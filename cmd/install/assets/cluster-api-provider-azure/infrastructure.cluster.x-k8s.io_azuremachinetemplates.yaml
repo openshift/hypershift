@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.13.0
+    controller-gen.kubebuilder.io/version: v0.14.0
   name: azuremachinetemplates.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -23,14 +23,19 @@ spec:
           API.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -42,45 +47,50 @@ spec:
                   to create an AzureMachine from a template.
                 properties:
                   metadata:
-                    description: "ObjectMeta is metadata that all persisted resources
-                      must have, which includes all objects users must create. This
-                      is a copy of customizable fields from metav1.ObjectMeta. \n
-                      ObjectMeta is embedded in `Machine.Spec`, `MachineDeployment.Template`
-                      and `MachineSet.Template`, which are not top-level Kubernetes
-                      objects. Given that metav1.ObjectMeta has lots of special cases
-                      and read-only fields which end up in the generated CRD validation,
-                      having it as a subset simplifies the API and some issues that
-                      can impact user experience. \n During the [upgrade to controller-tools@v2](https://github.com/kubernetes-sigs/cluster-api/pull/1054)
-                      for v1alpha2, we noticed a failure would occur running Cluster
-                      API test suite against the new CRDs, specifically `spec.metadata.creationTimestamp
-                      in body must be of type string: \"null\"`. The investigation
-                      showed that `controller-tools@v2` behaves differently than its
-                      previous version when handling types from [metav1](k8s.io/apimachinery/pkg/apis/meta/v1)
-                      package. \n In more details, we found that embedded (non-top
-                      level) types that embedded `metav1.ObjectMeta` had validation
-                      properties, including for `creationTimestamp` (metav1.Time).
-                      The `metav1.Time` type specifies a custom json marshaller that,
-                      when IsZero() is true, returns `null` which breaks validation
-                      because the field isn't marked as nullable. \n In future versions,
-                      controller-tools@v2 might allow overriding the type and validation
-                      for embedded types. When that happens, this hack should be revisited."
+                    description: |-
+                      ObjectMeta is metadata that all persisted resources must have, which includes all objects
+                      users must create. This is a copy of customizable fields from metav1.ObjectMeta.
+
+
+                      ObjectMeta is embedded in `Machine.Spec`, `MachineDeployment.Template` and `MachineSet.Template`,
+                      which are not top-level Kubernetes objects. Given that metav1.ObjectMeta has lots of special cases
+                      and read-only fields which end up in the generated CRD validation, having it as a subset simplifies
+                      the API and some issues that can impact user experience.
+
+
+                      During the [upgrade to controller-tools@v2](https://github.com/kubernetes-sigs/cluster-api/pull/1054)
+                      for v1alpha2, we noticed a failure would occur running Cluster API test suite against the new CRDs,
+                      specifically `spec.metadata.creationTimestamp in body must be of type string: "null"`.
+                      The investigation showed that `controller-tools@v2` behaves differently than its previous version
+                      when handling types from [metav1](k8s.io/apimachinery/pkg/apis/meta/v1) package.
+
+
+                      In more details, we found that embedded (non-top level) types that embedded `metav1.ObjectMeta`
+                      had validation properties, including for `creationTimestamp` (metav1.Time).
+                      The `metav1.Time` type specifies a custom json marshaller that, when IsZero() is true, returns `null`
+                      which breaks validation because the field isn't marked as nullable.
+
+
+                      In future versions, controller-tools@v2 might allow overriding the type and validation for embedded
+                      types. When that happens, this hack should be revisited.
                     properties:
                       annotations:
                         additionalProperties:
                           type: string
-                        description: 'Annotations is an unstructured key value map
-                          stored with a resource that may be set by external tools
-                          to store and retrieve arbitrary metadata. They are not queryable
-                          and should be preserved when modifying objects. More info:
-                          http://kubernetes.io/docs/user-guide/annotations'
+                        description: |-
+                          Annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
                         type: object
                       labels:
                         additionalProperties:
                           type: string
-                        description: 'Map of string keys and values that can be used
-                          to organize and categorize (scope and select) objects. May
-                          match selectors of replication controllers and services.
-                          More info: http://kubernetes.io/docs/user-guide/labels'
+                        description: |-
+                          Map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
                         type: object
                     type: object
                   spec:
@@ -96,20 +106,19 @@ spec:
                           enabled or disabled on the virtual machine.
                         properties:
                           ultraSSDEnabled:
-                            description: UltraSSDEnabled enables or disables Azure
-                              UltraSSD capability for the virtual machine. Defaults
-                              to true if Ultra SSD data disks are specified, otherwise
-                              it doesn't set the capability on the VM.
+                            description: |-
+                              UltraSSDEnabled enables or disables Azure UltraSSD capability for the virtual machine.
+                              Defaults to true if Ultra SSD data disks are specified,
+                              otherwise it doesn't set the capability on the VM.
                             type: boolean
                         type: object
                       additionalTags:
                         additionalProperties:
                           type: string
-                        description: AdditionalTags is an optional set of tags to
-                          add to an instance, in addition to the ones added by default
-                          by the Azure provider. If both the AzureCluster and the
-                          AzureMachine specify the same tag name with different values,
-                          the AzureMachine's value takes precedence.
+                        description: |-
+                          AdditionalTags is an optional set of tags to add to an instance, in addition to the ones added by default by the
+                          Azure provider. If both the AzureCluster and the AzureMachine specify the same tag name with different values, the
+                          AzureMachine's value takes precedence.
                         type: object
                       allocatePublicIP:
                         description: AllocatePublicIP allows the ability to create
@@ -135,11 +144,9 @@ spec:
                               format: int32
                               type: integer
                             lun:
-                              description: Lun Specifies the logical unit number of
-                                the data disk. This value is used to identify data
-                                disks within the VM and therefore must be unique for
-                                each data disk attached to a VM. The value must be
-                                between 0 and 63.
+                              description: |-
+                                Lun Specifies the logical unit number of the data disk. This value is used to identify data disks within the VM and therefore must be unique for each data disk attached to a VM.
+                                The value must be between 0 and 63.
                               format: int32
                               type: integer
                             managedDisk:
@@ -161,11 +168,10 @@ spec:
                                     profile for the managed disk.
                                   properties:
                                     diskEncryptionSet:
-                                      description: DiskEncryptionSet specifies the
-                                        customer-managed disk encryption set resource
-                                        id for the managed disk that is used for Customer
-                                        Managed Key encrypted ConfidentialVM OS Disk
-                                        and VMGuest blob.
+                                      description: |-
+                                        DiskEncryptionSet specifies the customer-managed disk encryption set resource id for the
+                                        managed disk that is used for Customer Managed Key encrypted ConfidentialVM OS Disk and
+                                        VMGuest blob.
                                       properties:
                                         id:
                                           description: ID defines resourceID for diskEncryptionSet
@@ -173,18 +179,14 @@ spec:
                                           type: string
                                       type: object
                                     securityEncryptionType:
-                                      description: SecurityEncryptionType specifies
-                                        the encryption type of the managed disk. It
-                                        is set to DiskWithVMGuestState to encrypt
-                                        the managed disk along with the VMGuestState
-                                        blob, and to VMGuestStateOnly to encrypt the
-                                        VMGuestState blob only. When set to VMGuestStateOnly,
-                                        VirtualizedTrustedPlatformModule should be
-                                        set to Enabled. When set to DiskWithVMGuestState,
-                                        EncryptionAtHost should be disabled, SecureBoot
-                                        and VirtualizedTrustedPlatformModule should
-                                        be set to Enabled. It can be set only for
-                                        Confidential VMs.
+                                      description: |-
+                                        SecurityEncryptionType specifies the encryption type of the managed disk.
+                                        It is set to DiskWithVMGuestState to encrypt the managed disk along with the VMGuestState
+                                        blob, and to VMGuestStateOnly to encrypt the VMGuestState blob only.
+                                        When set to VMGuestStateOnly, VirtualizedTrustedPlatformModule should be set to Enabled.
+                                        When set to DiskWithVMGuestState, EncryptionAtHost should be disabled, SecureBoot and
+                                        VirtualizedTrustedPlatformModule should be set to Enabled.
+                                        It can be set only for Confidential VMs.
                                       enum:
                                       - VMGuestStateOnly
                                       - DiskWithVMGuestState
@@ -194,9 +196,9 @@ spec:
                                   type: string
                               type: object
                             nameSuffix:
-                              description: NameSuffix is the suffix to be appended
-                                to the machine name to generate the disk name. Each
-                                disk name will be in format <machineName>_<nameSuffix>.
+                              description: |-
+                                NameSuffix is the suffix to be appended to the machine name to generate the disk name.
+                                Each disk name will be in format <machineName>_<nameSuffix>.
                               type: string
                           required:
                           - diskSizeGB
@@ -204,23 +206,21 @@ spec:
                           type: object
                         type: array
                       diagnostics:
-                        description: Diagnostics specifies the diagnostics settings
-                          for a virtual machine. If not specified then Boot diagnostics
-                          (Managed) will be enabled.
+                        description: |-
+                          Diagnostics specifies the diagnostics settings for a virtual machine.
+                          If not specified then Boot diagnostics (Managed) will be enabled.
                         properties:
                           boot:
-                            description: Boot configures the boot diagnostics settings
-                              for the virtual machine. This allows to configure capturing
-                              serial output from the virtual machine on boot. This
-                              is useful for debugging software based launch issues.
-                              If not specified then Boot diagnostics (Managed) will
-                              be enabled.
+                            description: |-
+                              Boot configures the boot diagnostics settings for the virtual machine.
+                              This allows to configure capturing serial output from the virtual machine on boot.
+                              This is useful for debugging software based launch issues.
+                              If not specified then Boot diagnostics (Managed) will be enabled.
                             properties:
                               storageAccountType:
-                                description: StorageAccountType determines if the
-                                  storage account for storing the diagnostics data
-                                  should be disabled (Disabled), provisioned by Azure
-                                  (Managed) or by the user (UserManaged).
+                                description: |-
+                                  StorageAccountType determines if the storage account for storing the diagnostics data
+                                  should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
                                 enum:
                                 - Managed
                                 - UserManaged
@@ -231,16 +231,13 @@ spec:
                                   user-managed storage account.
                                 properties:
                                   storageAccountURI:
-                                    description: 'StorageAccountURI is the URI of
-                                      the user-managed storage account. The URI typically
-                                      will be `https://<mystorageaccountname>.blob.core.windows.net/`
-                                      but may differ if you are using Azure DNS zone
-                                      endpoints. You can find the correct endpoint
-                                      by looking for the Blob Primary Endpoint in
-                                      the endpoints tab in the Azure console or with
-                                      the CLI by issuing `az storage account list
-                                      --query=''[].{name: name, "resource group":
-                                      resourceGroup, "blob endpoint": primaryEndpoints.blob}''`.'
+                                    description: |-
+                                      StorageAccountURI is the URI of the user-managed storage account.
+                                      The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                                      but may differ if you are using Azure DNS zone endpoints.
+                                      You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+                                      endpoints tab in the Azure console or with the CLI by issuing
+                                      `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
                                     maxLength: 1024
                                     pattern: ^https://
                                     type: string
@@ -258,35 +255,33 @@ spec:
                           type: string
                         type: array
                       enableIPForwarding:
-                        description: EnableIPForwarding enables IP Forwarding in Azure
-                          which is required for some CNI's to send traffic from a
-                          pods on one machine to another. This is required for IpV6
-                          with Calico in combination with User Defined Routes (set
-                          by the Azure Cloud Controller manager). Default is false
-                          for disabled.
+                        description: |-
+                          EnableIPForwarding enables IP Forwarding in Azure which is required for some CNI's to send traffic from a pods on one machine
+                          to another. This is required for IpV6 with Calico in combination with User Defined Routes (set by the Azure Cloud Controller
+                          manager). Default is false for disabled.
                         type: boolean
                       failureDomain:
-                        description: FailureDomain is the failure domain unique identifier
-                          this Machine should be attached to, as defined in Cluster
-                          API. This relates to an Azure Availability Zone
+                        description: |-
+                          FailureDomain is the failure domain unique identifier this Machine should be attached to,
+                          as defined in Cluster API. This relates to an Azure Availability Zone
                         type: string
                       identity:
                         default: None
-                        description: Identity is the type of identity used for the
-                          virtual machine. The type 'SystemAssigned' is an implicitly
-                          created identity. The generated identity will be assigned
-                          a Subscription contributor role. The type 'UserAssigned'
-                          is a standalone Azure resource provided by the user and
-                          assigned to the VM
+                        description: |-
+                          Identity is the type of identity used for the virtual machine.
+                          The type 'SystemAssigned' is an implicitly created identity.
+                          The generated identity will be assigned a Subscription contributor role.
+                          The type 'UserAssigned' is a standalone Azure resource provided by the user
+                          and assigned to the VM
                         enum:
                         - None
                         - SystemAssigned
                         - UserAssigned
                         type: string
                       image:
-                        description: Image is used to provide details of an image
-                          to use during VM creation. If image details are omitted
-                          the image will default the Azure Marketplace "capi" offer,
+                        description: |-
+                          Image is used to provide details of an image to use during VM creation.
+                          If image details are omitted the image will default the Azure Marketplace "capi" offer,
                           which is based on Ubuntu.
                         properties:
                           computeGallery:
@@ -306,8 +301,8 @@ spec:
                                 description: Plan contains plan information.
                                 properties:
                                   offer:
-                                    description: Offer specifies the name of a group
-                                      of related images created by the publisher.
+                                    description: |-
+                                      Offer specifies the name of a group of related images created by the publisher.
                                       For example, UbuntuServer, WindowsServer
                                     minLength: 1
                                     type: string
@@ -317,9 +312,9 @@ spec:
                                     minLength: 1
                                     type: string
                                   sku:
-                                    description: SKU specifies an instance of an offer,
-                                      such as a major release of a distribution. For
-                                      example, 18.04-LTS, 2019-Datacenter
+                                    description: |-
+                                      SKU specifies an instance of an offer, such as a major release of a distribution.
+                                      For example, 18.04-LTS, 2019-Datacenter
                                     minLength: 1
                                     type: string
                                 required:
@@ -336,14 +331,12 @@ spec:
                                   subscription that contains the private compute gallery.
                                 type: string
                               version:
-                                description: Version specifies the version of the
-                                  marketplace image. The allowed formats are Major.Minor.Build
-                                  or 'latest'. Major, Minor, and Build are decimal
-                                  numbers. Specify 'latest' to use the latest version
-                                  of an image available at deploy time. Even if you
-                                  use 'latest', the VM image will not automatically
-                                  update after deploy time even if a new version becomes
-                                  available.
+                                description: |-
+                                  Version specifies the version of the marketplace image. The allowed formats
+                                  are Major.Minor.Build or 'latest'. Major, Minor, and Build are decimal numbers.
+                                  Specify 'latest' to use the latest version of an image available at deploy time.
+                                  Even if you use 'latest', the VM image will not automatically update after deploy
+                                  time even if a new version becomes available.
                                 minLength: 1
                                 type: string
                             required:
@@ -359,9 +352,9 @@ spec:
                               the Azure Marketplace
                             properties:
                               offer:
-                                description: Offer specifies the name of a group of
-                                  related images created by the publisher. For example,
-                                  UbuntuServer, WindowsServer
+                                description: |-
+                                  Offer specifies the name of a group of related images created by the publisher.
+                                  For example, UbuntuServer, WindowsServer
                                 minLength: 1
                                 type: string
                               publisher:
@@ -370,26 +363,24 @@ spec:
                                 minLength: 1
                                 type: string
                               sku:
-                                description: SKU specifies an instance of an offer,
-                                  such as a major release of a distribution. For example,
-                                  18.04-LTS, 2019-Datacenter
+                                description: |-
+                                  SKU specifies an instance of an offer, such as a major release of a distribution.
+                                  For example, 18.04-LTS, 2019-Datacenter
                                 minLength: 1
                                 type: string
                               thirdPartyImage:
                                 default: false
-                                description: ThirdPartyImage indicates the image is
-                                  published by a third party publisher and a Plan
+                                description: |-
+                                  ThirdPartyImage indicates the image is published by a third party publisher and a Plan
                                   will be generated for it.
                                 type: boolean
                               version:
-                                description: Version specifies the version of an image
-                                  sku. The allowed formats are Major.Minor.Build or
-                                  'latest'. Major, Minor, and Build are decimal numbers.
-                                  Specify 'latest' to use the latest version of an
-                                  image available at deploy time. Even if you use
-                                  'latest', the VM image will not automatically update
-                                  after deploy time even if a new version becomes
-                                  available.
+                                description: |-
+                                  Version specifies the version of an image sku. The allowed formats
+                                  are Major.Minor.Build or 'latest'. Major, Minor, and Build are decimal numbers.
+                                  Specify 'latest' to use the latest version of an image available at deploy time.
+                                  Even if you use 'latest', the VM image will not automatically update after deploy
+                                  time even if a new version becomes available.
                                 minLength: 1
                                 type: string
                             required:
@@ -399,9 +390,9 @@ spec:
                             - version
                             type: object
                           sharedGallery:
-                            description: 'SharedGallery specifies an image to use
-                              from an Azure Shared Image Gallery Deprecated: use ComputeGallery
-                              instead.'
+                            description: |-
+                              SharedGallery specifies an image to use from an Azure Shared Image Gallery
+                              Deprecated: use ComputeGallery instead.
                             properties:
                               gallery:
                                 description: Gallery specifies the name of the shared
@@ -413,21 +404,17 @@ spec:
                                 minLength: 1
                                 type: string
                               offer:
-                                description: Offer specifies the name of a group of
-                                  related images created by the publisher. For example,
-                                  UbuntuServer, WindowsServer This value will be used
-                                  to add a `Plan` in the API request when creating
-                                  the VM/VMSS resource. This is needed when the source
-                                  image from which this SIG image was built requires
-                                  the `Plan` to be used.
+                                description: |-
+                                  Offer specifies the name of a group of related images created by the publisher.
+                                  For example, UbuntuServer, WindowsServer
+                                  This value will be used to add a `Plan` in the API request when creating the VM/VMSS resource.
+                                  This is needed when the source image from which this SIG image was built requires the `Plan` to be used.
                                 type: string
                               publisher:
-                                description: Publisher is the name of the organization
-                                  that created the image. This value will be used
-                                  to add a `Plan` in the API request when creating
-                                  the VM/VMSS resource. This is needed when the source
-                                  image from which this SIG image was built requires
-                                  the `Plan` to be used.
+                                description: |-
+                                  Publisher is the name of the organization that created the image.
+                                  This value will be used to add a `Plan` in the API request when creating the VM/VMSS resource.
+                                  This is needed when the source image from which this SIG image was built requires the `Plan` to be used.
                                 type: string
                               resourceGroup:
                                 description: ResourceGroup specifies the resource
@@ -435,13 +422,11 @@ spec:
                                 minLength: 1
                                 type: string
                               sku:
-                                description: SKU specifies an instance of an offer,
-                                  such as a major release of a distribution. For example,
-                                  18.04-LTS, 2019-Datacenter This value will be used
-                                  to add a `Plan` in the API request when creating
-                                  the VM/VMSS resource. This is needed when the source
-                                  image from which this SIG image was built requires
-                                  the `Plan` to be used.
+                                description: |-
+                                  SKU specifies an instance of an offer, such as a major release of a distribution.
+                                  For example, 18.04-LTS, 2019-Datacenter
+                                  This value will be used to add a `Plan` in the API request when creating the VM/VMSS resource.
+                                  This is needed when the source image from which this SIG image was built requires the `Plan` to be used.
                                 type: string
                               subscriptionID:
                                 description: SubscriptionID is the identifier of the
@@ -449,14 +434,12 @@ spec:
                                 minLength: 1
                                 type: string
                               version:
-                                description: Version specifies the version of the
-                                  marketplace image. The allowed formats are Major.Minor.Build
-                                  or 'latest'. Major, Minor, and Build are decimal
-                                  numbers. Specify 'latest' to use the latest version
-                                  of an image available at deploy time. Even if you
-                                  use 'latest', the VM image will not automatically
-                                  update after deploy time even if a new version becomes
-                                  available.
+                                description: |-
+                                  Version specifies the version of the marketplace image. The allowed formats
+                                  are Major.Minor.Build or 'latest'. Major, Minor, and Build are decimal numbers.
+                                  Specify 'latest' to use the latest version of an image available at deploy time.
+                                  Even if you use 'latest', the VM image will not automatically update after deploy
+                                  time even if a new version becomes available.
                                 minLength: 1
                                 type: string
                             required:
@@ -468,27 +451,24 @@ spec:
                             type: object
                         type: object
                       networkInterfaces:
-                        description: NetworkInterfaces specifies a list of network
-                          interface configurations. If left unspecified, the VM will
-                          get a single network interface with a single IPConfig in
-                          the subnet specified in the cluster's node subnet field.
-                          The primary interface will be the first networkInterface
-                          specified (index 0) in the list.
+                        description: |-
+                          NetworkInterfaces specifies a list of network interface configurations.
+                          If left unspecified, the VM will get a single network interface with a
+                          single IPConfig in the subnet specified in the cluster's node subnet field.
+                          The primary interface will be the first networkInterface specified (index 0) in the list.
                         items:
                           description: NetworkInterface defines a network interface.
                           properties:
                             acceleratedNetworking:
-                              description: AcceleratedNetworking enables or disables
-                                Azure accelerated networking. If omitted, it will
-                                be set based on whether the requested VMSize supports
-                                accelerated networking. If AcceleratedNetworking is
-                                set to true with a VMSize that does not support it,
-                                Azure will return an error.
+                              description: |-
+                                AcceleratedNetworking enables or disables Azure accelerated networking. If omitted, it will be set based on
+                                whether the requested VMSize supports accelerated networking.
+                                If AcceleratedNetworking is set to true with a VMSize that does not support it, Azure will return an error.
                               type: boolean
                             privateIPConfigs:
-                              description: PrivateIPConfigs specifies the number of
-                                private IP addresses to attach to the interface. Defaults
-                                to 1 if not specified.
+                              description: |-
+                                PrivateIPConfigs specifies the number of private IP addresses to attach to the interface.
+                                Defaults to 1 if not specified.
                               type: integer
                             subnetName:
                               description: SubnetName specifies the subnet in which
@@ -512,9 +492,9 @@ spec:
                               settings for the os disk.
                             properties:
                               option:
-                                description: Option enables ephemeral OS when set
-                                  to "Local" See https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks
-                                  for full details
+                                description: |-
+                                  Option enables ephemeral OS when set to "Local"
+                                  See https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks for full details
                                 enum:
                                 - Local
                                 type: string
@@ -522,8 +502,9 @@ spec:
                             - option
                             type: object
                           diskSizeGB:
-                            description: DiskSizeGB is the size in GB to assign to
-                              the OS disk. Will have a default of 30GB if not provided
+                            description: |-
+                              DiskSizeGB is the size in GB to assign to the OS disk.
+                              Will have a default of 30GB if not provided
                             format: int32
                             type: integer
                           managedDisk:
@@ -545,10 +526,10 @@ spec:
                                   profile for the managed disk.
                                 properties:
                                   diskEncryptionSet:
-                                    description: DiskEncryptionSet specifies the customer-managed
-                                      disk encryption set resource id for the managed
-                                      disk that is used for Customer Managed Key encrypted
-                                      ConfidentialVM OS Disk and VMGuest blob.
+                                    description: |-
+                                      DiskEncryptionSet specifies the customer-managed disk encryption set resource id for the
+                                      managed disk that is used for Customer Managed Key encrypted ConfidentialVM OS Disk and
+                                      VMGuest blob.
                                     properties:
                                       id:
                                         description: ID defines resourceID for diskEncryptionSet
@@ -556,17 +537,14 @@ spec:
                                         type: string
                                     type: object
                                   securityEncryptionType:
-                                    description: SecurityEncryptionType specifies
-                                      the encryption type of the managed disk. It
-                                      is set to DiskWithVMGuestState to encrypt the
-                                      managed disk along with the VMGuestState blob,
-                                      and to VMGuestStateOnly to encrypt the VMGuestState
-                                      blob only. When set to VMGuestStateOnly, VirtualizedTrustedPlatformModule
-                                      should be set to Enabled. When set to DiskWithVMGuestState,
-                                      EncryptionAtHost should be disabled, SecureBoot
-                                      and VirtualizedTrustedPlatformModule should
-                                      be set to Enabled. It can be set only for Confidential
-                                      VMs.
+                                    description: |-
+                                      SecurityEncryptionType specifies the encryption type of the managed disk.
+                                      It is set to DiskWithVMGuestState to encrypt the managed disk along with the VMGuestState
+                                      blob, and to VMGuestStateOnly to encrypt the VMGuestState blob only.
+                                      When set to VMGuestStateOnly, VirtualizedTrustedPlatformModule should be set to Enabled.
+                                      When set to DiskWithVMGuestState, EncryptionAtHost should be disabled, SecureBoot and
+                                      VirtualizedTrustedPlatformModule should be set to Enabled.
+                                      It can be set only for Confidential VMs.
                                     enum:
                                     - VMGuestStateOnly
                                     - DiskWithVMGuestState
@@ -593,18 +571,16 @@ spec:
                           settings for a virtual machine.
                         properties:
                           encryptionAtHost:
-                            description: This field indicates whether Host Encryption
-                              should be enabled or disabled for a virtual machine
-                              or virtual machine scale set. This should be disabled
-                              when SecurityEncryptionType is set to DiskWithVMGuestState.
+                            description: |-
+                              This field indicates whether Host Encryption should be enabled
+                              or disabled for a virtual machine or virtual machine scale set.
+                              This should be disabled when SecurityEncryptionType is set to DiskWithVMGuestState.
                               Default is disabled.
                             type: boolean
                           securityType:
-                            description: 'SecurityType specifies the SecurityType
-                              of the virtual machine. It has to be set to any specified
-                              value to enable UefiSettings. The default behavior is:
-                              UefiSettings will not be enabled unless this property
-                              is set.'
+                            description: |-
+                              SecurityType specifies the SecurityType of the virtual machine. It has to be set to any specified value to
+                              enable UefiSettings. The default behavior is: UefiSettings will not be enabled unless this property is set.
                             enum:
                             - ConfidentialVM
                             - TrustedLaunch
@@ -615,26 +591,18 @@ spec:
                               machine.
                             properties:
                               secureBootEnabled:
-                                description: SecureBootEnabled specifies whether secure
-                                  boot should be enabled on the virtual machine. Secure
-                                  Boot verifies the digital signature of all boot
-                                  components and halts the boot process if signature
-                                  verification fails. If omitted, the platform chooses
-                                  a default, which is subject to change over time,
-                                  currently that default is false.
+                                description: |-
+                                  SecureBootEnabled specifies whether secure boot should be enabled on the virtual machine.
+                                  Secure Boot verifies the digital signature of all boot components and halts the boot process if signature verification fails.
+                                  If omitted, the platform chooses a default, which is subject to change over time, currently that default is false.
                                 type: boolean
                               vTpmEnabled:
-                                description: VTpmEnabled specifies whether vTPM should
-                                  be enabled on the virtual machine. When true it
-                                  enables the virtualized trusted platform module
-                                  measurements to create a known good boot integrity
-                                  policy baseline. The integrity policy baseline is
-                                  used for comparison with measurements from subsequent
-                                  VM boots to determine if anything has changed. This
-                                  is required to be set to Enabled if SecurityEncryptionType
-                                  is defined. If omitted, the platform chooses a default,
-                                  which is subject to change over time, currently
-                                  that default is false.
+                                description: |-
+                                  VTpmEnabled specifies whether vTPM should be enabled on the virtual machine.
+                                  When true it enables the virtualized trusted platform module measurements to create a known good boot integrity policy baseline.
+                                  The integrity policy baseline is used for comparison with measurements from subsequent VM boots to determine if anything has changed.
+                                  This is required to be set to Enabled if SecurityEncryptionType is defined.
+                                  If omitted, the platform chooses a default, which is subject to change over time, currently that default is false.
                                 type: boolean
                             type: object
                         type: object
@@ -660,9 +628,9 @@ spec:
                             x-kubernetes-int-or-string: true
                         type: object
                       sshPublicKey:
-                        description: SSHPublicKey is the SSH public key string, base64-encoded
-                          to add to a Virtual Machine. Linux only. Refer to documentation
-                          on how to set up SSH access on Windows instances.
+                        description: |-
+                          SSHPublicKey is the SSH public key string, base64-encoded to add to a Virtual Machine. Linux only.
+                          Refer to documentation on how to set up SSH access on Windows instances.
                         type: string
                       subnetName:
                         description: 'Deprecated: SubnetName should be set in the
@@ -673,38 +641,36 @@ spec:
                           scope to assign to the system-assigned identity.
                         properties:
                           definitionID:
-                            description: 'DefinitionID is the ID of the role definition
-                              to create for a system assigned identity. It can be
-                              an Azure built-in role or a custom role. Refer to built-in
-                              roles: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles'
+                            description: |-
+                              DefinitionID is the ID of the role definition to create for a system assigned identity. It can be an Azure built-in role or a custom role.
+                              Refer to built-in roles: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles
                             type: string
                           name:
-                            description: Name is the name of the role assignment to
-                              create for a system assigned identity. It can be any
-                              valid UUID. If not specified, a random UUID will be
-                              generated.
+                            description: |-
+                              Name is the name of the role assignment to create for a system assigned identity. It can be any valid UUID.
+                              If not specified, a random UUID will be generated.
                             type: string
                           scope:
-                            description: Scope is the scope that the role assignment
-                              or definition applies to. The scope can be any REST
-                              resource instance. If not specified, the scope will
-                              be the subscription.
+                            description: |-
+                              Scope is the scope that the role assignment or definition applies to. The scope can be any REST resource instance.
+                              If not specified, the scope will be the subscription.
                             type: string
                         type: object
                       userAssignedIdentities:
-                        description: UserAssignedIdentities is a list of standalone
-                          Azure identities provided by the user The lifecycle of a
-                          user-assigned identity is managed separately from the lifecycle
-                          of the AzureMachine. See https://learn.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
+                        description: |-
+                          UserAssignedIdentities is a list of standalone Azure identities provided by the user
+                          The lifecycle of a user-assigned identity is managed separately from the lifecycle of
+                          the AzureMachine.
+                          See https://learn.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
                         items:
-                          description: UserAssignedIdentity defines the user-assigned
-                            identities provided by the user to be assigned to Azure
-                            resources.
+                          description: |-
+                            UserAssignedIdentity defines the user-assigned identities provided
+                            by the user to be assigned to Azure resources.
                           properties:
                             providerID:
-                              description: 'ProviderID is the identification ID of
-                                the user-assigned Identity, the format of an identity
-                                is: ''azure:///subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}'''
+                              description: |-
+                                ProviderID is the identification ID of the user-assigned Identity, the format of an identity is:
+                                'azure:///subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}'
                               type: string
                           required:
                           - providerID
