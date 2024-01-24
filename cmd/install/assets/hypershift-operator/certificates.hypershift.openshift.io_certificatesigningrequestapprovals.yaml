@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.13.0
-  name: certificatesigningrequestapprovals.hypershift.openshift.io
+  name: certificatesigningrequestapprovals.certificates.hypershift.openshift.io
 spec:
-  group: hypershift.openshift.io
+  group: certificates.hypershift.openshift.io
   names:
     kind: CertificateSigningRequestApproval
     listKind: CertificateSigningRequestApprovalList
@@ -17,7 +17,7 @@ spec:
     singular: certificatesigningrequestapproval
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
         description: CertificateSigningRequestApproval defines the desired state of
