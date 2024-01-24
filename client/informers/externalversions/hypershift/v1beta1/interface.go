@@ -23,6 +23,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.
+	CertificateSigningRequestApprovals() CertificateSigningRequestApprovalInformer
 	// HostedClusters returns a HostedClusterInformer.
 	HostedClusters() HostedClusterInformer
 	// HostedControlPlanes returns a HostedControlPlaneInformer.
@@ -40,6 +42,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.
+func (v *version) CertificateSigningRequestApprovals() CertificateSigningRequestApprovalInformer {
+	return &certificateSigningRequestApprovalInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // HostedClusters returns a HostedClusterInformer.
