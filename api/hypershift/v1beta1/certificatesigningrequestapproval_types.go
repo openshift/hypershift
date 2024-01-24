@@ -1,8 +1,13 @@
-package v1alpha1
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func init() {
+	SchemeBuilder.Register(&CertificateSigningRequestApproval{})
+	SchemeBuilder.Register(&CertificateSigningRequestApprovalList{})
+}
 
 // +genclient
 // +kubebuilder:resource:path=certificatesigningrequestapprovals,shortName=csra;csras,scope=Namespaced

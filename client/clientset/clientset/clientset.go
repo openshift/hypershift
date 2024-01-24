@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 
-	certificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
 	hypershiftv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	discovery "k8s.io/client-go/discovery"
@@ -31,7 +30,6 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1alpha1Interface
 	HypershiftV1alpha1() hypershiftv1alpha1.HypershiftV1alpha1Interface
 	HypershiftV1beta1() hypershiftv1beta1.HypershiftV1beta1Interface
 }
@@ -39,14 +37,8 @@ type Interface interface {
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	certificatesV1alpha1 *certificatesv1alpha1.CertificatesV1alpha1Client
-	hypershiftV1alpha1   *hypershiftv1alpha1.HypershiftV1alpha1Client
-	hypershiftV1beta1    *hypershiftv1beta1.HypershiftV1beta1Client
-}
-
-// CertificatesV1alpha1 retrieves the CertificatesV1alpha1Client
-func (c *Clientset) CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1alpha1Interface {
-	return c.certificatesV1alpha1
+	hypershiftV1alpha1 *hypershiftv1alpha1.HypershiftV1alpha1Client
+	hypershiftV1beta1  *hypershiftv1beta1.HypershiftV1beta1Client
 }
 
 // HypershiftV1alpha1 retrieves the HypershiftV1alpha1Client
@@ -103,10 +95,6 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
-	cs.certificatesV1alpha1, err = certificatesv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
-	if err != nil {
-		return nil, err
-	}
 	cs.hypershiftV1alpha1, err = hypershiftv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
@@ -136,7 +124,6 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.certificatesV1alpha1 = certificatesv1alpha1.New(c)
 	cs.hypershiftV1alpha1 = hypershiftv1alpha1.New(c)
 	cs.hypershiftV1beta1 = hypershiftv1beta1.New(c)
 
