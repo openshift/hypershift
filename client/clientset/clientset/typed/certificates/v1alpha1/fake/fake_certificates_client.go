@@ -18,30 +18,22 @@ limitations under the License.
 package fake
 
 import (
-	v1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
+	v1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )
 
-type FakeHypershiftV1beta1 struct {
+type FakeCertificatesV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeHypershiftV1beta1) HostedClusters(namespace string) v1beta1.HostedClusterInterface {
-	return &FakeHostedClusters{c, namespace}
-}
-
-func (c *FakeHypershiftV1beta1) HostedControlPlanes(namespace string) v1beta1.HostedControlPlaneInterface {
-	return &FakeHostedControlPlanes{c, namespace}
-}
-
-func (c *FakeHypershiftV1beta1) NodePools(namespace string) v1beta1.NodePoolInterface {
-	return &FakeNodePools{c, namespace}
+func (c *FakeCertificatesV1alpha1) CertificateSigningRequestApprovals(namespace string) v1alpha1.CertificateSigningRequestApprovalInterface {
+	return &FakeCertificateSigningRequestApprovals{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeHypershiftV1beta1) RESTClient() rest.Interface {
+func (c *FakeCertificatesV1alpha1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

@@ -63,7 +63,7 @@ rules:
   - update
   - patch
 - apiGroups:
-  - hypershift.openshift.io
+  - certificates.hypershift.openshift.io
   resources:
   - certificatesigningrequestapprovals
   verbs:
