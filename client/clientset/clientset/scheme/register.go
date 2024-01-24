@@ -18,7 +18,6 @@ limitations under the License.
 package scheme
 
 import (
-	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,7 +31,6 @@ var Scheme = runtime.NewScheme()
 var Codecs = serializer.NewCodecFactory(Scheme)
 var ParameterCodec = runtime.NewParameterCodec(Scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
-	certificatesv1alpha1.AddToScheme,
 	hypershiftv1alpha1.AddToScheme,
 	hypershiftv1beta1.AddToScheme,
 }

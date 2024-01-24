@@ -2700,11 +2700,6 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 			Verbs:     []string{"*"},
 		},
 		{
-			APIGroups: []string{"certificates.hypershift.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
 			APIGroups: []string{
 				"bootstrap.cluster.x-k8s.io",
 				"controlplane.cluster.x-k8s.io",
