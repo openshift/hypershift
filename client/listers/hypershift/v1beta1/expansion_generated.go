@@ -17,14 +17,6 @@ limitations under the License.
 
 package v1beta1
 
-// CertificateSigningRequestApprovalListerExpansion allows custom methods to be added to
-// CertificateSigningRequestApprovalLister.
-type CertificateSigningRequestApprovalListerExpansion interface{}
-
-// CertificateSigningRequestApprovalNamespaceListerExpansion allows custom methods to be added to
-// CertificateSigningRequestApprovalNamespaceLister.
-type CertificateSigningRequestApprovalNamespaceListerExpansion interface{}
-
 // HostedClusterListerExpansion allows custom methods to be added to
 // HostedClusterLister.
 type HostedClusterListerExpansion interface{}
