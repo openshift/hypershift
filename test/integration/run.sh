@@ -82,7 +82,7 @@ function image() {
   # we don't add the LABEL stanzas to this image, since the HyperShift Operator won't
   # be able to read the image metadata anyway, so we provide it as an annotation on the
   # HostedCluster resources the same way we provide the Control Plane Operator image
-  cat <<EOF >>bin/Dockerfile
+  cat <<EOF >bin/Dockerfile
 FROM quay.io/${os}/${os}:${version}
 COPY ./* /usr/bin
 ENTRYPOINT /usr/bin/hypershift
@@ -104,11 +104,11 @@ function reload() {
   done
 }
 
+image_labels="$( grep -Eo "LABEL .*" Dockerfile.control-plane | awk '{ print $2}' | paste -sd "," - )"
 function run_setup() {
   rm -rf "${workdir}/artifacts"
   mkdir -p "${workdir}/artifacts"
   echo "Running setup..."
-  image_labels="$( grep -Po "(?<=LABEL ).*" Dockerfile.control-plane | paste -sd "," - )"
   go test ./test/integration -tags integration -v \
     --timeout 0 \
     --kubeconfig "${workdir}/kubeconfig" \
@@ -122,7 +122,6 @@ function run_setup() {
 
 function run_test() {
   echo "Running test..."
-  image_labels="$( grep -Po "(?<=LABEL ).*" Dockerfile.control-plane | paste -sd "," - )"
   go test ./test/integration -tags integration -v \
     --kubeconfig "${workdir}/kubeconfig" \
     --pull-secret "${PULL_SECRET}" \
