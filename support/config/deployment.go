@@ -45,6 +45,7 @@ type DeploymentConfig struct {
 	DebugDeployments          sets.String
 	ResourceRequestOverrides  ResourceOverrides
 	IsolateAsRequestServing   bool
+	RevisionHistoryLimit      int
 }
 
 func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Container) {
@@ -91,6 +92,9 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 		deployment.Spec.Strategy.RollingUpdate.MaxSurge = &maxSurge
 		deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &maxUnavailable
 	}
+
+	// set revision history limit
+	deployment.Spec.RevisionHistoryLimit = pointer.Int32(int32(c.RevisionHistoryLimit))
 
 	// set default security context for pod
 	if c.SetDefaultSecurityContext {
@@ -374,8 +378,8 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZon
 		c.Replicas = *replicas
 	}
 	c.DebugDeployments = debugDeployments(hcp)
-
 	c.ResourceRequestOverrides = resourceRequestOverrides(hcp)
+	c.RevisionHistoryLimit = 2
 
 	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
