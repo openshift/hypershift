@@ -63,6 +63,7 @@ nav:
     - how-to/automated-machine-management/nodepool-lifecycle.md
     - how-to/automated-machine-management/node-tuning.md
     - how-to/automated-machine-management/configure-machines.md
+    - how-to/automated-machine-management/performance-profiling.md
   - 'AWS':
     - how-to/aws/create-aws-hosted-cluster-arm-workers.md
     - how-to/aws/create-infra-iam-separately.md

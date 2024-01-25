@@ -814,8 +814,10 @@ provided: reconciliation is paused on the resource until the field is removed.</
 Tuned resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
+<p>The PerformanceProfile API is defined here:
+<a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
-JSON or YAML of a serialized Tuned.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
 </td>
 </tr>
 <tr>
@@ -6645,8 +6647,10 @@ provided: reconciliation is paused on the resource until the field is removed.</
 Tuned resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
+<p>The PerformanceProfile API is defined here:
+<a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
-JSON or YAML of a serialized Tuned.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
 </td>
 </tr>
 <tr>

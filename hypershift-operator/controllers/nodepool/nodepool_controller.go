@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	coreerrors "errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -91,9 +93,10 @@ const (
 	TokenSecretIgnitionReachedAnnotation      = "hypershift.openshift.io/ignition-reached"
 	TokenSecretNodePoolUpgradeType            = "hypershift.openshift.io/node-pool-upgrade-type"
 
-	tuningConfigKey                = "tuning"
-	tuningConfigMapLabel           = "hypershift.openshift.io/tuned-config"
-	nodeTuningGeneratedConfigLabel = "hypershift.openshift.io/nto-generated-machine-config"
+	tuningConfigKey                  = "tuning"
+	tunedConfigMapLabel              = "hypershift.openshift.io/tuned-config"
+	nodeTuningGeneratedConfigLabel   = "hypershift.openshift.io/nto-generated-machine-config"
+	performanceProfileConfigMapLabel = "hypershift.openshift.io/performanceprofile-config"
 
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
@@ -654,7 +657,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Validate tuningConfig input.
-	tuningConfig, err := r.getTuningConfig(ctx, nodePool)
+	tunedConfig, performanceProfileConfig, err := r.getTuningConfig(ctx, nodePool)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidTuningConfigConditionType,
@@ -692,20 +695,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
-	tuningConfigMap := TuningConfigMap(controlPlaneNamespace, nodePool.Name)
-	if tuningConfig == "" {
-		err = r.Get(ctx, client.ObjectKeyFromObject(tuningConfigMap), tuningConfigMap)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to get tuningConfig ConfigMap: %w", err)
-		}
-		if err == nil {
-			if err := r.Delete(ctx, tuningConfigMap); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to delete tuningConfig ConfigMap with no Tuneds defined: %w", err)
-			}
+	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
+	if tunedConfig == "" {
+		if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, tunedConfigMap); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete tunedConfig ConfigMap: %w", err)
 		}
 	} else {
-		if result, err := r.CreateOrUpdate(ctx, r.Client, tuningConfigMap, func() error {
-			return reconcileTuningConfigMap(tuningConfigMap, nodePool, tuningConfig)
+		if result, err := r.CreateOrUpdate(ctx, r.Client, tunedConfigMap, func() error {
+			return reconcileTunedConfigMap(tunedConfigMap, nodePool, tunedConfig)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile Tuned ConfigMap: %w", err)
 		} else {
@@ -713,6 +710,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
+	performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, nodePool.Name)
+	if performanceProfileConfig == "" {
+		if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, performanceProfileConfigMap); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete performanceprofileConfig ConfigMap: %w", err)
+		}
+	} else {
+		if result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
+			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile PerformanceProfile ConfigMap: %w", err)
+		} else {
+			log.Info("Reconciled PerformanceProfile ConfigMap", "result", result)
+		}
+	}
+	// Set AllMachinesReadyCondition.
+	// Get all Machines for NodePool.
 	err = r.setMachineAndNodeConditions(ctx, nodePool)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -1464,10 +1477,7 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	return nil
 }
 
-// reconcileTuningConfigMap inserts the Tuned object manifest in tuningConfig into ConfigMap tuningConfigMap.
-// This is used to mirror the Tuned object manifest into the control plane namespace, for the Node
-// Tuning Operator to mirror and reconcile in the hosted cluster.
-func reconcileTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tuningConfig string) error {
+func reconcileNodeTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, rawConfig string) error {
 	tuningConfigMap.Immutable = k8sutilspointer.Bool(false)
 	if tuningConfigMap.Annotations == nil {
 		tuningConfigMap.Annotations = make(map[string]string)
@@ -1476,15 +1486,36 @@ func reconcileTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyper
 		tuningConfigMap.Labels = make(map[string]string)
 	}
 
-	tuningConfigMap.Labels[tuningConfigMapLabel] = "true"
-	tuningConfigMap.Annotations[nodePoolAnnotation] = nodePool.GetName()
+	tuningConfigMap.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 	tuningConfigMap.Labels[nodePoolAnnotation] = nodePool.GetName()
 
 	if tuningConfigMap.Data == nil {
 		tuningConfigMap.Data = map[string]string{}
 	}
-	tuningConfigMap.Data[tuningConfigKey] = tuningConfig
+	tuningConfigMap.Data[tuningConfigKey] = rawConfig
 
+	return nil
+}
+
+// reconcileTunedConfigMap inserts the Tuned object manifest in tunedConfig into ConfigMap tunedConfigMap.
+// This is used to mirror the Tuned object manifest into the control plane namespace, for the Node
+// Tuning Operator to mirror and reconcile in the hosted cluster.
+func reconcileTunedConfigMap(tunedConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tunedConfig string) error {
+	if err := reconcileNodeTuningConfigMap(tunedConfigMap, nodePool, tunedConfig); err != nil {
+		return err
+	}
+	tunedConfigMap.Labels[tunedConfigMapLabel] = "true"
+	return nil
+}
+
+// reconcilePerformanceProfileConfigMap inserts the PerformanceProfile object manifest in performanceProfileConfig into ConfigMap performanceProfileConfigMap.
+// This is used to mirror the PerformanceProfile object manifest into the control plane namespace, for the Node
+// Tuning Operator to mirror and reconcile in the hosted cluster.
+func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, performanceProfileConfig string) error {
+	if err := reconcileNodeTuningConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig); err != nil {
+		return err
+	}
+	performanceProfileConfigMap.Labels[performanceProfileConfigMapLabel] = "true"
 	return nil
 }
 
@@ -1965,10 +1996,13 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 
 func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 	nodePool *hyperv1.NodePool,
-) (configsRaw string, err error) {
-	var configs []corev1.ConfigMap
-	var allConfigPlainText []string
-	var errors []error
+) (string, string, error) {
+	var (
+		configs                              []corev1.ConfigMap
+		tunedAllConfigPlainText              []string
+		performanceProfileAllConfigPlainText []string
+		errors                               []error
+	)
 
 	for _, config := range nodePool.Spec.TuningConfig {
 		configConfigMap := &corev1.ConfigMap{
@@ -1990,47 +2024,70 @@ func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 			errors = append(errors, fmt.Errorf("no manifest found in configmap %q with key %q", config.Name, tuningConfigKey))
 			continue
 		}
-		manifest, err := validateTuningConfigManifest([]byte(manifestRaw))
+		manifestTuned, manifestPerformanceProfile, err := validateTuningConfigManifest([]byte(manifestRaw))
 		if err != nil {
 			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
 			continue
 		}
-
-		allConfigPlainText = append(allConfigPlainText, string(manifest))
+		if manifestTuned != nil {
+			tunedAllConfigPlainText = append(tunedAllConfigPlainText, string(manifestTuned))
+		}
+		if manifestPerformanceProfile != nil {
+			performanceProfileAllConfigPlainText = append(performanceProfileAllConfigPlainText, string(manifestPerformanceProfile))
+		}
 	}
 
-	// Keep output deterministic to avoid unnecessary no-op changes to Tuned ConfigMap
-	sort.Strings(allConfigPlainText)
-	return strings.Join(allConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
+	if len(performanceProfileAllConfigPlainText) > 1 {
+		errors = append(errors, fmt.Errorf("there cannot be more than one PerformanceProfile per NodePool. found: %d", len(performanceProfileAllConfigPlainText)))
+	}
+
+	// Keep output deterministic to avoid unnecesary no-op changes to Tuned ConfigMap
+	sort.Strings(tunedAllConfigPlainText)
+	sort.Strings(performanceProfileAllConfigPlainText)
+
+	return strings.Join(tunedAllConfigPlainText, "\n---\n"), strings.Join(performanceProfileAllConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
+
 }
 
-func validateTuningConfigManifest(manifest []byte) ([]byte, error) {
+func validateTuningConfigManifest(manifest []byte) ([]byte, []byte, error) {
 	scheme := runtime.NewScheme()
 	tunedv1.AddToScheme(scheme)
+	performanceprofilev2.AddToScheme(scheme)
 
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
 		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
 	)
-
 	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding config: %w", err)
+		return nil, nil, fmt.Errorf("error decoding config: %w", err)
 	}
 
 	switch obj := cr.(type) {
 	case *tunedv1.Tuned:
 		buff := bytes.Buffer{}
 		if err := yamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, fmt.Errorf("failed to encode Tuned object: %w", err)
+			return nil, nil, fmt.Errorf("failed to encode Tuned object: %w", err)
 		}
 		manifest = buff.Bytes()
+		return manifest, nil, nil
+
+	case *performanceprofilev2.PerformanceProfile:
+		validationErrors := obj.ValidateBasicFields()
+		if len(validationErrors) > 0 {
+			return nil, nil, fmt.Errorf("PerformanceProfile validation failed pp:%s : %w", obj.Name, coreerrors.Join(validationErrors.ToAggregate().Errors()...))
+		}
+
+		buff := bytes.Buffer{}
+		if err := yamlSerializer.Encode(obj, &buff); err != nil {
+			return nil, nil, fmt.Errorf("failed to encode performance profile after defaulting it: %w", err)
+		}
+		manifest = buff.Bytes()
+		return nil, manifest, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported tuningConfig object type: %T", obj)
+		return nil, nil, fmt.Errorf("unsupported tuningConfig object type: %T", obj)
 	}
-
-	return manifest, err
 }
 
 // validateManagement does additional backend validation. API validation/default should
@@ -2070,36 +2127,51 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	_ = v1alpha1.Install(scheme)
 	_ = configv1.Install(scheme)
 
-	YamlSerializer := serializer.NewSerializerWithOptions(
+	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
 		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
 	)
 
-	cr, _, err := YamlSerializer.Decode(manifest, nil, nil)
+	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding config: %w", err)
 	}
 
 	switch obj := cr.(type) {
 	case *mcfgv1.MachineConfig:
-		if obj.Labels == nil {
-			obj.Labels = map[string]string{}
+		addWorkerLabel(&obj.ObjectMeta)
+		manifest, err = encode(cr, yamlSerializer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode machine config after defaulting it: %w", err)
 		}
-		obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
-		buff := bytes.Buffer{}
-		if err := YamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, fmt.Errorf("failed to encode config after defaulting it: %w", err)
-		}
-		manifest = buff.Bytes()
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *configv1.ImageDigestMirrorSet:
 	case *mcfgv1.KubeletConfig:
+		addWorkerLabel(&obj.ObjectMeta)
+		manifest, err = encode(cr, yamlSerializer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode kubelet config after defaulting it: %w", err)
+		}
 	case *mcfgv1.ContainerRuntimeConfig:
 	default:
 		return nil, fmt.Errorf("unsupported config type: %T", obj)
 	}
 
 	return manifest, err
+}
+
+func addWorkerLabel(obj *metav1.ObjectMeta) {
+	if obj.Labels == nil {
+		obj.Labels = map[string]string{}
+	}
+	obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
+}
+func encode(obj runtime.Object, ser *serializer.Serializer) ([]byte, error) {
+	buff := bytes.Buffer{}
+	if err := ser.Encode(obj, &buff); err != nil {
+		return nil, err
+	}
+	return buff.Bytes(), nil
 }
 
 func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {
@@ -2277,7 +2349,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 
 	// If the ConfigMap is generated by the NodePool controller and contains Tuned manifests
 	// return the ConfigMaps parent NodePool.
-	if _, ok := obj.GetLabels()[tuningConfigMapLabel]; ok {
+	if isNodePoolGeneratedTuningConfigMap(cm) {
 		return enqueueParentNodePool(ctx, obj)
 	}
 
@@ -2341,6 +2413,14 @@ func (r *NodePoolReconciler) getNodePoolNamespacedName(nodePoolName string, cont
 	nodePoolNamespace := supportutil.ParseNamespacedName(hostedCluster).Namespace
 
 	return types.NamespacedName{Name: nodePoolName, Namespace: nodePoolNamespace}, nil
+}
+
+func isNodePoolGeneratedTuningConfigMap(cm *corev1.ConfigMap) bool {
+	if _, ok := cm.GetLabels()[tunedConfigMapLabel]; ok {
+		return true
+	}
+	_, ok := cm.GetLabels()[performanceProfileConfigMapLabel]
+	return ok
 }
 
 func enqueueParentNodePool(ctx context.Context, obj client.Object) []reconcile.Request {
