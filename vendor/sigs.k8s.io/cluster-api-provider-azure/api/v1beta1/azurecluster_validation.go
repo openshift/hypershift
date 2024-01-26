@@ -23,13 +23,11 @@ import (
 	"regexp"
 
 	valid "github.com/asaskevich/govalidator"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/ptr"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 const (
@@ -37,11 +35,11 @@ const (
 	// not using . in the name to avoid issues when the name is part of DNS name.
 	clusterNameRegex = `^[a-z0-9][a-z0-9-]{0,42}[a-z0-9]$`
 	// max length of 44 to allow for cluster name to be used as a prefix for VMs and other resources that
-	// have limitations as outlined here https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules.
+	// have limitations as outlined here https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules.
 	clusterNameMaxLength = 44
-	// obtained from https://learn.microsoft.com/rest/api/resources/resourcegroups/createorupdate#uri-parameters.
+	// obtained from https://docs.microsoft.com/en-us/rest/api/resources/resourcegroups/createorupdate#uri-parameters.
 	resourceGroupRegex = `^[-\w\._\(\)]+$`
-	// described in https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules.
+	// described in https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules.
 	subnetRegex       = `^[-\w\._]+$`
 	loadBalancerRegex = `^[-\w\._]+$`
 	// MaxLoadBalancerOutboundIPs is the maximum number of outbound IPs in a Standard LoadBalancer frontend configuration.
@@ -51,14 +49,14 @@ const (
 	// MaxLBIdleTimeoutInMinutes is the maximum number of minutes for the LB idle timeout.
 	MaxLBIdleTimeoutInMinutes = 30
 	// Network security rules should be a number between 100 and 4096.
-	// https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview#security-rules
+	// https://docs.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview#security-rules
 	minRulePriority = 100
 	maxRulePriority = 4096
 	// Must start with 'Microsoft.', then an alpha character, then can include alnum.
 	serviceEndpointServiceRegexPattern = `^Microsoft\.[a-zA-Z]{1,42}[a-zA-Z0-9]{0,42}$`
 	// Must start with an alpha character and then can include alnum OR be only *.
 	serviceEndpointLocationRegexPattern = `^([a-z]{1,42}\d{0,5}|[*])$`
-	// described in https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules.
+	// described in https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules.
 	privateEndpointRegex = `^[-\w\._]+$`
 	// resource ID Pattern.
 	resourceIDPattern = `(?i)subscriptions/(.+)/resourceGroups/(.+)/providers/(.+?)/(.+?)/(.+)`
@@ -70,16 +68,16 @@ var (
 )
 
 // validateCluster validates a cluster.
-func (c *AzureCluster) validateCluster(old *AzureCluster) (admission.Warnings, error) {
+func (c *AzureCluster) validateCluster(old *AzureCluster) error {
 	var allErrs field.ErrorList
 	allErrs = append(allErrs, c.validateClusterName()...)
 	allErrs = append(allErrs, c.validateClusterSpec(old)...)
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	return nil, apierrors.NewInvalid(
-		schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: AzureClusterKind},
+	return apierrors.NewInvalid(
+		schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: "AzureCluster"},
 		c.Name, allErrs)
 }
 
@@ -105,10 +103,6 @@ func (c *AzureCluster) validateClusterSpec(old *AzureCluster) field.ErrorList {
 	}
 
 	if err := validateBastionSpec(c.Spec.BastionSpec, field.NewPath("spec").Child("azureBastion").Child("bastionSpec")); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := validateIdentityRef(c.Spec.IdentityRef, field.NewPath("spec").Child("identityRef")); err != nil {
 		allErrs = append(allErrs, err)
 	}
 
@@ -142,23 +136,12 @@ func validateBastionSpec(bastionSpec BastionSpec, fldPath *field.Path) *field.Er
 	return nil
 }
 
-// validateIdentityRef validates an IdentityRef.
-func validateIdentityRef(identityRef *corev1.ObjectReference, fldPath *field.Path) *field.Error {
-	if identityRef == nil {
-		return field.Required(fldPath, "identityRef is required")
-	}
-	if identityRef.Kind != AzureClusterIdentityKind {
-		return field.NotSupported(fldPath.Child("name"), identityRef.Name, []string{"AzureClusterIdentity"})
-	}
-	return nil
-}
-
 // validateNetworkSpec validates a NetworkSpec.
 func validateNetworkSpec(networkSpec NetworkSpec, old NetworkSpec, fldPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 	// If the user specifies a resourceGroup for vnet, it means
-	// that they intend to use a pre-existing vnet. In this case,
-	// we need to verify the information they provide
+	// that she intends to use a pre-existing vnet. In this case,
+	// we need to verify the information she provides
 	if networkSpec.Vnet.ResourceGroup != "" {
 		if err := validateResourceGroup(networkSpec.Vnet.ResourceGroup,
 			fldPath.Child("vnet").Child("resourceGroup")); err != nil {
@@ -182,14 +165,14 @@ func validateNetworkSpec(networkSpec NetworkSpec, old NetworkSpec, fldPath *fiel
 
 	allErrs = append(allErrs, validateAPIServerLB(networkSpec.APIServerLB, old.APIServerLB, cidrBlocks, fldPath.Child("apiServerLB"))...)
 
-	var needOutboundLB bool
+	var oneSubnetWithoutNatGateway bool
 	for _, subnet := range networkSpec.Subnets {
-		if subnet.Role == SubnetNode && subnet.IsIPv6Enabled() {
-			needOutboundLB = true
+		if subnet.Role == SubnetNode && !subnet.IsNatGatewayEnabled() {
+			oneSubnetWithoutNatGateway = true
 			break
 		}
 	}
-	if needOutboundLB {
+	if oneSubnetWithoutNatGateway {
 		allErrs = append(allErrs, validateNodeOutboundLB(networkSpec.NodeOutboundLB, old.NodeOutboundLB, networkSpec.APIServerLB, fldPath.Child("nodeOutboundLB"))...)
 	}
 
@@ -381,7 +364,7 @@ func validateAPIServerLB(lb LoadBalancerSpec, old LoadBalancerSpec, cidrs []stri
 	}
 
 	// There should only be one IP config.
-	if len(lb.FrontendIPs) != 1 || ptr.Deref[int32](lb.FrontendIPsCount, 1) != 1 {
+	if len(lb.FrontendIPs) != 1 || pointer.Int32Deref(lb.FrontendIPsCount, 1) != 1 {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("frontendIPConfigs"), lb.FrontendIPs,
 			"API Server Load balancer should have 1 Frontend IP"))
 	} else {
@@ -538,7 +521,7 @@ func validateClassSpecForAPIServerLB(lb LoadBalancerClassSpec, old *LoadBalancer
 	}
 
 	// IdletimeoutInMinutes should be immutable.
-	if old != nil && old.IdleTimeoutInMinutes != nil && !ptr.Equal(old.IdleTimeoutInMinutes, lb.IdleTimeoutInMinutes) {
+	if old != nil && old.IdleTimeoutInMinutes != nil && !pointer.Int32Equal(old.IdleTimeoutInMinutes, lb.IdleTimeoutInMinutes) {
 		allErrs = append(allErrs, field.Forbidden(apiServerLBPath.Child("idleTimeoutInMinutes"), "API Server load balancer idle timeout cannot be modified after AzureCluster creation."))
 	}
 
@@ -571,7 +554,7 @@ func validateClassSpecForNodeOutboundLB(lb *LoadBalancerClassSpec, old *LoadBala
 		allErrs = append(allErrs, field.Forbidden(fldPath.Child("type"), "Node outbound load balancer Type cannot be modified after AzureCluster creation."))
 	}
 
-	if old != nil && !ptr.Equal(old.IdleTimeoutInMinutes, lb.IdleTimeoutInMinutes) {
+	if old != nil && !pointer.Int32Equal(old.IdleTimeoutInMinutes, lb.IdleTimeoutInMinutes) {
 		allErrs = append(allErrs, field.Forbidden(fldPath.Child("idleTimeoutInMinutes"), "Node outbound load balancer idle timeout cannot be modified after AzureCluster creation."))
 	}
 

@@ -440,6 +440,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.IPv6)(nil), (*IPv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_IPv6_To_v1beta1_IPv6(a.(*v1beta2.IPv6), b.(*IPv6), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*Ignition)(nil), (*v1beta2.Ignition)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Ignition_To_v1beta2_Ignition(a.(*Ignition), b.(*v1beta2.Ignition), scope)
 	}); err != nil {
@@ -455,6 +460,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.IngressRule)(nil), (*IngressRule)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(a.(*v1beta2.IngressRule), b.(*IngressRule), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*Instance)(nil), (*v1beta2.Instance)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Instance_To_v1beta2_Instance(a.(*Instance), b.(*v1beta2.Instance), scope)
 	}); err != nil {
@@ -462,6 +472,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*NetworkSpec)(nil), (*v1beta2.NetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_NetworkSpec_To_v1beta2_NetworkSpec(a.(*NetworkSpec), b.(*v1beta2.NetworkSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkSpec)(nil), (*NetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(a.(*v1beta2.NetworkSpec), b.(*NetworkSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -482,6 +497,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*S3Bucket)(nil), (*v1beta2.S3Bucket)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_S3Bucket_To_v1beta2_S3Bucket(a.(*S3Bucket), b.(*v1beta2.S3Bucket), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.S3Bucket)(nil), (*S3Bucket)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(a.(*v1beta2.S3Bucket), b.(*S3Bucket), scope)
 	}); err != nil {
 		return err
 	}
@@ -510,8 +530,18 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.SubnetSpec)(nil), (*SubnetSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec(a.(*v1beta2.SubnetSpec), b.(*SubnetSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*VPCSpec)(nil), (*v1beta2.VPCSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_VPCSpec_To_v1beta2_VPCSpec(a.(*VPCSpec), b.(*v1beta2.VPCSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.VPCSpec)(nil), (*VPCSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_VPCSpec_To_v1beta1_VPCSpec(a.(*v1beta2.VPCSpec), b.(*VPCSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -555,16 +585,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddConversionFunc((*v1beta2.IPv6)(nil), (*IPv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_IPv6_To_v1beta1_IPv6(a.(*v1beta2.IPv6), b.(*IPv6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.IngressRule)(nil), (*IngressRule)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(a.(*v1beta2.IngressRule), b.(*IngressRule), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddConversionFunc((*v1beta2.Instance)(nil), (*Instance)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_Instance_To_v1beta1_Instance(a.(*v1beta2.Instance), b.(*Instance), scope)
 	}); err != nil {
@@ -575,28 +595,8 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddConversionFunc((*v1beta2.NetworkSpec)(nil), (*NetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(a.(*v1beta2.NetworkSpec), b.(*NetworkSpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddConversionFunc((*v1beta2.NetworkStatus)(nil), (*NetworkStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus(a.(*v1beta2.NetworkStatus), b.(*NetworkStatus), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.S3Bucket)(nil), (*S3Bucket)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(a.(*v1beta2.S3Bucket), b.(*S3Bucket), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.SubnetSpec)(nil), (*SubnetSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec(a.(*v1beta2.SubnetSpec), b.(*SubnetSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.VPCSpec)(nil), (*VPCSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_VPCSpec_To_v1beta1_VPCSpec(a.(*v1beta2.VPCSpec), b.(*VPCSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -897,15 +897,7 @@ func autoConvert_v1beta1_AWSClusterSpec_To_v1beta2_AWSClusterSpec(in *AWSCluster
 		return err
 	}
 	out.IdentityRef = (*v1beta2.AWSIdentityReference)(unsafe.Pointer(in.IdentityRef))
-	if in.S3Bucket != nil {
-		in, out := &in.S3Bucket, &out.S3Bucket
-		*out = new(v1beta2.S3Bucket)
-		if err := Convert_v1beta1_S3Bucket_To_v1beta2_S3Bucket(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.S3Bucket = nil
-	}
+	out.S3Bucket = (*v1beta2.S3Bucket)(unsafe.Pointer(in.S3Bucket))
 	return nil
 }
 
@@ -939,15 +931,7 @@ func autoConvert_v1beta2_AWSClusterSpec_To_v1beta1_AWSClusterSpec(in *v1beta2.AW
 		return err
 	}
 	out.IdentityRef = (*AWSIdentityReference)(unsafe.Pointer(in.IdentityRef))
-	if in.S3Bucket != nil {
-		in, out := &in.S3Bucket, &out.S3Bucket
-		*out = new(S3Bucket)
-		if err := Convert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.S3Bucket = nil
-	}
+	out.S3Bucket = (*S3Bucket)(unsafe.Pointer(in.S3Bucket))
 	return nil
 }
 
@@ -1235,8 +1219,6 @@ func autoConvert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(in *
 	out.Subnets = *(*[]string)(unsafe.Pointer(&in.Subnets))
 	out.HealthCheckProtocol = (*ClassicELBProtocol)(unsafe.Pointer(in.HealthCheckProtocol))
 	out.AdditionalSecurityGroups = *(*[]string)(unsafe.Pointer(&in.AdditionalSecurityGroups))
-	// WARNING: in.AdditionalListeners requires manual conversion: does not exist in peer-type
-	// WARNING: in.IngressRules requires manual conversion: does not exist in peer-type
 	// WARNING: in.LoadBalancerType requires manual conversion: does not exist in peer-type
 	// WARNING: in.DisableHostsRewrite requires manual conversion: does not exist in peer-type
 	// WARNING: in.PreserveClientIP requires manual conversion: does not exist in peer-type
@@ -1409,7 +1391,6 @@ func autoConvert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec(in *v1beta2.AW
 	}
 	out.Ignition = (*Ignition)(unsafe.Pointer(in.Ignition))
 	out.SpotMarketOptions = (*SpotMarketOptions)(unsafe.Pointer(in.SpotMarketOptions))
-	// WARNING: in.PlacementGroupName requires manual conversion: does not exist in peer-type
 	out.Tenancy = in.Tenancy
 	return nil
 }
@@ -1902,8 +1883,12 @@ func autoConvert_v1beta2_IPv6_To_v1beta1_IPv6(in *v1beta2.IPv6, out *IPv6, s con
 	out.CidrBlock = in.CidrBlock
 	out.PoolID = in.PoolID
 	out.EgressOnlyInternetGatewayID = (*string)(unsafe.Pointer(in.EgressOnlyInternetGatewayID))
-	// WARNING: in.IPAMPool requires manual conversion: does not exist in peer-type
 	return nil
+}
+
+// Convert_v1beta2_IPv6_To_v1beta1_IPv6 is an autogenerated conversion function.
+func Convert_v1beta2_IPv6_To_v1beta1_IPv6(in *v1beta2.IPv6, out *IPv6, s conversion.Scope) error {
+	return autoConvert_v1beta2_IPv6_To_v1beta1_IPv6(in, out, s)
 }
 
 func autoConvert_v1beta1_Ignition_To_v1beta2_Ignition(in *Ignition, out *v1beta2.Ignition, s conversion.Scope) error {
@@ -1950,8 +1935,12 @@ func autoConvert_v1beta2_IngressRule_To_v1beta1_IngressRule(in *v1beta2.IngressR
 	out.CidrBlocks = *(*[]string)(unsafe.Pointer(&in.CidrBlocks))
 	out.IPv6CidrBlocks = *(*[]string)(unsafe.Pointer(&in.IPv6CidrBlocks))
 	out.SourceSecurityGroupIDs = *(*[]string)(unsafe.Pointer(&in.SourceSecurityGroupIDs))
-	// WARNING: in.SourceSecurityGroupRoles requires manual conversion: does not exist in peer-type
 	return nil
+}
+
+// Convert_v1beta2_IngressRule_To_v1beta1_IngressRule is an autogenerated conversion function.
+func Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(in *v1beta2.IngressRule, out *IngressRule, s conversion.Scope) error {
+	return autoConvert_v1beta2_IngressRule_To_v1beta1_IngressRule(in, out, s)
 }
 
 func autoConvert_v1beta1_Instance_To_v1beta2_Instance(in *Instance, out *v1beta2.Instance, s conversion.Scope) error {
@@ -2006,7 +1995,6 @@ func autoConvert_v1beta2_Instance_To_v1beta1_Instance(in *v1beta2.Instance, out 
 	out.Tags = *(*map[string]string)(unsafe.Pointer(&in.Tags))
 	out.AvailabilityZone = in.AvailabilityZone
 	out.SpotMarketOptions = (*SpotMarketOptions)(unsafe.Pointer(in.SpotMarketOptions))
-	// WARNING: in.PlacementGroupName requires manual conversion: does not exist in peer-type
 	out.Tenancy = in.Tenancy
 	out.VolumeIDs = *(*[]string)(unsafe.Pointer(&in.VolumeIDs))
 	// WARNING: in.InstanceMetadataOptions requires manual conversion: does not exist in peer-type
@@ -2017,17 +2005,7 @@ func autoConvert_v1beta1_NetworkSpec_To_v1beta2_NetworkSpec(in *NetworkSpec, out
 	if err := Convert_v1beta1_VPCSpec_To_v1beta2_VPCSpec(&in.VPC, &out.VPC, s); err != nil {
 		return err
 	}
-	if in.Subnets != nil {
-		in, out := &in.Subnets, &out.Subnets
-		*out = make(v1beta2.Subnets, len(*in))
-		for i := range *in {
-			if err := Convert_v1beta1_SubnetSpec_To_v1beta2_SubnetSpec(&(*in)[i], &(*out)[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.Subnets = nil
-	}
+	out.Subnets = *(*v1beta2.Subnets)(unsafe.Pointer(&in.Subnets))
 	out.CNI = (*v1beta2.CNISpec)(unsafe.Pointer(in.CNI))
 	out.SecurityGroupOverrides = *(*map[v1beta2.SecurityGroupRole]string)(unsafe.Pointer(&in.SecurityGroupOverrides))
 	return nil
@@ -2042,37 +2020,19 @@ func autoConvert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(in *v1beta2.NetworkS
 	if err := Convert_v1beta2_VPCSpec_To_v1beta1_VPCSpec(&in.VPC, &out.VPC, s); err != nil {
 		return err
 	}
-	if in.Subnets != nil {
-		in, out := &in.Subnets, &out.Subnets
-		*out = make(Subnets, len(*in))
-		for i := range *in {
-			if err := Convert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec(&(*in)[i], &(*out)[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.Subnets = nil
-	}
+	out.Subnets = *(*Subnets)(unsafe.Pointer(&in.Subnets))
 	out.CNI = (*CNISpec)(unsafe.Pointer(in.CNI))
 	out.SecurityGroupOverrides = *(*map[SecurityGroupRole]string)(unsafe.Pointer(&in.SecurityGroupOverrides))
-	// WARNING: in.AdditionalControlPlaneIngressRules requires manual conversion: does not exist in peer-type
 	return nil
 }
 
+// Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec is an autogenerated conversion function.
+func Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(in *v1beta2.NetworkSpec, out *NetworkSpec, s conversion.Scope) error {
+	return autoConvert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(in, out, s)
+}
+
 func autoConvert_v1beta1_NetworkStatus_To_v1beta2_NetworkStatus(in *NetworkStatus, out *v1beta2.NetworkStatus, s conversion.Scope) error {
-	if in.SecurityGroups != nil {
-		in, out := &in.SecurityGroups, &out.SecurityGroups
-		*out = make(map[v1beta2.SecurityGroupRole]v1beta2.SecurityGroup, len(*in))
-		for key, val := range *in {
-			newVal := new(v1beta2.SecurityGroup)
-			if err := Convert_v1beta1_SecurityGroup_To_v1beta2_SecurityGroup(&val, newVal, s); err != nil {
-				return err
-			}
-			(*out)[v1beta2.SecurityGroupRole(key)] = *newVal
-		}
-	} else {
-		out.SecurityGroups = nil
-	}
+	out.SecurityGroups = *(*map[v1beta2.SecurityGroupRole]v1beta2.SecurityGroup)(unsafe.Pointer(&in.SecurityGroups))
 	if err := Convert_v1beta1_ClassicELB_To_v1beta2_LoadBalancer(&in.APIServerELB, &out.APIServerELB, s); err != nil {
 		return err
 	}
@@ -2085,23 +2045,10 @@ func Convert_v1beta1_NetworkStatus_To_v1beta2_NetworkStatus(in *NetworkStatus, o
 }
 
 func autoConvert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus(in *v1beta2.NetworkStatus, out *NetworkStatus, s conversion.Scope) error {
-	if in.SecurityGroups != nil {
-		in, out := &in.SecurityGroups, &out.SecurityGroups
-		*out = make(map[SecurityGroupRole]SecurityGroup, len(*in))
-		for key, val := range *in {
-			newVal := new(SecurityGroup)
-			if err := Convert_v1beta2_SecurityGroup_To_v1beta1_SecurityGroup(&val, newVal, s); err != nil {
-				return err
-			}
-			(*out)[SecurityGroupRole(key)] = *newVal
-		}
-	} else {
-		out.SecurityGroups = nil
-	}
+	out.SecurityGroups = *(*map[SecurityGroupRole]SecurityGroup)(unsafe.Pointer(&in.SecurityGroups))
 	if err := Convert_v1beta2_LoadBalancer_To_v1beta1_ClassicELB(&in.APIServerELB, &out.APIServerELB, s); err != nil {
 		return err
 	}
-	// WARNING: in.NatGatewaysIPs requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -2140,25 +2087,19 @@ func Convert_v1beta1_S3Bucket_To_v1beta2_S3Bucket(in *S3Bucket, out *v1beta2.S3B
 func autoConvert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(in *v1beta2.S3Bucket, out *S3Bucket, s conversion.Scope) error {
 	out.ControlPlaneIAMInstanceProfile = in.ControlPlaneIAMInstanceProfile
 	out.NodesIAMInstanceProfiles = *(*[]string)(unsafe.Pointer(&in.NodesIAMInstanceProfiles))
-	// WARNING: in.PresignedURLDuration requires manual conversion: does not exist in peer-type
 	out.Name = in.Name
 	return nil
+}
+
+// Convert_v1beta2_S3Bucket_To_v1beta1_S3Bucket is an autogenerated conversion function.
+func Convert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(in *v1beta2.S3Bucket, out *S3Bucket, s conversion.Scope) error {
+	return autoConvert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(in, out, s)
 }
 
 func autoConvert_v1beta1_SecurityGroup_To_v1beta2_SecurityGroup(in *SecurityGroup, out *v1beta2.SecurityGroup, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Name = in.Name
-	if in.IngressRules != nil {
-		in, out := &in.IngressRules, &out.IngressRules
-		*out = make(v1beta2.IngressRules, len(*in))
-		for i := range *in {
-			if err := Convert_v1beta1_IngressRule_To_v1beta2_IngressRule(&(*in)[i], &(*out)[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.IngressRules = nil
-	}
+	out.IngressRules = *(*v1beta2.IngressRules)(unsafe.Pointer(&in.IngressRules))
 	out.Tags = *(*v1beta2.Tags)(unsafe.Pointer(&in.Tags))
 	return nil
 }
@@ -2171,17 +2112,7 @@ func Convert_v1beta1_SecurityGroup_To_v1beta2_SecurityGroup(in *SecurityGroup, o
 func autoConvert_v1beta2_SecurityGroup_To_v1beta1_SecurityGroup(in *v1beta2.SecurityGroup, out *SecurityGroup, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Name = in.Name
-	if in.IngressRules != nil {
-		in, out := &in.IngressRules, &out.IngressRules
-		*out = make(IngressRules, len(*in))
-		for i := range *in {
-			if err := Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(&(*in)[i], &(*out)[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.IngressRules = nil
-	}
+	out.IngressRules = *(*IngressRules)(unsafe.Pointer(&in.IngressRules))
 	out.Tags = *(*Tags)(unsafe.Pointer(&in.Tags))
 	return nil
 }
@@ -2231,7 +2162,6 @@ func Convert_v1beta1_SubnetSpec_To_v1beta2_SubnetSpec(in *SubnetSpec, out *v1bet
 
 func autoConvert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec(in *v1beta2.SubnetSpec, out *SubnetSpec, s conversion.Scope) error {
 	out.ID = in.ID
-	// WARNING: in.ResourceID requires manual conversion: does not exist in peer-type
 	out.CidrBlock = in.CidrBlock
 	out.IPv6CidrBlock = in.IPv6CidrBlock
 	out.AvailabilityZone = in.AvailabilityZone
@@ -2243,18 +2173,15 @@ func autoConvert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec(in *v1beta2.SubnetSpec
 	return nil
 }
 
+// Convert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec is an autogenerated conversion function.
+func Convert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec(in *v1beta2.SubnetSpec, out *SubnetSpec, s conversion.Scope) error {
+	return autoConvert_v1beta2_SubnetSpec_To_v1beta1_SubnetSpec(in, out, s)
+}
+
 func autoConvert_v1beta1_VPCSpec_To_v1beta2_VPCSpec(in *VPCSpec, out *v1beta2.VPCSpec, s conversion.Scope) error {
 	out.ID = in.ID
 	out.CidrBlock = in.CidrBlock
-	if in.IPv6 != nil {
-		in, out := &in.IPv6, &out.IPv6
-		*out = new(v1beta2.IPv6)
-		if err := Convert_v1beta1_IPv6_To_v1beta2_IPv6(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.IPv6 = nil
-	}
+	out.IPv6 = (*v1beta2.IPv6)(unsafe.Pointer(in.IPv6))
 	out.InternetGatewayID = (*string)(unsafe.Pointer(in.InternetGatewayID))
 	out.Tags = *(*v1beta2.Tags)(unsafe.Pointer(&in.Tags))
 	out.AvailabilityZoneUsageLimit = (*int)(unsafe.Pointer(in.AvailabilityZoneUsageLimit))
@@ -2270,21 +2197,17 @@ func Convert_v1beta1_VPCSpec_To_v1beta2_VPCSpec(in *VPCSpec, out *v1beta2.VPCSpe
 func autoConvert_v1beta2_VPCSpec_To_v1beta1_VPCSpec(in *v1beta2.VPCSpec, out *VPCSpec, s conversion.Scope) error {
 	out.ID = in.ID
 	out.CidrBlock = in.CidrBlock
-	// WARNING: in.IPAMPool requires manual conversion: does not exist in peer-type
-	if in.IPv6 != nil {
-		in, out := &in.IPv6, &out.IPv6
-		*out = new(IPv6)
-		if err := Convert_v1beta2_IPv6_To_v1beta1_IPv6(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.IPv6 = nil
-	}
+	out.IPv6 = (*IPv6)(unsafe.Pointer(in.IPv6))
 	out.InternetGatewayID = (*string)(unsafe.Pointer(in.InternetGatewayID))
 	out.Tags = *(*Tags)(unsafe.Pointer(&in.Tags))
 	out.AvailabilityZoneUsageLimit = (*int)(unsafe.Pointer(in.AvailabilityZoneUsageLimit))
 	out.AvailabilityZoneSelection = (*AZSelectionScheme)(unsafe.Pointer(in.AvailabilityZoneSelection))
 	return nil
+}
+
+// Convert_v1beta2_VPCSpec_To_v1beta1_VPCSpec is an autogenerated conversion function.
+func Convert_v1beta2_VPCSpec_To_v1beta1_VPCSpec(in *v1beta2.VPCSpec, out *VPCSpec, s conversion.Scope) error {
+	return autoConvert_v1beta2_VPCSpec_To_v1beta1_VPCSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_Volume_To_v1beta2_Volume(in *Volume, out *v1beta2.Volume, s conversion.Scope) error {
