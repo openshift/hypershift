@@ -86,4 +86,5 @@ linters:
     - exhaustive
     - depguard
     - tagalign
+    - inamedparam
   fast: false

@@ -23,15 +23,16 @@ type InstanceIPv4Response struct {
 
 // InstanceIP represents an Instance IP with additional DNS and networking details
 type InstanceIP struct {
-	Address    string         `json:"address"`
-	Gateway    string         `json:"gateway"`
-	SubnetMask string         `json:"subnet_mask"`
-	Prefix     int            `json:"prefix"`
-	Type       InstanceIPType `json:"type"`
-	Public     bool           `json:"public"`
-	RDNS       string         `json:"rdns"`
-	LinodeID   int            `json:"linode_id"`
-	Region     string         `json:"region"`
+	Address    string             `json:"address"`
+	Gateway    string             `json:"gateway"`
+	SubnetMask string             `json:"subnet_mask"`
+	Prefix     int                `json:"prefix"`
+	Type       InstanceIPType     `json:"type"`
+	Public     bool               `json:"public"`
+	RDNS       string             `json:"rdns"`
+	LinodeID   int                `json:"linode_id"`
+	Region     string             `json:"region"`
+	VPCNAT1To1 *InstanceIPNAT1To1 `json:"vpc_nat_1_1"`
 }
 
 // InstanceIPv6Response contains the IPv6 addresses and ranges for an Instance
@@ -39,6 +40,14 @@ type InstanceIPv6Response struct {
 	LinkLocal *InstanceIP `json:"link_local"`
 	SLAAC     *InstanceIP `json:"slaac"`
 	Global    []IPv6Range `json:"global"`
+}
+
+// InstanceIPNAT1To1 contains information about the NAT 1:1 mapping
+// of a public IP address to a VPC subnet.
+type InstanceIPNAT1To1 struct {
+	Address  string `json:"address"`
+	SubnetID int    `json:"subnet_id"`
+	VPCID    int    `json:"vpc_id"`
 }
 
 // IPv6Range represents a range of IPv6 addresses routed to a single Linode in a given Region

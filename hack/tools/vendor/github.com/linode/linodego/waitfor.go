@@ -6,9 +6,13 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
+
+var englishTitle = cases.Title(language.English)
 
 type EventPoller struct {
 	EntityID   any
@@ -284,7 +288,7 @@ func (client Client) WaitForEventFinished(
 	minStart time.Time,
 	timeoutSeconds int,
 ) (*Event, error) {
-	titledEntityType := strings.Title(string(entityType))
+	titledEntityType := englishTitle.String(string(entityType))
 	filter := Filter{
 		Order:   Descending,
 		OrderBy: "created",

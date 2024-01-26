@@ -26,6 +26,8 @@ type TargetGroupTarget struct {
 	Port *int32 `json:"port"`
 	// The traffic is distributed proportionally to target weight, which is the ratio of the total weight of all targets. A target with higher weight receives a larger share of traffic. The valid range is from 0 to 256; the default value is '1'. Targets with a weight of '0' do not participate in load balancing but still accept persistent connections. We recommend using values in the middle range to leave room for later adjustments.
 	Weight *int32 `json:"weight"`
+	// ProxyProtocol is used to set the proxy protocol version.
+	ProxyProtocol *string `json:"proxyProtocol,omitempty"`
 }
 
 // NewTargetGroupTarget instantiates a new TargetGroupTarget object
@@ -38,6 +40,8 @@ func NewTargetGroupTarget(ip string, port int32, weight int32) *TargetGroupTarge
 	this.Ip = &ip
 	this.Port = &port
 	this.Weight = &weight
+	var proxyProtocol string = "none"
+	this.ProxyProtocol = &proxyProtocol
 
 	return &this
 }
@@ -47,6 +51,8 @@ func NewTargetGroupTarget(ip string, port int32, weight int32) *TargetGroupTarge
 // but it doesn't guarantee that properties required by API are set
 func NewTargetGroupTargetWithDefaults() *TargetGroupTarget {
 	this := TargetGroupTarget{}
+	var proxyProtocol string = "none"
+	this.ProxyProtocol = &proxyProtocol
 	return &this
 }
 
@@ -240,6 +246,44 @@ func (o *TargetGroupTarget) HasWeight() bool {
 	return false
 }
 
+// GetProxyProtocol returns the ProxyProtocol field value
+// If the value is explicit nil, nil is returned
+func (o *TargetGroupTarget) GetProxyProtocol() *string {
+	if o == nil {
+		return nil
+	}
+
+	return o.ProxyProtocol
+
+}
+
+// GetProxyProtocolOk returns a tuple with the ProxyProtocol field value
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *TargetGroupTarget) GetProxyProtocolOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+
+	return o.ProxyProtocol, true
+}
+
+// SetProxyProtocol sets field value
+func (o *TargetGroupTarget) SetProxyProtocol(v string) {
+
+	o.ProxyProtocol = &v
+
+}
+
+// HasProxyProtocol returns a boolean if a field has been set.
+func (o *TargetGroupTarget) HasProxyProtocol() bool {
+	if o != nil && o.ProxyProtocol != nil {
+		return true
+	}
+
+	return false
+}
+
 func (o TargetGroupTarget) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.HealthCheckEnabled != nil {
@@ -260,6 +304,10 @@ func (o TargetGroupTarget) MarshalJSON() ([]byte, error) {
 
 	if o.Weight != nil {
 		toSerialize["weight"] = o.Weight
+	}
+
+	if o.ProxyProtocol != nil {
+		toSerialize["proxyProtocol"] = o.ProxyProtocol
 	}
 
 	return json.Marshal(toSerialize)

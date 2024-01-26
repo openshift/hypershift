@@ -7,6 +7,7 @@ package linodego
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -53,7 +54,7 @@ func (l ListOptions) Hash() (string, error) {
 
 	h.Write(data)
 
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func applyListOptionsToRequest(opts *ListOptions, req *resty.Request) error {

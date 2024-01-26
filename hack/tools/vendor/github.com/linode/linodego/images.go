@@ -148,7 +148,7 @@ func (c *Client) GetImage(ctx context.Context, imageID string) (*Image, error) {
 	return r.Result().(*Image), nil
 }
 
-// CreateImage creates a Image
+// CreateImage creates an Image
 func (c *Client) CreateImage(ctx context.Context, opts ImageCreateOptions) (*Image, error) {
 	body, err := json.Marshal(opts)
 	if err != nil {

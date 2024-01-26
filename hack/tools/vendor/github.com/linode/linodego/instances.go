@@ -107,22 +107,23 @@ type InstanceMetadataOptions struct {
 
 // InstanceCreateOptions require only Region and Type
 type InstanceCreateOptions struct {
-	Region          string                    `json:"region"`
-	Type            string                    `json:"type"`
-	Label           string                    `json:"label,omitempty"`
-	Group           string                    `json:"group,omitempty"`
-	RootPass        string                    `json:"root_pass,omitempty"`
-	AuthorizedKeys  []string                  `json:"authorized_keys,omitempty"`
-	AuthorizedUsers []string                  `json:"authorized_users,omitempty"`
-	StackScriptID   int                       `json:"stackscript_id,omitempty"`
-	StackScriptData map[string]string         `json:"stackscript_data,omitempty"`
-	BackupID        int                       `json:"backup_id,omitempty"`
-	Image           string                    `json:"image,omitempty"`
-	Interfaces      []InstanceConfigInterface `json:"interfaces,omitempty"`
-	BackupsEnabled  bool                      `json:"backups_enabled,omitempty"`
-	PrivateIP       bool                      `json:"private_ip,omitempty"`
-	Tags            []string                  `json:"tags,omitempty"`
-	Metadata        *InstanceMetadataOptions  `json:"metadata,omitempty"`
+	Region          string                                 `json:"region"`
+	Type            string                                 `json:"type"`
+	Label           string                                 `json:"label,omitempty"`
+	Group           string                                 `json:"group,omitempty"`
+	RootPass        string                                 `json:"root_pass,omitempty"`
+	AuthorizedKeys  []string                               `json:"authorized_keys,omitempty"`
+	AuthorizedUsers []string                               `json:"authorized_users,omitempty"`
+	StackScriptID   int                                    `json:"stackscript_id,omitempty"`
+	StackScriptData map[string]string                      `json:"stackscript_data,omitempty"`
+	BackupID        int                                    `json:"backup_id,omitempty"`
+	Image           string                                 `json:"image,omitempty"`
+	Interfaces      []InstanceConfigInterfaceCreateOptions `json:"interfaces,omitempty"`
+	BackupsEnabled  bool                                   `json:"backups_enabled,omitempty"`
+	PrivateIP       bool                                   `json:"private_ip,omitempty"`
+	Tags            []string                               `json:"tags,omitempty"`
+	Metadata        *InstanceMetadataOptions               `json:"metadata,omitempty"`
+	FirewallID      int                                    `json:"firewall_id,omitempty"`
 
 	// Creation fields that need to be set explicitly false, "", or 0 use pointers
 	SwapSize *int  `json:"swap_size,omitempty"`
