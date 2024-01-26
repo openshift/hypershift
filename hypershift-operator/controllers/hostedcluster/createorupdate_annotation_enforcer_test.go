@@ -27,6 +27,10 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 		{
 			name: "No annotations",
 			obj: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
 					Namespace: "bar",
@@ -52,6 +56,10 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 		{
 			name: "Existing annotations are kept",
 			obj: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
 					Namespace: "bar",
@@ -83,6 +91,10 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 		{
 			name: "Do not annotate cluster scoped resources",
 			obj: &corev1.Namespace{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Namespace",
+					APIVersion: "v1",
+				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "foo",
 				},
