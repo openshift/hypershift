@@ -730,6 +730,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		status = corev1.ConditionFalse
 		reason = hyperv1.NodePoolNotFoundReason
 		message = "No Machines are created"
+		if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
+			reason = hyperv1.AsExpectedReason
+			message = "NodePool set to no replicas"
+		}
 	}
 
 	// Aggregate conditions.
@@ -779,6 +783,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		status = corev1.ConditionFalse
 		reason = hyperv1.NodePoolNotFoundReason
 		message = "No Machines are created"
+		if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
+			reason = hyperv1.AsExpectedReason
+			message = "NodePool set to no replicas"
+		}
 	}
 
 	for _, machine := range machines {
