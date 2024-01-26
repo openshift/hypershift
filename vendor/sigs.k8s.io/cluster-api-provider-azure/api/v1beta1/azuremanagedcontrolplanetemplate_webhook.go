@@ -176,7 +176,7 @@ func (mcpw *azureManagedControlPlaneTemplateWebhook) ValidateUpdate(ctx context.
 		return nil, mcp.validateManagedControlPlaneTemplate(mcpw.Client)
 	}
 
-	return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedControlPlaneTemplate").GroupKind(), mcp.Name, allErrs)
+	return nil, apierrors.NewInvalid(GroupVersion.WithKind(AzureManagedControlPlaneTemplateKind).GroupKind(), mcp.Name, allErrs)
 }
 
 // Validate the Azure Managed Control Plane Template and return an aggregate error.

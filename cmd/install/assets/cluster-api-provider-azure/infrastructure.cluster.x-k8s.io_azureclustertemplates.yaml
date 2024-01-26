@@ -53,11 +53,19 @@ spec:
                           addition to the ones added by default.
                         type: object
                       azureEnvironment:
-                        description: 'AzureEnvironment is the name of the AzureCloud
+                        description: "AzureEnvironment is the name of the AzureCloud
                           to be used. The default value that would be used by most
-                          users is "AzurePublicCloud", other values are: - ChinaCloud:
-                          "AzureChinaCloud" - GermanCloud: "AzureGermanCloud" - PublicCloud:
-                          "AzurePublicCloud" - USGovernmentCloud: "AzureUSGovernmentCloud"'
+                          users is \"AzurePublicCloud\", other values are: - ChinaCloud:
+                          \"AzureChinaCloud\" - GermanCloud: \"AzureGermanCloud\"
+                          - PublicCloud: \"AzurePublicCloud\" - USGovernmentCloud:
+                          \"AzureUSGovernmentCloud\" \n Note that values other than
+                          the default must also be accompanied by corresponding changes
+                          to the aso-controller-settings Secret to configure ASO to
+                          refer to the non-Public cloud. ASO currently does not support
+                          referring to multiple different clouds in a single installation.
+                          The following fields must be defined in the Secret: - AZURE_AUTHORITY_HOST
+                          - AZURE_RESOURCE_MANAGER_ENDPOINT - AZURE_RESOURCE_MANAGER_AUDIENCE
+                          \n See the [ASO docs] for more details. \n [ASO docs]: https://azure.github.io/azure-service-operator/guide/aso-controller-settings-options/"
                         type: string
                       bastionSpec:
                         description: BastionSpec encapsulates all things related to
@@ -276,6 +284,12 @@ spec:
                                                 0 and 65535. Asterix '*' can also
                                                 be used to match all ports.
                                               type: string
+                                            sources:
+                                              description: Sources specifies The CIDR
+                                                or source IP ranges.
+                                              items:
+                                                type: string
+                                              type: array
                                           required:
                                           - description
                                           - direction
@@ -766,6 +780,12 @@ spec:
                                               0 and 65535. Asterix '*' can also be
                                               used to match all ports.
                                             type: string
+                                          sources:
+                                            description: Sources specifies The CIDR
+                                              or source IP ranges.
+                                            items:
+                                              type: string
+                                            type: array
                                         required:
                                         - description
                                         - direction
