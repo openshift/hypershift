@@ -28,6 +28,7 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/evanphx/json-patch/v5 v5.7.0
+	github.com/go-jose/go-jose/v3 v3.0.1
 	github.com/go-logr/logr v1.4.1
 	github.com/go-logr/zapr v1.2.4
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -69,7 +70,6 @@ require (
 	golang.org/x/time v0.5.0
 	google.golang.org/grpc v1.60.1
 	gopkg.in/ini.v1 v1.67.0
-	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.29.0
 	k8s.io/apiextensions-apiserver v0.29.0
@@ -239,6 +239,7 @@ require (
 	gopkg.in/evanphx/json-patch.v5 v5.7.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
+	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/kms v0.29.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20231214164306-ab13479f8bf8 // indirect
