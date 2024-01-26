@@ -8,15 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/hashicorp/go-uuid"
-	"github.com/spf13/cobra"
-
+	"github.com/openshift/hypershift/api/fixtures"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
-
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"sigs.k8s.io/yaml"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -29,6 +24,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/Azure/go-autorest/autorest"
+
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/hashicorp/go-uuid"
+	"github.com/spf13/cobra"
 
 	// This is the same client as terraform uses: https://github.com/hashicorp/terraform-provider-azurerm/blob/b0c897055329438be6a3a159f6ffac4e1ce958f2/internal/services/storage/blobs.go#L17
 	// The one from the azure sdk is cumbersome to use (distinct authorizer, requires to manually construct the full target url), and only allows upload from url for files that are not bigger than 256M.
@@ -50,7 +52,8 @@ type CreateInfraOptions struct {
 	CredentialsFile   string
 	Credentials       *util.AzureCreds
 	OutputFile        string
-	RHCOSImage        string
+	RHCOSImage        map[string]string
+	Arch              string
 	ResourceGroupName string
 }
 
@@ -63,10 +66,11 @@ type CreateInfraOutput struct {
 	VNetID            string `json:"vnetID"`
 	VnetName          string `json:"vnetName"`
 	SubnetName        string `json:"subnetName"`
-	BootImageID       string `json:"bootImageID"`
 	InfraID           string `json:"infraID"`
 	MachineIdentityID string `json:"machineIdentityID"`
 	SecurityGroupName string `json:"securityGroupName"`
+
+	BootImageInfo map[string]fixtures.BootImageDetails `json:"bootImageInfo"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -107,9 +111,10 @@ func NewCreateCommand() *cobra.Command {
 
 func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
 	result := CreateInfraOutput{
-		Location:   o.Location,
-		InfraID:    o.InfraID,
-		BaseDomain: o.BaseDomain,
+		Location:      o.Location,
+		InfraID:       o.InfraID,
+		BaseDomain:    o.BaseDomain,
+		BootImageInfo: make(map[string]fixtures.BootImageDetails),
 	}
 
 	// Setup subscription ID and Azure credential information
@@ -182,9 +187,19 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	l.Info("Successfully created private DNS zone link")
 
 	// Upload RHCOS image and create a bootable image
-	result.BootImageID, err = createRhcosImages(ctx, l, o, subscriptionID, resourceGroupName, azureCreds)
+	bootImageID, err := createRhcosImages(ctx, l, o, o.Arch, subscriptionID, resourceGroupName, azureCreds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RHCOS image: %w", err)
+	}
+	result.BootImageInfo[o.Arch] = fixtures.BootImageDetails{BootImageID: bootImageID}
+
+	if o.Arch == hyperv1.ArchitectureARM64 {
+		// Upload the amd64 RHCOS image as well
+		bootImageID, err = createRhcosImages(ctx, l, o, hyperv1.ArchitectureAMD64, subscriptionID, resourceGroupName, azureCreds)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create RHCOS image: %w", err)
+		}
+		result.BootImageInfo[hyperv1.ArchitectureAMD64] = fixtures.BootImageDetails{BootImageID: bootImageID}
 	}
 
 	if o.OutputFile != "" {
@@ -435,7 +450,7 @@ func createPrivateDNSZoneLink(ctx context.Context, subscriptionID string, resour
 }
 
 // createRhcosImages uploads the RHCOS image and creates a bootable image
-func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions, subscriptionID string, resourceGroupName string, azureCreds azcore.TokenCredential) (string, error) {
+func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions, arch string, subscriptionID string, resourceGroupName string, azureCreds azcore.TokenCredential) (string, error) {
 	storageAccountClient, err := armstorage.NewAccountsClient(subscriptionID, azureCreds, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create new accounts client for storage: %w", err)
@@ -470,8 +485,8 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	}
 	l.Info("Successfully created blob container", "name", *imageContainer.Name)
 
-	sourceURL := o.RHCOSImage
-	blobName := "rhcos.x86_64.vhd"
+	sourceURL := o.RHCOSImage[arch]
+	blobName := "rhcos." + arch + ".vhd"
 
 	// Explicitly check this, Azure API makes inferring the problem from the error message extremely hard
 	if !strings.HasPrefix(sourceURL, "https://rhcos.blob.core.windows.net") {
@@ -524,7 +539,7 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 					BlobURI: to.Ptr(imageBlobURL),
 				},
 			},
-			HyperVGeneration: to.Ptr(armcompute.HyperVGenerationTypesV1),
+			HyperVGeneration: to.Ptr(armcompute.HyperVGenerationTypesV2),
 		},
 		Location: to.Ptr(o.Location),
 	}

@@ -49,8 +49,22 @@ func (o *AzurePlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool 
 	}
 
 	nodePool.Spec.Platform.Type = hyperv1.AzurePlatform
+
+	var instanceType string
+	if o.InstanceType != "" {
+		instanceType = o.InstanceType
+	} else {
+		// Aligning with Azure IPI instance type defaults
+		switch nodePool.Spec.Arch {
+		case hyperv1.ArchitectureAMD64:
+			instanceType = "Standard_D4s_v4"
+		case hyperv1.ArchitectureARM64:
+			instanceType = "Standard_D4ps_v5"
+		}
+	}
+
 	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:              o.InstanceType,
+		VMSize:              instanceType,
 		DiskSizeGB:          o.DiskSize,
 		AvailabilityZone:    o.AvailabilityZone,
 		DiskEncryptionSetID: o.DiskEncryptionSetID,
