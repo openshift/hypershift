@@ -110,6 +110,13 @@ type AzureManagedControlPlaneSpec struct {
 	// Immutable.
 	// +optional
 	DNSPrefix *string `json:"dnsPrefix,omitempty"`
+
+	// FleetsMember is the spec for the fleet this cluster is a member of.
+	// See also [AKS doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/en-us/azure/templates/microsoft.containerservice/2023-03-15-preview/fleets/members
+	// +optional
+	FleetsMember *FleetsMember `json:"fleetsMember,omitempty"`
 }
 
 // HTTPProxyConfig is the HTTP proxy configuration for the cluster.
