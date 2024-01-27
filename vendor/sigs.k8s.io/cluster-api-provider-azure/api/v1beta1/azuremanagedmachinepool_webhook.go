@@ -34,7 +34,7 @@ import (
 	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
+	clusterctlv1alpha3 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -224,7 +224,7 @@ func (mw *azureManagedMachinePoolWebhook) ValidateUpdate(ctx context.Context, ol
 
 	if m.Spec.Mode != string(NodePoolModeSystem) && old.Spec.Mode == string(NodePoolModeSystem) {
 		// validate for last system node pool
-		if err := validateLastSystemNodePool(mw.Client, m.Labels, m.Namespace); err != nil {
+		if err := validateLastSystemNodePool(mw.Client, m.Labels, m.Namespace, m.Annotations); err != nil {
 			allErrs = append(allErrs, field.Forbidden(
 				field.NewPath("Spec", "Mode"),
 				"Cannot change node pool mode to User, you must have at least one System node pool in your cluster"))
@@ -293,7 +293,7 @@ func (mw *azureManagedMachinePoolWebhook) ValidateUpdate(ctx context.Context, ol
 	}
 
 	if len(allErrs) != 0 {
-		return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedMachinePool").GroupKind(), m.Name, allErrs)
+		return nil, apierrors.NewInvalid(GroupVersion.WithKind(AzureManagedMachinePoolKind).GroupKind(), m.Name, allErrs)
 	}
 
 	return nil, nil
@@ -309,12 +309,12 @@ func (mw *azureManagedMachinePoolWebhook) ValidateDelete(ctx context.Context, ob
 		return nil, nil
 	}
 
-	return nil, errors.Wrapf(validateLastSystemNodePool(mw.Client, m.Labels, m.Namespace), "if the delete is triggered via owner MachinePool please refer to trouble shooting section in https://capz.sigs.k8s.io/topics/managedcluster.html")
+	return nil, errors.Wrapf(validateLastSystemNodePool(mw.Client, m.Labels, m.Namespace, m.Annotations), "if the delete is triggered via owner MachinePool please refer to trouble shooting section in https://capz.sigs.k8s.io/topics/managedcluster.html")
 }
 
 // validateLastSystemNodePool is used to check if the existing system node pool is the last system node pool.
 // If it is a last system node pool it cannot be deleted or mutated to user node pool as AKS expects min 1 system node pool.
-func validateLastSystemNodePool(cli client.Client, labels map[string]string, namespace string) error {
+func validateLastSystemNodePool(cli client.Client, labels map[string]string, namespace string, annotations map[string]string) error {
 	ctx := context.Background()
 
 	// Fetch the Cluster.
@@ -337,8 +337,8 @@ func validateLastSystemNodePool(cli client.Client, labels map[string]string, nam
 		return nil
 	}
 
-	// checking if the Cluster is going to be deleted for clusterctl move operation
-	if _, found := ownerCluster.Annotations[clusterctlv1.DeleteForMoveAnnotation]; found {
+	// checking if this AzureManagedMachinePool is going to be deleted for clusterctl move operation
+	if _, ok := annotations[clusterctlv1alpha3.DeleteForMoveAnnotation]; ok {
 		return nil
 	}
 
