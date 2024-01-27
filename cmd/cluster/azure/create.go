@@ -23,6 +23,16 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		Use:          "azure",
 		Short:        "Creates basic functional HostedCluster resources on Azure",
 		SilenceUsage: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Check if the network security group is set and the resource group is not
+			nsg, _ := cmd.Flags().GetString("network-security-group")
+			rg, _ := cmd.Flags().GetString("resource-group-name")
+
+			if nsg != "" && rg == "" {
+				fmt.Println("Error: Flag --resource-group-name is required when using --network-security-group")
+				os.Exit(1)
+			}
+		},
 	}
 
 	opts.AzurePlatform.Location = "eastus"
@@ -37,6 +47,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availability-zones", opts.AzurePlatform.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskEncryptionSetID, "disk-encryption-set-id", opts.AzurePlatform.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroup, "network-security-group", opts.AzurePlatform.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network created for HostedCluster.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -90,13 +101,14 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 		infraID := infraid.New(opts.Name)
 		infra, err = (&azureinfra.CreateInfraOptions{
-			Name:              opts.Name,
-			Location:          opts.AzurePlatform.Location,
-			InfraID:           infraID,
-			CredentialsFile:   opts.AzurePlatform.CredentialsFile,
-			BaseDomain:        opts.BaseDomain,
-			RHCOSImage:        rhcosImage,
-			ResourceGroupName: opts.AzurePlatform.ResourceGroupName,
+			Name:                 opts.Name,
+			Location:             opts.AzurePlatform.Location,
+			InfraID:              infraID,
+			CredentialsFile:      opts.AzurePlatform.CredentialsFile,
+			BaseDomain:           opts.BaseDomain,
+			RHCOSImage:           rhcosImage,
+			ResourceGroupName:    opts.AzurePlatform.ResourceGroupName,
+			NetworkSecurityGroup: opts.AzurePlatform.NetworkSecurityGroup,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)

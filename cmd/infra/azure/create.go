@@ -43,15 +43,16 @@ const (
 )
 
 type CreateInfraOptions struct {
-	Name              string
-	BaseDomain        string
-	Location          string
-	InfraID           string
-	CredentialsFile   string
-	Credentials       *util.AzureCreds
-	OutputFile        string
-	RHCOSImage        string
-	ResourceGroupName string
+	Name                 string
+	BaseDomain           string
+	Location             string
+	InfraID              string
+	CredentialsFile      string
+	Credentials          *util.AzureCreds
+	OutputFile           string
+	RHCOSImage           string
+	ResourceGroupName    string
+	NetworkSecurityGroup string
 }
 
 type CreateInfraOutput struct {
@@ -74,6 +75,16 @@ func NewCreateCommand() *cobra.Command {
 		Use:          "azure",
 		Short:        "Creates Azure infrastructure resources for a cluster",
 		SilenceUsage: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Check if the network security group is set and the resource group is not
+			nsg, _ := cmd.Flags().GetString("network-security-group")
+			rg, _ := cmd.Flags().GetString("resource-group-name")
+
+			if nsg != "" && rg == "" {
+				fmt.Println("Error: Flag --resource-group-name is required when using --network-security-group")
+				os.Exit(1)
+			}
+		},
 	}
 
 	opts := CreateInfraOptions{
@@ -87,6 +98,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
+	cmd.Flags().StringVar(&opts.NetworkSecurityGroup, "network-security-group", opts.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network")
 
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -148,13 +160,31 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 	l.Info("Successfully assigned contributor role to managed identity", "name", identityID)
 
-	// Create network security group
-	securityGroupName, securityGroupID, err := createSecurityGroup(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
-	if err != nil {
-		return nil, err
+	securityGroupID := ""
+
+	if o.NetworkSecurityGroup != "" {
+		//check that the provided network security group exists
+		securityGroupClient, err := armnetwork.NewSecurityGroupsClient(subscriptionID, azureCreds, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create security group client: %w", err)
+		}
+		nsg, err := securityGroupClient.Get(ctx, resourceGroupName, o.NetworkSecurityGroup, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get network security group: %w", err)
+		}
+		securityGroupID = *nsg.ID
+		result.SecurityGroupName = o.NetworkSecurityGroup
+		l.Info("Successfully found existing network security group", "name", o.NetworkSecurityGroup)
+	} else {
+		// Create network security group
+		securityGroupName, nsgID, err := createSecurityGroup(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
+		if err != nil {
+			return nil, err
+		}
+		securityGroupID = nsgID
+		result.SecurityGroupName = securityGroupName
+		l.Info("Successfully created network security group", "name", securityGroupName)
 	}
-	result.SecurityGroupName = securityGroupName
-	l.Info("Successfully created network security group", "name", securityGroupName)
 
 	// Create virtual network
 	subnetName, vnetID, vnetName, err := createVirtualNetwork(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, securityGroupID, azureCreds)
