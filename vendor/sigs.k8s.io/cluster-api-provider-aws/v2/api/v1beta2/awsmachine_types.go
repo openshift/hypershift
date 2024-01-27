@@ -152,10 +152,6 @@ type AWSMachineSpec struct {
 	// +optional
 	SpotMarketOptions *SpotMarketOptions `json:"spotMarketOptions,omitempty"`
 
-	// PlacementGroupName specifies the name of the placement group in which to launch the instance.
-	// +optional
-	PlacementGroupName string `json:"placementGroupName,omitempty"`
-
 	// Tenancy indicates if instance should run on shared or single-tenant hardware.
 	// +optional
 	// +kubebuilder:validation:Enum:=default;dedicated;host
@@ -195,7 +191,7 @@ type Ignition struct {
 	//
 	// +optional
 	// +kubebuilder:default="2.3"
-	// +kubebuilder:validation:Enum="2.3";"3.0";"3.1";"3.2";"3.3";"3.4"
+	// +kubebuilder:validation:Enum="2.3"
 	Version string `json:"version,omitempty"`
 }
 

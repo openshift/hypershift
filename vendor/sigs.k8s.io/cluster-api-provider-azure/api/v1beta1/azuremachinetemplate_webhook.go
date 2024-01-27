@@ -53,7 +53,7 @@ var _ webhook.CustomDefaulter = &AzureMachineTemplate{}
 var _ webhook.CustomValidator = &AzureMachineTemplate{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type.
-func (r *AzureMachineTemplate) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (r *AzureMachineTemplate) ValidateCreate(ctx context.Context, obj runtime.Object) error {
 	t := obj.(*AzureMachineTemplate)
 	spec := t.Spec.Template.Spec
 
@@ -86,21 +86,21 @@ func (r *AzureMachineTemplate) ValidateCreate(ctx context.Context, obj runtime.O
 	}
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureMachineTemplate").GroupKind(), t.Name, allErrs)
+	return apierrors.NewInvalid(GroupVersion.WithKind("AzureMachineTemplate").GroupKind(), t.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureMachineTemplate) ValidateUpdate(ctx context.Context, oldRaw runtime.Object, newRaw runtime.Object) (admission.Warnings, error) {
+func (r *AzureMachineTemplate) ValidateUpdate(ctx context.Context, oldRaw runtime.Object, newRaw runtime.Object) error {
 	var allErrs field.ErrorList
 	old := oldRaw.(*AzureMachineTemplate)
 	t := newRaw.(*AzureMachineTemplate)
 
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected a admission.Request inside context: %v", err))
+		return apierrors.NewBadRequest(fmt.Sprintf("expected a admission.Request inside context: %v", err))
 	}
 
 	if !topology.ShouldSkipImmutabilityChecks(req, t) &&
@@ -131,14 +131,14 @@ func (r *AzureMachineTemplate) ValidateUpdate(ctx context.Context, oldRaw runtim
 	}
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
-	return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureMachineTemplate").GroupKind(), t.Name, allErrs)
+	return apierrors.NewInvalid(GroupVersion.WithKind("AzureMachineTemplate").GroupKind(), t.Name, allErrs)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureMachineTemplate) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	return nil, nil
+func (r *AzureMachineTemplate) ValidateDelete(ctx context.Context, obj runtime.Object) error {
+	return nil
 }
 
 // Default implements webhookutil.defaulter so a webhook will be registered for the type.

@@ -70,29 +70,6 @@ const (
 	MachineCreated AWSMachineProviderConditionType = "MachineCreated"
 )
 
-const (
-	// ExternalResourceGCAnnotation is the name of an annotation that indicates if
-	// external resources should be garbage collected for the cluster.
-	ExternalResourceGCAnnotation = "aws.cluster.x-k8s.io/external-resource-gc"
-
-	// ExternalResourceGCTasksAnnotation is the name of an annotation that indicates what
-	// external resources tasks should be executed by garbage collector for the cluster.
-	ExternalResourceGCTasksAnnotation = "aws.cluster.x-k8s.io/external-resource-tasks-gc"
-)
-
-type GCTask string
-
-var (
-	// GCTaskLoadBalancer defines a task to cleaning up resources for AWS load balancers.
-	GCTaskLoadBalancer = GCTask("load-balancer")
-
-	// GCTaskTargetGroup defines a task to cleaning up resources for AWS target groups.
-	GCTaskTargetGroup = GCTask("target-group")
-
-	// GCTaskSecurityGroup defines a task to cleaning up resources for AWS security groups.
-	GCTaskSecurityGroup = GCTask("security-group")
-)
-
 // AZSelectionScheme defines the scheme of selecting AZs.
 type AZSelectionScheme string
 
@@ -216,10 +193,6 @@ type Instance struct {
 
 	// SpotMarketOptions option for configuring instances to be run using AWS Spot instances.
 	SpotMarketOptions *SpotMarketOptions `json:"spotMarketOptions,omitempty"`
-
-	// PlacementGroupName specifies the name of the placement group in which to launch the instance.
-	// +optional
-	PlacementGroupName string `json:"placementGroupName,omitempty"`
 
 	// Tenancy indicates if instance should run on shared or single-tenant hardware.
 	// +optional
