@@ -2,33 +2,23 @@ package hostedcluster
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"time"
 
-	"github.com/blang/semver"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
 	apiexample "github.com/openshift/hypershift/api/fixtures"
-	"golang.org/x/sync/errgroup"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/supportedversion"
 	hyperutil "github.com/openshift/hypershift/support/util"
 )
-
-const versionLabel = "io.openshift.release"
 
 type hostedClusterDefaulter struct {
 }
@@ -130,12 +120,6 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
 func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.RegistryClientImageMetadataProvider, logger logr.Logger) error {
-	kvValidator = &kubevirtClusterValidator{
-		client:                mgr.GetClient(),
-		clientMap:             kubevirtexternalinfra.NewKubevirtInfraClientMap(),
-		imageMetaDataProvider: imageMetaDataProvider,
-	}
-
 	err := ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithDefaulter(&hostedClusterDefaulter{}).
@@ -147,7 +131,7 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 	err = ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.NodePool{}).
 		WithDefaulter(&nodePoolDefaulter{client: mgr.GetClient()}).
-		WithValidator(newNodePoolValidator(mgr.GetClient(), logger)).
+		WithValidator(newNodePoolValidator(logger)).
 		Complete()
 	if err != nil {
 		return fmt.Errorf("unable to register nodepool webhook: %w", err)
@@ -160,8 +144,6 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 	}
 	return nil
 }
-
-var kvValidator *kubevirtClusterValidator
 
 var _ admission.CustomValidator = (*hostedClusterValidator)(nil)
 
@@ -212,7 +194,7 @@ func (v hostedClusterValidator) validateCreateKubevirtHostedCluster(ctx context.
 		return nil, err
 	}
 
-	return kvValidator.validateCreate(ctx, hc, hyperutil.HCControlPlaneReleaseImage(hc))
+	return nil, nil
 }
 
 func (v hostedClusterValidator) validateUpdateKubevirtHostedCluster(ctx context.Context, oldHC, newHC *hyperv1.HostedCluster) error {
@@ -221,32 +203,15 @@ func (v hostedClusterValidator) validateUpdateKubevirtHostedCluster(ctx context.
 		return err
 	}
 
-	newReleaseImage := hyperutil.HCControlPlaneReleaseImage(newHC)
-
-	if newReleaseImage != hyperutil.HCControlPlaneReleaseImage(oldHC) {
-		if _, isTimeout := ctx.Deadline(); !isTimeout {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, time.Second*10)
-			defer cancel()
-		}
-
-		err = kvValidator.validateReleaseImage(ctx, newHC, newReleaseImage)
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
 type nodePoolValidator struct {
-	client client.Client
 	logger logr.Logger
 }
 
-func newNodePoolValidator(client client.Client, logger logr.Logger) *nodePoolValidator {
+func newNodePoolValidator(logger logr.Logger) *nodePoolValidator {
 	return &nodePoolValidator{
-		client: client,
 		logger: logr.New(logger.GetSink()).WithName("nodePoolValidator"),
 	}
 }
@@ -297,12 +262,7 @@ func (v nodePoolValidator) validateCreateKubevirtNodePool(ctx context.Context, n
 		return nil, err
 	}
 
-	hc := v.getHostedClusterOrSkip(ctx, np)
-	if hc == nil {
-		return nil, nil
-	}
-
-	return kvValidator.validateCreate(ctx, hc, np.Spec.Release.Image)
+	return nil, nil
 }
 
 func (v nodePoolValidator) validateUpdateKubevirtNodePool(ctx context.Context, oldNP, newNP *hyperv1.NodePool) error {
@@ -310,127 +270,7 @@ func (v nodePoolValidator) validateUpdateKubevirtNodePool(ctx context.Context, o
 	if err != nil {
 		return err
 	}
-
-	if oldNP.Spec.Release.Image != newNP.Spec.Release.Image {
-		if _, isTimeout := ctx.Deadline(); !isTimeout {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, time.Second*10)
-			defer cancel()
-		}
-		hc := v.getHostedClusterOrSkip(ctx, newNP)
-		if hc == nil {
-			return nil
-		}
-
-		err = kvValidator.validateReleaseImage(ctx, hc, newNP.Spec.Release.Image)
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
-}
-
-func (v nodePoolValidator) getHostedClusterOrSkip(ctx context.Context, np *hyperv1.NodePool) *hyperv1.HostedCluster {
-	hc := &hyperv1.HostedCluster{}
-	err := v.client.Get(ctx, client.ObjectKey{Name: np.Spec.ClusterName, Namespace: np.Namespace}, hc)
-	if err != nil {
-		v.logger.Error(err, "can't find HostedCluster; skipping NodePool validation",
-			"HostedCluster", np.Spec.ClusterName,
-			"NodePool", np.Name,
-			"namespace", np.Namespace)
-		return nil
-	}
-
-	return hc
-}
-
-type kubevirtClusterValidator struct {
-	client                client.Client
-	clientMap             kubevirtexternalinfra.KubevirtInfraClientMap
-	imageMetaDataProvider hyperutil.ImageMetadataProvider
-}
-
-func (v *kubevirtClusterValidator) validateCreate(ctx context.Context, hc *hyperv1.HostedCluster, releaseImage string) (admission.Warnings, error) {
-	if v == nil {
-		return nil, errors.New("kubevirt validator is not initialized") // should never happen
-	}
-
-	if hc.Spec.Platform.Kubevirt == nil {
-		return nil, fmt.Errorf("the spec.platform.kubevirt field is missing in the HostedCluster resource")
-	}
-
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
-	cl, err := v.clientMap.DiscoverKubevirtClusterClient(ctx, v.client, hc.Spec.InfraID, hc.Spec.Platform.Kubevirt.Credentials, controlPlaneNamespace, hc.Namespace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect external infra cluster; %w", err)
-	}
-
-	if _, isTimeout := ctx.Deadline(); !isTimeout {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Second*10)
-		defer cancel()
-	}
-
-	eg, egCtx := errgroup.WithContext(ctx)
-
-	eg.Go(func() error {
-		return v.validateReleaseImage(egCtx, hc, releaseImage)
-	})
-
-	eg.Go(func() error {
-		return kubevirtexternalinfra.ValidateClusterVersions(egCtx, cl)
-	})
-
-	return nil, eg.Wait()
-}
-
-func (v *kubevirtClusterValidator) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseImage string) error {
-	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
-		return nil
-	}
-
-	version, err := v.getImageVersion(ctx, hc, releaseImage)
-	if err != nil {
-		return err
-	}
-
-	if version == nil {
-		return nil
-	}
-
-	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
-
-	return supportedversion.IsValidReleaseVersion(version, nil, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
-}
-
-func (v *kubevirtClusterValidator) getImageVersion(ctx context.Context, hc *hyperv1.HostedCluster, releaseImage string) (*semver.Version, error) {
-	var pullSecret corev1.Secret
-	err := v.client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
-	}
-
-	metadata, err := v.imageMetaDataProvider.ImageMetadata(ctx, releaseImage, pullSecretBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrive release image metadata: %w", err)
-	}
-
-	ver, ok := metadata.Config.Labels[versionLabel]
-	if !ok { // no version. Can't validate
-		return nil, nil
-	}
-
-	version, err := semver.Parse(ver)
-	if err != nil {
-		return nil, fmt.Errorf("wrong version structure %q: %w", ver, err)
-	}
-
-	return &version, nil
 }
 
 func validateJsonAnnotation(annotations map[string]string) error {
