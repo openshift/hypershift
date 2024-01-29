@@ -1475,7 +1475,9 @@ spec:
                           resource to use to encrypt the OS disks for the VMs.
                         type: string
                       diskSizeGB:
-                        default: 120
+                        default: 30
+                        description: DiskSizeGB is the size in GB to assign to the
+                          OS disk CAPZ default is 30GB, https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599
                         format: int32
                         minimum: 16
                         type: integer

@@ -2304,6 +2304,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
+<p>DiskSizeGB is the size in GB to assign to the OS disk
+CAPZ default is 30GB, <a href="https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599">https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599</a></p>
 </td>
 </tr>
 <tr>

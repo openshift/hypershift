@@ -47,7 +47,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 func (o *AzurePlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	// Resource group name is required when using DiskEncryptionSetID
 	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
-		return fmt.Errorf("UpdateNodePool: resource-group-name is required when using disk-encryption-set-id")
+		return fmt.Errorf("resource-group-name is required when using disk-encryption-set-id")
 	}
 
 	nodePool.Spec.Platform.Type = hyperv1.AzurePlatform

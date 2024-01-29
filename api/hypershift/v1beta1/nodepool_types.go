@@ -855,7 +855,10 @@ type AzureNodePoolPlatform struct {
 	// subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
 	// +optional
 	ImageID string `json:"imageID,omitempty"`
-	// +kubebuilder:default:=120
+	// DiskSizeGB is the size in GB to assign to the OS disk
+	// CAPZ default is 30GB, https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599
+	//
+	// +kubebuilder:default:=30
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
