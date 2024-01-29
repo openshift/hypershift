@@ -1021,7 +1021,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
-			condition.Reason = "Blocked"
+			condition.Reason = hyperv1.BlockedReason
 		}
 		if progressing {
 			condition.Status = metav1.ConditionTrue
@@ -3446,7 +3446,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 	} else {
 		// This catches and bubbles up validation errors that prevent the HCP from being created.
 		hcProgressingCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterProgressing))
-		if hcProgressingCondition != nil && hcProgressingCondition.Reason == "Blocked" {
+		if hcProgressingCondition != nil && hcProgressingCondition.Reason == hyperv1.BlockedReason {
 			hcpAvailableMessage = hcProgressingCondition.Message
 		}
 	}
