@@ -100,3 +100,44 @@ spec:
 status:
   replicas: 0
 ```
+
+## Enabling Ephemeral OS Disks on Azure VMs
+To enable the ephemeral OS disk option on the Azure VMs in your HostedCluster, set the `enable-ephemeral-disk` flag to true.
+
+!!! important
+
+    Ephermeral OS disks are not available in every region or for every instance type. 
+
+    You may need to adjust the disk storage account type; to adjust the disk storage account type, 
+    use the `disk-storage-account-type` flag as shown in the example below.
+    
+    You may need to adjust the disk size depending on the instance type used; to adjust the disk size, use the 
+    `root-disk-size` flag.
+
+    See [Ephemeral OS disks for Azure VMs](https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks) for more details.
+
+```
+hypershift create cluster azure \
+--name <cluster_name> \
+--pull-secret <pull_secret_file> \
+--azure-creds <path_to_azure_credentials_file> \
+--location <location> \
+--base-domain <base_domain> \
+--release-image <release_image> \
+--node-pool-replicas <number_of_replicas> \
+--enable-ephemeral-disk true \
+--instance-type Standard_DS2_v2 \
+--disk-storage-account-type Standard_LRS
+```
+
+You can also set the `enable-ephemeral-disk` flag when creating a NodePool.
+```
+hypershift create nodepool azure \
+--name <name_of_nodepool> \
+--cluster-name <cluster_name> \
+--node-count <number_of_replicas> \
+--release-image <release_image> \
+--enable-ephemeral-disk true \
+--instance-type Standard_DS2_v2 \
+--disk-storage-account-type Standard_LRS
+```
