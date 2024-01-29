@@ -20,19 +20,10 @@ import (
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "azure",
-		Short:        "Creates basic functional HostedCluster resources on Azure",
-		SilenceUsage: true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// Check if the network security group is set and the resource group is not
-			nsg, _ := cmd.Flags().GetString("network-security-group")
-			rg, _ := cmd.Flags().GetString("resource-group-name")
-
-			if nsg != "" && rg == "" {
-				fmt.Println("Error: Flag --resource-group-name is required when using --network-security-group")
-				os.Exit(1)
-			}
-		},
+		Use:               "azure",
+		Short:             "Creates basic functional HostedCluster resources on Azure",
+		SilenceUsage:      true,
+		PersistentPreRunE: validateFlags,
 	}
 
 	opts.AzurePlatform.Location = "eastus"
@@ -49,6 +40,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskEncryptionSetID, "disk-encryption-set-id", opts.AzurePlatform.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroup, "network-security-group", opts.AzurePlatform.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network created for HostedCluster.")
 	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
+	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -61,12 +53,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		err := validate(opts)
-		if err != nil {
-			return err
-		}
-
-		if err = CreateCluster(ctx, opts); err != nil {
+		if err := CreateCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -122,19 +109,20 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.InfraID = infra.InfraID
 	exampleOptions.ExternalDNSDomain = opts.ExternalDNSDomain
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
-		Location:              infra.Location,
-		ResourceGroupName:     infra.ResourceGroupName,
-		VnetName:              infra.VnetName,
-		VnetID:                infra.VNetID,
-		SubnetName:            infra.SubnetName,
-		BootImageID:           infra.BootImageID,
-		MachineIdentityID:     infra.MachineIdentityID,
-		InstanceType:          opts.AzurePlatform.InstanceType,
-		SecurityGroupName:     infra.SecurityGroupName,
-		DiskSizeGB:            opts.AzurePlatform.DiskSizeGB,
-		AvailabilityZones:     opts.AzurePlatform.AvailabilityZones,
-		DiskEncryptionSetID:   opts.AzurePlatform.DiskEncryptionSetID,
-		EnableEphemeralOSDisk: opts.AzurePlatform.EnableEphemeralOSDisk,
+		Location:               infra.Location,
+		ResourceGroupName:      infra.ResourceGroupName,
+		VnetName:               infra.VnetName,
+		VnetID:                 infra.VNetID,
+		SubnetName:             infra.SubnetName,
+		BootImageID:            infra.BootImageID,
+		MachineIdentityID:      infra.MachineIdentityID,
+		InstanceType:           opts.AzurePlatform.InstanceType,
+		SecurityGroupName:      infra.SecurityGroupName,
+		DiskSizeGB:             opts.AzurePlatform.DiskSizeGB,
+		AvailabilityZones:      opts.AzurePlatform.AvailabilityZones,
+		DiskEncryptionSetID:    opts.AzurePlatform.DiskEncryptionSetID,
+		EnableEphemeralOSDisk:  opts.AzurePlatform.EnableEphemeralOSDisk,
+		DiskStorageAccountType: opts.AzurePlatform.DiskStorageAccountType,
 	}
 
 	if opts.AzurePlatform.EncryptionKeyID != "" {
@@ -194,11 +182,31 @@ func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecret
 	return rhcosImage, nil
 }
 
-// validate validates the core create options passed in by the user
-func validate(opts *core.CreateOptions) error {
-	// Resource group name is required when using DiskEncryptionSetID
-	if opts.AzurePlatform.DiskEncryptionSetID != "" && opts.AzurePlatform.ResourceGroupName == "" {
-		return fmt.Errorf("validate: resource-group-name is required when using disk-encryption-set-id")
+// validateFlags validates the core create option flags passed in by the user
+func validateFlags(cmd *cobra.Command, args []string) error {
+	// Check if the network security group is set and the resource group is not
+	nsg, err := cmd.Flags().GetString("network-security-group")
+	if err != nil {
+		return err
 	}
+	rg, err := cmd.Flags().GetString("resource-group-name")
+	if err != nil {
+		return err
+	}
+
+	if nsg != "" && rg == "" {
+		return fmt.Errorf("flag --resource-group-name is required when using --network-security-group")
+	}
+
+	// Validate a resource group is provided when using the disk encryption set id flag
+	desID, err := cmd.Flags().GetString("disk-encryption-set-id")
+	if err != nil {
+		return err
+	}
+
+	if desID != "" && rg == "" {
+		return fmt.Errorf("resource-group-name is required when using disk-encryption-set-id")
+	}
+
 	return nil
 }
