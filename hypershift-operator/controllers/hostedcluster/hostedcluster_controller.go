@@ -3427,6 +3427,12 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 			hcpAvailableReason = hyperv1.AsExpectedReason
 			hcpAvailableMessage = "The hosted control plane is available"
 		}
+	} else {
+		// This catches and bubbles up validation errors that prevent the HCP from being created.
+		hcProgressingCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterProgressing))
+		if hcProgressingCondition != nil && hcProgressingCondition.Reason == "Blocked" {
+			hcpAvailableMessage = hcProgressingCondition.Message
+		}
 	}
 
 	return metav1.Condition{
@@ -3953,7 +3959,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		switch string(condition.Type) {
 		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
 			if condition.Status == metav1.ConditionFalse {
-				return false, fmt.Errorf("%s condition is false", string(condition.Type))
+				return false, fmt.Errorf("%s condition is false: %s", string(condition.Type), condition.Message)
 			}
 		case string(hyperv1.ClusterVersionUpgradeable):
 			_, _, err := isUpgrading(hc, releaseImage)
