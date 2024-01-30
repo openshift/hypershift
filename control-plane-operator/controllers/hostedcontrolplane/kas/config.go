@@ -303,6 +303,7 @@ func admissionPlugins() []string {
 		"ServiceAccount",
 		"StorageObjectInUseProtection",
 		"TaintNodesByCondition",
+		"ValidatingAdmissionPolicy",
 		"ValidatingAdmissionWebhook",
 		"authorization.openshift.io/RestrictSubjectBindings",
 		"authorization.openshift.io/ValidateRoleBindingRestriction",
