@@ -17,13 +17,17 @@ limitations under the License.
 package v1beta1
 
 import (
+	"fmt"
+	"reflect"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
+	"sigs.k8s.io/cluster-api-provider-azure/util/maps"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // SetupWebhookWithManager sets up and registers the webhook with the manager.
@@ -38,24 +42,42 @@ func (r *AzureManagedCluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.Validator = &AzureManagedCluster{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureManagedCluster) ValidateCreate() (admission.Warnings, error) {
+func (r *AzureManagedCluster) ValidateCreate() error {
 	// NOTE: AzureManagedCluster relies upon MachinePools, which is behind a feature gate flag.
 	// The webhook must prevent creating new objects in case the feature flag is disabled.
 	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return nil, field.Forbidden(
+		return field.Forbidden(
 			field.NewPath("spec"),
 			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
 		)
 	}
-	return nil, nil
+	return nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureManagedCluster) ValidateUpdate(oldRaw runtime.Object) (admission.Warnings, error) {
-	return nil, nil
+func (r *AzureManagedCluster) ValidateUpdate(oldRaw runtime.Object) error {
+	old := oldRaw.(*AzureManagedCluster)
+	var allErrs field.ErrorList
+
+	// custom headers are immutable
+	oldCustomHeaders := maps.FilterByKeyPrefix(old.ObjectMeta.Annotations, CustomHeaderPrefix)
+	newCustomHeaders := maps.FilterByKeyPrefix(r.ObjectMeta.Annotations, CustomHeaderPrefix)
+	if !reflect.DeepEqual(oldCustomHeaders, newCustomHeaders) {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("metadata", "annotations"),
+				r.ObjectMeta.Annotations,
+				fmt.Sprintf("annotations with '%s' prefix are immutable", CustomHeaderPrefix)))
+	}
+
+	if len(allErrs) != 0 {
+		return apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedCluster").GroupKind(), r.Name, allErrs)
+	}
+
+	return nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureManagedCluster) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AzureManagedCluster) ValidateDelete() error {
+	return nil
 }

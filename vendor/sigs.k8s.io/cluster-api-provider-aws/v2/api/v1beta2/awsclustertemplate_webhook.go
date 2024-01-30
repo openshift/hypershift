@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func (r *AWSClusterTemplate) SetupWebhookWithManager(mgr ctrl.Manager) error {
@@ -44,26 +43,26 @@ func (r *AWSClusterTemplate) Default() {
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSClusterTemplate) ValidateCreate() (admission.Warnings, error) {
+func (r *AWSClusterTemplate) ValidateCreate() error {
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, r.Spec.Template.Spec.Bastion.Validate()...)
 	allErrs = append(allErrs, validateSSHKeyName(r.Spec.Template.Spec.SSHKeyName)...)
 
-	return nil, aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
+	return aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSClusterTemplate) ValidateUpdate(oldRaw runtime.Object) (admission.Warnings, error) {
+func (r *AWSClusterTemplate) ValidateUpdate(oldRaw runtime.Object) error {
 	old := oldRaw.(*AWSClusterTemplate)
 
 	if !cmp.Equal(r.Spec, old.Spec) {
-		return nil, apierrors.NewBadRequest("AWSClusterTemplate.Spec is immutable")
+		return apierrors.NewBadRequest("AWSClusterTemplate.Spec is immutable")
 	}
-	return nil, nil
+	return nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSClusterTemplate) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AWSClusterTemplate) ValidateDelete() error {
+	return nil
 }

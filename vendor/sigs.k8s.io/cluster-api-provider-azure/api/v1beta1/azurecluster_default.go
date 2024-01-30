@@ -19,7 +19,7 @@ package v1beta1
 import (
 	"fmt"
 
-	"k8s.io/utils/ptr"
+	"k8s.io/utils/pointer"
 )
 
 const (
@@ -119,21 +119,14 @@ func (c *AzureCluster) setSubnetDefaults() {
 		if subnet.SecurityGroup.Name == "" {
 			subnet.SecurityGroup.Name = generateNodeSecurityGroupName(c.ObjectMeta.Name)
 		}
-		subnet.SecurityGroup.SecurityGroupClass.setDefaults()
+		cpSubnet.SecurityGroup.SecurityGroupClass.setDefaults()
 
 		if subnet.RouteTable.Name == "" {
 			subnet.RouteTable.Name = generateNodeRouteTableName(c.ObjectMeta.Name)
 		}
-
-		// NAT gateway only supports the use of IPv4 public IP addresses for outbound connectivity.
-		// So default use the NAT gateway for outbound traffic in IPv4 cluster instead of loadbalancer.
-		// We assume that if the ID is set, the subnet already exists so we shouldn't add a NAT gateway.
-		if !subnet.IsIPv6Enabled() && subnet.ID == "" {
-			if subnet.NatGateway.Name == "" {
-				subnet.NatGateway.Name = withIndex(generateNatGatewayName(c.ObjectMeta.Name), nodeSubnetCounter)
-			}
+		if subnet.IsNatGatewayEnabled() {
 			if subnet.NatGateway.NatGatewayIP.Name == "" {
-				subnet.NatGateway.NatGatewayIP.Name = generateNatGatewayIPName(subnet.NatGateway.Name)
+				subnet.NatGateway.NatGatewayIP.Name = generateNatGatewayIPName(c.ObjectMeta.Name, subnet.Name)
 			}
 		}
 
@@ -152,11 +145,6 @@ func (c *AzureCluster) setSubnetDefaults() {
 			},
 			RouteTable: RouteTable{
 				Name: generateNodeRouteTableName(c.ObjectMeta.Name),
-			},
-			NatGateway: NatGateway{
-				NatGatewayClassSpec: NatGatewayClassSpec{
-					Name: generateNatGatewayName(c.ObjectMeta.Name),
-				},
 			},
 		}
 		c.Spec.NetworkSpec.Subnets = append(c.Spec.NetworkSpec.Subnets, nodeSubnet)
@@ -217,7 +205,7 @@ func (c *AzureCluster) SetNodeOutboundLBDefaults() {
 
 		var needsOutboundLB bool
 		for _, subnet := range c.Spec.NetworkSpec.Subnets {
-			if subnet.Role == SubnetNode && subnet.IsIPv6Enabled() {
+			if subnet.Role == SubnetNode && !subnet.IsNatGatewayEnabled() {
 				needsOutboundLB = true
 				break
 			}
@@ -241,7 +229,7 @@ func (c *AzureCluster) SetNodeOutboundLBDefaults() {
 	}
 
 	if lb.FrontendIPsCount == nil {
-		lb.FrontendIPsCount = ptr.To[int32](1)
+		lb.FrontendIPsCount = pointer.Int32(1)
 	}
 
 	c.setOutboundLBFrontendIPs(lb, generateNodeOutboundIPName)
@@ -261,7 +249,7 @@ func (c *AzureCluster) SetControlPlaneOutboundLBDefaults() {
 		lb.Name = generateControlPlaneOutboundLBName(c.ObjectMeta.Name)
 	}
 	if lb.FrontendIPsCount == nil {
-		lb.FrontendIPsCount = ptr.To[int32](1)
+		lb.FrontendIPsCount = pointer.Int32(1)
 	}
 	c.setOutboundLBFrontendIPs(lb, generateControlPlaneOutboundIPName)
 	c.SetControlPlaneOutboundLBBackendPoolNameDefault()
@@ -356,7 +344,7 @@ func (lb *LoadBalancerClassSpec) setAPIServerLBDefaults() {
 		lb.SKU = SKUStandard
 	}
 	if lb.IdleTimeoutInMinutes == nil {
-		lb.IdleTimeoutInMinutes = ptr.To[int32](DefaultOutboundRuleIdleTimeoutInMinutes)
+		lb.IdleTimeoutInMinutes = pointer.Int32(DefaultOutboundRuleIdleTimeoutInMinutes)
 	}
 }
 
@@ -372,7 +360,7 @@ func (lb *LoadBalancerClassSpec) setOutboundLBDefaults() {
 	lb.Type = Public
 	lb.SKU = SKUStandard
 	if lb.IdleTimeoutInMinutes == nil {
-		lb.IdleTimeoutInMinutes = ptr.To[int32](DefaultOutboundRuleIdleTimeoutInMinutes)
+		lb.IdleTimeoutInMinutes = pointer.Int32(DefaultOutboundRuleIdleTimeoutInMinutes)
 	}
 }
 
@@ -391,7 +379,7 @@ func setControlPlaneOutboundLBDefaults(lb *LoadBalancerClassSpec, apiserverLBTyp
 	lb.SKU = SKUStandard
 
 	if lb.IdleTimeoutInMinutes == nil {
-		lb.IdleTimeoutInMinutes = ptr.To[int32](DefaultOutboundRuleIdleTimeoutInMinutes)
+		lb.IdleTimeoutInMinutes = pointer.Int32(DefaultOutboundRuleIdleTimeoutInMinutes)
 	}
 }
 
@@ -470,14 +458,9 @@ func generateControlPlaneOutboundIPName(clusterName string) string {
 	return fmt.Sprintf("pip-%s-controlplane-outbound", clusterName)
 }
 
-// generateNatGatewayName generates a NAT gateway name.
-func generateNatGatewayName(clusterName string) string {
-	return fmt.Sprintf("%s-%s", clusterName, "node-natgw")
-}
-
 // generateNatGatewayIPName generates a NAT gateway IP name.
-func generateNatGatewayIPName(natGatewayName string) string {
-	return fmt.Sprintf("pip-%s", natGatewayName)
+func generateNatGatewayIPName(clusterName, subnetName string) string {
+	return fmt.Sprintf("pip-%s-%s-natgw", clusterName, subnetName)
 }
 
 // withIndex appends the index as suffix to a generated name.
