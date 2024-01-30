@@ -701,7 +701,8 @@ func (c *CertificateRevocationController) prunePreviousSignerCertificates(ctx co
 		for _, secret := range secrets {
 			certKeyInfo, err := certgraphanalysis.InspectSecret(secret)
 			if err != nil {
-				return true, nil, false, fmt.Errorf("failed to load cert/key pair from secret %s/%s: %w", secret.Namespace, secret.Name, err)
+				klog.Warningf("failed to load cert/key pair from secret %s/%s: %v", secret.Namespace, secret.Name, err)
+				continue
 			}
 			if certKeyInfo == nil {
 				continue
