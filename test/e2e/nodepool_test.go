@@ -238,27 +238,52 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 		expectedConditions[hyperv1.NodePoolValidArchPlatform] = corev1.ConditionFalse
 	}
 
+	t.Logf("validating status for nodepool %s/%s", nodePool.Namespace, nodePool.Name)
 	start := time.Now()
+	previousResourceVersion := ""
+	previousConditions := map[string]hyperv1.NodePoolCondition{}
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
 			t.Logf("Failed to get nodepool: %v", err)
 			return false, nil
 		}
 
-		for _, condition := range nodePool.Status.Conditions {
+		if nodePool.ResourceVersion == previousResourceVersion {
+			// nothing's changed since the last time we checked
+			return false, nil
+		}
+		previousResourceVersion = nodePool.ResourceVersion
+
+		currentConditions := map[string]hyperv1.NodePoolCondition{}
+		conditionsValid := true
+		for i, condition := range nodePool.Status.Conditions {
 			expectedStatus, known := expectedConditions[condition.Type]
 			if !known {
 				return false, fmt.Errorf("unknown condition %s", condition.Type)
 			}
+			conditionsValid = conditionsValid && (condition.Status == expectedStatus)
 
-			if condition.Status != expectedStatus {
-				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
-				return false, nil
+			currentConditions[condition.Type] = nodePool.Status.Conditions[i]
+			if conditionsIdentical(currentConditions[condition.Type], previousConditions[condition.Type]) {
+				// no need to spam anything, we already said it when we processed this last time
+				continue
 			}
-			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+			prefix := ""
+			if condition.Status != expectedStatus {
+				prefix = "in"
+			}
+			msg := fmt.Sprintf("%scorrect condition: wanted %s=%s, got %s=%s", prefix, condition.Type, expectedStatus, condition.Type, condition.Status)
+			if condition.Reason != "" {
+				msg += ": " + condition.Reason
+			}
+			if condition.Message != "" {
+				msg += "(" + condition.Message + ")"
+			}
+			t.Log(msg)
 		}
+		previousConditions = currentConditions
 
-		return true, nil
+		return conditionsValid, nil
 	})
 	duration := time.Since(start).Round(time.Second)
 
@@ -266,4 +291,8 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 		t.Fatalf("Failed to validate NodePool conditions in %s: %v", duration, err)
 	}
 	t.Logf("Successfully validated all expected NodePool conditions in %s", duration)
+}
+
+func conditionsIdentical(a, b hyperv1.NodePoolCondition) bool {
+	return a.Type == b.Type && a.Status == b.Status && a.Reason == b.Reason && a.Message == b.Message
 }
