@@ -130,6 +130,8 @@ const (
 	NetworkInterfaceReadyCondition clusterv1.ConditionType = "NetworkInterfacesReady"
 	// PrivateEndpointsReadyCondition means the private endpoints exist and are ready to be used.
 	PrivateEndpointsReadyCondition clusterv1.ConditionType = "PrivateEndpointsReady"
+	// FleetReadyCondition means the Fleet exists and is ready to be used.
+	FleetReadyCondition clusterv1.ConditionType = "FleetReady"
 
 	// CreatingReason means the resource is being created.
 	CreatingReason = "Creating"
@@ -160,16 +162,31 @@ const (
 )
 
 const (
+	// AzureNetworkPluginName is the name of the Azure network plugin.
+	AzureNetworkPluginName = "azure"
+)
+
+const (
 	// AzureClusterKind indicates the kind of an AzureCluster.
 	AzureClusterKind = "AzureCluster"
+	// AzureClusterTemplateKind indicates the kind of an AzureClusterTemplate.
+	AzureClusterTemplateKind = "AzureClusterTemplate"
+	// AzureMachineKind indicates the kind of an AzureMachine.
+	AzureMachineKind = "AzureMachine"
+	// AzureMachineTemplateKind indicates the kind of an AzureMachineTemplate.
+	AzureMachineTemplateKind = "AzureMachineTemplate"
 	// AzureMachinePoolKind indicates the kind of an AzureMachinePool.
 	AzureMachinePoolKind = "AzureMachinePool"
+	// AzureManagedMachinePoolKind indicates the kind of an AzureManagedMachinePool.
+	AzureManagedMachinePoolKind = "AzureManagedMachinePool"
 	// AzureManagedClusterKind indicates the kind of an AzureManagedCluster.
 	AzureManagedClusterKind = "AzureManagedCluster"
 	// AzureManagedControlPlaneKind indicates the kind of an AzureManagedControlPlane.
 	AzureManagedControlPlaneKind = "AzureManagedControlPlane"
+	// AzureManagedControlPlaneTemplateKind indicates the kind of an AzureManagedControlPlaneTemplate.
+	AzureManagedControlPlaneTemplateKind = "AzureManagedControlPlaneTemplate"
+	// AzureManagedMachinePoolTemplateKind indicates the kind of an AzureManagedMachinePoolTemplate.
+	AzureManagedMachinePoolTemplateKind = "AzureManagedMachinePoolTemplate"
 	// AzureClusterIdentityKind indicates the kind of an AzureClusterIdentity.
 	AzureClusterIdentityKind = "AzureClusterIdentity"
-	// AzureNetworkPluginName is the name of the Azure network plugin.
-	AzureNetworkPluginName = "azure"
 )
