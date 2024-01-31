@@ -173,6 +173,7 @@ type AzurePlatformOptions struct {
 	NetworkSecurityGroup   string
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
+	ResourceGroupTags      []string
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {

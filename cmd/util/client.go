@@ -90,12 +90,12 @@ func GetImpersonatedClient(userName string) (crclient.Client, error) {
 	return client, nil
 }
 
-// ParseAWSTags does exactly that
-func ParseAWSTags(tags []string) (map[string]string, error) {
+// ParseTags converts []string to map[string]string
+func ParseTags(tags []string) (map[string]string, error) {
 	tagMap := make(map[string]string, len(tags))
 	for _, tagStr := range tags {
 		parts := strings.SplitN(tagStr, "=", 2)
-		if len(parts) != 2 {
+		if len(parts) != 2 || len(parts[0]) == 0 || len(parts[1]) == 0 {
 			return nil, fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
 		}
 		tagMap[parts[0]] = parts[1]
