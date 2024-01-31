@@ -66,7 +66,7 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 				ImageRef:          imageRef,
 				Network:           subnet,
 				SystemType:        nodePool.Spec.Platform.PowerVS.SystemType,
-				ProcessorType:     nodePool.Spec.Platform.PowerVS.ProcessorType.CastToCAPIPowerVSProcessorType(),
+				ProcessorType:     capipowervs.PowerVSProcessorType(nodePool.Spec.Platform.PowerVS.ProcessorType.CastToCAPIPowerVSProcessorType()),
 				Processors:        nodePool.Spec.Platform.PowerVS.Processors,
 				MemoryGiB:         nodePool.Spec.Platform.PowerVS.MemoryGiB,
 			},

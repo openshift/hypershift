@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-
+	"github.com/openshift/hypershift/api/types/ibmcapi"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -451,14 +450,14 @@ const (
 	PowerVSNodePoolCappedProcType = PowerVSNodePoolProcType("capped")
 )
 
-func (p *PowerVSNodePoolProcType) CastToCAPIPowerVSProcessorType() capibmv1.PowerVSProcessorType {
+func (p *PowerVSNodePoolProcType) CastToCAPIPowerVSProcessorType() ibmcapi.PowerVSProcessorType {
 	switch *p {
 	case PowerVSNodePoolDedicatedProcType:
-		return capibmv1.PowerVSProcessorTypeDedicated
+		return ibmcapi.PowerVSProcessorTypeDedicated
 	case PowerVSNodePoolCappedProcType:
-		return capibmv1.PowerVSProcessorTypeCapped
+		return ibmcapi.PowerVSProcessorTypeCapped
 	default:
-		return capibmv1.PowerVSProcessorTypeShared
+		return ibmcapi.PowerVSProcessorTypeShared
 	}
 }
 
@@ -862,7 +861,10 @@ type AzureNodePoolPlatform struct {
 	// subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
 	// +optional
 	ImageID string `json:"imageID,omitempty"`
-	// +kubebuilder:default:=120
+	// DiskSizeGB is the size in GB to assign to the OS disk
+	// CAPZ default is 30GB, https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599
+	//
+	// +kubebuilder:default:=30
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
@@ -886,6 +888,9 @@ type AzureNodePoolPlatform struct {
 	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
 	// +optional
 	DiskEncryptionSetID string `json:"diskEncryptionSetID,omitempty"`
+	// EnableEphemeralOSDisk enables ephemeral OS disk
+	// +optional
+	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation
