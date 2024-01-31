@@ -1,4 +1,4 @@
-package v1alpha1
+package conversion
 
 import (
 	"bytes"
@@ -12,45 +12,45 @@ import (
 	"github.com/google/go-cmp/cmp"
 	fuzz "github.com/google/gofuzz"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/configrefs"
-	"github.com/openshift/hypershift/api/util/conversiontest"
 	"github.com/openshift/hypershift/api/util/ipnet"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )
 
-func networkingFuzzer(in *ClusterNetworking, c fuzz.Continue) {
+func networkingFuzzer(in *hyperv1alpha1.ClusterNetworking, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
 	in.MachineCIDR = "10.10.100.0/24"
 	in.PodCIDR = "10.10.101.0/24"
 	in.ServiceCIDR = "10.10.102.0/24"
-	in.MachineNetwork = []MachineNetworkEntry{
+	in.MachineNetwork = []hyperv1alpha1.MachineNetworkEntry{
 		{
 			CIDR: mustParseCIDR(in.MachineCIDR),
 		},
 	}
-	in.ClusterNetwork = []ClusterNetworkEntry{
+	in.ClusterNetwork = []hyperv1alpha1.ClusterNetworkEntry{
 		{
 			CIDR: mustParseCIDR(in.PodCIDR),
 		},
 	}
-	in.ServiceNetwork = []ServiceNetworkEntry{
+	in.ServiceNetwork = []hyperv1alpha1.ServiceNetworkEntry{
 		{
 			CIDR: mustParseCIDR(in.ServiceCIDR),
 		},
 	}
 }
 
-func v1beta1NetworkingFuzzer(in *v1beta1.ClusterNetworking, c fuzz.Continue) {
-	in.ClusterNetwork = []v1beta1.ClusterNetworkEntry{{CIDR: mustParseCIDR("10.11.100.0/24")}}
-	in.MachineNetwork = []v1beta1.MachineNetworkEntry{{CIDR: mustParseCIDR("10.11.101.0/24")}}
-	in.ServiceNetwork = []v1beta1.ServiceNetworkEntry{{CIDR: mustParseCIDR("10.11.102.0/24")}}
+func v1beta1NetworkingFuzzer(in *hyperv1beta1.ClusterNetworking, c fuzz.Continue) {
+	in.ClusterNetwork = []hyperv1beta1.ClusterNetworkEntry{{CIDR: mustParseCIDR("10.11.100.0/24")}}
+	in.MachineNetwork = []hyperv1beta1.MachineNetworkEntry{{CIDR: mustParseCIDR("10.11.101.0/24")}}
+	in.ServiceNetwork = []hyperv1beta1.ServiceNetworkEntry{{CIDR: mustParseCIDR("10.11.102.0/24")}}
 }
 
 func mustParseCIDR(str string) ipnet.IPNet {
@@ -61,14 +61,14 @@ func mustParseCIDR(str string) ipnet.IPNet {
 	return *result
 }
 
-func v1beta1ConfigFuzzer(in *v1beta1.ClusterConfiguration, c fuzz.Continue) {
+func v1beta1ConfigFuzzer(in *hyperv1beta1.ClusterConfiguration, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
 	if in.APIServer != nil && in.APIServer.Audit.Profile == "" {
 		in.APIServer.Audit.Profile = configv1.DefaultAuditProfileType
 	}
 }
 
-func configFuzzer(in *ClusterConfiguration, c fuzz.Continue) {
+func configFuzzer(in *hyperv1alpha1.ClusterConfiguration, c fuzz.Continue) {
 	in.Items = nil
 	if randomBool() {
 		in.APIServer = &configv1.APIServerSpec{}
@@ -162,7 +162,7 @@ func serializeResource(obj runtime.Object) []byte {
 		panic(fmt.Sprintf("did not find gvk for %T", obj))
 	}
 	obj.GetObjectKind().SetGroupVersionKind(gvks[0])
-	err = serializer.Encode(obj, b)
+	err = localSerializer.Encode(obj, b)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -188,17 +188,17 @@ func randomBool() bool {
 	return rand.Intn(2) == 1
 }
 
-func secretEncryptionFuzzer(in *SecretEncryptionSpec, c fuzz.Continue) {
+func secretEncryptionFuzzer(in *hyperv1alpha1.SecretEncryptionSpec, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
-	in.KMS = &KMSSpec{
-		Provider: AWS,
-		AWS: &AWSKMSSpec{
+	in.KMS = &hyperv1alpha1.KMSSpec{
+		Provider: hyperv1alpha1.AWS,
+		AWS: &hyperv1alpha1.AWSKMSSpec{
 			Region: "",
-			ActiveKey: AWSKMSKeyEntry{
+			ActiveKey: hyperv1alpha1.AWSKMSKeyEntry{
 				ARN: c.RandString(),
 			},
 			BackupKey: nil,
-			Auth: AWSKMSAuthSpec{
+			Auth: hyperv1alpha1.AWSKMSAuthSpec{
 				Credentials: corev1.LocalObjectReference{
 					Name: c.RandString(),
 				},
@@ -207,9 +207,9 @@ func secretEncryptionFuzzer(in *SecretEncryptionSpec, c fuzz.Continue) {
 	}
 }
 
-func awsRolesRefFuzzer(in *AWSPlatformSpec, c fuzz.Continue) {
+func awsRolesRefFuzzer(in *hyperv1alpha1.AWSPlatformSpec, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
-	roles := []AWSRoleCredentials{
+	roles := []hyperv1alpha1.AWSRoleCredentials{
 		{
 			ARN:       c.RandString(),
 			Namespace: "openshift-image-registry",
@@ -244,10 +244,10 @@ func awsRolesRefFuzzer(in *AWSPlatformSpec, c fuzz.Continue) {
 	in.NodePoolManagementCreds = corev1.LocalObjectReference{
 		Name: c.RandString(),
 	}
-	in.RolesRef = AWSRolesRef{}
+	in.RolesRef = hyperv1alpha1.AWSRolesRef{}
 }
 
-func hcpFuzzer(in *HostedControlPlane, c fuzz.Continue) {
+func hcpFuzzer(in *hyperv1alpha1.HostedControlPlane, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
 	in.Spec.ServiceCIDR = in.Spec.Networking.ServiceCIDR
 	in.Spec.PodCIDR = in.Spec.Networking.PodCIDR
@@ -264,19 +264,19 @@ func hcpFuzzer(in *HostedControlPlane, c fuzz.Continue) {
 	}
 }
 
-func awsEndpointServiceFuzzer(in *AWSEndpointService, c fuzz.Continue) {
+func awsEndpointServiceFuzzer(in *hyperv1alpha1.AWSEndpointService, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
 	in.Status.DNSName = ""
 }
 
-func nodePoolFuzzer(in *NodePool, c fuzz.Continue) {
+func nodePoolFuzzer(in *hyperv1alpha1.NodePool, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
 	in.Spec.NodeCount = nil
 }
 
-func fixupHostedCluster(in conversion.Convertible) {
+func fixupHostedCluster(in runtime.Object) {
 	removeTypeMeta(in)
-	hc, ok := in.(*HostedCluster)
+	hc, ok := in.(*hyperv1alpha1.HostedCluster)
 	if !ok {
 		panic(fmt.Sprintf("unexpected convertible type: %T", in))
 	}
@@ -288,7 +288,7 @@ func fixupHostedCluster(in conversion.Convertible) {
 	}
 	if hc.Spec.Platform.AWS != nil {
 		populateDeprecatedAWSRoles(hc.Spec.Platform.AWS)
-		hc.Spec.Platform.AWS.RolesRef = AWSRolesRef{}
+		hc.Spec.Platform.AWS.RolesRef = hyperv1alpha1.AWSRolesRef{}
 	}
 	if hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.AWS != nil {
 		hc.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = ""
@@ -296,15 +296,15 @@ func fixupHostedCluster(in conversion.Convertible) {
 	populateDeprecatedNetworkingFields(&hc.Spec.Networking)
 }
 
-func fixupHostedControlPlane(in conversion.Convertible) {
+func fixupHostedControlPlane(in runtime.Object) {
 	removeTypeMeta(in)
-	hcp, ok := in.(*HostedControlPlane)
+	hcp, ok := in.(*hyperv1alpha1.HostedControlPlane)
 	if !ok {
 		panic(fmt.Sprintf("unexpected convertible type: %T", in))
 	}
 	if hcp.Spec.Configuration != nil {
 		for i, item := range hcp.Spec.Configuration.Items {
-			resource, _, err := serializer.Decode(item.Raw, nil, nil)
+			resource, _, err := localSerializer.Decode(item.Raw, nil, nil)
 			if err != nil {
 				panic(err.Error())
 			}
@@ -312,7 +312,7 @@ func fixupHostedControlPlane(in conversion.Convertible) {
 		}
 	}
 	if hcp.Spec.Platform.AWS != nil {
-		hcp.Spec.Platform.AWS.RolesRef = AWSRolesRef{}
+		hcp.Spec.Platform.AWS.RolesRef = hyperv1alpha1.AWSRolesRef{}
 		roles := hcp.Spec.Platform.AWS.Roles
 		sort.SliceStable(roles, func(i, j int) bool {
 			return roles[i].Namespace < roles[j].Namespace
@@ -360,48 +360,48 @@ func NodePoolFuzzerFuncs(_ runtimeserializer.CodecFactory) []interface{} {
 	}
 }
 
-func removeTypeMeta(in conversion.Convertible) {
+func removeTypeMeta(in runtime.Object) {
 	in.GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{})
 }
 
-func removeHubTypeMeta(in conversion.Hub) {
+func removeHubTypeMeta(in runtime.Object) {
 	in.GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{})
 }
 
 func TestFuzzyConversion(t *testing.T) {
-	t.Run("for HostedCluster", conversiontest.FuzzTestFunc(conversiontest.FuzzTestFuncInput{
-		Hub:                &v1beta1.HostedCluster{},
+	t.Run("for HostedCluster", FuzzTestFunc(FuzzTestFuncInput{
+		Hub:                &hyperv1beta1.HostedCluster{},
 		HubAfterMutation:   removeHubTypeMeta,
-		Spoke:              &HostedCluster{},
+		Spoke:              &hyperv1alpha1.HostedCluster{},
 		SpokeAfterMutation: fixupHostedCluster,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{hostedClusterFuzzerFuncs},
 		Scheme:             localScheme,
 	}))
-	t.Run("for NodePool", conversiontest.FuzzTestFunc(conversiontest.FuzzTestFuncInput{
-		Hub:                &v1beta1.NodePool{},
+	t.Run("for NodePool", FuzzTestFunc(FuzzTestFuncInput{
+		Hub:                &hyperv1beta1.NodePool{},
 		HubAfterMutation:   removeHubTypeMeta,
-		Spoke:              &NodePool{},
+		Spoke:              &hyperv1alpha1.NodePool{},
 		SpokeAfterMutation: removeTypeMeta,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{NodePoolFuzzerFuncs},
 	}))
-	t.Run("for HostedControlPlane", conversiontest.FuzzTestFunc(conversiontest.FuzzTestFuncInput{
-		Hub:                &v1beta1.HostedControlPlane{},
+	t.Run("for HostedControlPlane", FuzzTestFunc(FuzzTestFuncInput{
+		Hub:                &hyperv1beta1.HostedControlPlane{},
 		HubAfterMutation:   removeHubTypeMeta,
-		Spoke:              &HostedControlPlane{},
+		Spoke:              &hyperv1alpha1.HostedControlPlane{},
 		SpokeAfterMutation: fixupHostedControlPlane,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{hostedControlPlaneFuzzerFuncs},
 	}))
-	t.Run("for AWSEndpointService", conversiontest.FuzzTestFunc(conversiontest.FuzzTestFuncInput{
-		Hub:                &v1beta1.AWSEndpointService{},
+	t.Run("for AWSEndpointService", FuzzTestFunc(FuzzTestFuncInput{
+		Hub:                &hyperv1beta1.AWSEndpointService{},
 		HubAfterMutation:   removeHubTypeMeta,
-		Spoke:              &AWSEndpointService{},
+		Spoke:              &hyperv1alpha1.AWSEndpointService{},
 		SpokeAfterMutation: removeTypeMeta,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{awsEndpointServiceFuzzerFuncs},
 	}))
 }
 
 func TestConfigurationFieldsToRawExtensions(t *testing.T) {
-	config := &ClusterConfiguration{
+	config := &hyperv1alpha1.ClusterConfiguration{
 		Ingress: &configv1.IngressSpec{Domain: "example.com"},
 		Proxy:   &configv1.ProxySpec{HTTPProxy: "http://10.0.136.57:3128", HTTPSProxy: "http://10.0.136.57:3128"},
 	}

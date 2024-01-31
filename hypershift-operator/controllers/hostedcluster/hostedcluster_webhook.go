@@ -16,6 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/conversion"
+	"github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/supportedversion"
 	hyperutil "github.com/openshift/hypershift/support/util"
 )
@@ -120,6 +122,15 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
 func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.RegistryClientImageMetadataProvider, logger logr.Logger) error {
+
+	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
+
+	kvValidator = &kubevirtClusterValidator{
+		client:                mgr.GetClient(),
+		clientMap:             kubevirtexternalinfra.NewKubevirtInfraClientMap(),
+		imageMetaDataProvider: imageMetaDataProvider,
+	}
+
 	err := ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithDefaulter(&hostedClusterDefaulter{}).

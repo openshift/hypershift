@@ -1,4 +1,4 @@
-package conversiontest
+package conversion
 
 import (
 	"math/rand"
@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/kubectl/pkg/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )
 
 // Source: https://github.com/kubernetes-sigs/cluster-api/blob/1ec0cd6174f1b860dc466db587241ea7edea0b9f/util/conversion/conversion.go
@@ -54,11 +53,11 @@ func GetFuzzer(scheme *runtime.Scheme, funcs ...fuzzer.FuzzerFuncs) *fuzz.Fuzzer
 type FuzzTestFuncInput struct {
 	Scheme *runtime.Scheme
 
-	Hub              conversion.Hub
-	HubAfterMutation func(conversion.Hub)
+	Hub              runtime.Object
+	HubAfterMutation func(runtime.Object)
 
-	Spoke                      conversion.Convertible
-	SpokeAfterMutation         func(convertible conversion.Convertible)
+	Spoke                      runtime.Object
+	SpokeAfterMutation         func(runtime.Object)
 	SkipSpokeAnnotationCleanup bool
 
 	FuzzerFuncs []fuzzer.FuzzerFuncs
@@ -80,16 +79,16 @@ func FuzzTestFunc(input FuzzTestFuncInput) func(*testing.T) {
 
 			for i := 0; i < 100; i++ {
 				// Create the spoke and fuzz it
-				spokeBefore := input.Spoke.DeepCopyObject().(conversion.Convertible)
+				spokeBefore := input.Spoke.DeepCopyObject()
 				fuzzer.Fuzz(spokeBefore)
 
 				// First convert spoke to hub
-				hubCopy := input.Hub.DeepCopyObject().(conversion.Hub)
-				g.Expect(spokeBefore.ConvertTo(hubCopy)).To(gomega.Succeed())
+				hubCopy := input.Hub.DeepCopyObject()
+				g.Expect(ConvertTo(spokeBefore, hubCopy)).To(gomega.Succeed())
 
 				// Convert hub back to spoke and check if the resulting spoke is equal to the spoke before the round trip
-				spokeAfter := input.Spoke.DeepCopyObject().(conversion.Convertible)
-				g.Expect(spokeAfter.ConvertFrom(hubCopy)).To(gomega.Succeed())
+				spokeAfter := input.Spoke.DeepCopyObject()
+				g.Expect(ConvertFrom(hubCopy, spokeAfter)).To(gomega.Succeed())
 
 				if input.SpokeAfterMutation != nil {
 					input.SpokeAfterMutation(spokeAfter)
@@ -105,16 +104,16 @@ func FuzzTestFunc(input FuzzTestFuncInput) func(*testing.T) {
 
 			for i := 0; i < 100; i++ {
 				// Create the hub and fuzz it
-				hubBefore := input.Hub.DeepCopyObject().(conversion.Hub)
+				hubBefore := input.Hub.DeepCopyObject()
 				fuzzer.Fuzz(hubBefore)
 
 				// First convert hub to spoke
-				dstCopy := input.Spoke.DeepCopyObject().(conversion.Convertible)
-				g.Expect(dstCopy.ConvertFrom(hubBefore)).To(gomega.Succeed())
+				dstCopy := input.Spoke.DeepCopyObject()
+				g.Expect(ConvertFrom(hubBefore, dstCopy)).To(gomega.Succeed())
 
 				// Convert spoke back to hub and check if the resulting hub is equal to the hub before the round trip
-				hubAfter := input.Hub.DeepCopyObject().(conversion.Hub)
-				g.Expect(dstCopy.ConvertTo(hubAfter)).To(gomega.Succeed())
+				hubAfter := input.Hub.DeepCopyObject()
+				g.Expect(ConvertTo(dstCopy, hubAfter)).To(gomega.Succeed())
 
 				if input.HubAfterMutation != nil {
 					input.HubAfterMutation(hubAfter)
