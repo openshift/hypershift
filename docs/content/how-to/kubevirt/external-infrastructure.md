@@ -57,8 +57,11 @@ It isn't necessary for the user defined in the kubeconfig used for the external 
 The user or service account used in the provided kubeconfig should have full permissions over the following resources:
 * `virtualmachines.kubevirt.io`
 * `virtualmachineinstances.kubevirt.io`
+* `virtualmachines.kubevirt.io/finalizers`
 * `datavolumes.cdi.kubevirt.io`
 * `services`
+* `endpointslices`
+* `endpointslices/restricted`
 * `routes`
 
 All of these permissions are needed only on the target namespace on the infra cluster (passed through the `--infra-namespace` command-line argument).
@@ -74,6 +77,7 @@ rules:
       - kubevirt.io
     resources:
       - virtualmachines
+      - virtualmachines/finalizers
       - virtualmachineinstances
     verbs:
       - '*'
@@ -94,6 +98,13 @@ rules:
     resources:
       - routes
       - routes/custom-host
+    verbs:
+      - '*'
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+      - endpointslices/restricted
     verbs:
       - '*'
   - apiGroups:

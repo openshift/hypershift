@@ -1006,7 +1006,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"kubevirt.io"},
-				Resources: []string{"virtualmachineinstances", "virtualmachines"},
+				Resources: []string{"virtualmachineinstances", "virtualmachines", "virtualmachines/finalizers"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
@@ -1041,8 +1041,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"discovery.k8s.io"},
-				Resources: []string{"endpointslices"},
-				Verbs:     []string{"list", "watch"},
+				Resources: []string{
+					"endpointslices",
+					"endpointslices/restricted",
+				},
+				Verbs: []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups:     []string{"admissionregistration.k8s.io"},

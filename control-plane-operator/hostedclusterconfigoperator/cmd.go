@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/node"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
@@ -61,6 +62,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	resources.ControllerName: resources.Setup,
 	"inplaceupgrader":        inplaceupgrader.Setup,
 	"node":                   node.Setup,
+	"machine":                machine.Setup,
 	"drainer":                drainer.Setup,
 	hcpstatus.ControllerName: hcpstatus.Setup,
 }
