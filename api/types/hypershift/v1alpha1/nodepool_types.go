@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	"github.com/openshift/hypershift/api/types/ibmcapi"
 )
 
 const (
@@ -456,14 +456,14 @@ const (
 	PowerVSNodePoolCappedProcType = PowerVSNodePoolProcType("capped")
 )
 
-func (p *PowerVSNodePoolProcType) CastToCAPIPowerVSProcessorType() capibmv1.PowerVSProcessorType {
+func (p *PowerVSNodePoolProcType) CastToCAPIPowerVSProcessorType() ibmcapi.PowerVSProcessorType {
 	switch *p {
 	case PowerVSNodePoolDedicatedProcType:
-		return capibmv1.PowerVSProcessorTypeDedicated
+		return ibmcapi.PowerVSProcessorTypeDedicated
 	case PowerVSNodePoolCappedProcType:
-		return capibmv1.PowerVSProcessorTypeCapped
+		return ibmcapi.PowerVSProcessorTypeCapped
 	default:
-		return capibmv1.PowerVSProcessorTypeShared
+		return ibmcapi.PowerVSProcessorTypeShared
 	}
 }
 
