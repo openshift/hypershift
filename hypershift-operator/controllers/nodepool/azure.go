@@ -52,6 +52,13 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		}
 	}
 
+	if nodePool.Spec.Platform.Azure.EnableEphemeralOSDisk {
+		// This is set to "None" if not explicitly set - https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/f44d953844de58e4b6fe8f51d88b0bf75a04e9ec/api/v1beta1/azuremachine_default.go#L54
+		// "VMs and VM Scale Set Instances using an ephemeral OS disk support only Readonly caching."
+		azureMachineTemplate.Template.Spec.OSDisk.CachingType = "ReadOnly"
+		azureMachineTemplate.Template.Spec.OSDisk.DiffDiskSettings = &capiazure.DiffDiskSettings{Option: "Local"}
+	}
+
 	return azureMachineTemplate, nil
 }
 
