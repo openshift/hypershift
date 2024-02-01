@@ -94,7 +94,7 @@ func GetImpersonatedClient(userName string) (crclient.Client, error) {
 func ParseTags(tags []string) (map[string]string, error) {
 	tagMap := make(map[string]string, len(tags))
 	for _, tagStr := range tags {
-		parts := strings.SplitN(tagStr, "=", 2)
+		parts := strings.SplitN(tagStr, "=", -1)
 		if len(parts) != 2 || len(parts[0]) == 0 || len(parts[1]) == 0 {
 			return nil, fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
 		}
