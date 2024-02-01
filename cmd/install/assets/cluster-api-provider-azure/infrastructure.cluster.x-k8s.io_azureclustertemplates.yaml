@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.13.0
+    controller-gen.kubebuilder.io/version: v0.14.0
   name: azureclustertemplates.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -23,14 +23,19 @@ spec:
           API.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -48,24 +53,33 @@ spec:
                       additionalTags:
                         additionalProperties:
                           type: string
-                        description: AdditionalTags is an optional set of tags to
-                          add to Azure resources managed by the Azure provider, in
-                          addition to the ones added by default.
+                        description: |-
+                          AdditionalTags is an optional set of tags to add to Azure resources managed by the Azure provider, in addition to the
+                          ones added by default.
                         type: object
                       azureEnvironment:
-                        description: "AzureEnvironment is the name of the AzureCloud
-                          to be used. The default value that would be used by most
-                          users is \"AzurePublicCloud\", other values are: - ChinaCloud:
-                          \"AzureChinaCloud\" - GermanCloud: \"AzureGermanCloud\"
-                          - PublicCloud: \"AzurePublicCloud\" - USGovernmentCloud:
-                          \"AzureUSGovernmentCloud\" \n Note that values other than
-                          the default must also be accompanied by corresponding changes
-                          to the aso-controller-settings Secret to configure ASO to
-                          refer to the non-Public cloud. ASO currently does not support
-                          referring to multiple different clouds in a single installation.
-                          The following fields must be defined in the Secret: - AZURE_AUTHORITY_HOST
-                          - AZURE_RESOURCE_MANAGER_ENDPOINT - AZURE_RESOURCE_MANAGER_AUDIENCE
-                          \n See the [ASO docs] for more details. \n [ASO docs]: https://azure.github.io/azure-service-operator/guide/aso-controller-settings-options/"
+                        description: |-
+                          AzureEnvironment is the name of the AzureCloud to be used.
+                          The default value that would be used by most users is "AzurePublicCloud", other values are:
+                          - ChinaCloud: "AzureChinaCloud"
+                          - GermanCloud: "AzureGermanCloud"
+                          - PublicCloud: "AzurePublicCloud"
+                          - USGovernmentCloud: "AzureUSGovernmentCloud"
+
+
+                          Note that values other than the default must also be accompanied by corresponding changes to the
+                          aso-controller-settings Secret to configure ASO to refer to the non-Public cloud. ASO currently does
+                          not support referring to multiple different clouds in a single installation. The following fields must
+                          be defined in the Secret:
+                          - AZURE_AUTHORITY_HOST
+                          - AZURE_RESOURCE_MANAGER_ENDPOINT
+                          - AZURE_RESOURCE_MANAGER_AUDIENCE
+
+
+                          See the [ASO docs] for more details.
+
+
+                          [ASO docs]: https://azure.github.io/azure-service-operator/guide/aso-controller-settings-options/
                         type: string
                       bastionSpec:
                         description: BastionSpec encapsulates all things related to
@@ -124,11 +138,9 @@ spec:
                                             to create the private endpoint.
                                           type: string
                                         manualApproval:
-                                          description: ManualApproval specifies if
-                                            the connection approval needs to be done
-                                            manually or not. Set it true when the
-                                            network admin does not have access to
-                                            approve connections to the remote resource.
+                                          description: |-
+                                            ManualApproval specifies if the connection approval needs to be done manually or not.
+                                            Set it true when the network admin does not have access to approve connections to the remote resource.
                                             Defaults to false.
                                           type: boolean
                                         name:
@@ -136,11 +148,9 @@ spec:
                                             the private endpoint.
                                           type: string
                                         privateIPAddresses:
-                                          description: PrivateIPAddresses specifies
-                                            the IP addresses for the network interface
-                                            associated with the private endpoint.
-                                            They have to be part of the subnet where
-                                            the private endpoint is linked.
+                                          description: |-
+                                            PrivateIPAddresses specifies the IP addresses for the network interface associated with the private endpoint.
+                                            They have to be part of the subnet where the private endpoint is linked.
                                           items:
                                             type: string
                                           type: array
@@ -335,16 +345,12 @@ spec:
                             type: object
                         type: object
                       cloudProviderConfigOverrides:
-                        description: 'CloudProviderConfigOverrides is an optional
-                          set of configuration values that can be overridden in azure
-                          cloud provider config. This is only a subset of options
-                          that are available in azure cloud provider config. Some
-                          values for the cloud provider config are inferred from other
-                          parts of cluster api provider azure spec, and may not be
-                          available for overrides. See: https://cloud-provider-azure.sigs.k8s.io/install/configs
-                          Note: All cloud provider config values can be customized
-                          by creating the secret beforehand. CloudProviderConfigOverrides
-                          is only used when the secret is managed by the Azure Provider.'
+                        description: |-
+                          CloudProviderConfigOverrides is an optional set of configuration values that can be overridden in azure cloud provider config.
+                          This is only a subset of options that are available in azure cloud provider config.
+                          Some values for the cloud provider config are inferred from other parts of cluster api provider azure spec, and may not be available for overrides.
+                          See: https://cloud-provider-azure.sigs.k8s.io/install/configs
+                          Note: All cloud provider config values can be customized by creating the secret beforehand. CloudProviderConfigOverrides is only used when the secret is managed by the Azure Provider.
                         properties:
                           backOffs:
                             description: BackOffConfig indicates the back-off config
@@ -371,15 +377,13 @@ spec:
                             type: object
                           rateLimits:
                             items:
-                              description: 'RateLimitSpec represents the rate limit
-                                configuration for a particular kind of resource. Eg.
-                                loadBalancerRateLimit is used to configure rate limits
-                                for load balancers. This eventually gets converted
-                                to CloudProviderRateLimitConfig that cloud-provider-azure
-                                expects. See: https://github.com/kubernetes-sigs/cloud-provider-azure/blob/d585c2031925b39c925624302f22f8856e29e352/pkg/provider/azure_ratelimit.go#L25
-                                We cannot use CloudProviderRateLimitConfig directly
-                                because floating point values are not supported in
-                                controller-tools. See: https://github.com/kubernetes-sigs/controller-tools/issues/245'
+                              description: |-
+                                RateLimitSpec represents the rate limit configuration for a particular kind of resource.
+                                Eg. loadBalancerRateLimit is used to configure rate limits for load balancers.
+                                This eventually gets converted to CloudProviderRateLimitConfig that cloud-provider-azure expects.
+                                See: https://github.com/kubernetes-sigs/cloud-provider-azure/blob/d585c2031925b39c925624302f22f8856e29e352/pkg/provider/azure_ratelimit.go#L25
+                                We cannot use CloudProviderRateLimitConfig directly because floating point values are not supported in controller-tools.
+                                See: https://github.com/kubernetes-sigs/controller-tools/issues/245
                               properties:
                                 config:
                                   description: RateLimitConfig indicates the rate
@@ -447,10 +451,9 @@ spec:
                         type: object
                       failureDomains:
                         additionalProperties:
-                          description: FailureDomainSpec is the Schema for Cluster
-                            API failure domains. It allows controllers to understand
-                            how many failure domains a cluster can optionally span
-                            across.
+                          description: |-
+                            FailureDomainSpec is the Schema for Cluster API failure domains.
+                            It allows controllers to understand how many failure domains a cluster can optionally span across.
                           properties:
                             attributes:
                               additionalProperties:
@@ -463,11 +466,11 @@ spec:
                                 domain is suitable for use by control plane machines.
                               type: boolean
                           type: object
-                        description: 'FailureDomains is a list of failure domains
-                          in the cluster''s region, used to restrict eligibility to
-                          host the control plane. A FailureDomain maps to an availability
-                          zone, which is a separated group of datacenters within a
-                          region. See: https://learn.microsoft.com/azure/reliability/availability-zones-overview'
+                        description: |-
+                          FailureDomains is a list of failure domains in the cluster's region, used to restrict
+                          eligibility to host the control plane. A FailureDomain maps to an availability zone,
+                          which is a separated group of datacenters within a region.
+                          See: https://learn.microsoft.com/azure/reliability/availability-zones-overview
                         type: object
                       identityRef:
                         description: IdentityRef is a reference to an AzureIdentity
@@ -477,34 +480,40 @@ spec:
                             description: API version of the referent.
                             type: string
                           fieldPath:
-                            description: 'If referring to a piece of an object instead
-                              of an entire object, this string should contain a valid
-                              JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                              For example, if the object reference is to a container
-                              within a pod, this would take on a value like: "spec.containers{name}"
-                              (where "name" refers to the name of the container that
-                              triggered the event) or if no container name is specified
-                              "spec.containers[2]" (container with index 2 in this
-                              pod). This syntax is chosen only to have some well-defined
-                              way of referencing a part of an object. TODO: this design
-                              is not final and this field is subject to change in
-                              the future.'
+                            description: |-
+                              If referring to a piece of an object instead of an entire object, this string
+                              should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                              For example, if the object reference is to a container within a pod, this would take on a value like:
+                              "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                              the event) or if no container name is specified "spec.containers[2]" (container with
+                              index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                              referencing a part of an object.
+                              TODO: this design is not final and this field is subject to change in the future.
                             type: string
                           kind:
-                            description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                            description: |-
+                              Kind of the referent.
+                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
                             type: string
                           name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            description: |-
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                             type: string
                           namespace:
-                            description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                            description: |-
+                              Namespace of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
                             type: string
                           resourceVersion:
-                            description: 'Specific resourceVersion to which this reference
-                              is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                            description: |-
+                              Specific resourceVersion to which this reference is made, if any.
+                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
                             type: string
                           uid:
-                            description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                            description: |-
+                              UID of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
@@ -532,10 +541,9 @@ spec:
                                 type: string
                             type: object
                           controlPlaneOutboundLB:
-                            description: ControlPlaneOutboundLB is the configuration
-                              for the control-plane outbound load balancer. This is
-                              different from APIServerLB, and is used only in private
-                              clusters (optionally) for enabling outbound traffic.
+                            description: |-
+                              ControlPlaneOutboundLB is the configuration for the control-plane outbound load balancer.
+                              This is different from APIServerLB, and is used only in private clusters (optionally) for enabling outbound traffic.
                             properties:
                               idleTimeoutInMinutes:
                                 description: IdleTimeoutInMinutes specifies the timeout
@@ -623,22 +631,19 @@ spec:
                                           to create the private endpoint.
                                         type: string
                                       manualApproval:
-                                        description: ManualApproval specifies if the
-                                          connection approval needs to be done manually
-                                          or not. Set it true when the network admin
-                                          does not have access to approve connections
-                                          to the remote resource. Defaults to false.
+                                        description: |-
+                                          ManualApproval specifies if the connection approval needs to be done manually or not.
+                                          Set it true when the network admin does not have access to approve connections to the remote resource.
+                                          Defaults to false.
                                         type: boolean
                                       name:
                                         description: Name specifies the name of the
                                           private endpoint.
                                         type: string
                                       privateIPAddresses:
-                                        description: PrivateIPAddresses specifies
-                                          the IP addresses for the network interface
-                                          associated with the private endpoint. They
-                                          have to be part of the subnet where the
-                                          private endpoint is linked.
+                                        description: |-
+                                          PrivateIPAddresses specifies the IP addresses for the network interface associated with the private endpoint.
+                                          They have to be part of the subnet where the private endpoint is linked.
                                         items:
                                           type: string
                                         type: array
@@ -851,41 +856,31 @@ spec:
                                     network peering class.
                                   properties:
                                     forwardPeeringProperties:
-                                      description: ForwardPeeringProperties specifies
-                                        VnetPeeringProperties for peering from the
-                                        cluster's virtual network to the remote virtual
-                                        network.
+                                      description: |-
+                                        ForwardPeeringProperties specifies VnetPeeringProperties for peering from the cluster's virtual network to the
+                                        remote virtual network.
                                       properties:
                                         allowForwardedTraffic:
-                                          description: AllowForwardedTraffic specifies
-                                            whether the forwarded traffic from the
-                                            VMs in the local virtual network will
-                                            be allowed/disallowed in remote virtual
-                                            network.
+                                          description: |-
+                                            AllowForwardedTraffic specifies whether the forwarded traffic from the VMs in the local virtual network will be
+                                            allowed/disallowed in remote virtual network.
                                           type: boolean
                                         allowGatewayTransit:
-                                          description: AllowGatewayTransit specifies
-                                            if gateway links can be used in remote
-                                            virtual networking to link to this virtual
+                                          description: |-
+                                            AllowGatewayTransit specifies if gateway links can be used in remote virtual networking to link to this virtual
                                             network.
                                           type: boolean
                                         allowVirtualNetworkAccess:
-                                          description: AllowVirtualNetworkAccess specifies
-                                            whether the VMs in the local virtual network
-                                            space would be able to access the VMs
-                                            in remote virtual network space.
+                                          description: |-
+                                            AllowVirtualNetworkAccess specifies whether the VMs in the local virtual network space would be able to access
+                                            the VMs in remote virtual network space.
                                           type: boolean
                                         useRemoteGateways:
-                                          description: UseRemoteGateways specifies
-                                            if remote gateways can be used on this
-                                            virtual network. If the flag is set to
-                                            true, and allowGatewayTransit on remote
-                                            peering is also set to true, the virtual
-                                            network will use the gateways of the remote
-                                            virtual network for transit. Only one
-                                            peering can have this flag set to true.
-                                            This flag cannot be set if virtual network
-                                            already has a gateway.
+                                          description: |-
+                                            UseRemoteGateways specifies if remote gateways can be used on this virtual network.
+                                            If the flag is set to true, and allowGatewayTransit on remote peering is also set to true, the virtual network
+                                            will use the gateways of the remote virtual network for transit. Only one peering can have this flag set to true.
+                                            This flag cannot be set if virtual network already has a gateway.
                                           type: boolean
                                       type: object
                                     remoteVnetName:
@@ -897,41 +892,31 @@ spec:
                                         name of the remote virtual network.
                                       type: string
                                     reversePeeringProperties:
-                                      description: ReversePeeringProperties specifies
-                                        VnetPeeringProperties for peering from the
-                                        remote virtual network to the cluster's virtual
-                                        network.
+                                      description: |-
+                                        ReversePeeringProperties specifies VnetPeeringProperties for peering from the remote virtual network to the
+                                        cluster's virtual network.
                                       properties:
                                         allowForwardedTraffic:
-                                          description: AllowForwardedTraffic specifies
-                                            whether the forwarded traffic from the
-                                            VMs in the local virtual network will
-                                            be allowed/disallowed in remote virtual
-                                            network.
+                                          description: |-
+                                            AllowForwardedTraffic specifies whether the forwarded traffic from the VMs in the local virtual network will be
+                                            allowed/disallowed in remote virtual network.
                                           type: boolean
                                         allowGatewayTransit:
-                                          description: AllowGatewayTransit specifies
-                                            if gateway links can be used in remote
-                                            virtual networking to link to this virtual
+                                          description: |-
+                                            AllowGatewayTransit specifies if gateway links can be used in remote virtual networking to link to this virtual
                                             network.
                                           type: boolean
                                         allowVirtualNetworkAccess:
-                                          description: AllowVirtualNetworkAccess specifies
-                                            whether the VMs in the local virtual network
-                                            space would be able to access the VMs
-                                            in remote virtual network space.
+                                          description: |-
+                                            AllowVirtualNetworkAccess specifies whether the VMs in the local virtual network space would be able to access
+                                            the VMs in remote virtual network space.
                                           type: boolean
                                         useRemoteGateways:
-                                          description: UseRemoteGateways specifies
-                                            if remote gateways can be used on this
-                                            virtual network. If the flag is set to
-                                            true, and allowGatewayTransit on remote
-                                            peering is also set to true, the virtual
-                                            network will use the gateways of the remote
-                                            virtual network for transit. Only one
-                                            peering can have this flag set to true.
-                                            This flag cannot be set if virtual network
-                                            already has a gateway.
+                                          description: |-
+                                            UseRemoteGateways specifies if remote gateways can be used on this virtual network.
+                                            If the flag is set to true, and allowGatewayTransit on remote peering is also set to true, the virtual network
+                                            will use the gateways of the remote virtual network for transit. Only one peering can have this flag set to true.
+                                            This flag cannot be set if virtual network already has a gateway.
                                           type: boolean
                                       type: object
                                   required:
