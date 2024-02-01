@@ -15,7 +15,7 @@
  */
 
 /*
- * IBM OpenAPI SDK Code Generator Version: 3.84.0-a4533f12-20240103-170852
+ * IBM OpenAPI SDK Code Generator Version: 3.84.1-55f6d880-20240110-194020
  */
 
 // Package iampolicymanagementv1 : Operations and models for the IamPolicyManagementV1 service
@@ -6454,8 +6454,9 @@ type V2PolicySubjectAttribute struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator" validate:"required"`
 
-	// The value of the ID of the subject, e.g., service ID, access group ID, IAM ID.
-	Value *string `json:"value" validate:"required"`
+	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
+	// array of strings (e.g., array of days to permit access) for rule attribute.
+	Value interface{} `json:"value" validate:"required"`
 }
 
 // Constants associated with the V2PolicySubjectAttribute.Operator property.
@@ -6465,11 +6466,11 @@ const (
 )
 
 // NewV2PolicySubjectAttribute : Instantiate V2PolicySubjectAttribute (Generic Model Constructor)
-func (*IamPolicyManagementV1) NewV2PolicySubjectAttribute(key string, operator string, value string) (_model *V2PolicySubjectAttribute, err error) {
+func (*IamPolicyManagementV1) NewV2PolicySubjectAttribute(key string, operator string, value interface{}) (_model *V2PolicySubjectAttribute, err error) {
 	_model = &V2PolicySubjectAttribute{
 		Key: core.StringPtr(key),
 		Operator: core.StringPtr(operator),
-		Value: core.StringPtr(value),
+		Value: value,
 	}
 	err = core.ValidateStruct(_model, "required parameters")
 	return
