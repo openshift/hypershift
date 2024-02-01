@@ -862,14 +862,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
-	if util.IsPrivateHCP(hostedControlPlane) {
-		r.Log.Info("Removing private IngressController")
-		// Ensure that if an ingress controller exists from a previous version, it is removed
-		if err := r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
-		}
-	}
-
 	r.Log.Info("Reconciling infrastructure services")
 	if err := r.reconcileInfrastructure(ctx, hostedControlPlane, createOrUpdate); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to ensure infrastructure: %w", err)
@@ -3769,18 +3761,6 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
 	}
 
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(ic), ic); err == nil {
-		if err = r.Delete(ctx, ic); err != nil {
-			return fmt.Errorf("failed to delete private ingress controller: %w", err)
-		}
-	} else if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to get private ingress controller: %w", err)
-	}
 	return nil
 }
 
