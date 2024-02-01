@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"k8s.io/utils/pointer"
 )

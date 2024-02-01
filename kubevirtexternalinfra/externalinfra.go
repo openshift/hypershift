@@ -18,7 +18,7 @@ import (
 	cr "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 type KubevirtInfraClientMap interface {

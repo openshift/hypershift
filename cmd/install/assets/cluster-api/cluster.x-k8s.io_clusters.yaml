@@ -19,6 +19,11 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - description: ClusterClass of this Cluster, empty if the Cluster is not using
+        a ClusterClass
+      jsonPath: .spec.topology.class
+      name: ClusterClass
+      type: string
     - description: Cluster status such as Pending/Provisioning/Provisioned/Deleting/Failed
       jsonPath: .status.phase
       name: Phase
@@ -700,13 +705,9 @@ spec:
                                       x-kubernetes-int-or-string: true
                                   type: object
                                 type:
-<<<<<<< HEAD
                                   description: |-
                                     Type of deployment. Allowed values are RollingUpdate and OnDelete.
                                     The default is RollingUpdate.
-=======
-                                  description: Type of deployment. Default is RollingUpdate.
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                                   enum:
                                   - RollingUpdate
                                   - OnDelete
@@ -755,7 +756,6 @@ spec:
                           - name
                           type: object
                         type: array
-<<<<<<< HEAD
                       machinePools:
                         description: MachinePools is a list of machine pools in the
                           cluster.
@@ -884,8 +884,6 @@ spec:
                           - name
                           type: object
                         type: array
-=======
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                     type: object
                 required:
                 - class

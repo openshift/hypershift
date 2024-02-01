@@ -6,8 +6,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/blang/semver"
-	hyperv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/util"
 )

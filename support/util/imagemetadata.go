@@ -12,7 +12,7 @@ import (
 	"github.com/golang/groupcache/lru"
 	"k8s.io/client-go/rest"
 
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"

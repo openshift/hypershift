@@ -21,7 +21,7 @@ trap "rm -rf ${PROJECT_ROOT}/github.com" EXIT
 kube::codegen::gen_client \
     --with-watch \
     --with-applyconfig \
-    --input-pkg-root github.com/openshift/hypershift/api/types \
+    --input-pkg-root github.com/openshift/hypershift/api \
     --output-pkg-root github.com/openshift/hypershift/client \
     --output-base "$(dirname "${BASH_SOURCE[0]}")/.." \
     --versioned-name clientset \

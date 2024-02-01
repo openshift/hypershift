@@ -7,7 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	v1 "github.com/openshift/api/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"

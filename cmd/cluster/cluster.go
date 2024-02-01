@@ -3,7 +3,7 @@ package cluster
 import (
 	"time"
 
-	"github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"github.com/spf13/cobra"
 

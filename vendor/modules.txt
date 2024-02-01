@@ -828,12 +828,12 @@ github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1
 github.com/openshift/custom-resource-status/conditions/v1
 # github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000 => ./api
 ## explicit; go 1.21
-github.com/openshift/hypershift/api/types/certificates
-github.com/openshift/hypershift/api/types/certificates/v1alpha1
-github.com/openshift/hypershift/api/types/hypershift
-github.com/openshift/hypershift/api/types/hypershift/v1alpha1
-github.com/openshift/hypershift/api/types/hypershift/v1beta1
-github.com/openshift/hypershift/api/types/ibmcapi
+github.com/openshift/hypershift/api/certificates
+github.com/openshift/hypershift/api/certificates/v1alpha1
+github.com/openshift/hypershift/api/hypershift
+github.com/openshift/hypershift/api/hypershift/v1alpha1
+github.com/openshift/hypershift/api/hypershift/v1beta1
+github.com/openshift/hypershift/api/ibmcapi
 github.com/openshift/hypershift/api/util/configrefs
 github.com/openshift/hypershift/api/util/ipnet
 # github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
@@ -2108,7 +2108,7 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.6.1 => sigs.k8s.io/cluster-api v1.5.3
+# sigs.k8s.io/cluster-api v1.6.1
 ## explicit; go 1.20
 sigs.k8s.io/cluster-api/api/v1beta1
 sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
@@ -2121,10 +2121,8 @@ sigs.k8s.io/cluster-api/util/annotations
 sigs.k8s.io/cluster-api/util/conditions
 sigs.k8s.io/cluster-api/util/contract
 sigs.k8s.io/cluster-api/util/conversion
-sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
 sigs.k8s.io/cluster-api/util/topology
-sigs.k8s.io/cluster-api/util/version
 # sigs.k8s.io/cluster-api-provider-aws/v2 v2.3.1
 ## explicit; go 1.20
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
@@ -2142,7 +2140,7 @@ sigs.k8s.io/cluster-api-provider-azure/feature
 sigs.k8s.io/cluster-api-provider-azure/util/azure
 sigs.k8s.io/cluster-api-provider-azure/util/ssh
 sigs.k8s.io/cluster-api-provider-azure/util/webhook
-# sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0 => sigs.k8s.io/cluster-api-provider-ibmcloud v0.6.0
+# sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
 ## explicit; go 1.20
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
@@ -2307,5 +2305,3 @@ sigs.k8s.io/yaml/goyaml.v2
 # kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 # kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.1
-# sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.5.3
-# sigs.k8s.io/cluster-api-provider-ibmcloud => sigs.k8s.io/cluster-api-provider-ibmcloud v0.6.0

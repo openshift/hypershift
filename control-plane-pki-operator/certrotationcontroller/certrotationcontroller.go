@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"time"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftv1beta1client "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-pki-operator/clienthelpers"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"

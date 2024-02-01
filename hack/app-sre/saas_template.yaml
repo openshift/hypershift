@@ -1595,7 +1595,6 @@ objects:
                                             type: string
                                           type: array
                                       type: object
-<<<<<<< HEAD
                                     machinePoolClass:
                                       description: |-
                                         MachinePoolClass selects templates referenced in specific MachinePoolClasses in
@@ -1608,8 +1607,6 @@ objects:
                                             type: string
                                           type: array
                                       type: object
-=======
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                                   type: object
                               required:
                               - apiVersion
@@ -2069,13 +2066,9 @@ objects:
                                     x-kubernetes-int-or-string: true
                                 type: object
                               type:
-<<<<<<< HEAD
                                 description: |-
                                   Type of deployment. Allowed values are RollingUpdate and OnDelete.
                                   The default is RollingUpdate.
-=======
-                                description: Type of deployment. Default is RollingUpdate.
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                                 enum:
                                 - RollingUpdate
                                 - OnDelete
@@ -2227,7 +2220,6 @@ objects:
                         - template
                         type: object
                       type: array
-<<<<<<< HEAD
                     machinePools:
                       description: |-
                         MachinePools is a list of machine pool classes that can be used to create
@@ -2442,8 +2434,6 @@ objects:
                         - template
                         type: object
                       type: array
-=======
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                   type: object
               type: object
             status:
@@ -2721,6 +2711,11 @@ objects:
     scope: Namespaced
     versions:
     - additionalPrinterColumns:
+      - description: ClusterClass of this Cluster, empty if the Cluster is not using
+          a ClusterClass
+        jsonPath: .spec.topology.class
+        name: ClusterClass
+        type: string
       - description: Cluster status such as Pending/Provisioning/Provisioned/Deleting/Failed
         jsonPath: .status.phase
         name: Phase
@@ -3404,13 +3399,9 @@ objects:
                                         x-kubernetes-int-or-string: true
                                     type: object
                                   type:
-<<<<<<< HEAD
                                     description: |-
                                       Type of deployment. Allowed values are RollingUpdate and OnDelete.
                                       The default is RollingUpdate.
-=======
-                                    description: Type of deployment. Default is RollingUpdate.
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                                     enum:
                                     - RollingUpdate
                                     - OnDelete
@@ -3459,7 +3450,6 @@ objects:
                             - name
                             type: object
                           type: array
-<<<<<<< HEAD
                         machinePools:
                           description: MachinePools is a list of machine pools in
                             the cluster.
@@ -3588,8 +3578,6 @@ objects:
                             - name
                             type: object
                           type: array
-=======
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                       type: object
                   required:
                   - class
@@ -3958,13 +3946,9 @@ objects:
                           x-kubernetes-int-or-string: true
                       type: object
                     type:
-<<<<<<< HEAD
                       description: |-
                         Type of deployment. Allowed values are RollingUpdate and OnDelete.
                         The default is RollingUpdate.
-=======
-                      description: Type of deployment. Default is RollingUpdate.
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                       enum:
                       - RollingUpdate
                       - OnDelete
@@ -25196,6 +25180,8 @@ objects:
                     address:
                       type: string
                     floatingIPID:
+                      description: 'Deprecated: This field has no function and is
+                        going to be removed in the next release.'
                       type: string
                     loadBalancerIPID:
                       type: string
@@ -25377,6 +25363,8 @@ objects:
                     address:
                       type: string
                     floatingIPID:
+                      description: 'Deprecated: This field has no function and is
+                        going to be removed in the next release.'
                       type: string
                     loadBalancerIPID:
                       type: string
@@ -25401,7 +25389,6 @@ objects:
     annotations:
       controller-gen.kubebuilder.io/version: v0.14.0
     creationTimestamp: null
-<<<<<<< HEAD
     name: ibmvpcclustertemplates.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -25543,8 +25530,6 @@ objects:
     annotations:
       controller-gen.kubebuilder.io/version: v0.14.0
     creationTimestamp: null
-=======
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
     name: ibmvpcmachines.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io

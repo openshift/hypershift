@@ -3,7 +3,7 @@ package controlplanepkioperator
 import (
 	"fmt"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 

@@ -250,13 +250,9 @@ spec:
                         x-kubernetes-int-or-string: true
                     type: object
                   type:
-<<<<<<< HEAD
                     description: |-
                       Type of deployment. Allowed values are RollingUpdate and OnDelete.
                       The default is RollingUpdate.
-=======
-                    description: Type of deployment. Default is RollingUpdate.
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                     enum:
                     - RollingUpdate
                     - OnDelete

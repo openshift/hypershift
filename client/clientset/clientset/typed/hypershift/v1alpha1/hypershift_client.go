@@ -20,7 +20,7 @@ package v1alpha1
 import (
 	"net/http"
 
-	v1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
+	v1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	"github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	rest "k8s.io/client-go/rest"
 )

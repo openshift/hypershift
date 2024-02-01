@@ -28,8 +28,8 @@ import (
 	"fmt"
 	"net/http"
 
-	hyperv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
-	hyperv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	apix "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

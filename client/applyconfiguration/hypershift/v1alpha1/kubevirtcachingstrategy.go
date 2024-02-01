@@ -18,7 +18,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
+	v1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 )
 
 // KubevirtCachingStrategyApplyConfiguration represents an declarative configuration of the KubevirtCachingStrategy type for use

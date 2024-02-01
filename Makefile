@@ -20,7 +20,6 @@ PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
-GO_NO_VENDOR=GO111MODULE=on GOFLAGS=-mod=mod go
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
@@ -95,9 +94,9 @@ api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ib
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/types/..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	rm -rf cmd/install/assets/hypershift-operator/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/types/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 .PHONY: cluster-api
 cluster-api: $(CONTROLLER_GEN)

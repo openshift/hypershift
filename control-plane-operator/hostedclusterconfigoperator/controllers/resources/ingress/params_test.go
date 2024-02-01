@@ -5,7 +5,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	v1 "github.com/openshift/api/operator/v1"
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	. "github.com/onsi/gomega"

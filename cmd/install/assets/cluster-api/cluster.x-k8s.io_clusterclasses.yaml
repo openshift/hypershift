@@ -497,7 +497,6 @@ spec:
                                           type: string
                                         type: array
                                     type: object
-<<<<<<< HEAD
                                   machinePoolClass:
                                     description: |-
                                       MachinePoolClass selects templates referenced in specific MachinePoolClasses in
@@ -510,8 +509,6 @@ spec:
                                           type: string
                                         type: array
                                     type: object
-=======
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                                 type: object
                             required:
                             - apiVersion
@@ -971,13 +968,9 @@ spec:
                                   x-kubernetes-int-or-string: true
                               type: object
                             type:
-<<<<<<< HEAD
                               description: |-
                                 Type of deployment. Allowed values are RollingUpdate and OnDelete.
                                 The default is RollingUpdate.
-=======
-                              description: Type of deployment. Default is RollingUpdate.
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                               enum:
                               - RollingUpdate
                               - OnDelete
@@ -1129,7 +1122,6 @@ spec:
                       - template
                       type: object
                     type: array
-<<<<<<< HEAD
                   machinePools:
                     description: |-
                       MachinePools is a list of machine pool classes that can be used to create
@@ -1344,8 +1336,6 @@ spec:
                       - template
                       type: object
                     type: array
-=======
->>>>>>> fe0c9b3f6 (HOSTEDCP-336: Hypershift API separation)
                 type: object
             type: object
           status:

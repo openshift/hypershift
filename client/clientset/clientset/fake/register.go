@@ -18,9 +18,9 @@ limitations under the License.
 package fake
 
 import (
-	certificatesv1alpha1 "github.com/openshift/hypershift/api/types/certificates/v1alpha1"
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

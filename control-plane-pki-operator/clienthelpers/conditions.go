@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftv1beta1client "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/condition"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
+	clientgoapplyconfig "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 func NewHostedControlPlaneStatusReporter(name, namespace string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
@@ -67,13 +67,14 @@ func UpdateHostedControlPlaneStatusCondition(ctx context.Context, newCondition m
 	}
 
 	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(name, namespace).
-		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().WithConditions(metav1applyconfigurations.Condition().
-			WithType(newCondition.Type).
-			WithStatus(newCondition.Status).
-			WithLastTransitionTime(newCondition.LastTransitionTime).
-			WithReason(newCondition.Reason).
-			WithMessage(newCondition.Message),
-		))
+		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().WithConditions(
+			&clientgoapplyconfig.ConditionApplyConfiguration{
+				Type:               &newCondition.Type,
+				Status:             &newCondition.Status,
+				Reason:             &newCondition.Reason,
+				Message:            &newCondition.Message,
+				LastTransitionTime: &newCondition.LastTransitionTime,
+			}))
 
 	_, updateErr := client.HostedControlPlanes(namespace).ApplyStatus(ctx, cfg, metav1.ApplyOptions{FieldManager: fieldManager})
 	return true, updateErr

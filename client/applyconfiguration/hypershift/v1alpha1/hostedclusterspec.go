@@ -18,7 +18,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
+	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 )
 

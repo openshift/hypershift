@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"

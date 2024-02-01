@@ -9,7 +9,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
 
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	supportutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"

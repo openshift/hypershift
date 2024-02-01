@@ -69,7 +69,7 @@ updates:
     commit-message:
       prefix: "NO-JIRA"
     labels:
-      - "area/api"
+      - "area/ci-tooling"
       - "ok-to-test"
     groups:
       github-dependencies:

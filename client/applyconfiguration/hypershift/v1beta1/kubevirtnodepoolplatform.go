@@ -18,7 +18,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 // KubevirtNodePoolPlatformApplyConfiguration represents an declarative configuration of the KubevirtNodePoolPlatform type for use

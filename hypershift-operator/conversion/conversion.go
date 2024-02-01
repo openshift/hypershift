@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
-	hyperv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
-	hyperv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	corev1 "k8s.io/api/core/v1"
