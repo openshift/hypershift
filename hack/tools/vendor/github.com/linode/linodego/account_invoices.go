@@ -18,7 +18,7 @@ type Invoice struct {
 	Date  *time.Time `json:"-"`
 }
 
-// InvoiceItem structs reflect an single billable activity associate with an Invoice
+// InvoiceItem structs reflect a single billable activity associate with an Invoice
 type InvoiceItem struct {
 	Label     string     `json:"label"`
 	Type      string     `json:"type"`
@@ -105,7 +105,7 @@ func (i *InvoiceItem) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// GetInvoice gets the a single Invoice matching the provided ID
+// GetInvoice gets a single Invoice matching the provided ID
 func (c *Client) GetInvoice(ctx context.Context, invoiceID int) (*Invoice, error) {
 	req := c.R(ctx).SetResult(&Invoice{})
 	e := fmt.Sprintf("account/invoices/%d", invoiceID)

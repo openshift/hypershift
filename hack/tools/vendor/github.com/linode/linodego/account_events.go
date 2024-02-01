@@ -183,6 +183,12 @@ const (
 	ActionVolumeUpdate                            EventAction = "volume_update"
 	ActionVolumeDetach                            EventAction = "volume_detach"
 	ActionVolumeResize                            EventAction = "volume_resize"
+	ActionVPCCreate                               EventAction = "vpc_create"
+	ActionVPCDelete                               EventAction = "vpc_delete"
+	ActionVPCUpdate                               EventAction = "vpc_update"
+	ActionVPCSubnetCreate                         EventAction = "subnet_create"
+	ActionVPCSubnetDelete                         EventAction = "subnet_delete"
+	ActionVPCSubnetUpdate                         EventAction = "subnet_update"
 
 	// deprecated due to incorrect spelling,
 	// to be removed in the next major version release.
@@ -200,6 +206,8 @@ const (
 	EntityDomain       EntityType = "domain"
 	EntityFirewall     EntityType = "firewall"
 	EntityNodebalancer EntityType = "nodebalancer"
+	EntityVPC          EntityType = "vpc"
+	EntityVPCSubnet    EntityType = "subnet"
 )
 
 // EventStatus constants start with Event and include Linode API Event Status values
