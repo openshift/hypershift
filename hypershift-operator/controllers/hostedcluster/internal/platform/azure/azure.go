@@ -251,7 +251,7 @@ func reconcileAzureClusterIdentity(ctx context.Context, c client.Client, hcluste
 		ClientID:     string(credentialsSecret.Data["AZURE_CLIENT_ID"]),
 		ClientSecret: corev1.SecretReference{Name: "azure-client-secret", Namespace: controlPlaneNamespace},
 		TenantID:     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
-		Type:         capiazure.ManualServicePrincipal,
+		Type:         capiazure.ServicePrincipal,
 		AllowedNamespaces: &capiazure.AllowedNamespaces{
 			NamespaceList: []string{
 				controlPlaneNamespace,
