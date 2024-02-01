@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -46,32 +45,32 @@ var (
 )
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSClusterStaticIdentity) ValidateCreate() (admission.Warnings, error) {
+func (r *AWSClusterStaticIdentity) ValidateCreate() error {
 	// Validate selector parses as Selector
 	if r.Spec.AllowedNamespaces != nil {
 		_, err := metav1.LabelSelectorAsSelector(&r.Spec.AllowedNamespaces.Selector)
 		if err != nil {
-			return nil, field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
+			return field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSClusterStaticIdentity) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AWSClusterStaticIdentity) ValidateDelete() error {
+	return nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSClusterStaticIdentity) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (r *AWSClusterStaticIdentity) ValidateUpdate(old runtime.Object) error {
 	oldP, ok := old.(*AWSClusterStaticIdentity)
 	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected an AWSClusterStaticIdentity but got a %T", old))
+		return apierrors.NewBadRequest(fmt.Sprintf("expected an AWSClusterStaticIdentity but got a %T", old))
 	}
 
 	if oldP.Spec.SecretRef != r.Spec.SecretRef {
-		return nil, field.Invalid(field.NewPath("spec", "secretRef"),
+		return field.Invalid(field.NewPath("spec", "secretRef"),
 			r.Spec.SecretRef, "field cannot be updated")
 	}
 
@@ -79,11 +78,11 @@ func (r *AWSClusterStaticIdentity) ValidateUpdate(old runtime.Object) (admission
 	if r.Spec.AllowedNamespaces != nil {
 		_, err := metav1.LabelSelectorAsSelector(&r.Spec.AllowedNamespaces.Selector)
 		if err != nil {
-			return nil, field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
+			return field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
 // Default should return the default AWSClusterStaticIdentity.
