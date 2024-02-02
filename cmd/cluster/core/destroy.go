@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/util"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -103,10 +104,26 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
 	if hostedClusterExists {
+
+		original := hostedCluster.DeepCopy()
 		if shouldDestroyPlatformSpecifics {
-			err = setFinalizer(ctx, hostedCluster, o, c)
-			if err != nil {
-				return err
+			setFinalizer(hostedCluster, o)
+		}
+		if o.DestroyCloudResources {
+			setDestroyCloudResourcesAnnotation(hostedCluster, o)
+		}
+
+		// if the hostedcluster is needs to be modified during deletion, patch the
+		// hosted cluster before deleting it.
+		if !equality.Semantic.DeepEqual(&hostedCluster, original) {
+			if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
+				if apierrors.IsNotFound(err) {
+					o.Log.Info("Hosted cluster not found, skipping client updates", "namespace", o.Namespace, "name", o.Name)
+				} else if !strings.Contains(err.Error(), "no new finalizers can be added if the object is being deleted") {
+					return fmt.Errorf("failed to add client finalizer to hosted cluster: %w", err)
+				}
+			} else {
+				o.Log.Info("Updated hosted cluster", "namespace", o.Namespace, "name", o.Name)
 			}
 		}
 
@@ -216,32 +233,22 @@ func waitForRestOfFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedC
 	return nil
 }
 
-func setFinalizer(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
-	if sets.New[string](hostedCluster.Finalizers...).Has(destroyFinalizer) {
-		return nil
+func setDestroyCloudResourcesAnnotation(hostedCluster *hyperv1.HostedCluster, o *DestroyOptions) {
+	if hostedCluster.Annotations == nil {
+		hostedCluster.Annotations = map[string]string{}
 	}
+	hostedCluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation] = "true"
+	o.Log.Info("Marking cleanup of cloud resources for hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
+}
 
-	original := hostedCluster.DeepCopy()
+func setFinalizer(hostedCluster *hyperv1.HostedCluster, o *DestroyOptions) {
+	if sets.New[string](hostedCluster.Finalizers...).Has(destroyFinalizer) {
+		return
+	}
 	if hostedCluster.DeletionTimestamp == nil {
 		controllerutil.AddFinalizer(hostedCluster, destroyFinalizer)
 	}
-	if o.DestroyCloudResources {
-		if hostedCluster.Annotations == nil {
-			hostedCluster.Annotations = map[string]string{}
-		}
-		hostedCluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation] = "true"
-	}
-	if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
-		if apierrors.IsNotFound(err) {
-			o.Log.Info("Hosted cluster not found, skipping finalizer update", "namespace", o.Namespace, "name", o.Name)
-		} else if !strings.Contains(err.Error(), "no new finalizers can be added if the object is being deleted") {
-			return fmt.Errorf("failed to add finalizer to hosted cluster: %w", err)
-		}
-	} else {
-		o.Log.Info("Updated finalizer for hosted cluster", "namespace", o.Namespace, "name", o.Name)
-	}
-
-	return nil
+	o.Log.Info("Setting client finalizer for hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 }
 
 func waitForClusterDeletion(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
