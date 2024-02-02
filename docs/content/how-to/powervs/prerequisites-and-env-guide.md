@@ -49,7 +49,7 @@ API Key used should have below services with respective roles for hypershift clu
 Need to have existing CIS Domain in [IBM Cloud Internet Services](https://cloud.ibm.com/docs/cis) which can be used as a `BASEDOMAIN` while creating the cluster.
 
 ## Region and Zones
-Refer [this](https://cluster-api-ibmcloud.sigs.k8s.io/reference/regions-zones-mapping.html) to get possible region and zone values. Substitute those with `REGION` `ZONE` and `VPC_REGION` while creating the cluster.
+Refer [this](https://cluster-api-ibmcloud.sigs.k8s.io/reference/regions-zones-mapping.html) to get possible region and zone values. Substitute those with `REGION` `ZONE` `VPC_REGION` and `TRANSIT_GATEWAY_LOCATION` while creating the cluster.
 
 ## Release Image
 Use [this](https://multi.ocp.releases.ci.openshift.org) to get latest multi arch nightly build as release image. Substitute it with `RELEASE_IMAGE` while creating the cluster.

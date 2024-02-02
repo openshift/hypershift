@@ -48,6 +48,24 @@ where
 
 Running this command will create [infra](create-infra-separately.md) and manifests for the hosted cluster and deploys it.
 
+## Utilizing Power Edge Router(PER) via Transit Gateway
+To use IBM Cloud's PER feature via transit gateway, need to pass `--use-power-edge-router` and `--transit-gateway-location $TRANSIT_GATEWAY_LOCATION` flags to create cluster command like below.
+
+    TRANSIT_GATEWAY_LOCATION=us-south
+    ./bin/hypershift create cluster powervs \
+        --name $CLUSTER_NAME \
+        --region $REGION \
+        --zone $ZONE \
+        --vpc-region $VPC_REGION \
+        --base-domain $BASEDOMAIN \
+        --resource-group $RESOURCE_GROUP \
+        --release-image $RELEASE_IMAGE
+        --pull-secret $PULL_SECRET \
+        --node-pool-replicas=2 \
+        --use-power-edge-router \
+        --transit-gateway-location $TRANSIT_GATEWAY_LOCATION
+
+Read [here](https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-per) to know more about PER and data centers where its deployed currently.
 
 !!! important
 

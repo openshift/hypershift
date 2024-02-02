@@ -28,13 +28,14 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.PowerVSPlatform = core.PowerVSPlatformOptions{
-		Region:     "us-south",
-		Zone:       "us-south",
-		VPCRegion:  "us-south",
-		SysType:    "s922",
-		ProcType:   hyperv1.PowerVSNodePoolSharedProcType,
-		Processors: "0.5",
-		Memory:     32,
+		Region:                 "us-south",
+		Zone:                   "us-south",
+		VPCRegion:              "us-south",
+		TransitGatewayLocation: "us-south",
+		SysType:                "s922",
+		ProcType:               hyperv1.PowerVSNodePoolSharedProcType,
+		Processors:             "0.5",
+		Memory:                 32,
 	}
 
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.ResourceGroup, "resource-group", "", "IBM Cloud Resource group")
@@ -50,6 +51,9 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().Int32Var(&opts.PowerVSPlatform.Memory, "memory", opts.PowerVSPlatform.Memory, "Amount of memory allocated (in GB). Default is 32")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.RecreateSecrets, "recreate-secrets", opts.PowerVSPlatform.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
+	cmd.Flags().BoolVar(&opts.PowerVSPlatform.PER, "power-edge-router", opts.PowerVSPlatform.PER, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.TransitGatewayLocation, "transit-gateway-location", opts.PowerVSPlatform.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.TransitGateway, "transit-gateway", opts.PowerVSPlatform.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 
 	cmd.MarkFlagRequired("resource-group")
 	cmd.MarkPersistentFlagRequired("pull-secret")
@@ -59,6 +63,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().MarkHidden("cloud-instance-id")
 	cmd.Flags().MarkHidden("cloud-connection")
 	cmd.Flags().MarkHidden("vpc")
+	cmd.Flags().MarkHidden("transit-gateway")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -113,22 +118,29 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return fmt.Errorf("resource-group flag is required if infra-json is not provided")
 	}
 
+	if opts.PowerVSPlatform.PER && opts.PowerVSPlatform.TransitGatewayLocation == "" {
+		return fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
+	}
+
 	if infra == nil {
 		opt := &powervsinfra.CreateInfraOptions{
-			Name:            opts.Name,
-			Namespace:       opts.Namespace,
-			BaseDomain:      opts.BaseDomain,
-			ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
-			InfraID:         infraID,
-			OutputFile:      opts.InfrastructureJSON,
-			Region:          opts.PowerVSPlatform.Region,
-			Zone:            opts.PowerVSPlatform.Zone,
-			CloudInstanceID: opts.PowerVSPlatform.CloudInstanceID,
-			CloudConnection: opts.PowerVSPlatform.CloudConnection,
-			VPCRegion:       opts.PowerVSPlatform.VPCRegion,
-			VPC:             opts.PowerVSPlatform.VPC,
-			Debug:           opts.PowerVSPlatform.Debug,
-			RecreateSecrets: opts.PowerVSPlatform.RecreateSecrets,
+			Name:                   opts.Name,
+			Namespace:              opts.Namespace,
+			BaseDomain:             opts.BaseDomain,
+			ResourceGroup:          opts.PowerVSPlatform.ResourceGroup,
+			InfraID:                infraID,
+			OutputFile:             opts.InfrastructureJSON,
+			Region:                 opts.PowerVSPlatform.Region,
+			Zone:                   opts.PowerVSPlatform.Zone,
+			CloudInstanceID:        opts.PowerVSPlatform.CloudInstanceID,
+			CloudConnection:        opts.PowerVSPlatform.CloudConnection,
+			VPCRegion:              opts.PowerVSPlatform.VPCRegion,
+			VPC:                    opts.PowerVSPlatform.VPC,
+			Debug:                  opts.PowerVSPlatform.Debug,
+			RecreateSecrets:        opts.PowerVSPlatform.RecreateSecrets,
+			PER:                    opts.PowerVSPlatform.PER,
+			TransitGatewayLocation: opts.PowerVSPlatform.TransitGatewayLocation,
+			TransitGateway:         opts.PowerVSPlatform.TransitGateway,
 		}
 		infra = &powervsinfra.Infra{
 			ID:            infraID,
