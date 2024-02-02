@@ -190,6 +190,9 @@ func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string) {
 // setNodeSpread sets PodAntiAffinity with corev1.LabelHostname as the topology key for a given set of labels.
 // This is useful to e.g ensure pods are spread across nodes.
 func (c *DeploymentConfig) setNodeSpread(labels map[string]string) {
+	if labels == nil {
+		return
+	}
 	if c.Scheduling.Affinity == nil {
 		c.Scheduling.Affinity = &corev1.Affinity{}
 	}
