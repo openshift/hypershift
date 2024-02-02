@@ -87,6 +87,24 @@ func TestConfigMapRefs(t *testing.T) {
 			refs: []string{"oauthmetadataref"},
 		},
 		{
+			name: "oidc provider",
+			config: &hyperv1.ClusterConfiguration{
+				Authentication: &configv1.AuthenticationSpec{
+					Type: configv1.AuthenticationTypeOIDC,
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Issuer: configv1.TokenIssuer{
+								CertificateAuthority: configv1.ConfigMapNameReference{
+									Name: "issuercaref",
+								},
+							},
+						},
+					},
+				},
+			},
+			refs: []string{"issuercaref"},
+		},
+		{
 			name: "image ca",
 			config: &hyperv1.ClusterConfiguration{
 				Image: &configv1.ImageSpec{
@@ -365,6 +383,26 @@ func TestSecretRefs(t *testing.T) {
 				},
 			},
 			refs: []string{"serving-cert1", "serving-cert2"},
+		},
+		{
+			name: "oidc client secret",
+			config: &hyperv1.ClusterConfiguration{
+				Authentication: &configv1.AuthenticationSpec{
+					Type: configv1.AuthenticationTypeOIDC,
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							OIDCClients: []configv1.OIDCClientConfig{
+								{
+									ClientSecret: configv1.SecretNameReference{
+										Name: "clientsecretref",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			refs: []string{"clientsecretref"},
 		},
 		{
 			name: "idp refs",

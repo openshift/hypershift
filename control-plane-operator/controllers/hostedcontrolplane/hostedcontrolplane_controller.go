@@ -2538,7 +2538,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if !util.HCPOAuthEnabled(hcp) &&
 		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
 		hcp.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name != "" {
-		oidcCA = &corev1.LocalObjectReference{Name: manifests.OIDCCAConfigMap("").Name}
+		// This is needed for version skew between HO and CPO.  Older versions of the HO wrote the CA to a fixed
+		// oidc-ca configmap.  Newer versions just copy the configmap with its original name.
+		name := hcp.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name
+		err := r.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: name}, &corev1.ConfigMap{})
+		if err != nil {
+			oidcCA = &corev1.LocalObjectReference{Name: manifests.OIDCCAConfigMap("").Name}
+		} else {
+			oidcCA = &corev1.LocalObjectReference{Name: name}
+		}
 	}
 
 	if _, err := createOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
