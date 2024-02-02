@@ -9,5 +9,5 @@ func ReconcileCloudCredentialConfig(cfg *operatorv1.CloudCredential) {
 		cfg.Spec.ManagementState = operatorv1.Managed
 	}
 
-	cfg.Spec.CredentialsMode = operatorv1.CloudCredentialsModeDefault
+	cfg.Spec.CredentialsMode = operatorv1.CloudCredentialsModeManual
 }
