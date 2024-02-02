@@ -974,6 +974,10 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 		status = corev1.ConditionFalse
 		reason = hyperv1.NodePoolNotFoundReason
 		message = "No Machines are created"
+		if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
+			reason = hyperv1.AsExpectedReason
+			message = "NodePool set to no replicas"
+		}
 	}
 
 	for _, machine := range machines {
@@ -1008,6 +1012,10 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 		status = corev1.ConditionFalse
 		reason = hyperv1.NodePoolNotFoundReason
 		message = "No Machines are created"
+		if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
+			reason = hyperv1.AsExpectedReason
+			message = "NodePool set to no replicas"
+		}
 	} else {
 		// Aggregate conditions.
 		// TODO (alberto): consider bubbling failureReason / failureMessage.
