@@ -1,3 +1,7 @@
+# github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
+## explicit
+github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute
+github.com/Azure/azure-sdk-for-go/version
 # github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.1
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/azcore
@@ -40,9 +44,6 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthoriza
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.4.0
-## explicit; go 1.18
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns
@@ -90,6 +91,9 @@ github.com/Azure/go-autorest/autorest/azure/cli
 # github.com/Azure/go-autorest/autorest/date v0.3.0
 ## explicit; go 1.12
 github.com/Azure/go-autorest/autorest/date
+# github.com/Azure/go-autorest/autorest/to v0.4.0
+## explicit; go 1.12
+github.com/Azure/go-autorest/autorest/to
 # github.com/Azure/go-autorest/autorest/validation v0.3.1
 ## explicit; go 1.12
 github.com/Azure/go-autorest/autorest/validation
@@ -122,7 +126,7 @@ github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/version
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/public
-# github.com/IBM-Cloud/power-go-client v1.5.6
+# github.com/IBM-Cloud/power-go-client v1.5.8
 ## explicit; go 1.20
 github.com/IBM-Cloud/power-go-client/clients/instance
 github.com/IBM-Cloud/power-go-client/errors
@@ -175,7 +179,7 @@ github.com/IBM-Cloud/power-go-client/power/models
 # github.com/IBM/go-sdk-core/v5 v5.15.1
 ## explicit; go 1.19
 github.com/IBM/go-sdk-core/v5/core
-# github.com/IBM/ibm-cos-sdk-go v1.9.4
+# github.com/IBM/ibm-cos-sdk-go v1.10.1
 ## explicit; go 1.11
 github.com/IBM/ibm-cos-sdk-go/aws
 github.com/IBM/ibm-cos-sdk-go/aws/arn
@@ -225,7 +229,7 @@ github.com/IBM/networking-go-sdk/directlinkv1
 github.com/IBM/networking-go-sdk/dnsrecordsv1
 github.com/IBM/networking-go-sdk/transitgatewayapisv1
 github.com/IBM/networking-go-sdk/zonesv1
-# github.com/IBM/platform-services-go-sdk v0.56.3
+# github.com/IBM/platform-services-go-sdk v0.56.4
 ## explicit; go 1.19
 github.com/IBM/platform-services-go-sdk/common
 github.com/IBM/platform-services-go-sdk/globalcatalogv1
@@ -234,7 +238,7 @@ github.com/IBM/platform-services-go-sdk/iamidentityv1
 github.com/IBM/platform-services-go-sdk/iampolicymanagementv1
 github.com/IBM/platform-services-go-sdk/resourcecontrollerv2
 github.com/IBM/platform-services-go-sdk/resourcemanagerv2
-# github.com/IBM/vpc-go-sdk v0.46.0
+# github.com/IBM/vpc-go-sdk v0.48.0
 ## explicit; go 1.18
 github.com/IBM/vpc-go-sdk/common
 github.com/IBM/vpc-go-sdk/vpcv1
@@ -253,8 +257,8 @@ github.com/armon/go-socks5
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/aws/aws-sdk-go v1.44.298
-## explicit; go 1.11
+# github.com/aws/aws-sdk-go v1.50.9
+## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
 github.com/aws/aws-sdk-go/aws/auth/bearer
@@ -342,7 +346,7 @@ github.com/chai2010/gettext-go
 github.com/chai2010/gettext-go/mo
 github.com/chai2010/gettext-go/plural
 github.com/chai2010/gettext-go/po
-# github.com/clarketm/json v1.14.1
+# github.com/clarketm/json v1.17.1
 ## explicit
 github.com/clarketm/json
 # github.com/coreos/go-semver v0.3.1
@@ -353,8 +357,8 @@ github.com/coreos/go-semver/semver
 github.com/coreos/go-systemd/v22/daemon
 github.com/coreos/go-systemd/v22/journal
 github.com/coreos/go-systemd/v22/unit
-# github.com/coreos/ignition/v2 v2.16.2
-## explicit; go 1.18
+# github.com/coreos/ignition/v2 v2.17.0
+## explicit; go 1.19
 github.com/coreos/ignition/v2/config/shared/errors
 github.com/coreos/ignition/v2/config/shared/parse
 github.com/coreos/ignition/v2/config/shared/validations
@@ -450,8 +454,8 @@ github.com/go-logr/stdr
 # github.com/go-logr/zapr v1.3.0
 ## explicit; go 1.18
 github.com/go-logr/zapr
-# github.com/go-openapi/analysis v0.21.4
-## explicit; go 1.13
+# github.com/go-openapi/analysis v0.21.5
+## explicit; go 1.19
 github.com/go-openapi/analysis
 github.com/go-openapi/analysis/internal/debug
 github.com/go-openapi/analysis/internal/flatten/normalize
@@ -469,8 +473,8 @@ github.com/go-openapi/jsonpointer
 ## explicit; go 1.19
 github.com/go-openapi/jsonreference
 github.com/go-openapi/jsonreference/internal
-# github.com/go-openapi/loads v0.21.2
-## explicit; go 1.13
+# github.com/go-openapi/loads v0.21.3
+## explicit; go 1.19
 github.com/go-openapi/loads
 # github.com/go-openapi/runtime v0.26.2
 ## explicit; go 1.19
@@ -483,8 +487,8 @@ github.com/go-openapi/runtime/middleware/header
 github.com/go-openapi/runtime/middleware/untyped
 github.com/go-openapi/runtime/security
 github.com/go-openapi/runtime/yamlpc
-# github.com/go-openapi/spec v0.20.11
-## explicit; go 1.13
+# github.com/go-openapi/spec v0.20.12
+## explicit; go 1.19
 github.com/go-openapi/spec
 # github.com/go-openapi/strfmt v0.22.0
 ## explicit; go 1.19
@@ -492,8 +496,8 @@ github.com/go-openapi/strfmt
 # github.com/go-openapi/swag v0.22.7
 ## explicit; go 1.19
 github.com/go-openapi/swag
-# github.com/go-openapi/validate v0.22.3
-## explicit; go 1.18
+# github.com/go-openapi/validate v0.22.4
+## explicit; go 1.19
 github.com/go-openapi/validate
 # github.com/go-playground/locales v0.14.1
 ## explicit; go 1.17
@@ -618,7 +622,7 @@ github.com/hashicorp/go-cleanhttp
 # github.com/hashicorp/go-retryablehttp v0.7.5
 ## explicit; go 1.13
 github.com/hashicorp/go-retryablehttp
-# github.com/hashicorp/go-uuid v1.0.1
+# github.com/hashicorp/go-uuid v1.0.3
 ## explicit
 github.com/hashicorp/go-uuid
 # github.com/imdario/mergo v0.3.16
@@ -645,8 +649,8 @@ github.com/jpillora/backoff
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
-# github.com/kubernetes-csi/external-snapshotter/client/v6 v6.0.1
-## explicit; go 1.17
+# github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
+## explicit; go 1.20
 github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1
 # github.com/kylelemons/godebug v1.1.0
 ## explicit; go 1.11
@@ -702,8 +706,8 @@ github.com/mxk/go-flowrate/flowrate
 # github.com/oklog/ulid v1.3.1
 ## explicit
 github.com/oklog/ulid
-# github.com/onsi/gomega v1.30.0
-## explicit; go 1.18
+# github.com/onsi/gomega v1.31.1
+## explicit; go 1.20
 github.com/onsi/gomega
 github.com/onsi/gomega/format
 github.com/onsi/gomega/internal
@@ -718,8 +722,8 @@ github.com/onsi/gomega/types
 ## explicit; go 1.13
 github.com/opencontainers/go-digest
 github.com/opencontainers/go-digest/digestset
-# github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
-## explicit; go 1.17
+# github.com/opencontainers/image-spec v1.1.0-rc.6
+## explicit; go 1.18
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/openshift/api v0.0.0-20231213232254-1029f2d5339f
@@ -858,8 +862,8 @@ github.com/openshift/library-go/test/library/metrics
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
-# github.com/operator-framework/api v0.10.7
-## explicit; go 1.16
+# github.com/operator-framework/api v0.21.0
+## explicit; go 1.20
 github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
 github.com/operator-framework/api/pkg/operators/v1
@@ -885,8 +889,8 @@ github.com/pmezard/go-difflib/difflib
 # github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
 ## explicit; go 1.15
 github.com/ppc64le-cloud/powervs-utils
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
-## explicit; go 1.17
+# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.2
+## explicit; go 1.21
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1
 # github.com/prometheus/client_golang v1.18.0
@@ -920,7 +924,7 @@ github.com/robfig/cron
 # github.com/russross/blackfriday/v2 v2.1.0
 ## explicit
 github.com/russross/blackfriday/v2
-# github.com/sirupsen/logrus v1.9.0
+# github.com/sirupsen/logrus v1.9.2
 ## explicit; go 1.13
 github.com/sirupsen/logrus
 # github.com/soheilhy/cmux v0.1.5
@@ -2111,8 +2115,8 @@ sigs.k8s.io/cluster-api/util/contract
 sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/patch
 sigs.k8s.io/cluster-api/util/topology
-# sigs.k8s.io/cluster-api-provider-aws/v2 v2.3.1
-## explicit; go 1.20
+# sigs.k8s.io/cluster-api-provider-aws/v2 v2.1.4
+## explicit; go 1.19
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
 sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta1
@@ -2121,11 +2125,12 @@ sigs.k8s.io/cluster-api-provider-aws/v2/feature
 sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/v2/pkg/eks
 sigs.k8s.io/cluster-api-provider-aws/v2/pkg/hash
-# sigs.k8s.io/cluster-api-provider-azure v1.13.0
-## explicit; go 1.20
+# sigs.k8s.io/cluster-api-provider-azure v1.8.7
+## explicit; go 1.19
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
 sigs.k8s.io/cluster-api-provider-azure/feature
 sigs.k8s.io/cluster-api-provider-azure/util/azure
+sigs.k8s.io/cluster-api-provider-azure/util/maps
 sigs.k8s.io/cluster-api-provider-azure/util/ssh
 sigs.k8s.io/cluster-api-provider-azure/util/webhook
 # sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0

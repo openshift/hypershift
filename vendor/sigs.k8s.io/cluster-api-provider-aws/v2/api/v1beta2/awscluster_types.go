@@ -208,17 +208,6 @@ type AWSLoadBalancerSpec struct {
 	// +optional
 	AdditionalSecurityGroups []string `json:"additionalSecurityGroups,omitempty"`
 
-	// AdditionalListeners sets the additional listeners for the control plane load balancer.
-	// This is only applicable to Network Load Balancer (NLB) types for the time being.
-	// +listType=map
-	// +listMapKey=port
-	// +optional
-	AdditionalListeners []AdditionalListenerSpec `json:"additionalListeners,omitempty"`
-
-	// IngressRules sets the ingress rules for the control plane load balancer.
-	// +optional
-	IngressRules []IngressRule `json:"ingressRules,omitempty"`
-
 	// LoadBalancerType sets the type for a load balancer. The default type is classic.
 	// +kubebuilder:default=classic
 	// +kubebuilder:validation:Enum:=classic;elb;alb;nlb
@@ -231,20 +220,6 @@ type AWSLoadBalancerSpec struct {
 	// PreserveClientIP lets the user control if preservation of client ips must be retained or not.
 	// If this is enabled 6443 will be opened to 0.0.0.0/0.
 	PreserveClientIP bool `json:"preserveClientIP,omitempty"`
-}
-
-// AdditionalListenerSpec defines the desired state of an
-// additional listener on an AWS load balancer.
-type AdditionalListenerSpec struct {
-	// Port sets the port for the additional listener.
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=65535
-	Port int64 `json:"port"`
-	// Protocol sets the protocol for the additional listener.
-	// Currently only TCP is supported.
-	// +kubebuilder:validation:Enum=TCP
-	// +kubebuilder:default=TCP
-	Protocol ELBProtocol `json:"protocol,omitempty"`
 }
 
 // AWSClusterStatus defines the observed state of AWSCluster.
@@ -260,22 +235,11 @@ type AWSClusterStatus struct {
 type S3Bucket struct {
 	// ControlPlaneIAMInstanceProfile is a name of the IAMInstanceProfile, which will be allowed
 	// to read control-plane node bootstrap data from S3 Bucket.
-	// +optional
-	ControlPlaneIAMInstanceProfile string `json:"controlPlaneIAMInstanceProfile,omitempty"`
+	ControlPlaneIAMInstanceProfile string `json:"controlPlaneIAMInstanceProfile"`
 
 	// NodesIAMInstanceProfiles is a list of IAM instance profiles, which will be allowed to read
 	// worker nodes bootstrap data from S3 Bucket.
-	// +optional
-	NodesIAMInstanceProfiles []string `json:"nodesIAMInstanceProfiles,omitempty"`
-
-	// PresignedURLDuration defines the duration for which presigned URLs are valid.
-	//
-	// This is used to generate presigned URLs for S3 Bucket objects, which are used by
-	// control-plane and worker nodes to fetch bootstrap data.
-	//
-	// When enabled, the IAM instance profiles specified are not used.
-	// +optional
-	PresignedURLDuration *metav1.Duration `json:"presignedURLDuration,omitempty"`
+	NodesIAMInstanceProfiles []string `json:"nodesIAMInstanceProfiles"`
 
 	// Name defines name of S3 Bucket to be created.
 	// +kubebuilder:validation:MinLength:=3

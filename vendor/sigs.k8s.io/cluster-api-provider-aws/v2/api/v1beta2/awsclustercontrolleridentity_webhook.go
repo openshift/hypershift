@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -48,10 +47,10 @@ var (
 )
 
 // ValidateCreate will do any extra validation when creating an AWSClusterControllerIdentity.
-func (r *AWSClusterControllerIdentity) ValidateCreate() (admission.Warnings, error) {
+func (r *AWSClusterControllerIdentity) ValidateCreate() error {
 	// Ensures AWSClusterControllerIdentity being singleton by only allowing "default" as name
 	if r.Name != AWSClusterControllerIdentityName {
-		return nil, field.Invalid(field.NewPath("name"),
+		return field.Invalid(field.NewPath("name"),
 			r.Name, "AWSClusterControllerIdentity is a singleton and only acceptable name is default")
 	}
 
@@ -59,31 +58,31 @@ func (r *AWSClusterControllerIdentity) ValidateCreate() (admission.Warnings, err
 	if r.Spec.AllowedNamespaces != nil {
 		_, err := metav1.LabelSelectorAsSelector(&r.Spec.AllowedNamespaces.Selector)
 		if err != nil {
-			return nil, field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
+			return field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
 // ValidateDelete allows you to add any extra validation when deleting an AWSClusterControllerIdentity.
-func (r *AWSClusterControllerIdentity) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AWSClusterControllerIdentity) ValidateDelete() error {
+	return nil
 }
 
 // ValidateUpdate will do any extra validation when updating an AWSClusterControllerIdentity.
-func (r *AWSClusterControllerIdentity) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (r *AWSClusterControllerIdentity) ValidateUpdate(old runtime.Object) error {
 	oldP, ok := old.(*AWSClusterControllerIdentity)
 	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected an AWSClusterControllerIdentity but got a %T", old))
+		return apierrors.NewBadRequest(fmt.Sprintf("expected an AWSClusterControllerIdentity but got a %T", old))
 	}
 
 	if !cmp.Equal(r.Spec, oldP.Spec) {
-		return nil, errors.New("AWSClusterControllerIdentity is immutable")
+		return errors.New("AWSClusterControllerIdentity is immutable")
 	}
 
 	if r.Name != oldP.Name {
-		return nil, field.Invalid(field.NewPath("name"),
+		return field.Invalid(field.NewPath("name"),
 			r.Name, "AWSClusterControllerIdentity is a singleton and only acceptable name is default")
 	}
 
@@ -91,11 +90,11 @@ func (r *AWSClusterControllerIdentity) ValidateUpdate(old runtime.Object) (admis
 	if r.Spec.AllowedNamespaces != nil {
 		_, err := metav1.LabelSelectorAsSelector(&r.Spec.AllowedNamespaces.Selector)
 		if err != nil {
-			return nil, field.Invalid(field.NewPath("spec", "allowedNamespaces", "selectors"), r.Spec.AllowedNamespaces.Selector, err.Error())
+			return field.Invalid(field.NewPath("spec", "allowedNamespaces", "selectors"), r.Spec.AllowedNamespaces.Selector, err.Error())
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
 // Default will set default values for the AWSClusterControllerIdentity.
