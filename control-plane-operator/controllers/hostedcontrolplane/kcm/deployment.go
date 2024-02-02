@@ -9,7 +9,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
@@ -77,13 +76,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 		}
 	}
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-	maxSurge := intstr.FromInt(3)
-	maxUnavailable := intstr.FromInt(1)
 	args := kcmArgs(p)
-	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-		MaxSurge:       &maxSurge,
-		MaxUnavailable: &maxUnavailable,
-	}
 	if deployment.Spec.Template.ObjectMeta.Labels == nil {
 		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{}
 	}

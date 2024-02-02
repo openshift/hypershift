@@ -10,7 +10,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -56,8 +55,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		config.SetContainerResourcesIfPresent(mainContainer)
 	}
 
-	maxSurge := intstr.FromInt(3)
-	maxUnavailable := intstr.FromInt(1)
 	s := deployment.Spec.Selector
 	if deployment.Spec.Selector == nil {
 		s = &metav1.LabelSelector{
@@ -66,13 +63,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: s,
-		Strategy: appsv1.DeploymentStrategy{
-			Type: appsv1.RollingUpdateDeploymentStrategyType,
-			RollingUpdate: &appsv1.RollingUpdateDeployment{
-				MaxSurge:       &maxSurge,
-				MaxUnavailable: &maxUnavailable,
-			},
-		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: labels,

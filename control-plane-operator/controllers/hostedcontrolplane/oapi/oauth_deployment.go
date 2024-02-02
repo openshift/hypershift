@@ -63,22 +63,12 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
 
-	maxUnavailable := intstr.FromInt(1)
-	maxSurge := intstr.FromInt(3)
-
 	auditConfigBytes, ok := auditConfig.Data[auditPolicyConfigMapKey]
 	if !ok {
 		return fmt.Errorf("openshift-oauth-apiserver audit configuration is not expected to be empty")
 	}
 	auditConfigHash := util.ComputeHash(auditConfigBytes)
 
-	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
-		Type: appsv1.RollingUpdateDeploymentStrategyType,
-		RollingUpdate: &appsv1.RollingUpdateDeployment{
-			MaxUnavailable: &maxUnavailable,
-			MaxSurge:       &maxSurge,
-		},
-	}
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: openShiftOAuthAPIServerLabels(),

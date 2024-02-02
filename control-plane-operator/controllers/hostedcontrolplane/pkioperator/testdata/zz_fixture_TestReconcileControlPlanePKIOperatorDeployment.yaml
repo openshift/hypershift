@@ -18,7 +18,11 @@ spec:
   selector:
     matchLabels:
       name: control-plane-pki-operator
-  strategy: {}
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       annotations:

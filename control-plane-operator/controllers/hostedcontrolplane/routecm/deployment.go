@@ -8,7 +8,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -55,13 +54,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image string, config *co
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
 
-	maxSurge := intstr.FromInt(0)
-	maxUnavailable := intstr.FromInt(1)
-	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-		MaxSurge:       &maxSurge,
-		MaxUnavailable: &maxUnavailable,
-	}
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: openShiftRouteControllerManagerLabels(),

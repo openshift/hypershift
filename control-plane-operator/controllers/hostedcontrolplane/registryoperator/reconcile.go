@@ -181,9 +181,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selectorLabels(),
 		},
-		Strategy: appsv1.DeploymentStrategy{
-			Type: appsv1.RecreateDeploymentStrategyType,
-		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: selectorLabels(),
