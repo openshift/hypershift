@@ -19,7 +19,6 @@ package v1beta1
 import (
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/net"
 )
 
 const (
@@ -29,28 +28,6 @@ const (
 	Node string = "node"
 	// Bastion subnet label.
 	Bastion string = "bastion"
-)
-
-// SecurityEncryptionType represents the Encryption Type when the virtual machine is a
-// Confidential VM.
-type SecurityEncryptionType string
-
-const (
-	// SecurityEncryptionTypeVMGuestStateOnly disables OS disk confidential encryption.
-	SecurityEncryptionTypeVMGuestStateOnly SecurityEncryptionType = "VMGuestStateOnly"
-	// SecurityEncryptionTypeDiskWithVMGuestState OS disk confidential encryption with a
-	// platform-managed key (PMK) or a customer-managed key (CMK).
-	SecurityEncryptionTypeDiskWithVMGuestState SecurityEncryptionType = "DiskWithVMGuestState"
-)
-
-// SecurityTypes represents the SecurityType of the virtual machine.
-type SecurityTypes string
-
-const (
-	// SecurityTypesConfidentialVM defines the SecurityType of the virtual machine as a Confidential VM.
-	SecurityTypesConfidentialVM SecurityTypes = "ConfidentialVM"
-	// SecurityTypesTrustedLaunch defines the SecurityType of the virtual machine as a Trusted Launch VM.
-	SecurityTypesTrustedLaunch SecurityTypes = "TrustedLaunch"
 )
 
 // Futures is a slice of Future.
@@ -147,41 +124,6 @@ type VnetPeeringClassSpec struct {
 
 	// RemoteVnetName defines name of the remote virtual network.
 	RemoteVnetName string `json:"remoteVnetName"`
-
-	// ForwardPeeringProperties specifies VnetPeeringProperties for peering from the cluster's virtual network to the
-	// remote virtual network.
-	// +optional
-	ForwardPeeringProperties VnetPeeringProperties `json:"forwardPeeringProperties,omitempty"`
-
-	// ReversePeeringProperties specifies VnetPeeringProperties for peering from the remote virtual network to the
-	// cluster's virtual network.
-	// +optional
-	ReversePeeringProperties VnetPeeringProperties `json:"reversePeeringProperties,omitempty"`
-}
-
-// VnetPeeringProperties specifies virtual network peering properties.
-type VnetPeeringProperties struct {
-	// AllowForwardedTraffic specifies whether the forwarded traffic from the VMs in the local virtual network will be
-	// allowed/disallowed in remote virtual network.
-	// +optional
-	AllowForwardedTraffic *bool `json:"allowForwardedTraffic,omitempty"`
-
-	// AllowGatewayTransit specifies if gateway links can be used in remote virtual networking to link to this virtual
-	// network.
-	// +optional
-	AllowGatewayTransit *bool `json:"allowGatewayTransit,omitempty"`
-
-	// AllowVirtualNetworkAccess specifies whether the VMs in the local virtual network space would be able to access
-	// the VMs in remote virtual network space.
-	// +optional
-	AllowVirtualNetworkAccess *bool `json:"allowVirtualNetworkAccess,omitempty"`
-
-	// UseRemoteGateways specifies if remote gateways can be used on this virtual network.
-	// If the flag is set to true, and allowGatewayTransit on remote peering is also set to true, the virtual network
-	// will use the gateways of the remote virtual network for transit. Only one peering can have this flag set to true.
-	// This flag cannot be set if virtual network already has a gateway.
-	// +optional
-	UseRemoteGateways *bool `json:"useRemoteGateways,omitempty"`
 }
 
 // VnetPeerings is a slice of VnetPeering.
@@ -270,17 +212,6 @@ const (
 	SecurityRuleDirectionOutbound = SecurityRuleDirection("Outbound")
 )
 
-// SecurityRuleAccess defines the action type for a security group rule.
-type SecurityRuleAccess string
-
-const (
-	// SecurityRuleActionAllow allows traffic defined in the rule.
-	SecurityRuleActionAllow SecurityRuleAccess = "Allow"
-
-	// SecurityRuleActionDeny denies traffic defined in the rule.
-	SecurityRuleActionDeny SecurityRuleAccess = "Deny"
-)
-
 // SecurityRule defines an Azure security rule for security groups.
 type SecurityRule struct {
 	// Name is a unique name within the network security group.
@@ -305,16 +236,9 @@ type SecurityRule struct {
 	// Source specifies the CIDR or source IP range. Asterix '*' can also be used to match all source IPs. Default tags such as 'VirtualNetwork', 'AzureLoadBalancer' and 'Internet' can also be used. If this is an ingress rule, specifies where network traffic originates from.
 	// +optional
 	Source *string `json:"source,omitempty"`
-	// Sources specifies The CIDR or source IP ranges.
-	Sources []*string `json:"sources,omitempty"`
 	// Destination is the destination address prefix. CIDR or destination IP range. Asterix '*' can also be used to match all source IPs. Default tags such as 'VirtualNetwork', 'AzureLoadBalancer' and 'Internet' can also be used.
 	// +optional
 	Destination *string `json:"destination,omitempty"`
-	// Action specifies whether network traffic is allowed or denied. Can either be "Allow" or "Deny". Defaults to "Allow".
-	// +kubebuilder:default=Allow
-	// +kubebuilder:validation:Enum=Allow;Deny
-	//+optional
-	Action SecurityRuleAccess `json:"action"`
 }
 
 // SecurityRules is a slice of Azure security rules for security groups.
@@ -410,7 +334,7 @@ const (
 	// Canceled represents an action which was initiated but terminated by the user before completion.
 	Canceled ProvisioningState = "Canceled"
 	// Deleted represents a deleted VM
-	// NOTE: This state is specific to capz, and does not have corresponding mapping in Azure API (https://learn.microsoft.com/azure/virtual-machines/states-billing#provisioning-states)
+	// NOTE: This state is specific to capz, and does not have corresponding mapping in Azure API (https://docs.microsoft.com/en-us/azure/virtual-machines/states-billing#provisioning-states)
 	Deleted ProvisioningState = "Deleted"
 )
 
@@ -567,8 +491,15 @@ type UserAssignedIdentity struct {
 	ProviderID string `json:"providerID"`
 }
 
+const (
+	// AzureIdentityBindingSelector is the label used to match with the AzureIdentityBinding
+	// For the controller to match an identity binding, it needs a [label] with the key `aadpodidbinding`
+	// whose value is that of the `selector:` field in the `AzureIdentityBinding`.
+	AzureIdentityBindingSelector = "capz-controller-aadpodidentity-selector"
+)
+
 // IdentityType represents different types of identities.
-// +kubebuilder:validation:Enum=ServicePrincipal;UserAssignedMSI;ManualServicePrincipal;ServicePrincipalCertificate;WorkloadIdentity
+// +kubebuilder:validation:Enum=ServicePrincipal;UserAssignedMSI;ManualServicePrincipal;ServicePrincipalCertificate
 type IdentityType string
 
 const (
@@ -583,9 +514,6 @@ const (
 
 	// ServicePrincipalCertificate represents a service principal using a certificate as secret.
 	ServicePrincipalCertificate IdentityType = "ServicePrincipalCertificate"
-
-	// WorkloadIdentity represents a WorkloadIdentity.
-	WorkloadIdentity IdentityType = "WorkloadIdentity"
 )
 
 // OSDisk defines the operating system disk for a VM.
@@ -650,32 +578,8 @@ type VMExtension struct {
 type ManagedDiskParameters struct {
 	// +optional
 	StorageAccountType string `json:"storageAccountType,omitempty"`
-	// DiskEncryptionSet specifies the customer-managed disk encryption set resource id for the managed disk.
 	// +optional
 	DiskEncryptionSet *DiskEncryptionSetParameters `json:"diskEncryptionSet,omitempty"`
-	// SecurityProfile specifies the security profile for the managed disk.
-	// +optional
-	SecurityProfile *VMDiskSecurityProfile `json:"securityProfile,omitempty"`
-}
-
-// VMDiskSecurityProfile specifies the security profile settings for the managed disk.
-// It can be set only for Confidential VMs.
-type VMDiskSecurityProfile struct {
-	// DiskEncryptionSet specifies the customer-managed disk encryption set resource id for the
-	// managed disk that is used for Customer Managed Key encrypted ConfidentialVM OS Disk and
-	// VMGuest blob.
-	// +optional
-	DiskEncryptionSet *DiskEncryptionSetParameters `json:"diskEncryptionSet,omitempty"`
-	// SecurityEncryptionType specifies the encryption type of the managed disk.
-	// It is set to DiskWithVMGuestState to encrypt the managed disk along with the VMGuestState
-	// blob, and to VMGuestStateOnly to encrypt the VMGuestState blob only.
-	// When set to VMGuestStateOnly, VirtualizedTrustedPlatformModule should be set to Enabled.
-	// When set to DiskWithVMGuestState, EncryptionAtHost should be disabled, SecureBoot and
-	// VirtualizedTrustedPlatformModule should be set to Enabled.
-	// It can be set only for Confidential VMs.
-	// +kubebuilder:validation:Enum=VMGuestStateOnly;DiskWithVMGuestState
-	// +optional
-	SecurityEncryptionType SecurityEncryptionType `json:"securityEncryptionType,omitempty"`
 }
 
 // DiskEncryptionSetParameters defines disk encryption options.
@@ -688,7 +592,7 @@ type DiskEncryptionSetParameters struct {
 // DiffDiskSettings describe ephemeral disk settings for the os disk.
 type DiffDiskSettings struct {
 	// Option enables ephemeral OS when set to "Local"
-	// See https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks for full details
+	// See https://docs.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks for full details
 	// +kubebuilder:validation:Enum=Local
 	Option string `json:"option"`
 }
@@ -829,51 +733,14 @@ func (s SubnetSpec) IsNatGatewayEnabled() bool {
 	return s.NatGateway.Name != ""
 }
 
-// IsIPv6Enabled returns whether or not IPv6 is enabled on the subnet.
-func (s SubnetSpec) IsIPv6Enabled() bool {
-	for _, cidr := range s.CIDRBlocks {
-		if net.IsIPv6CIDRString(cidr) {
-			return true
-		}
-	}
-	return false
-}
-
 // SecurityProfile specifies the Security profile settings for a
 // virtual machine or virtual machine scale set.
 type SecurityProfile struct {
 	// This field indicates whether Host Encryption should be enabled
-	// or disabled for a virtual machine or virtual machine scale set.
-	// This should be disabled when SecurityEncryptionType is set to DiskWithVMGuestState.
-	// Default is disabled.
+	// or disabled for a virtual machine or virtual machine scale
+	// set. Default is disabled.
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
-	// SecurityType specifies the SecurityType of the virtual machine. It has to be set to any specified value to
-	// enable UefiSettings. The default behavior is: UefiSettings will not be enabled unless this property is set.
-	// +kubebuilder:validation:Enum=ConfidentialVM;TrustedLaunch
-	// +optional
-	SecurityType SecurityTypes `json:"securityType,omitempty"`
-	// UefiSettings specifies the security settings like secure boot and vTPM used while creating the virtual machine.
-	// +optional
-	UefiSettings *UefiSettings `json:"uefiSettings,omitempty"`
-}
-
-// UefiSettings specifies the security settings like secure boot and vTPM used while creating the virtual
-// machine.
-// +optional
-type UefiSettings struct {
-	// SecureBootEnabled specifies whether secure boot should be enabled on the virtual machine.
-	// Secure Boot verifies the digital signature of all boot components and halts the boot process if signature verification fails.
-	// If omitted, the platform chooses a default, which is subject to change over time, currently that default is false.
-	//+optional
-	SecureBootEnabled *bool `json:"secureBootEnabled,omitempty"`
-	// VTpmEnabled specifies whether vTPM should be enabled on the virtual machine.
-	// When true it enables the virtualized trusted platform module measurements to create a known good boot integrity policy baseline.
-	// The integrity policy baseline is used for comparison with measurements from subsequent VM boots to determine if anything has changed.
-	// This is required to be set to Enabled if SecurityEncryptionType is defined.
-	// If omitted, the platform chooses a default, which is subject to change over time, currently that default is false.
-	// +optional
-	VTpmEnabled *bool `json:"vTpmEnabled,omitempty"`
 }
 
 // AddressRecord specifies a DNS record mapping a hostname to an IPV4 or IPv6 address.
@@ -998,18 +865,6 @@ type AzureBastion struct {
 	// +kubebuilder:default=false
 	// +optional
 	EnableTunneling bool `json:"enableTunneling,omitempty"`
-}
-
-// FleetsMember defines the fleets member configuration.
-// See also [AKS doc].
-//
-// [AKS doc]: https://learn.microsoft.com/en-us/azure/templates/microsoft.containerservice/2023-03-15-preview/fleets/members
-type FleetsMember struct {
-	// Name is the name of the member.
-	// +optional
-	Name string `json:"name,omitempty"`
-
-	FleetsMemberClassSpec `json:",inline"`
 }
 
 // BackendPool describes the backend pool of the load balancer.
