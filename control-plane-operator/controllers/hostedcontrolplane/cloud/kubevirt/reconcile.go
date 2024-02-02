@@ -106,7 +106,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 		isExternalInfra = true
 	}
 	deploymentConfig := newDeploymentConfig()
-	deploymentConfig.SetDefaults(hcp, nil, nil)
+	deploymentConfig.SetDefaults(hcp, ccmLabels(), nil)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: ccmLabels(),
