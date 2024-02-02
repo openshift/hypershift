@@ -20,7 +20,8 @@ package externalversions
 import (
 	"fmt"
 
-	v1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
@@ -52,10 +53,14 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=hypershift.openshift.io, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithResource("hostedclusters"):
+	// Group=certificates.hypershift.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateSigningRequestApprovals().Informer()}, nil
+
+		// Group=hypershift.openshift.io, Version=v1alpha1
+	case hypershiftv1alpha1.SchemeGroupVersion.WithResource("hostedclusters"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1alpha1().HostedClusters().Informer()}, nil
-	case v1alpha1.SchemeGroupVersion.WithResource("nodepools"):
+	case hypershiftv1alpha1.SchemeGroupVersion.WithResource("nodepools"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1alpha1().NodePools().Informer()}, nil
 
 		// Group=hypershift.openshift.io, Version=v1beta1
