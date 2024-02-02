@@ -174,6 +174,7 @@ const (
 	WaitingForAvailableReason   = "WaitingForAvailable"
 	SecretNotFoundReason        = "SecretNotFound"
 	WaitingForGracePeriodReason = "WaitingForGracePeriod"
+	BlockedReason               = "Blocked"
 
 	InfraStatusFailureReason           = "InfraStatusFailure"
 	WaitingOnInfrastructureReadyReason = "WaitingOnInfrastructureReady"
