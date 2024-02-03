@@ -71,7 +71,7 @@ func (c *AzureClusterTemplate) setSubnetsTemplateDefaults() {
 		nodeSubnetCounter++
 		nodeSubnetFound = true
 		subnet.SubnetClassSpec.setDefaults(fmt.Sprintf(DefaultNodeSubnetCIDRPattern, nodeSubnetCounter))
-		subnet.SecurityGroup.setDefaults()
+		cpSubnet.SecurityGroup.setDefaults()
 		c.Spec.Template.Spec.NetworkSpec.Subnets[i] = subnet
 	}
 
@@ -94,7 +94,7 @@ func (c *AzureClusterTemplate) setNodeOutboundLBDefaults() {
 
 		var needsOutboundLB bool
 		for _, subnet := range c.Spec.Template.Spec.NetworkSpec.Subnets {
-			if subnet.Role == SubnetNode && subnet.IsIPv6Enabled() {
+			if subnet.Role == SubnetNode && !subnet.IsNatGatewayEnabled() {
 				needsOutboundLB = true
 				break
 			}

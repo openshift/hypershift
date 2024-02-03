@@ -25,7 +25,6 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 )
@@ -110,7 +109,7 @@ func (r *AWSMachinePool) validateAdditionalSecurityGroups() field.ErrorList {
 }
 
 // ValidateCreate will do any extra validation when creating a AWSMachinePool.
-func (r *AWSMachinePool) ValidateCreate() (admission.Warnings, error) {
+func (r *AWSMachinePool) ValidateCreate() error {
 	log.Info("AWSMachinePool validate create", "machine-pool", klog.KObj(r))
 
 	var allErrs field.ErrorList
@@ -122,10 +121,10 @@ func (r *AWSMachinePool) ValidateCreate() (admission.Warnings, error) {
 	allErrs = append(allErrs, r.validateAdditionalSecurityGroups()...)
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	return nil, apierrors.NewInvalid(
+	return apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name,
 		allErrs,
@@ -133,7 +132,7 @@ func (r *AWSMachinePool) ValidateCreate() (admission.Warnings, error) {
 }
 
 // ValidateUpdate will do any extra validation when updating a AWSMachinePool.
-func (r *AWSMachinePool) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (r *AWSMachinePool) ValidateUpdate(old runtime.Object) error {
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, r.validateDefaultCoolDown()...)
@@ -142,10 +141,10 @@ func (r *AWSMachinePool) ValidateUpdate(old runtime.Object) (admission.Warnings,
 	allErrs = append(allErrs, r.validateAdditionalSecurityGroups()...)
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	return nil, apierrors.NewInvalid(
+	return apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name,
 		allErrs,
@@ -153,8 +152,8 @@ func (r *AWSMachinePool) ValidateUpdate(old runtime.Object) (admission.Warnings,
 }
 
 // ValidateDelete allows you to add any extra validation when deleting.
-func (r *AWSMachinePool) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AWSMachinePool) ValidateDelete() error {
+	return nil
 }
 
 // Default will set default values for the AWSMachinePool.

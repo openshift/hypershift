@@ -17,42 +17,20 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
 	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
-
-// SetupAzureMachineWebhookWithManager sets up and registers the webhook with the manager.
-func SetupAzureMachineWebhookWithManager(mgr ctrl.Manager) error {
-	mw := &azureMachineWebhook{Client: mgr.GetClient()}
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&AzureMachine{}).
-		WithDefaulter(mw).
-		WithValidator(mw).
-		Complete()
-}
 
 // +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachine,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=azuremachines,versions=v1beta1,name=validation.azuremachine.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:webhook:verbs=create;update,path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachine,mutating=true,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=azuremachines,versions=v1beta1,name=default.azuremachine.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
 
-// azureMachineWebhook implements a validating and defaulting webhook for AzureMachines.
-type azureMachineWebhook struct {
-	Client client.Client
-}
-
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (mw *azureMachineWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	m, ok := obj.(*AzureMachine)
-	if !ok {
-		return nil, apierrors.NewBadRequest("expected an AzureMachine resource")
-	}
+func (m *AzureMachine) ValidateCreate(client client.Client) error {
 	spec := m.Spec
 
 	allErrs := ValidateAzureMachineSpec(spec)
@@ -67,23 +45,16 @@ func (mw *azureMachineWebhook) ValidateCreate(ctx context.Context, obj runtime.O
 	}
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	return nil, apierrors.NewInvalid(GroupVersion.WithKind(AzureMachineKind).GroupKind(), m.Name, allErrs)
+	return apierrors.NewInvalid(GroupVersion.WithKind("AzureMachine").GroupKind(), m.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (mw *azureMachineWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (m *AzureMachine) ValidateUpdate(oldRaw runtime.Object, client client.Client) error {
 	var allErrs field.ErrorList
-	old, ok := oldObj.(*AzureMachine)
-	if !ok {
-		return nil, apierrors.NewBadRequest("expected an AzureMachine resource")
-	}
-	m, ok := newObj.(*AzureMachine)
-	if !ok {
-		return nil, apierrors.NewBadRequest("expected an AzureMachine resource")
-	}
+	old := oldRaw.(*AzureMachine)
 
 	if err := webhookutils.ValidateImmutable(
 		field.NewPath("Spec", "Image"),
@@ -207,21 +178,17 @@ func (mw *azureMachineWebhook) ValidateUpdate(ctx context.Context, oldObj, newOb
 	}
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
-	return nil, apierrors.NewInvalid(GroupVersion.WithKind(AzureMachineKind).GroupKind(), m.Name, allErrs)
+	return apierrors.NewInvalid(GroupVersion.WithKind("AzureMachine").GroupKind(), m.Name, allErrs)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (mw *azureMachineWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	return nil, nil
+func (m *AzureMachine) ValidateDelete(client client.Client) error {
+	return nil
 }
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type.
-func (mw *azureMachineWebhook) Default(ctx context.Context, obj runtime.Object) error {
-	m, ok := obj.(*AzureMachine)
-	if !ok {
-		return apierrors.NewBadRequest("expected an AzureMachine resource")
-	}
-	return m.SetDefaults(mw.Client)
+func (m *AzureMachine) Default(client client.Client) {
+	m.SetDefaults(client)
 }

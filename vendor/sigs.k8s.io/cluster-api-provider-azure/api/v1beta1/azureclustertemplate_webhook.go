@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // AzureClusterTemplateImmutableMsg is the message used for errors on fields that are immutable.
@@ -50,12 +49,12 @@ func (c *AzureClusterTemplate) Default() {
 var _ webhook.Validator = &AzureClusterTemplate{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (c *AzureClusterTemplate) ValidateCreate() (admission.Warnings, error) {
+func (c *AzureClusterTemplate) ValidateCreate() error {
 	return c.validateClusterTemplate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (c *AzureClusterTemplate) ValidateUpdate(oldRaw runtime.Object) (admission.Warnings, error) {
+func (c *AzureClusterTemplate) ValidateUpdate(oldRaw runtime.Object) error {
 	var allErrs field.ErrorList
 	old := oldRaw.(*AzureClusterTemplate)
 	if !reflect.DeepEqual(c.Spec.Template.Spec, old.Spec.Template.Spec) {
@@ -65,12 +64,12 @@ func (c *AzureClusterTemplate) ValidateUpdate(oldRaw runtime.Object) (admission.
 	}
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
-	return nil, apierrors.NewInvalid(GroupVersion.WithKind(AzureClusterTemplateKind).GroupKind(), c.Name, allErrs)
+	return apierrors.NewInvalid(GroupVersion.WithKind("AzureClusterTemplate").GroupKind(), c.Name, allErrs)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (c *AzureClusterTemplate) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (c *AzureClusterTemplate) ValidateDelete() error {
+	return nil
 }
