@@ -2670,9 +2670,24 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile api server egress selector config: %w", err)
 	}
 
+	userOauthMetadata := ""
+	if hcp.Spec.Configuration.Authentication != nil && len(hcp.Spec.Configuration.Authentication.OAuthMetadata.Name) > 0 {
+		var userOauthMetadataConfigMap corev1.ConfigMap
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Configuration.Authentication.OAuthMetadata.Name}, &userOauthMetadataConfigMap)
+		if err != nil {
+			return fmt.Errorf("failed to get user oauth metadata configmap: %w", err)
+		}
+		if userOauthMetadataConfigMap.Data == nil || len(userOauthMetadataConfigMap.Data) == 0 {
+			return fmt.Errorf("user oauth metadata configmap %s has no data", userOauthMetadataConfigMap.Name)
+		}
+		var ok bool
+		if userOauthMetadata, ok = userOauthMetadataConfigMap.Data["oauthMetadata"]; !ok {
+			return fmt.Errorf("user oauth metadata configmap %s has no oauthMetadata key", userOauthMetadataConfigMap.Name)
+		}
+	}
 	oauthMetadata := manifests.KASOAuthMetadata(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oauthMetadata, func() error {
-		return kas.ReconcileOauthMetadata(oauthMetadata, p.OwnerRef, p.ExternalOAuthAddress, p.ExternalOAuthPort)
+		return kas.ReconcileOauthMetadata(oauthMetadata, p.OwnerRef, userOauthMetadata, p.ExternalOAuthAddress, p.ExternalOAuthPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth metadata: %w", err)
 	}
