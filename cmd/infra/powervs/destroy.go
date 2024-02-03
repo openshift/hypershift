@@ -192,11 +192,6 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 		log(options.InfraID).Error(err, "error deleting dns record from cis domain")
 	}
 
-	if err = deleteSecrets(options.Name, options.Namespace, accountID, resourceGroupID); err != nil {
-		errL = append(errL, fmt.Errorf("error deleting secrets: %w", err))
-		log(options.InfraID).Error(err, "error deleting secrets")
-	}
-
 	if err = deleteCOS(ctx, options, resourceGroupID); err != nil {
 		errL = append(errL, fmt.Errorf("error deleting cos buckets: %w", err))
 		log(options.InfraID).Error(err, "error deleting cos buckets")
@@ -228,6 +223,11 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 		} else {
 			powerVsCloudInstanceID = *cloudInstance.GUID
 		}
+	}
+
+	if err = deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, accountID, resourceGroupID); err != nil {
+		errL = append(errL, fmt.Errorf("error deleting secrets: %w", err))
+		log(options.InfraID).Error(err, "error deleting secrets")
 	}
 
 	var session *ibmpisession.IBMPISession
@@ -321,14 +321,23 @@ func deleteDNSRecords(ctx context.Context, options *DestroyInfraOptions) error {
 }
 
 // deleteSecrets delete secrets generated for control plane components
-func deleteSecrets(name, namespace, accountID string, resourceGroupID string) error {
+func deleteSecrets(name, namespace, cloudInstanceID string, accountID string, resourceGroupID string) error {
+	var e error
 
+	kubeCloudControllerManagerCR, e = updateCRYaml(kubeCloudControllerManagerCR, "kubeCloudControllerManagerCRTemplate", cloudInstanceID)
+	if e != nil {
+		return fmt.Errorf("error updating kube cloud controller manager yaml: %w", e)
+	}
 	err := deleteServiceID(name, cloudApiKey, accountID, resourceGroupID,
 		kubeCloudControllerManagerCR, kubeCloudControllerManagerCreds, namespace)
 	if err != nil {
 		return fmt.Errorf("error deleting kube cloud controller manager secret: %w", err)
 	}
 
+	nodePoolManagementCR, e = updateCRYaml(nodePoolManagementCR, "nodePoolManagementCRTemplate", cloudInstanceID)
+	if e != nil {
+		return fmt.Errorf("error updating nodepool management yaml: %w", e)
+	}
 	err = deleteServiceID(name, cloudApiKey, accountID, resourceGroupID,
 		nodePoolManagementCR, nodePoolManagementCreds, namespace)
 	if err != nil {
@@ -341,6 +350,10 @@ func deleteSecrets(name, namespace, accountID string, resourceGroupID string) er
 		return fmt.Errorf("error deleting ingress operator secret: %w", err)
 	}
 
+	storageOperatorCR, e = updateCRYaml(storageOperatorCR, "storageOperatorCRTemplate", cloudInstanceID)
+	if e != nil {
+		return fmt.Errorf("error updating storage operator yaml: %w", e)
+	}
 	err = deleteServiceID(name, cloudApiKey, accountID, resourceGroupID,
 		storageOperatorCR, storageOperatorCreds, namespace)
 	if err != nil {

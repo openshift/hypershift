@@ -52,6 +52,7 @@ func TestCreateServiceIDClient(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
+			test.input.crYaml, _ = updateCRYaml(test.input.crYaml, "crYaml_template", "cloud_ins_id_1234")
 			_, err := createServiceIDClient(test.input.name, test.input.apiKey, test.input.account, test.input.resourceGroupID, test.input.crYaml, test.input.secretRefName, test.input.secretRefNamespace)
 			if test.errExpected {
 				g.Expect(err).ToNot(BeNil())

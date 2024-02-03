@@ -362,10 +362,6 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error setup base domain: %w", err)
 	}
 
-	if err := infra.setupSecrets(options); err != nil {
-		return fmt.Errorf("error setup secrets: %w", err)
-	}
-
 	gtag, err := globaltaggingv1.NewGlobalTaggingV1(&globaltaggingv1.GlobalTaggingV1Options{Authenticator: getIAMAuth()})
 	if err != nil {
 		return err
@@ -414,6 +410,11 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		}
 	}
 
+	// setupSecrets need parameter cloudInstanceId, hence invoked after setupPowerVSCloudInstance
+	if err := infra.setupSecrets(options); err != nil {
+		return fmt.Errorf("error setup secrets: %w", err)
+	}
+
 	log(options.InfraID).Info("Setup infra completed in", "duration", time.Since(startTime).String())
 	return nil
 }
@@ -421,21 +422,38 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 // setupSecrets generate secrets for control plane components
 func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 	var err error
+	var powerVsCloudInstanceID string
+
+	if options.CloudInstanceID != "" {
+		powerVsCloudInstanceID = options.CloudInstanceID
+	} else if infra.CloudInstanceID != "" {
+		powerVsCloudInstanceID = infra.CloudInstanceID
+	} else {
+		return fmt.Errorf("unable to limit access scope to instance level: cloud instance not found")
+	}
 
 	if options.RecreateSecrets {
-		deleteSecrets(options.Name, options.Namespace, infra.AccountID, infra.ResourceGroupID)
+		deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
 	}
 
 	log(infra.ID).Info("Creating Secrets ...")
 
 	infra.Secrets = Secrets{}
 
+	kubeCloudControllerManagerCR, err = updateCRYaml(kubeCloudControllerManagerCR, "kubeCloudControllerManagerCRTemplate", powerVsCloudInstanceID)
+	if err != nil {
+		return fmt.Errorf("error updating kube cloud controller manager yaml: %w", err)
+	}
 	infra.Secrets.KubeCloudControllerManager, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
 		kubeCloudControllerManagerCR, kubeCloudControllerManagerCreds, options.Namespace)
 	if err != nil {
 		return fmt.Errorf("error setup kube cloud controller manager secret: %w", err)
 	}
 
+	nodePoolManagementCR, err = updateCRYaml(nodePoolManagementCR, "nodePoolManagementCRTemplate", powerVsCloudInstanceID)
+	if err != nil {
+		return fmt.Errorf("error updating nodepool management yaml: %w", err)
+	}
 	infra.Secrets.NodePoolManagement, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
 		nodePoolManagementCR, nodePoolManagementCreds, options.Namespace)
 	if err != nil {
@@ -448,6 +466,10 @@ func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 		return fmt.Errorf("error setup ingress operator secret: %w", err)
 	}
 
+	storageOperatorCR, err = updateCRYaml(storageOperatorCR, "storageOperatorCRTemplate", powerVsCloudInstanceID)
+	if err != nil {
+		return fmt.Errorf("error updating storage operator yaml: %w", err)
+	}
 	infra.Secrets.StorageOperator, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
 		storageOperatorCR, storageOperatorCreds, options.Namespace)
 	if err != nil {
