@@ -1021,7 +1021,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
-			condition.Reason = "Blocked"
+			condition.Reason = hyperv1.BlockedReason
 		}
 		if progressing {
 			condition.Status = metav1.ConditionTrue
@@ -3432,6 +3432,12 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 			hcpAvailableReason = hyperv1.AsExpectedReason
 			hcpAvailableMessage = "The hosted control plane is available"
 		}
+	} else {
+		// This catches and bubbles up validation errors that prevent the HCP from being created.
+		hcProgressingCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterProgressing))
+		if hcProgressingCondition != nil && hcProgressingCondition.Reason == hyperv1.BlockedReason {
+			hcpAvailableMessage = hcProgressingCondition.Message
+		}
 	}
 
 	return metav1.Condition{
@@ -3958,7 +3964,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		switch string(condition.Type) {
 		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
 			if condition.Status == metav1.ConditionFalse {
-				return false, fmt.Errorf("%s condition is false", string(condition.Type))
+				return false, fmt.Errorf("%s condition is false: %s", string(condition.Type), condition.Message)
 			}
 		case string(hyperv1.ClusterVersionUpgradeable):
 			_, _, err := isUpgrading(hc, releaseImage)
