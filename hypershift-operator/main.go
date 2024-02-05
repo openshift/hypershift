@@ -376,7 +376,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// If enabled, start controller to ensure UWM stack is enabled and configured
-	// to remotely write telemetry metrics
+	// to remotely write telemetry metrics.
 	if opts.EnableUWMTelemetryRemoteWrite {
 		if err := (&uwmtelemetry.Reconciler{
 			Namespace:              opts.Namespace,
@@ -385,6 +385,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create uwm telemetry controller: %w", err)
 		}
+		log.Info("UWM telemetry remote write controller enabled")
+	} else {
+		log.Info("UWM telemetry remote write controller disabled")
 	}
 
 	// Start controllers to manage dedicated request serving isolation
