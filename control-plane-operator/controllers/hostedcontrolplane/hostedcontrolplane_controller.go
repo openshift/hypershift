@@ -77,6 +77,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -261,11 +262,11 @@ type eventHandler struct {
 func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, restMapper meta.RESTMapper) []eventHandler {
 	handlers := []eventHandler{
 		{obj: &corev1.Event{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
+		{obj: &corev1.ConfigMap{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
 		{obj: &corev1.Service{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &appsv1.Deployment{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &appsv1.StatefulSet{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &corev1.Secret{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
-		{obj: &corev1.ConfigMap{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &corev1.ServiceAccount{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &policyv1.PodDisruptionBudget{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &prometheusoperatorv1.PodMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
@@ -273,6 +274,7 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 		{obj: &prometheusoperatorv1.PrometheusRule{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &rbacv1.Role{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &rbacv1.RoleBinding{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &batchv1.CronJob{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
@@ -1216,6 +1218,241 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling default security group")
 	if err := r.reconcileDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
 		return fmt.Errorf("failed to reconcile default security group")
+	}
+
+	// TODO: consider using a side container in the etcd pod instead.
+	r.Log.Info("Reconciling etcd-backup cronJob")
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+		configMapName := "etcd-backup-config" // TODO: get configMap name from annotation?
+		configMap := &corev1.ConfigMap{}
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedControlPlane.Namespace, Name: configMapName}, configMap); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get etcd backup configMap: %w", err)
+			}
+
+			serviceAccount := manifests.EtcdBackupServiceAccount(hostedControlPlane.Namespace)
+			if _, err := util.DeleteIfNeeded(ctx, r.Client, serviceAccount); err != nil {
+				return fmt.Errorf("failed to delete etcd backup service account: %w", err)
+			}
+			cronJob := manifests.EtcdBackupCronJob(hostedControlPlane.Namespace)
+			if _, err := util.DeleteIfNeeded(ctx, r.Client, cronJob); err != nil {
+				return fmt.Errorf("failed to delete etcd backup cronJob: %w", err)
+			}
+		} else {
+			serviceAccount := manifests.EtcdBackupServiceAccount(hostedControlPlane.Namespace)
+			if _, err = createOrUpdate(ctx, r.Client, serviceAccount, func() error {
+				util.EnsurePullSecret(serviceAccount, common.PullSecret("").Name)
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile etcd-backup cronJob service account: %w", err)
+			}
+
+			cronJob := manifests.EtcdBackupCronJob(hostedControlPlane.Namespace)
+			if _, err = createOrUpdate(ctx, r.Client, cronJob, func() error {
+				return r.reconcileEtcdBackupCronJob(cronJob,
+					configMap,
+					serviceAccount,
+					hostedControlPlane,
+					releaseImageProvider.GetImage(util.CPOImageName),
+					releaseImageProvider.GetImage("etcd"))
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile etcd-backup cronJob: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.CronJob, configMap *corev1.ConfigMap, serviceAccount *corev1.ServiceAccount, hcp *hyperv1.HostedControlPlane, cpoImage, etcdImage string) error {
+	clusterID, ok := hcp.Labels["api.openshift.com/id"]
+	if !ok {
+		clusterID = hcp.Spec.ClusterID
+	}
+	orgID, ok := hcp.Labels["api.openshift.com/legal-entity-id"]
+	if !ok {
+		orgID = "openshift" // TODO: non OCM environment
+	}
+
+	cronJob.Spec = batchv1.CronJobSpec{
+		Schedule: "0 */1 * * *", // TODO: make it configurable, read from annotation?
+		JobTemplate: batchv1.JobTemplateSpec{
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						InitContainers: []corev1.Container{
+							{
+								Name:            "copy-cpo-binary",
+								Image:           cpoImage,
+								ImagePullPolicy: corev1.PullIfNotPresent,
+								Command: []string{
+									"/bin/bash",
+									"-c",
+									`#!/bin/sh
+
+									while ! nslookup etcd-client; do sleep 10; done
+									cp /usr/bin/control-plane-operator /etc/backup/
+									`,
+								},
+
+								VolumeMounts: []corev1.VolumeMount{
+									{
+										Name:      "backup-volume",
+										MountPath: "/etc/backup",
+									},
+								},
+							},
+						},
+						Containers: []corev1.Container{
+							{
+								Name:            "etcd-backup",
+								Image:           etcdImage,
+								ImagePullPolicy: corev1.PullIfNotPresent,
+								Command: []string{
+									"/etc/backup/control-plane-operator",
+								},
+								Args: []string{
+									"etcd-backup",
+									"--backup-dir",
+									"/etc/backup",
+									"--s3-bucket-name",
+									"$(BUCKET_NAME)",
+									"--s3-key-prefix",
+									fmt.Sprintf("hourly/%s", clusterID),
+									"--s3-object-tags",
+									fmt.Sprintf("cluster_id=%s,org_id=%s", clusterID, orgID),
+									"--etcd-endpoint",
+									"etcd-client:2379",
+									"--etcd-client-cert",
+									"/etc/etcd/tls/client/etcd-client.crt",
+									"--etcd-client-key",
+									"/etc/etcd/tls/client/etcd-client.key",
+									"--etcd-ca-cert",
+									"/etc/etcd/tls/etcd-ca/ca.crt",
+								},
+								Env: []corev1.EnvVar{
+									{
+										Name: "BUCKET_NAME",
+										ValueFrom: &corev1.EnvVarSource{
+											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: configMap.Name,
+												},
+												Key: "bucket-name",
+											},
+										},
+									},
+									{
+										Name: "AWS_REGION",
+										ValueFrom: &corev1.EnvVarSource{
+											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: configMap.Name,
+												},
+												Key: "region",
+											},
+										},
+									},
+									{
+										Name: "AWS_ROLE_ARN",
+										ValueFrom: &corev1.EnvVarSource{
+											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: configMap.Name,
+												},
+												Key: "role-arn",
+											},
+										},
+									},
+									{
+										Name: "AWS_ENDPOINT_URL_S3",
+										ValueFrom: &corev1.EnvVarSource{
+											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: configMap.Name,
+												},
+												Key:      "s3-endpoint-url",
+												Optional: ptr.To(true),
+											},
+										},
+									},
+									{
+										Name:  "AWS_WEB_IDENTITY_TOKEN_FILE",
+										Value: "/var/run/secrets/openshift/serviceaccount/token",
+									},
+								},
+								VolumeMounts: []corev1.VolumeMount{
+									{
+										MountPath: "/etc/backup",
+										Name:      "backup-volume",
+									},
+									{
+										MountPath: "/etc/etcd/tls/client",
+										Name:      "client-tls",
+									},
+									{
+										MountPath: "/etc/etcd/tls/etcd-ca",
+										Name:      "etcd-ca",
+									},
+									{
+										MountPath: "/var/run/secrets/openshift/serviceaccount",
+										Name:      "cloud-token",
+										ReadOnly:  true,
+									},
+								},
+							},
+						},
+						RestartPolicy:      corev1.RestartPolicyNever,
+						ServiceAccountName: serviceAccount.Name,
+						Volumes: []corev1.Volume{
+							{
+								Name: "backup-volume",
+								VolumeSource: corev1.VolumeSource{
+									EmptyDir: &corev1.EmptyDirVolumeSource{},
+								},
+							},
+							{
+								Name: "client-tls",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										SecretName:  manifests.EtcdClientSecret("").Name,
+										DefaultMode: ptr.To[int32](420),
+									},
+								},
+							},
+							{
+								Name: "etcd-ca",
+								VolumeSource: corev1.VolumeSource{
+									ConfigMap: &corev1.ConfigMapVolumeSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: manifests.EtcdSignerCAConfigMap("").Name,
+										},
+										DefaultMode: ptr.To[int32](420),
+									},
+								},
+							},
+							{
+								Name: "cloud-token",
+								VolumeSource: corev1.VolumeSource{
+									Projected: &corev1.ProjectedVolumeSource{
+										Sources: []corev1.VolumeProjection{
+											{
+												ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+													Audience:          "openshift",
+													ExpirationSeconds: ptr.To[int64](86400),
+													Path:              "token",
+												},
+											},
+										},
+										DefaultMode: ptr.To[int32](420),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	return nil

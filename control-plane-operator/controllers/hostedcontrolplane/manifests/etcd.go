@@ -3,6 +3,7 @@ package manifests
 import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,6 +50,24 @@ func EtcdPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "etcd",
 			Namespace: ns,
+		},
+	}
+}
+
+func EtcdBackupServiceAccount(hcpNamespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-backup-sa",
+			Namespace: hcpNamespace,
+		},
+	}
+}
+
+func EtcdBackupCronJob(hcpNamespace string) *batchv1.CronJob {
+	return &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-backup",
+			Namespace: hcpNamespace,
 		},
 	}
 }
