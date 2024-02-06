@@ -193,6 +193,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 					"endpointslices/restricted",
 				},
 				Verbs: []string{
+					"delete",
 					"create",
 					"get",
 					"patch",
@@ -206,7 +207,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 					"kubevirt.io",
 				},
 				Resources: []string{"virtualmachines"},
-				Verbs:     []string{"get"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{

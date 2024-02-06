@@ -20,7 +20,7 @@ const (
 	ControllerManagerAdditionalCAConfigMap = "controller-manager-additional-ca"
 )
 
-func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
+func Setup(ctx context.Context, cfg *operator.HostedClusterConfigOperatorConfig) error {
 	if err := setupConfigMapObserver(cfg); err != nil {
 		return err
 	}

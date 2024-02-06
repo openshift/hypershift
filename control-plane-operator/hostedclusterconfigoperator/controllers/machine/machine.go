@@ -13,6 +13,7 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -21,17 +22,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const (
+	managedByValue = "control-plane-operator.hypershift.openshift.io"
+)
+
 func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
-	machine := &capiv1.Machine{}
-	if err := r.client.Get(ctx, client.ObjectKey(req.NamespacedName), machine); err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("not found", "Machine", r)
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to get Machine: %w", err)
-	}
 
 	hcp := &hyperv1.HostedControlPlane{}
 	if err := r.client.Get(ctx, r.hcpKey, hcp); err != nil {
@@ -43,9 +40,18 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
-		if hcp.Spec.Platform.Kubevirt != nil && (hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil && *hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough) {
-			if err := r.reconcileKubevirtDefaultIngressEndpoints(ctx, hcp, machine); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed reconciling kubevirt default ingress passthrough service endpoints: %w", err)
+		if hcp.Spec.Platform.Kubevirt != nil {
+			kubevirtPassthroughServices, err := r.findKubevirtPassthroughServices(ctx, hcp)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed finding kubevirt passthrough services: %w", err)
+			}
+			for _, kubevirtPassthroughService := range kubevirtPassthroughServices {
+				if err := r.reconcileKubevirtPassthroughService(ctx, hcp, req.NamespacedName, &kubevirtPassthroughService); err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed reconciling kubevirt infra passthrough service endpoint slices: %w", err)
+				}
+			}
+			if err := r.removeOrphanKubevirtPassthroughEndpointSlices(ctx, hcp); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed removing orphan kubevirt passthrough endpoint slices: %w", err)
 			}
 		}
 	}
@@ -53,25 +59,37 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	return reconcile.Result{}, nil
 }
 
-func (r *reconciler) reconcileKubevirtDefaultIngressEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane, machine *capiv1.Machine) error {
-	log := ctrl.LoggerFrom(ctx)
-	var namespace string
-	if hcp.Spec.Platform.Kubevirt.Credentials != nil {
-		namespace = hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
-	} else {
-		namespace = hcp.Namespace
-	}
+func (r *reconciler) findKubevirtPassthroughServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) ([]corev1.Service, error) {
+	kubevirtPassthroughServices := []corev1.Service{}
 
 	// Manifests for infra/mgmt cluster passthrough service
-	cpService := hcpmanifests.IngressDefaultIngressPassthroughService(namespace)
+	cpService := hcpmanifests.IngressDefaultIngressPassthroughService(kubevirtInfraNamespace(hcp))
 
 	cpService.Name = fmt.Sprintf("%s-%s",
 		hcpmanifests.IngressDefaultIngressPassthroughServiceName,
 		hcp.Spec.Platform.Kubevirt.GenerateID)
 
-	if err := r.kubevirtInfraClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
-		return fmt.Errorf("failed to get default ingress passthrough Service: %w", err)
+	err := r.kubevirtInfraClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to get default ingress passthrough Service: %w", err)
 	}
+	if !apierrors.IsNotFound(err) {
+		kubevirtPassthroughServices = append(kubevirtPassthroughServices, *cpService)
+	}
+
+	kccmServiceList := &corev1.ServiceList{}
+	if err := r.kubevirtInfraClient.List(ctx, kccmServiceList, client.InNamespace(kubevirtInfraNamespace(hcp)),
+		client.HasLabels{tenantServiceNameLabelKey},
+		client.MatchingLabels{clusterNameLabelKey: hcp.Labels[clusterNameLabelKey]},
+	); err != nil {
+		return nil, fmt.Errorf("failed listing kccm services: %w", err)
+	}
+	kubevirtPassthroughServices = append(kubevirtPassthroughServices, kccmServiceList.Items...)
+	return kubevirtPassthroughServices, nil
+}
+
+func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hcp *hyperv1.HostedControlPlane, machineKey types.NamespacedName, cpService *corev1.Service) error {
+	log := ctrl.LoggerFrom(ctx)
 
 	// If there is a selector endpoints should not be generated
 	if len(cpService.Spec.Selector) > 0 {
@@ -82,27 +100,34 @@ func (r *reconciler) reconcileKubevirtDefaultIngressEndpoints(ctx context.Contex
 		return fmt.Errorf("missing default ingress passthrough Service %s/%s ports", cpService.Namespace, cpService.Name)
 	}
 
+	machine := &capiv1.Machine{}
+	if err := r.client.Get(ctx, client.ObjectKey(machineKey), machine); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("not found", "Machine", r)
+			return nil
+		}
+		return fmt.Errorf("failed to get Machine: %w", err)
+	}
+
 	ipv4MachineAddresses := []string{}
 	ipv6MachineAddresses := []string{}
 	ports := []discoveryv1.EndpointPort{}
 
-	// If machine is back to not ready we should reset the endpointslice
-	if machine.Status.GetTypedPhase() == capiv1.MachinePhaseRunning {
-		for _, machineAddress := range machine.Status.Addresses {
-			if machineAddress.Type == capiv1.MachineInternalIP {
-				if netip.MustParseAddr(machineAddress.Address).Is4() {
-					ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)
-				} else {
-					ipv6MachineAddresses = append(ipv6MachineAddresses, machineAddress.Address)
-				}
+	for _, machineAddress := range machine.Status.Addresses {
+		if machineAddress.Type == capiv1.MachineInternalIP {
+			if netip.MustParseAddr(machineAddress.Address).Is4() {
+				ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)
+			} else {
+				ipv6MachineAddresses = append(ipv6MachineAddresses, machineAddress.Address)
 			}
 		}
-		for _, port := range cpService.Spec.Ports {
-			ports = append(ports, discoveryv1.EndpointPort{
-				Protocol: &port.Protocol,
-				Port:     pointer.Int32(int32(port.TargetPort.IntValue())),
-			})
-		}
+	}
+	for _, port := range cpService.Spec.Ports {
+		ports = append(ports, discoveryv1.EndpointPort{
+			Name:     &port.Name,
+			Protocol: &port.Protocol,
+			Port:     pointer.Int32(int32(port.TargetPort.IntValue())),
+		})
 	}
 
 	ipAddressesByFamily := map[corev1.IPFamily][]string{
@@ -113,7 +138,7 @@ func (r *reconciler) reconcileKubevirtDefaultIngressEndpoints(ctx context.Contex
 		if !serviceHasIPFamily(cpService, ipFamily) {
 			continue
 		}
-		err := r.reconcileKubevirtDefaultIngressEndpointsByIPFamily(ctx, machine, cpService, ipFamily, ipAddressesByFamily[ipFamily], ports)
+		err := r.reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx, machine, cpService, ipFamily, ipAddressesByFamily[ipFamily], ports)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Info(fmt.Sprintf("waiting for kubevirt VM to be created before processing default ingress %s endpoints", ipFamily))
@@ -126,7 +151,7 @@ func (r *reconciler) reconcileKubevirtDefaultIngressEndpoints(ctx context.Contex
 	return nil
 }
 
-func (r *reconciler) reconcileKubevirtDefaultIngressEndpointsByIPFamily(ctx context.Context, machine *capiv1.Machine, cpService *corev1.Service, ipFamily corev1.IPFamily, machineAddresses []string, ports []discoveryv1.EndpointPort) error {
+func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx context.Context, machine *capiv1.Machine, cpService *corev1.Service, ipFamily corev1.IPFamily, machineAddresses []string, ports []discoveryv1.EndpointPort) error {
 	log := ctrl.LoggerFrom(ctx)
 	endpointSlice := &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
@@ -143,22 +168,25 @@ func (r *reconciler) reconcileKubevirtDefaultIngressEndpointsByIPFamily(ctx cont
 				Namespace: cpService.Namespace,
 				Name:      machine.Spec.InfrastructureRef.Name,
 			}
-			vm := kubevirtv1.VirtualMachine{}
-			if err := r.kubevirtInfraClient.Get(ctx, vmKey, &vm); err != nil {
+			vm := &kubevirtv1.VirtualMachine{}
+			if err := r.kubevirtInfraClient.Get(ctx, vmKey, vm); err != nil {
 				return err
 			}
-			ownerRef := config.OwnerRefFrom(&vm)
+			ownerRef := config.OwnerRefFrom(vm)
 			ownerRef.ApplyTo(endpointSlice)
 		}
 
 		if endpointSlice.Labels == nil {
 			endpointSlice.Labels = map[string]string{}
 		}
-		endpointSlice.Labels["kubernetes.io/service-name"] = cpService.Name
-		endpointSlice.Labels["endpointslice.kubernetes.io/managed-by"] = "control-plane-operator.hypershift.openshift.io"
+		endpointSlice.Labels[discoveryv1.LabelServiceName] = cpService.Name
+		endpointSlice.Labels[discoveryv1.LabelManagedBy] = managedByValue
 		endpointSlice.AddressType = discoveryv1.AddressType(ipFamily)
 		if len(machineAddresses) > 0 {
-			endpointSlice.Endpoints = []discoveryv1.Endpoint{{Addresses: machineAddresses}}
+			endpointSlice.Endpoints = []discoveryv1.Endpoint{{
+				Addresses:  machineAddresses,
+				Conditions: machinePhaseToEndpointConditions(machine),
+			}}
 		} else {
 			endpointSlice.Endpoints = []discoveryv1.Endpoint{}
 		}
@@ -179,4 +207,52 @@ func serviceHasIPFamily(service *corev1.Service, ipFamilyToFind corev1.IPFamily)
 		}
 	}
 	return false
+}
+
+func kubevirtInfraNamespace(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Spec.Platform.Kubevirt.Credentials != nil {
+		return hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+	}
+	return hcp.Namespace
+}
+
+func (r *reconciler) removeOrphanKubevirtPassthroughEndpointSlices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	namespace := kubevirtInfraNamespace(hcp)
+	endpointSliceList := discoveryv1.EndpointSliceList{}
+	managedByControlPlaneOperator := client.MatchingLabels{discoveryv1.LabelManagedBy: managedByValue}
+	if err := r.kubevirtInfraClient.List(ctx, &endpointSliceList, client.InNamespace(namespace), managedByControlPlaneOperator); err != nil {
+		return fmt.Errorf("failed finding endpoint slices managed by control plane operator: %w", err)
+	}
+
+	for _, endpointSlice := range endpointSliceList.Items {
+		serviceName := endpointSlice.Labels[discoveryv1.LabelServiceName]
+		if serviceName == "" {
+			continue
+		}
+		err := r.kubevirtInfraClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: serviceName}, &corev1.Service{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed looking for service referencing endpoint slices managed by control plane operator: %w", err)
+		}
+		if apierrors.IsNotFound(err) {
+			if err := r.kubevirtInfraClient.Delete(ctx, &endpointSlice); err != nil {
+				return fmt.Errorf("failed deleting orphan kubevirt passthrough endpoint slice: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func machinePhaseToEndpointConditions(machine *capiv1.Machine) discoveryv1.EndpointConditions {
+	if machine.Status.GetTypedPhase() == capiv1.MachinePhaseRunning {
+		return discoveryv1.EndpointConditions{
+			Ready:       pointer.Bool(true),
+			Serving:     pointer.Bool(true),
+			Terminating: pointer.Bool(false),
+		}
+	}
+	return discoveryv1.EndpointConditions{
+		Ready:       pointer.Bool(false),
+		Serving:     pointer.Bool(false),
+		Terminating: pointer.Bool(false),
+	}
 }

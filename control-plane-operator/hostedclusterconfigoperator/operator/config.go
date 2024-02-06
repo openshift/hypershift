@@ -45,7 +45,7 @@ func cacheLabelSelector() labels.Selector {
 	return selector
 }
 
-type ControllerSetupFunc func(*HostedClusterConfigOperatorConfig) error
+type ControllerSetupFunc func(context.Context, *HostedClusterConfigOperatorConfig) error
 
 type HostedClusterConfigOperatorConfig struct {
 	Manager                      ctrl.Manager
@@ -187,7 +187,7 @@ func (c *HostedClusterConfigOperatorConfig) Fatal(err error, msg string) {
 func (c *HostedClusterConfigOperatorConfig) Start(ctx context.Context) error {
 	for controllerName, setupFunc := range c.ControllerFuncs {
 		c.Logger.Info("setting up controller", "controller", controllerName)
-		if err := setupFunc(c); err != nil {
+		if err := setupFunc(ctx, c); err != nil {
 			return fmt.Errorf("cannot setup controller %s: %v", controllerName, err)
 		}
 	}

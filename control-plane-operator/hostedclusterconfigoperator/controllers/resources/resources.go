@@ -123,7 +123,7 @@ func eventHandler() handler.EventHandler {
 		})
 }
 
-func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
+func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
 	if err := imageregistryv1.Install(opts.Manager.GetScheme()); err != nil {
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
