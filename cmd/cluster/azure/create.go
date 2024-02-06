@@ -41,7 +41,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroup, "network-security-group", opts.AzurePlatform.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network created for HostedCluster.")
 	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
-	cmd.Flags().StringSliceVar(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
+	cmd.Flags().StringToStringVarP(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", "t", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")

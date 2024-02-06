@@ -178,7 +178,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 
-	tagMap, err := util.ParseTags(opts.AWSPlatform.AdditionalTags)
+	tagMap, err := util.ParseAWSTags(opts.AWSPlatform.AdditionalTags)
 	if err != nil {
 		return fmt.Errorf("failed to parse additional tags: %w", err)
 	}

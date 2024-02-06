@@ -53,7 +53,7 @@ type CreateInfraOptions struct {
 	RHCOSImage           string
 	ResourceGroupName    string
 	NetworkSecurityGroup string
-	ResourceGroupTags    []string
+	ResourceGroupTags    map[string]string
 }
 
 type CreateInfraOutput struct {
@@ -100,7 +100,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().StringVar(&opts.NetworkSecurityGroup, "network-security-group", opts.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network")
-	cmd.Flags().StringSliceVar(&opts.ResourceGroupTags, "resource-group-tags", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
+	cmd.Flags().StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -124,13 +124,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		Location:   o.Location,
 		InfraID:    o.InfraID,
 		BaseDomain: o.BaseDomain,
-	}
-
-	if o.ResourceGroupTags != nil {
-		_, err := util.ParseTags(o.ResourceGroupTags)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// Setup subscription ID and Azure credential information
@@ -261,23 +254,18 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 
 		return *response.ID, *response.Name, existingRGSuccessMsg, nil
 	} else {
-		additionalTags := map[string]*string{}
 
-		if o.ResourceGroupTags != nil {
-			for _, tagStr := range o.ResourceGroupTags {
-				parts := strings.SplitN(tagStr, "=", 2)
-				if len(parts) != 2 {
-					return "", "", "", fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
-				}
-				additionalTags[parts[0]] = &parts[1]
-			}
+		resourceGroupTags := map[string]*string{}
+
+		for key, value := range o.ResourceGroupTags {
+			resourceGroupTags[key] = &value
 		}
 
 		// Create a resource group since none was provided
 		resourceGroupName := o.Name + "-" + o.InfraID
 		parameters := armresources.ResourceGroup{
 			Location: to.Ptr(o.Location),
-			Tags:     additionalTags,
+			Tags:     resourceGroupTags,
 		}
 		response, err := resourceGroupClient.CreateOrUpdate(ctx, resourceGroupName, parameters, nil)
 		if err != nil {

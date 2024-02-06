@@ -604,7 +604,7 @@ func (o *CreateInfraOptions) ec2TagSpecifications(resourceType, name string) []*
 }
 
 func (o *CreateInfraOptions) parseAdditionalTags() error {
-	parsed, err := util.ParseTags(o.AdditionalTags)
+	parsed, err := util.ParseAWSTags(o.AdditionalTags)
 	if err != nil {
 		return err
 	}
