@@ -119,6 +119,8 @@ type HostedControlPlaneSpec struct {
 	// critical control plane components. The default value is SingleReplica.
 	//
 	// +optional
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControllerAvailabilityPolicy is immutable"
 	// +kubebuilder:default:="SingleReplica"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
