@@ -2,6 +2,7 @@ package aws
 
 import (
 	"fmt"
+
 	k8sutilspointer "k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"

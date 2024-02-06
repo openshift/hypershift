@@ -663,7 +663,7 @@ EOF
    --asset-output-dir %[2]s/output \
    --rendered-manifest-dir=%[2]s/manifests \
    --cluster-profile=ibm-cloud-managed \
-   --payload-version=%[4]s 
+   --payload-version=%[4]s
 cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 `
 

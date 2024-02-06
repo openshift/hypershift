@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/openshift/hypershift/cmd/util"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"

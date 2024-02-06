@@ -3,8 +3,9 @@ package util
 import (
 	"context"
 	"fmt"
-	"github.com/docker/distribution"
 	"net/http"
+
+	"github.com/docker/distribution"
 
 	"github.com/blang/semver"
 	"github.com/docker/distribution/registry/client/transport"

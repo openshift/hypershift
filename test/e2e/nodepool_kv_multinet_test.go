@@ -116,7 +116,7 @@ apiVersion: "k8s.cni.cncf.io/v1"
 kind: NetworkAttachmentDefinition
 metadata:
   namespace: %[1]s
-  name: %[2]s 
+  name: %[2]s
 spec:
   config: |2
     {

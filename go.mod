@@ -41,11 +41,12 @@ require (
 	github.com/onsi/gomega v1.30.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
-	github.com/openshift/api v0.0.0-20231213232254-1029f2d5339f
+	github.com/openshift/api v0.0.0-20240108220607-355cd2586ec4
 	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
+	github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000
 	github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
@@ -253,7 +254,9 @@ require (
 
 replace (
 	github.com/google/cel-go => github.com/google/cel-go v0.17.7
+	github.com/openshift/hypershift/api => ./api
 	k8s.io/kubernetes => k8s.io/kubernetes v0.29.0
 	kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 	kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
+	sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.1
 )

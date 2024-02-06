@@ -5,9 +5,10 @@ package e2e
 
 import (
 	"context"
-	"k8s.io/utils/ptr"
 	"testing"
 	"time"
+
+	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"

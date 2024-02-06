@@ -11,7 +11,7 @@ require (
 	sigs.k8s.io/controller-tools v0.14.0
 )
 
-replace k8s.io/code-generator => github.com/stevekuznetsov/k8s-code-generator v0.0.0-20231218200749-2151937f4610
+replace k8s.io/code-generator => github.com/jparrill/code-generator v0.0.0-20240205120635-697bef95b1c3
 
 require (
 	cloud.google.com/go/compute v1.23.3 // indirect

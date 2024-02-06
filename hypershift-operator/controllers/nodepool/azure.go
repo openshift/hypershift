@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"

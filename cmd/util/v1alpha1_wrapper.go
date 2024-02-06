@@ -6,11 +6,11 @@ import (
 
 	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/conversion"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )
 
 func v1alpha1Client(client crclient.Client) crclient.Client {
@@ -170,27 +170,11 @@ func v1alpha1ListResource(list crclient.ObjectList) crclient.ObjectList {
 }
 
 func convertToV1Beta1(src, dest crclient.Object) error {
-	destHub, isHub := dest.(conversion.Hub)
-	if !isHub {
-		return fmt.Errorf("destination resource is of not of type v1beta1: %T", dest)
-	}
-	convertible, isConvertible := src.(conversion.Convertible)
-	if !isConvertible {
-		return fmt.Errorf("source resource is not of type v1alpha1: %T", src)
-	}
-	return convertible.ConvertTo(destHub)
+	return conversion.ConvertTo(src, dest)
 }
 
 func convertToV1Alpha1(src, dest crclient.Object) error {
-	convertible, isConvertible := dest.(conversion.Convertible)
-	if !isConvertible {
-		return fmt.Errorf("destination resource is not of type v1alpha1: %T", dest)
-	}
-	hub, isHub := src.(conversion.Hub)
-	if !isHub {
-		return fmt.Errorf("source resource is not of type v1beta1: %T", src)
-	}
-	return convertible.ConvertFrom(hub)
+	return conversion.ConvertFrom(src, dest)
 }
 
 func convertListToV1Beta1(src, dest crclient.ObjectList) error {
@@ -202,7 +186,7 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.HostedCluster{}
-			srcList.Items[i].ConvertTo(destItem)
+			conversion.Convert_HostedCluster_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
 			destList.Items = append(destList.Items, *destItem)
 		}
 	case *hyperv1alpha1.NodePoolList:
@@ -212,7 +196,7 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.NodePool{}
-			srcList.Items[i].ConvertTo(destItem)
+			conversion.Convert_NodePool_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
 			destList.Items = append(destList.Items, *destItem)
 		}
 	case *hyperv1alpha1.AWSEndpointServiceList:
@@ -222,7 +206,7 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.AWSEndpointService{}
-			srcList.Items[i].ConvertTo(destItem)
+			conversion.Convert_AWSEndpointService_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
 			destList.Items = append(destList.Items, *destItem)
 		}
 	case *hyperv1alpha1.HostedControlPlaneList:
@@ -232,7 +216,7 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.HostedControlPlane{}
-			srcList.Items[i].ConvertTo(destItem)
+			conversion.Convert_HostedControlPlane_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
 			destList.Items = append(destList.Items, *destItem)
 		}
 	}
