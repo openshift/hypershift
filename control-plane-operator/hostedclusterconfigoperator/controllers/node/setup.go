@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
@@ -10,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
+func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
 	r := &reconciler{
 		client:                 opts.CPCluster.GetClient(),
 		guestClusterClient:     opts.Manager.GetClient(),
