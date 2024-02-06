@@ -1397,66 +1397,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Reconcile the OIDCCAFile ConfigMap if
-	// * Authentication Type is OIDC
-	// * At least one OIDCProvider is set (only a single OIDCProvider is currently supported)
-	// * A configmap ref is set for the issuer CA
-	if !hyperutil.HCOAuthEnabled(hcluster) &&
-		len(hcluster.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
-		hcluster.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name != "" {
-		caConfigMapName := hcluster.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name
-		var src corev1.ConfigMap
-		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: caConfigMapName}, &src)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster OIDCCAFile configmap %s: %w", caConfigMapName, err)
-		}
-
-		dest := controlplaneoperator.OIDCCAConfigMap(controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
-			srcData, srcHasData := src.Data["ca.crt"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster OIDCCAFile configmap %q must have a ca.crt key", src.Name)
-			}
-			if dest.Data == nil {
-				dest.Data = map[string]string{}
-			}
-			dest.Data["ca.crt"] = srcData
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane OIDCCAFile configmap: %w", err)
-		}
-	}
-
-	// For each client secret in the Authentication OIDC global config, copy the secret into the control plane namespace.
-	if !hyperutil.HCOAuthEnabled(hcluster) &&
-		len(hcluster.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
-		len(hcluster.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
-		for _, oidcClient := range hcluster.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
-			var src corev1.Secret
-			err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err)
-			}
-			dest := corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      oidcClient.ClientSecret.Name,
-					Namespace: controlPlaneNamespace.Name,
-				},
-			}
-			_, err = createOrUpdate(ctx, r.Client, &dest, func() error {
-				if dest.Data == nil {
-					dest.Data = map[string][]byte{}
-				}
-				dest.Data["clientSecret"] = src.Data["clientSecret"]
-				return nil
-			})
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane OIDCClient secret %s: %w", dest.Name, err)
-			}
-		}
-	}
-
 	// Reconcile the service account signing key if set
 	if hcluster.Spec.ServiceAccountSigningKey != nil {
 		if err := r.reconcileServiceAccountSigningKey(ctx, hcluster, controlPlaneNamespace.Name, createOrUpdate); err != nil {
