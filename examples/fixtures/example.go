@@ -636,11 +636,6 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Subnet: &hyperv1.AWSResourceReference{
 					ID: zone.SubnetID,
 				},
-				SecurityGroups: []hyperv1.AWSResourceReference{
-					{
-						ID: &o.AWS.SecurityGroupID,
-					},
-				},
 				RootVolume: &hyperv1.Volume{
 					Size:          o.AWS.RootVolumeSize,
 					Type:          o.AWS.RootVolumeType,

@@ -40347,8 +40347,8 @@ objects:
                         defaultWorkerSecurityGroupID:
                           description: |-
                             DefaultWorkerSecurityGroupID is the ID of a security group created by
-                            the control plane operator. It is used for NodePools that don't specify a
-                            security group.
+                            the control plane operator. It is always added to worker machines in
+                            addition to any security groups specified in the NodePool.
                           type: string
                       type: object
                   type: object
@@ -44624,8 +44624,8 @@ objects:
                         defaultWorkerSecurityGroupID:
                           description: |-
                             DefaultWorkerSecurityGroupID is the ID of a security group created by
-                            the control plane operator. It is used for NodePools that don't specify a
-                            security group.
+                            the control plane operator. It is always added to worker machines in
+                            addition to any security groups specified in the NodePool.
                           type: string
                       type: object
                   type: object
@@ -49089,8 +49089,8 @@ objects:
                         defaultWorkerSecurityGroupID:
                           description: |-
                             DefaultWorkerSecurityGroupID is the ID of a security group created by
-                            the control plane operator. It is used for NodePools that don't specify a
-                            security group.
+                            the control plane operator. It is always added to worker machines in
+                            addition to any security groups specified in the NodePool.
                           type: string
                       type: object
                   type: object
@@ -53336,8 +53336,8 @@ objects:
                         defaultWorkerSecurityGroupID:
                           description: |-
                             DefaultWorkerSecurityGroupID is the ID of a security group created by
-                            the control plane operator. It is used for NodePools that don't specify a
-                            security group.
+                            the control plane operator. It is always added to worker machines in
+                            addition to any security groups specified in the NodePool.
                           type: string
                       type: object
                   type: object

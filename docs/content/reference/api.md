@@ -1484,8 +1484,8 @@ string
 <td>
 <em>(Optional)</em>
 <p>DefaultWorkerSecurityGroupID is the ID of a security group created by
-the control plane operator. It is used for NodePools that don&rsquo;t specify a
-security group.</p>
+the control plane operator. It is always added to worker machines in
+addition to any security groups specified in the NodePool.</p>
 </td>
 </tr>
 </tbody>
