@@ -60,6 +60,8 @@ spec:
       containers:
       - args:
         - operator
+        - --namespace
+        - test-namespace
         command:
         - /usr/bin/control-plane-pki-operator
         env:

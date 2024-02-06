@@ -41,9 +41,13 @@ const (
 	// KonnectivityAgentImageAnnotation is a temporary annotation that allows the specification of the konnectivity agent image.
 	// This will be removed when Konnectivity is added to the Openshift release payload
 	KonnectivityAgentImageAnnotation = "hypershift.openshift.io/konnectivity-agent-image"
-	// ControlPlaneOperatorImageAnnotation is a annotation that allows the specification of the control plane operator image.
+	// ControlPlaneOperatorImageAnnotation is an annotation that allows the specification of the control plane operator image.
 	// This is used for development and e2e workflows
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"
+	// ControlPlaneOperatorImageLabelsAnnotation is an annotation that allows the specification of the control plane operator image labels.
+	// Labels are provided in a comma-delimited format: key=value,key2=value2
+	// This is used for development and e2e workflows
+	ControlPlaneOperatorImageLabelsAnnotation = "hypershift.openshift.io/control-plane-operator-image-labels"
 	// RestartDateAnnotation is a annotation that can be used to trigger a rolling restart of all components managed by hypershift.
 	// it is important in some situations like CA rotation where components need to be fully restarted to pick up new CAs. It's also
 	// important in some recovery situations where a fresh start of the component helps fix symptoms a user might be experiencing.

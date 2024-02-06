@@ -830,6 +830,8 @@ github.com/openshift/custom-resource-status/conditions/v1
 ## explicit; go 1.20
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
 github.com/openshift/library-go/pkg/certs
+github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphanalysis
+github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphapi
 github.com/openshift/library-go/pkg/config/client
 github.com/openshift/library-go/pkg/config/clusterstatus
 github.com/openshift/library-go/pkg/config/configdefaults

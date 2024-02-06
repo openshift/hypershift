@@ -8,26 +8,13 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
-	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
-	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	certificatesv1 "k8s.io/api/certificates/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/wait"
-	certificatesv1applyconfigurations "k8s.io/client-go/applyconfigurations/certificates/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	"github.com/openshift/hypershift/test/integration"
+	integrationframework "github.com/openshift/hypershift/test/integration/framework"
 	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -36,7 +23,6 @@ import (
 // vs upgrading to the code under test as TestUpgradeControlPlane does.
 func TestCreateCluster(t *testing.T) {
 	t.Parallel()
-	_, key, csr := certKeyRequest(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -52,135 +38,32 @@ func TestCreateCluster(t *testing.T) {
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		t.Run("break-glass-credentials", func(t *testing.T) {
-			// Sanity check the cluster by waiting for the nodes to report ready
-			t.Logf("Waiting for guest client to become available")
-			_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+		// Sanity check the cluster by waiting for the nodes to report ready
+		t.Logf("Waiting for guest client to become available")
+		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-			hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		t.Logf("fetching mgmt kubeconfig")
+		mgmtCfg, err := e2eutil.GetConfig()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
+		mgmtCfg.QPS = -1
+		mgmtCfg.Burst = -1
 
-			validateCertificateAuth := func(t *testing.T, root *rest.Config, crt, key []byte) {
-				t.Log("validating that the client certificate provides the appropriate access")
+		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
 
-				t.Log("amending the existing kubeconfig to use break-glass client certificate credentials")
-				certConfig := rest.AnonymousClientConfig(root)
-				certConfig.TLSClientConfig.CertData = crt
-				certConfig.TLSClientConfig.KeyData = key
+		t.Logf("fetching guest kubeconfig")
+		guestKubeConfigSecretData, err := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get guest kubeconfig")
 
-				breakGlassTenantClient, err := kubernetes.NewForConfig(certConfig)
-				if err != nil {
-					t.Fatalf("could not create client: %v", err)
-				}
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
 
-				t.Log("issuing SSR to identify the subject we are given using the client certificate")
-				response, err := breakGlassTenantClient.AuthenticationV1().SelfSubjectReviews().Create(context.Background(), &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-				if err != nil {
-					t.Fatalf("could not send SSAR: %v", err)
-				}
+		guestClients, err := integrationframework.NewClients(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
 
-				t.Log("ensuring that the SSR identifies the client certificate as having system:masters power and correct username")
-				if !sets.New[string](response.Status.UserInfo.Groups...).Has("system:masters") || !strings.HasPrefix(response.Status.UserInfo.Username, "customer-break-glass-") {
-					t.Fatalf("did not get correct SSR response: %#v", response)
-				}
-			}
-
-			t.Logf("fetching guest kubeconfig")
-			guestKubeConfigSecretData, err := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
-
-			guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-			g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-
-			t.Run("direct fetch", func(t *testing.T) {
-				clientCertificate := pkimanifests.CustomerSystemAdminClientCertSecret(hostedControlPlaneNamespace)
-				t.Logf("Grabbing customer break-glass credentials from client certificate secret %s/%s", clientCertificate.Namespace, clientCertificate.Name)
-				if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 3*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-					getErr := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(clientCertificate), clientCertificate)
-					if apierrors.IsNotFound(getErr) {
-						return false, nil
-					}
-					return getErr == nil, err
-				}); err != nil {
-					t.Fatalf("client cert didn't become available: %v", err)
-				}
-
-				validateCertificateAuth(t, guestConfig, clientCertificate.Data["tls.crt"], clientCertificate.Data["tls.key"])
-			})
-
-			t.Run("CSR flow", func(t *testing.T) {
-				restConfig, err := e2eutil.GetConfig()
-				if err != nil {
-					t.Fatalf("could not get rest config for mgmt plane: %v", err)
-				}
-				kubeClient, err := kubernetes.NewForConfig(restConfig)
-				if err != nil {
-					t.Fatalf("could not create k8s client for mgmt plane: %v", err)
-				}
-				hypershiftClient, err := hypershiftclient.NewForConfig(restConfig)
-				if err != nil {
-					t.Fatalf("could not create hypershift client for mgmt plane: %v", err)
-				}
-
-				csrName := hostedControlPlaneNamespace
-				signerName := certificates.SignerNameForHC(hostedCluster, certificates.CustomerBreakGlassSigner)
-				t.Logf("creating CSR %q for signer %q, requesting client auth usages", csrName, signerName)
-				csrCfg := certificatesv1applyconfigurations.CertificateSigningRequest(csrName)
-				csrCfg.Spec = certificatesv1applyconfigurations.CertificateSigningRequestSpec().
-					WithSignerName(signerName).
-					WithRequest(csr...).
-					WithUsages(certificatesv1.UsageClientAuth)
-				if _, err := kubeClient.CertificatesV1().CertificateSigningRequests().Apply(ctx, csrCfg, metav1.ApplyOptions{FieldManager: "e2e-test"}); err != nil {
-					t.Fatalf("failed to create CSR: %v", err)
-				}
-
-				t.Logf("creating CSRA %s/%s to trigger automatic approval of the CSR", csrName, csrName)
-				csraCfg := certificatesv1alpha1applyconfigurations.CertificateSigningRequestApproval(hostedControlPlaneNamespace, csrName)
-				if _, err := hypershiftClient.CertificatesV1alpha1().CertificateSigningRequestApprovals(hostedControlPlaneNamespace).Apply(ctx, csraCfg, metav1.ApplyOptions{FieldManager: "e2e-test"}); err != nil {
-					t.Fatalf("failed to create CSRA: %v", err)
-				}
-
-				t.Logf("waiting for CSR %q to be approved and signed", csrName)
-				var signedCrt []byte
-				var lastResourceVersion string
-				if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-					csr, err := kubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, csrName, metav1.GetOptions{})
-					if apierrors.IsNotFound(err) {
-						t.Logf("CSR %q does not exist yet", csrName)
-						return false, nil
-					}
-					if err != nil && !apierrors.IsNotFound(err) {
-						return true, err
-					}
-					if csr != nil && csr.Status.Certificate != nil {
-						signedCrt = csr.Status.Certificate
-						return true, nil
-					}
-					if csr.ObjectMeta.ResourceVersion != lastResourceVersion {
-						t.Logf("CSR %q observed at RV %s", csrName, csr.ObjectMeta.ResourceVersion)
-						for _, condition := range csr.Status.Conditions {
-							msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
-							if condition.Reason != "" {
-								msg += ": " + condition.Reason
-							}
-							if condition.Message != "" {
-								msg += "(" + condition.Message + ")"
-							}
-							t.Logf("CSR %q status: %s", csr.Name, msg)
-						}
-						lastResourceVersion = csr.ObjectMeta.ResourceVersion
-					}
-					return false, nil
-				}); err != nil {
-					t.Fatalf("never saw CSR fulfilled: %v", err)
-				}
-
-				if len(signedCrt) == 0 {
-					t.Fatal("got a zero-length signed cert back")
-				}
-
-				validateCertificateAuth(t, guestConfig, signedCrt, key)
-			})
-		})
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }

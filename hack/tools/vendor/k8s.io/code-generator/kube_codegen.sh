@@ -586,6 +586,7 @@ function kube::codegen::gen_client() {
             --go-header-file "${boilerplate}" \
             --output-base "${out_base}" \
             --output-package "${out_pkg_root}/${applyconfig_subdir}" \
+            --external-applyconfigurations k8s.io/apimachinery/pkg/apis/meta/v1.Condition:k8s.io/client-go/applyconfigurations/meta/v1 \
             "${inputs[@]}"
     fi
 

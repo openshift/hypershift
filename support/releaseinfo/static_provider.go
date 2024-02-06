@@ -39,7 +39,7 @@ func (p *StaticProviderDecorator) Lookup(ctx context.Context, image string, pull
 				Name: image,
 			},
 		}
-		releaseImage.Spec.Tags = append(releaseImage.Spec.Tags, ref)
+		releaseImage.Spec.Tags = append(releaseImage.Spec.Tags, ref) //TODO(cewong): ensure we're not adding tags that are already in the map!
 	}
 	return releaseImage, nil
 }
