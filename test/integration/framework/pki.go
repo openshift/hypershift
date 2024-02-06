@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 )
 
@@ -42,7 +43,7 @@ func CertKeyRequest(t *testing.T) ([]byte, []byte, []byte) {
 
 		csr, err := x509.CreateCertificateRequest(rand.New(rand.NewSource(0)), &x509.CertificateRequest{
 			Subject: pkix.Name{
-				CommonName:   "customer-break-glass-test-whatever",
+				CommonName:   CommonName(),
 				Organization: []string{"system:masters"},
 			},
 		}, cfg.Key)
@@ -73,4 +74,8 @@ func CertKeyRequest(t *testing.T) ([]byte, []byte, []byte) {
 		t.Fatalf("failed to read certificate request: %v", err)
 	}
 	return crtb, keyb, csrb
+}
+
+func CommonName() string {
+	return certificates.CommonNamePrefix(certificates.CustomerBreakGlassSigner) + "e2e-test"
 }
