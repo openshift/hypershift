@@ -62,6 +62,7 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		CloudProviderBackoffDuration: 6,
 		UseInstanceMetadata:          true,
 		LoadBalancerSku:              "standard",
+		DisableOutboundSNAT:          true,
 	}
 }
 
@@ -88,4 +89,5 @@ type AzureConfig struct {
 	CloudProviderBackoffDuration int    `json:"cloudProviderBackoffDuration"`
 	UseInstanceMetadata          bool   `json:"useInstanceMetadata"`
 	LoadBalancerSku              string `json:"loadBalancerSku"`
+	DisableOutboundSNAT          bool   `json:"disableOutboundSNAT"`
 }
