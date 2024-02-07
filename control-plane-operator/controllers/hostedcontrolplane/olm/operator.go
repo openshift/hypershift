@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/assets"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -13,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -51,7 +51,7 @@ func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config
 	return nil
 }
 
-func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string) error {
+func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string, platformType hyperv1.PlatformType) error {
 	// preserve existing resource requirements
 	mainContainer := util.FindContainer(catalogOperatorName, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
@@ -85,7 +85,7 @@ func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef 
 		}
 	}
 	dc.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "CatalogSource"},
@@ -109,7 +109,7 @@ func ReconcileOLMOperatorMetricsService(svc *corev1.Service, ownerRef config.Own
 	return nil
 }
 
-func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string) error {
+func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements
@@ -141,7 +141,7 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 		}
 	}
 	dc.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "CatalogSource"},
