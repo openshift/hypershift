@@ -64,7 +64,7 @@ func kcmLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceServingCA *corev1.ConfigMap, p *KubeControllerManagerParams) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceServingCA *corev1.ConfigMap, p *KubeControllerManagerParams, platformType hyperv1.PlatformType) error {
 	// preserve existing resource requirements for main KCM container
 	mainContainer := util.FindContainer(kcmContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
@@ -128,7 +128,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig, p.CloudProvider)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds, p.TokenMinterImage, kcmContainerMain().Name)
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

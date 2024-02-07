@@ -104,7 +104,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 // hosted-cluster services, or external services, so the operator does not
 // require any special proxy configuration or permissions in the management
 // cluster.
-func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
+func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
 	dep.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{"name": "dns-operator"},
 	}
@@ -161,7 +161,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
 		},
 	}}
 	util.AvailabilityProber(
-		kas.InClusterKASReadyURL(),
+		kas.InClusterKASReadyURL(platformType),
 		params.AvailabilityProberImage,
 		&dep.Spec.Template.Spec,
 		func(o *util.AvailabilityProberOpts) {

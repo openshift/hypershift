@@ -178,7 +178,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		},
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
 		AdditionalLabels: map[string]string{
