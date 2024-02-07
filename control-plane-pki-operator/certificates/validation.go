@@ -18,11 +18,13 @@ type SignerClass string
 const (
 	// CustomerBreakGlassSigner is the signer class used to mint break-glass credentials for customers.
 	CustomerBreakGlassSigner SignerClass = "customer-break-glass"
+	// SREBreakGlassSigner is the signer class used to mint break-glass credentials for SRE.
+	SREBreakGlassSigner SignerClass = "sre-break-glass"
 )
 
 func ValidSignerClass(input string) bool {
 	switch SignerClass(input) {
-	case CustomerBreakGlassSigner:
+	case CustomerBreakGlassSigner, SREBreakGlassSigner:
 		return true
 	default:
 		return false
@@ -32,7 +34,7 @@ func ValidSignerClass(input string) bool {
 // ValidUsagesFor declares the valid usages for a CertificateSigningRequest, given a signer.
 func ValidUsagesFor(signer SignerClass) (required, optional sets.Set[certificatesv1.KeyUsage]) {
 	switch signer {
-	case CustomerBreakGlassSigner:
+	case CustomerBreakGlassSigner, SREBreakGlassSigner:
 		return sets.New[certificatesv1.KeyUsage](certificatesv1.UsageClientAuth),
 			sets.New[certificatesv1.KeyUsage](certificatesv1.UsageDigitalSignature, certificatesv1.UsageKeyEncipherment)
 	default:

@@ -29,7 +29,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject: pkix.Name{CommonName: "system:customer-break-glass:user"},
 				},
 				expectedErr: true,
 			},
@@ -41,7 +41,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject: pkix.Name{CommonName: "system:customer-break-glass:user"},
 				},
 				expectedErr: true,
 			},
@@ -54,7 +54,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject: pkix.Name{CommonName: "system:customer-break-glass:user"},
 				},
 				expectedErr: true,
 			},
@@ -67,7 +67,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject: pkix.Name{CommonName: "system:customer-break-glass:user"},
 				},
 				expectedErr: true,
 			},
@@ -80,7 +80,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject:  pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject:  pkix.Name{CommonName: "system:customer-break-glass:user"},
 					DNSNames: []string{"example.com"},
 				},
 				expectedErr: true,
@@ -94,7 +94,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject:        pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject:        pkix.Name{CommonName: "system:customer-break-glass:user"},
 					EmailAddresses: []string{"someone@example.com"},
 				},
 				expectedErr: true,
@@ -108,7 +108,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject:     pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject:     pkix.Name{CommonName: "system:customer-break-glass:user"},
 					IPAddresses: []net.IP{[]byte(`127.0.0.1`)},
 				},
 				expectedErr: true,
@@ -122,7 +122,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject: pkix.Name{CommonName: "system:customer-break-glass:user"},
 					URIs:    []*url.URL{{Scheme: "https"}},
 				},
 				expectedErr: true,
@@ -149,7 +149,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject: pkix.Name{CommonName: "system:customer-break-glass:user"},
 				},
 			},
 			{
@@ -161,7 +161,152 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					Subject: pkix.Name{CommonName: "system:customer-break-glass:user"},
+				},
+			},
+		},
+		SREBreakGlassSigner: {
+			{
+				name: "invalid signer domain",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "invalid",
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "system:sre-break-glass:user"},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid signer class",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/other",
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "system:sre-break-glass:user"},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "missing required usage",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageDigitalSignature},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "system:sre-break-glass:user"},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid usage",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageEmailProtection},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "system:sre-break-glass:user"},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid request: SAN: dns names specified",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject:  pkix.Name{CommonName: "system:sre-break-glass:user"},
+					DNSNames: []string{"example.com"},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid request: SAN: email addresses specified",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject:        pkix.Name{CommonName: "system:sre-break-glass:user"},
+					EmailAddresses: []string{"someone@example.com"},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid request: SAN: ip addresses specified",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject:     pkix.Name{CommonName: "system:sre-break-glass:user"},
+					IPAddresses: []net.IP{[]byte(`127.0.0.1`)},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid request: SAN: URIs specified",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "system:sre-break-glass:user"},
+					URIs:    []*url.URL{{Scheme: "https"}},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid request: common name without correct prefix",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "something"},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "valid: client auth",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "system:sre-break-glass:user"},
+				},
+			},
+			{
+				name: "valid: client auth with extras",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth, certificatesv1.UsageDigitalSignature, certificatesv1.UsageKeyEncipherment},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "system:sre-break-glass:user"},
 				},
 			},
 		},

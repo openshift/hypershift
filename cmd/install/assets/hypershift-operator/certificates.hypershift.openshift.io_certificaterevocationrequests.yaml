@@ -45,6 +45,7 @@ spec:
                   All the active signing CAs for the signer class will be revoked.
                 enum:
                 - customer-break-glass
+                - sre-break-glass
                 type: string
                 x-kubernetes-validations:
                 - message: signerClass is immutable

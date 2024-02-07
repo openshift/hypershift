@@ -19,7 +19,7 @@ func TestReconcileCSRApproverClusterRole(t *testing.T) {
 		Name:      "test-hc",
 	}}
 	clusterRole := controlplanepkioperator.CSRApproverClusterRole(hostedCluster)
-	if err := controlplanepkioperator.ReconcileCSRApproverClusterRole(clusterRole, hostedCluster, certificates.CustomerBreakGlassSigner); err != nil {
+	if err := controlplanepkioperator.ReconcileCSRApproverClusterRole(clusterRole, hostedCluster, certificates.CustomerBreakGlassSigner, certificates.SREBreakGlassSigner); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	clusterRoleYaml, err := util.SerializeResource(clusterRole, api.Scheme)
@@ -35,7 +35,7 @@ func TestReconcileCSRSignerClusterRole(t *testing.T) {
 		Name:      "test-hc",
 	}}
 	clusterRole := controlplanepkioperator.CSRSignerClusterRole(hostedCluster)
-	if err := controlplanepkioperator.ReconcileCSRSignerClusterRole(clusterRole, hostedCluster, certificates.CustomerBreakGlassSigner); err != nil {
+	if err := controlplanepkioperator.ReconcileCSRSignerClusterRole(clusterRole, hostedCluster, certificates.CustomerBreakGlassSigner, certificates.SREBreakGlassSigner); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	clusterRoleYaml, err := util.SerializeResource(clusterRole, api.Scheme)

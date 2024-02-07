@@ -31,6 +31,23 @@ func CustomerSystemAdminClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "customer-system-admin-client-cert-key")
 }
 
+func SRESystemAdminSigner(ns string) *corev1.Secret {
+	return secretFor(ns, "sre-system-admin-signer")
+}
+
+func SRESystemAdminSignerCA(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sre-system-admin-signer-ca",
+			Namespace: ns,
+		},
+	}
+}
+
+func SRESystemAdminClientCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "sre-system-admin-client-cert-key")
+}
+
 func TotalKASClientCABundle(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

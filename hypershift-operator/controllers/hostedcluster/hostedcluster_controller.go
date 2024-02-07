@@ -2173,7 +2173,7 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 	// Reconcile controlplane PKI operator CSR approver cluster role
 	controlPlanePKIOperatorCSRApproverClusterRole := controlplanepkioperatormanifests.CSRApproverClusterRole(hcluster)
 	_, err := createOrUpdate(ctx, r.Client, controlPlanePKIOperatorCSRApproverClusterRole, func() error {
-		return controlplanepkioperatormanifests.ReconcileCSRApproverClusterRole(controlPlanePKIOperatorCSRApproverClusterRole, hcluster, certificates.CustomerBreakGlassSigner)
+		return controlplanepkioperatormanifests.ReconcileCSRApproverClusterRole(controlPlanePKIOperatorCSRApproverClusterRole, hcluster, certificates.CustomerBreakGlassSigner, certificates.SREBreakGlassSigner)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR approver cluster role: %w", err)
@@ -2191,7 +2191,7 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 	// Reconcile controlplane PKI operator CSR signer cluster role
 	controlPlanePKIOperatorCSRSignerClusterRole := controlplanepkioperatormanifests.CSRSignerClusterRole(hcluster)
 	_, err = createOrUpdate(ctx, r.Client, controlPlanePKIOperatorCSRSignerClusterRole, func() error {
-		return controlplanepkioperatormanifests.ReconcileCSRSignerClusterRole(controlPlanePKIOperatorCSRSignerClusterRole, hcluster, certificates.CustomerBreakGlassSigner)
+		return controlplanepkioperatormanifests.ReconcileCSRSignerClusterRole(controlPlanePKIOperatorCSRSignerClusterRole, hcluster, certificates.CustomerBreakGlassSigner, certificates.SREBreakGlassSigner)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR signer cluster role: %w", err)

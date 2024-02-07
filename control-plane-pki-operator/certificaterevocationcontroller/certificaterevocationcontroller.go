@@ -197,6 +197,8 @@ func signerClassForSecretName(name string) (certificates.SignerClass, bool) {
 	switch name {
 	case manifests.CustomerSystemAdminSigner("").Name:
 		return certificates.CustomerBreakGlassSigner, true
+	case manifests.SRESystemAdminSigner("").Name:
+		return certificates.SREBreakGlassSigner, true
 	default:
 		return "", false
 	}
@@ -206,6 +208,8 @@ func secretForSignerClass(namespace string, signer certificates.SignerClass) (*c
 	switch signer {
 	case certificates.CustomerBreakGlassSigner:
 		return manifests.CustomerSystemAdminSigner(namespace), true
+	case certificates.SREBreakGlassSigner:
+		return manifests.SRESystemAdminSigner(namespace), true
 	default:
 		return nil, false
 	}
@@ -215,6 +219,8 @@ func signerClassForLeafCertificateSecret(secret *corev1.Secret) (certificates.Si
 	switch secret.Name {
 	case manifests.CustomerSystemAdminClientCertSecret(secret.Namespace).Name:
 		return certificates.CustomerBreakGlassSigner, true
+	case manifests.SRESystemAdminClientCertSecret(secret.Namespace).Name:
+		return certificates.SREBreakGlassSigner, true
 	default:
 		return "", false
 	}
@@ -247,6 +253,8 @@ func signerClassForConfigMap(configMap *corev1.ConfigMap) (certificates.SignerCl
 	switch configMap.Name {
 	case manifests.CustomerSystemAdminSignerCA(configMap.Namespace).Name:
 		return certificates.CustomerBreakGlassSigner, true
+	case manifests.SRESystemAdminSignerCA(configMap.Namespace).Name:
+		return certificates.SREBreakGlassSigner, true
 	default:
 		return "", false
 	}
@@ -256,6 +264,8 @@ func configMapForSignerClass(namespace string, signer certificates.SignerClass) 
 	switch signer {
 	case certificates.CustomerBreakGlassSigner:
 		return manifests.CustomerSystemAdminSignerCA(namespace), true
+	case certificates.SREBreakGlassSigner:
+		return manifests.SRESystemAdminSignerCA(namespace), true
 	default:
 		return nil, false
 	}
