@@ -1016,6 +1016,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
+	openShiftTrustedCABundleConfigMapForCPOExists, err := doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx, r.Client, hostedControlPlane.Namespace)
+	if err != nil {
+		return err
+	}
+
 	r.Log.Info("Reconciling ignition server")
 	if err := ignitionserver.ReconcileIgnitionServer(ctx,
 		r.Client,
@@ -1032,6 +1037,8 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 		config.OwnerRefFrom(hostedControlPlane),
+		openShiftTrustedCABundleConfigMapForCPOExists,
+		r.ReleaseProvider.GetMirroredReleaseImage(),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
@@ -1102,7 +1109,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Reconcile hosted cluster config operator
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
-	if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate); err != nil {
+	if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists); err != nil {
 		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
 	}
 
@@ -3543,7 +3550,7 @@ func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, se
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
 	versions, err := releaseImageProvider.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)
@@ -3573,7 +3580,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = createOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage, hcp.Spec.AdditionalTrustBundle, hcp)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage, hcp.Spec.AdditionalTrustBundle, hcp, openShiftTrustedCABundleConfigMapForCPOExists, r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}
@@ -4421,4 +4428,18 @@ func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Con
 		r.SREConfigHash = currentMetricsSetConfigHash
 	}
 	return nil
+}
+
+func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c client.Client, hcpNamespace string) (bool, error) {
+	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleFromCPO(hcpNamespace)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(openShiftTrustedCABundleConfigMapForCPO), openShiftTrustedCABundleConfigMapForCPO); err != nil {
+		// It's okay if this ConfigMap doesn't exist. It won't for non-OCP clusters. Only return an error if the error is something other than not existing.
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error getting %T: %w", openShiftTrustedCABundleConfigMapForCPO, err)
+		}
+	}
+	if openShiftTrustedCABundleConfigMapForCPO.Data != nil {
+		return true, nil
+	}
+	return false, nil
 }

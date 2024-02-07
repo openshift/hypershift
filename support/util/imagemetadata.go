@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"github.com/docker/distribution"
 	"net/http"
 
 	"github.com/blang/semver"
@@ -25,10 +26,12 @@ var (
 )
 
 type ImageMetadataProvider interface {
-	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte, imageContentSources []hyperv1.ImageContentSource) (*dockerv1client.DockerImageConfig, error)
+	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error)
 }
 
-type RegistryClientImageMetadataProvider struct{}
+type RegistryClientImageMetadataProvider struct {
+	OpenShiftImageRegistryOverrides map[string][]string
+}
 
 // ImageMetadata returns metadata for a given image using the given pull secret
 // to authenticate. This lookup uses a cache based on the image digest. If the
@@ -39,51 +42,72 @@ type RegistryClientImageMetadataProvider struct{}
 // tag is referring to could have changed. Once a digest is obtained, the cache is checked so that
 // no further fetching occurs. Only if both cache lookups fail, the image metadata is fetched and
 // stored in the cache.
-func (*RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte, imageContentSource []hyperv1.ImageContentSource) (*dockerv1client.DockerImageConfig, error) {
+func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
+	log := ctrl.LoggerFrom(ctx)
 
-	ref, err := reference.Parse(imageRef)
+	var repo distribution.Repository
+	var ref *reference.DockerImageReference
+
+	parsedImageRef, err := reference.Parse(imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
 	}
 
-	// Check if we should override the image for another disconneceted image
-	if len(imageContentSource) > 0 {
-		overridedImageRef, err := GetRegistryOverrides(ctx, ref, imageContentSource)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check registry overrides for image reference %q: %w", imageRef, err)
-		}
-
-		if overridedImageRef != nil {
-			ref = *overridedImageRef
-		}
-	}
-
 	// If the image reference contains a digest, immediately look it up in the cache
-	if ref.ID != "" {
-		if imageConfigObject, exists := imageMetadataCache.Get(string(ref.ID)); exists {
+	if parsedImageRef.ID != "" {
+		if imageConfigObject, exists := imageMetadataCache.Get(parsedImageRef.ID); exists {
 			return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
 		}
 	}
 
-	credStore, err := dockercredentials.NewFromBytes(pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse docker credentials: %w", err)
+	// There are no ICSPs/IDMSs to process before trying to get the image repo info
+	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+		ref = &parsedImageRef
+		repo, err = getRepository(ctx, *ref, pullSecret)
+		if err != nil {
+			return nil, err
+		}
 	}
-	rt, err := rest.TransportFor(&rest.Config{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create secure transport: %w", err)
-	}
-	registryContext := registryclient.NewContext(rt, nil).WithCredentials(credStore).
-		WithRequestModifiers(transport.NewHeaderRequestModifier(http.Header{http.CanonicalHeaderKey("User-Agent"): []string{rest.DefaultKubernetesUserAgent()}}))
 
-	repo, err := registryContext.Repository(ctx, ref.DockerClientDefaults().RegistryURL(), ref.RepositoryName(), false)
-	if err != nil {
+	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
+	for source, mirrors := range r.OpenShiftImageRegistryOverrides {
+		for _, mirror := range mirrors {
+			ref, err = GetRegistryOverrides(ctx, parsedImageRef, source, mirror)
+			if err != nil {
+				log.Info(fmt.Sprintf("failed to find registry override for image reference %q with source, %s, mirror %s: %s", imageRef, source, mirror, err.Error()))
+				continue
+			}
+
+			// If the image reference contains a digest, immediately look it up in the cache
+			if ref.ID != "" {
+				if imageConfigObject, exists := imageMetadataCache.Get(ref.ID); exists {
+					return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
+				}
+			}
+
+			repo, err = getRepository(ctx, *ref, pullSecret)
+			if err != nil {
+				log.Info(fmt.Sprintf("failed to create repository client for %s with source, %s, mirror %s: %s", ref.DockerClientDefaults().RegistryURL(), source, mirror, err.Error()))
+				continue
+			}
+			break
+		}
+		// We found a successful source/mirror combo so break continuing any further source/mirror combos
+		if repo != nil {
+			break
+		}
+	}
+
+	if repo == nil {
 		return nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
 	}
-	firstManifest, location, err := manifest.FirstManifest(ctx, ref, repo)
+
+	ref.ID = parsedImageRef.ID
+	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
 	}
+
 	// If the image ref did not contain a digest, attempt looking it up by digest after we've fetched the digest
 	if ref.ID == "" {
 		if imageConfigObject, exists := imageMetadataCache.Get(string(location.Manifest)); exists {
@@ -98,6 +122,21 @@ func (*RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, i
 	imageMetadataCache.Add(string(location.Manifest), config)
 
 	return config, nil
+}
+
+func getRepository(ctx context.Context, ref reference.DockerImageReference, pullSecret []byte) (distribution.Repository, error) {
+	credStore, err := dockercredentials.NewFromBytes(pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse docker credentials: %w", err)
+	}
+	rt, err := rest.TransportFor(&rest.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create secure transport: %w", err)
+	}
+	registryContext := registryclient.NewContext(rt, nil).WithCredentials(credStore).
+		WithRequestModifiers(transport.NewHeaderRequestModifier(http.Header{http.CanonicalHeaderKey("User-Agent"): []string{rest.DefaultKubernetesUserAgent()}}))
+
+	return registryContext.Repository(ctx, ref.DockerClientDefaults().RegistryURL(), ref.RepositoryName(), false)
 }
 
 // ImageLabels returns labels on a given image metadata
@@ -116,24 +155,23 @@ func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
 	return hcluster.Spec.Release.Image
 }
 
-func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReference, imageContentSources []hyperv1.ImageContentSource) (*reference.DockerImageReference, error) {
+func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReference, source string, mirror string) (*reference.DockerImageReference, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	for _, imageContentSource := range imageContentSources {
-		sourceRef, err := reference.Parse(imageContentSource.Source)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse source image reference %q: %w", imageContentSource.Source, err)
-		}
-
-		if sourceRef == ref {
-			log.Info("registry override coincidence found", "original", fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.Name), "mirror", imageContentSource.Mirrors[0])
-			mirrorRef, err := reference.Parse(imageContentSource.Mirrors[0])
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse mirror image reference %q: %w", mirrorRef.Name, err)
-			}
-			return &mirrorRef, nil
-		}
+	sourceRef, err := reference.Parse(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse source image reference %q: %w", source, err)
 	}
+
+	if sourceRef.Name == ref.Name {
+		log.Info("registry override coincidence found", "original", fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.Name), "mirror", mirror)
+		mirrorRef, err := reference.Parse(mirror)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse mirror image reference %q: %w", mirrorRef.Name, err)
+		}
+		return &mirrorRef, nil
+	}
+
 	log.Info("registry override coincidence not found", "image", ref.Name)
 	return &ref, nil
 }

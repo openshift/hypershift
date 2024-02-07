@@ -290,6 +290,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
+	imageMetaDataProvider := &hyperutil.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
@@ -299,7 +303,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ReleaseProvider:               releaseProviderWithOpenShiftImageRegistryOverrides,
 		EnableOCPClusterMonitoring:    opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:           opts.EnableCIDebugOutput,
-		ImageMetadataProvider:         &hyperutil.RegistryClientImageMetadataProvider{},
+		ImageMetadataProvider:         imageMetaDataProvider,
 		MetricsSet:                    metricsSet,
 		OperatorNamespace:             opts.Namespace,
 		SREConfigHash:                 sreConfigHash,
