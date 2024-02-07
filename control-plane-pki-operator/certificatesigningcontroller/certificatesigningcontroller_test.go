@@ -311,6 +311,39 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 				},
 			},
 		},
+		{
+			description: "valid sre csr",
+			name:        "test-csr",
+			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
+				if name != "test-csr" {
+					return nil, apierrors.NewNotFound(certificatesv1.SchemeGroupVersion.WithResource("certificatesigningrequests").GroupResource(), name)
+				}
+				return &certificatesv1.CertificateSigningRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: name,
+					},
+					Spec: testCSRSpec(csrBuilder{
+						cn:         certificates.CommonNamePrefix(certificates.SREBreakGlassSigner) + "test-client",
+						org:        []string{"system:masters"},
+						signerName: "hypershift.openshift.io/hc-namespace-hc-name.sre-break-glass",
+						usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					}),
+					Status: certificatesv1.CertificateSigningRequestStatus{
+						Conditions: []certificatesv1.CertificateSigningRequestCondition{{
+							Type:   certificatesv1.CertificateApproved,
+							Status: corev1.ConditionTrue,
+						}},
+					},
+				}, nil
+			},
+			signerName: certificates.SignerNameForHCP(hcp, certificates.SREBreakGlassSigner),
+			validator:  certificates.Validator(hcp, certificates.SREBreakGlassSigner),
+			expectedCfg: &certificatesv1applyconfigurations.CertificateSigningRequestApplyConfiguration{
+				Status: &certificatesv1applyconfigurations.CertificateSigningRequestStatusApplyConfiguration{
+					Certificate: []uint8(`testdata`),
+				},
+			},
+		},
 	}
 
 	for _, testCase := range cases {

@@ -24,7 +24,7 @@ type CertificateRevocationRequest struct {
 // CertificateRevocationRequestSpec defines the desired state of CertificateRevocationRequest
 type CertificateRevocationRequestSpec struct {
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=customer-break-glass
+	// +kubebuilder:validation:Enum=customer-break-glass;sre-break-glass
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="signerClass is immutable"
 
 	// SignerClass identifies the class of signer to revoke. All the active signing CAs for the
