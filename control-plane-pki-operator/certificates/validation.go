@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"strings"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -52,6 +53,10 @@ func SignerNameForHC(hc *hypershiftv1beta1.HostedCluster, signer SignerClass) st
 // SignerDomain is the domain all certificate signers identify under for HyperShift
 const SignerDomain string = "hypershift.openshift.io"
 
+func CommonNamePrefix(signer SignerClass) string {
+	return fmt.Sprintf("system:%s:", signer)
+}
+
 // ValidatorFunc knows how to validate a CertificateSigningRequest
 type ValidatorFunc func(csr *certificatesv1.CertificateSigningRequest, x509cr *x509.CertificateRequest) error
 
@@ -61,8 +66,19 @@ func Validator(hcp *hypershiftv1beta1.HostedControlPlane, signer SignerClass) Va
 	requiredUsages, optionalUsages := ValidUsagesFor(signer)
 	validUsages := optionalUsages.Union(requiredUsages)
 	return func(csr *certificatesv1.CertificateSigningRequest, x509cr *x509.CertificateRequest) error {
+		if csr == nil {
+			return errors.New("the Kubernetes CertificateSigningRequest object is missing - programmer error")
+		}
+		if x509cr == nil {
+			return errors.New("the x509 CertificateRequest object is missing - programmer error")
+		}
+
 		if csr.Spec.SignerName != signerName {
 			return fmt.Errorf("signer name %q does not match %q", csr.Spec.SignerName, signerName)
+		}
+
+		if prefix := CommonNamePrefix(signer); !strings.HasPrefix(x509cr.Subject.CommonName, prefix) {
+			return fmt.Errorf("invalid certificate request: subject CommonName must begin with %q", prefix)
 		}
 
 		requestedUsages := sets.New[certificatesv1.KeyUsage](csr.Spec.Usages...)

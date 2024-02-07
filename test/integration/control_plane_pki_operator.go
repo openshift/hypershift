@@ -48,7 +48,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 			return breakGlassTenantClient
 		}
 
-		validateCertificateAuth := func(t *testing.T, root *rest.Config, crt, key []byte) {
+		validateCertificateAuth := func(t *testing.T, root *rest.Config, crt, key []byte, usernameValid func(string) bool) {
 			t.Log("validating that the client certificate provides the appropriate access")
 
 			breakGlassTenantClient := clientForCertKey(t, root, crt, key)
@@ -60,7 +60,8 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 			}
 
 			t.Log("ensuring that the SSR identifies the client certificate as having system:masters power and correct username")
-			if !sets.New[string](response.Status.UserInfo.Groups...).Has("system:masters") || !strings.HasPrefix(response.Status.UserInfo.Username, "customer-break-glass-") {
+			if !sets.New[string](response.Status.UserInfo.Groups...).Has("system:masters") ||
+				!usernameValid(response.Status.UserInfo.Username) {
 				t.Fatalf("did not get correct SSR response: %#v", response)
 			}
 		}
@@ -78,7 +79,9 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 				t.Fatalf("client cert didn't become available: %v", err)
 			}
 
-			validateCertificateAuth(t, guest.Cfg, clientCertificate.Data["tls.crt"], clientCertificate.Data["tls.key"])
+			validateCertificateAuth(t, guest.Cfg, clientCertificate.Data["tls.crt"], clientCertificate.Data["tls.key"], func(s string) bool {
+				return strings.HasPrefix(s, certificates.CommonNamePrefix(certificates.CustomerBreakGlassSigner))
+			})
 		})
 
 		t.Run("CSR flow", func(t *testing.T) {
@@ -143,7 +146,9 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 				t.Fatal("got a zero-length signed cert back")
 			}
 
-			validateCertificateAuth(t, guest.Cfg, signedCrt, key)
+			validateCertificateAuth(t, guest.Cfg, signedCrt, key, func(s string) bool {
+				return s == framework.CommonName()
+			})
 
 			t.Run("revocation", func(t *testing.T) {
 				crrName := "customer-break-glass-revocation"

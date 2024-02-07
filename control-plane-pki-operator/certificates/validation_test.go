@@ -2,6 +2,7 @@ package certificates
 
 import (
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"net"
 	"net/url"
@@ -27,6 +28,9 @@ func TestValidator(t *testing.T) {
 						SignerName: "invalid",
 					},
 				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+				},
 				expectedErr: true,
 			},
 			{
@@ -35,6 +39,9 @@ func TestValidator(t *testing.T) {
 					Spec: certificatesv1.CertificateSigningRequestSpec{
 						SignerName: "hypershift.openshift.io/other",
 					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
 				},
 				expectedErr: true,
 			},
@@ -46,6 +53,9 @@ func TestValidator(t *testing.T) {
 						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageDigitalSignature},
 					},
 				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+				},
 				expectedErr: true,
 			},
 			{
@@ -55,6 +65,9 @@ func TestValidator(t *testing.T) {
 						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.customer-break-glass",
 						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageEmailProtection},
 					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
 				},
 				expectedErr: true,
 			},
@@ -67,6 +80,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
+					Subject:  pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
 					DNSNames: []string{"example.com"},
 				},
 				expectedErr: true,
@@ -80,6 +94,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
+					Subject:        pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
 					EmailAddresses: []string{"someone@example.com"},
 				},
 				expectedErr: true,
@@ -93,6 +108,7 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
+					Subject:     pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
 					IPAddresses: []net.IP{[]byte(`127.0.0.1`)},
 				},
 				expectedErr: true,
@@ -106,7 +122,21 @@ func TestValidator(t *testing.T) {
 					},
 				},
 				x509cr: &x509.CertificateRequest{
-					URIs: []*url.URL{{Scheme: "https"}},
+					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+					URIs:    []*url.URL{{Scheme: "https"}},
+				},
+				expectedErr: true,
+			},
+			{
+				name: "invalid request: common name without correct prefix",
+				csr: &certificatesv1.CertificateSigningRequest{
+					Spec: certificatesv1.CertificateSigningRequestSpec{
+						SignerName: "hypershift.openshift.io/hc-namespace-hc-name.customer-break-glass",
+						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
+					},
+				},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: "something"},
 				},
 				expectedErr: true,
 			},
@@ -118,7 +148,9 @@ func TestValidator(t *testing.T) {
 						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},
 					},
 				},
-				x509cr: &x509.CertificateRequest{},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+				},
 			},
 			{
 				name: "valid: client auth with extras",
@@ -128,7 +160,9 @@ func TestValidator(t *testing.T) {
 						Usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth, certificatesv1.UsageDigitalSignature, certificatesv1.UsageKeyEncipherment},
 					},
 				},
-				x509cr: &x509.CertificateRequest{},
+				x509cr: &x509.CertificateRequest{
+					Subject: pkix.Name{CommonName: CommonNamePrefix(CustomerBreakGlassSigner) + "user"},
+				},
 			},
 		},
 	} {
