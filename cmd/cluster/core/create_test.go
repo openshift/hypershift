@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"testing"
 
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -24,14 +23,6 @@ func TestDefaultNetworkType(t *testing.T) {
 			expected: "foo",
 		},
 		{
-			name: "4.10, SDN",
-			opts: &CreateOptions{
-				ReleaseImage: "4.10.0",
-			},
-			provider: &fake.FakeReleaseProvider{Version: "4.10.0"},
-			expected: "OpenShiftSDN",
-		},
-		{
 			name: "4.11, ovn-k",
 			opts: &CreateOptions{
 				ReleaseImage: "4.11.0",
@@ -49,13 +40,9 @@ func TestDefaultNetworkType(t *testing.T) {
 		},
 	}
 
-	readFile := func(string) ([]byte, error) { return nil, nil }
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := defaultNetworkType(context.Background(), tc.opts, tc.provider, readFile); err != nil {
-				t.Fatalf("defaultNetworkType failed: %v", err)
-			}
+			defaultNetworkType(tc.opts)
 			if tc.opts.NetworkType != tc.expected {
 				t.Errorf("expected network type %s, got %s", tc.expected, tc.opts.NetworkType)
 			}

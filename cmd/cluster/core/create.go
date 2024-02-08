@@ -23,7 +23,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/util"
@@ -31,7 +30,6 @@ import (
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 )
 
@@ -213,9 +211,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		opts.ReleaseImage = defaultVersion.PullSpec
 	}
 
-	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, os.ReadFile); err != nil {
-		return nil, fmt.Errorf("failed to default network: %w", err)
-	}
+	defaultNetworkType(opts)
 
 	annotations := map[string]string{}
 	for _, s := range opts.Annotations {
@@ -541,52 +537,8 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 	return apply(ctx, opts.Log, exampleOptions, opts.Wait, opts.BeforeApply)
 }
 
-func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvider releaseinfo.Provider, readFile func(string) ([]byte, error)) error {
-	if opts.NetworkType != "" {
-		return nil
-	} else if opts.ReleaseImage == "" {
+func defaultNetworkType(opts *CreateOptions) {
+	if opts.NetworkType == "" {
 		opts.NetworkType = string(hyperv1.OVNKubernetes)
-		return nil
 	}
-
-	version, err := getReleaseSemanticVersion(ctx, opts, releaseProvider, readFile)
-	if err != nil {
-		return fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)
-	}
-	if version.Minor > 10 {
-		opts.NetworkType = string(hyperv1.OVNKubernetes)
-	} else {
-		opts.NetworkType = string(hyperv1.OpenShiftSDN)
-	}
-
-	return nil
-}
-
-func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions, provider releaseinfo.Provider, readFile func(string) ([]byte, error)) (*semver.Version, error) {
-	var pullSecretBytes []byte
-	var err error
-	if len(opts.CredentialSecretName) > 0 {
-		pullSecretBytes, err = util.GetPullSecret(opts.CredentialSecretName, opts.Namespace)
-		if err != nil {
-			return nil, err
-		}
-	}
-	// overrides secret if set
-	if len(opts.PullSecretFile) > 0 {
-		pullSecretBytes, err = readFile(opts.PullSecretFile)
-		if err != nil {
-			return nil, fmt.Errorf("cannot read pull secret file %s: %w", opts.PullSecretFile, err)
-		}
-
-	}
-
-	releaseImage, err := provider.Lookup(ctx, opts.ReleaseImage, pullSecretBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get version information from %s: %w", opts.ReleaseImage, err)
-	}
-	semanticVersion, err := semver.Parse(releaseImage.Version())
-	if err != nil {
-		return nil, err
-	}
-	return &semanticVersion, nil
 }
