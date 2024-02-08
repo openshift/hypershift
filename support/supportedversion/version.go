@@ -17,7 +17,7 @@ import (
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
 var LatestSupportedVersion = semver.MustParse("4.16.0")
-var MinSupportedVersion = semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
+var MinSupportedVersion = semver.MustParse("4.13.0")
 
 func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 
@@ -25,9 +25,10 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 		return semver.MustParse("0.0.0")
 	}
 
-	defaultMinVersion := semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
-
+	defaultMinVersion := MinSupportedVersion
 	switch hc.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		return semver.MustParse("4.14.0")
 	case hyperv1.IBMCloudPlatform:
 		return semver.MustParse("4.9.0")
 	default:
@@ -35,13 +36,9 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 	}
 }
 
-// SupportedPreviousMinorVersions is the number of minor versions prior to current
-// version that are supported.
-const SupportedPreviousMinorVersions = 2
-
 func Supported() []string {
 	versions := []string{trimVersion(LatestSupportedVersion.String())}
-	for i := 0; i < SupportedPreviousMinorVersions; i++ {
+	for i := 0; i < int(LatestSupportedVersion.Minor-MinSupportedVersion.Minor); i++ {
 		versions = append(versions, trimVersion(subtractMinor(&LatestSupportedVersion, uint64(i+1)).String()))
 	}
 	return versions
@@ -117,6 +114,9 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 	var version ocpVersion
 
 	req, err := http.NewRequestWithContext(ctx, "GET", releaseURL, nil)
+	if err != nil {
+		return "", err
+	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -126,7 +126,7 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Unexpected status code: %d", resp.StatusCode)
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)

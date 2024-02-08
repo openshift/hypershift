@@ -31,5 +31,5 @@ func TestEnsureSupportedVersionConfigMap(t *testing.T) {
 	data := &supportedVersions{}
 	err = json.Unmarshal([]byte(cfgMap.Data[configMapKey]), data)
 	g.Expect(err).To(BeNil())
-	g.Expect(len(data.Versions)).To(Equal(supportedversion.SupportedPreviousMinorVersions + 1))
+	g.Expect(len(data.Versions)).To(Equal(len(supportedversion.Supported())))
 }
