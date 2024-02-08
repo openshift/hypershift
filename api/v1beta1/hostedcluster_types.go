@@ -225,6 +225,15 @@ const (
 
 	// JSONPatchAnnotation allow modifying the kubevirt VM template using jsonpatch
 	JSONPatchAnnotation = "hypershift.openshift.io/kubevirt-vm-jsonpatch"
+
+	// KubeAPIServerGOGCAnnotation allows modifying the kube-apiserver GOGC environment variable to impact how often
+	// the GO garbage collector runs. This can be used to reduce the memory footprint of the kube-apiserver.
+	KubeAPIServerGOGCAnnotation = "hypershift.openshift.io/kube-apiserver-gogc"
+
+	// KubeAPIServerGOMemoryLimitAnnotation allows modifying the kube-apiserver GOMEMLIMIT environment variable to increase
+	// the frequency of memory collection when memory used rises above a particular threshhold. This can be used to reduce
+	// the memory footprint of the kube-apiserver during upgrades.
+	KubeAPIServerGOMemoryLimitAnnotation = "hypershift.openshift.io/kube-apiserver-gomemlimit"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

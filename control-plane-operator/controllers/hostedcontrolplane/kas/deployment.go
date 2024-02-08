@@ -191,7 +191,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
-				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS)),
+				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS, hcp)),
 				util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(images.KonnectivityServer, deploymentConfig.Replicas)),
 				{
 					Name:            "audit-logs",
@@ -421,7 +421,7 @@ func kasContainerMain() *corev1.Container {
 	}
 }
 
-func buildKASContainerMain(image string, port int32, noProxyCIDRs []string) func(c *corev1.Container) {
+func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp *hyperv1.HostedControlPlane) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
@@ -451,6 +451,20 @@ func buildKASContainerMain(image string, port int32, noProxyCIDRs []string) func
 		// Using a CIDR is not supported by Go's default ProxyFunc, but Kube uses a custom one by default that does support it:
 		// https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/staging/src/k8s.io/apimachinery/pkg/util/net/http.go#L112-L114
 		proxy.SetEnvVars(&c.Env, noProxyCIDRs...)
+
+		if hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation] != "" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "GOGC",
+				Value: hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation],
+			})
+		}
+
+		if hcp.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] != "" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "GOMEMLIMIT",
+				Value: hcp.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation],
+			})
+		}
 
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
