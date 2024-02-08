@@ -223,7 +223,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		Region:                  infra.Region,
 		Zones:                   zones,
 		VPCID:                   infra.VPCID,
-		SecurityGroupID:         infra.SecurityGroupID,
 		InstanceProfile:         iamInfo.ProfileName,
 		InstanceType:            instanceType,
 		Roles:                   iamInfo.Roles,

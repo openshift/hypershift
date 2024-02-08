@@ -499,8 +499,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			})
 		}
 
-		if len(nodePool.Spec.Platform.AWS.SecurityGroups) == 0 &&
-			(hcluster.Status.Platform == nil || hcluster.Status.Platform.AWS == nil || hcluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "") {
+		if hcluster.Status.Platform == nil || hcluster.Status.Platform.AWS == nil || hcluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
 				Status:             corev1.ConditionFalse,
@@ -513,7 +512,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
 				Status:             corev1.ConditionTrue,
 				Reason:             hyperv1.AsExpectedReason,
-				Message:            "NodePool has a security group",
+				Message:            "NodePool has a default security group",
 				ObservedGeneration: nodePool.Generation,
 			})
 		}

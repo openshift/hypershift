@@ -55,7 +55,7 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 
 	securityGroups := []capiaws.AWSResourceReference{}
 	for _, sg := range nodePool.Spec.Platform.AWS.SecurityGroups {
-		filters := []capiaws.Filter{}
+		var filters []capiaws.Filter
 		for _, f := range sg.Filters {
 			filters = append(filters, capiaws.Filter{
 				Name:   f.Name,
@@ -67,7 +67,7 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 			Filters: filters,
 		})
 	}
-	if len(securityGroups) == 0 && defaultSG {
+	if defaultSG {
 		if hostedCluster.Status.Platform == nil || hostedCluster.Status.Platform.AWS == nil || hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
 			return nil, &NotReadyError{fmt.Errorf("the default security group for the HostedCluster has not been created")}
 		}

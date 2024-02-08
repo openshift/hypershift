@@ -2086,8 +2086,8 @@ type PlatformStatus struct {
 // AWSPlatformStatus contains status specific to the AWS platform
 type AWSPlatformStatus struct {
 	// DefaultWorkerSecurityGroupID is the ID of a security group created by
-	// the control plane operator. It is used for NodePools that don't specify a
-	// security group.
+	// the control plane operator. It is always added to worker machines in
+	// addition to any security groups specified in the NodePool.
 	// +optional
 	DefaultWorkerSecurityGroupID string `json:"defaultWorkerSecurityGroupID,omitempty"`
 }
