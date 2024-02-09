@@ -8,6 +8,7 @@ type ExampleAWSOptions struct {
 	Region                  string
 	Zones                   []ExampleAWSOptionsZones
 	VPCID                   string
+	SecurityGroupID         string
 	InstanceProfile         string
 	InstanceType            string
 	Roles                   hyperv1.AWSRolesRef

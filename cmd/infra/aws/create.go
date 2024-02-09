@@ -54,6 +54,7 @@ type CreateInfraOutput struct {
 	MachineCIDR      string                   `json:"machineCIDR"`
 	VPCID            string                   `json:"vpcID"`
 	Zones            []*CreateInfraOutputZone `json:"zones"`
+	SecurityGroupID  string                   `json:"securityGroupID"`
 	Name             string                   `json:"Name"`
 	BaseDomain       string                   `json:"baseDomain"`
 	BaseDomainPrefix string                   `json:"baseDomainPrefix"`
@@ -175,6 +176,10 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 	igwID, err := o.CreateInternetGateway(l, ec2Client, result.VPCID)
+	if err != nil {
+		return nil, err
+	}
+	result.SecurityGroupID, err = o.CreateWorkerSecurityGroup(ec2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
