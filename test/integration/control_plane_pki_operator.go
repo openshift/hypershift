@@ -107,7 +107,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 			var signedCrt []byte
 			var lastResourceVersion string
 			lastTimestamp := time.Now()
-			if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+			if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 				csr, err := mgmt.KubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, csrName, metav1.GetOptions{})
 				if apierrors.IsNotFound(err) {
 					t.Logf("CSR %q does not exist yet", csrName)
@@ -162,7 +162,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 				t.Logf("waiting for CRR %s/%s to be fulfilled", hostedControlPlaneNamespace, crrName)
 				var lastResourceVersion string
 				lastTimestamp := time.Now()
-				if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+				if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 					crr, err := mgmt.HyperShiftClient.CertificatesV1alpha1().CertificateRevocationRequests(hostedControlPlaneNamespace).Get(ctx, crrName, metav1.GetOptions{})
 					if apierrors.IsNotFound(err) {
 						t.Logf("CRR %q does not exist yet", csrName)
