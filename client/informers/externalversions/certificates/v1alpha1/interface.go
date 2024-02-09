@@ -23,6 +23,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// CertificateRevocationRequests returns a CertificateRevocationRequestInformer.
+	CertificateRevocationRequests() CertificateRevocationRequestInformer
 	// CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.
 	CertificateSigningRequestApprovals() CertificateSigningRequestApprovalInformer
 }
@@ -36,6 +38,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// CertificateRevocationRequests returns a CertificateRevocationRequestInformer.
+func (v *version) CertificateRevocationRequests() CertificateRevocationRequestInformer {
+	return &certificateRevocationRequestInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.

@@ -82,8 +82,11 @@ func ReconcileDeployment(
 							},
 						},
 						Command: []string{"/usr/bin/control-plane-pki-operator"},
-						Args:    []string{"operator"},
-						Ports:   []corev1.ContainerPort{{Name: "metrics", Protocol: "TCP", ContainerPort: 8443}},
+						Args: []string{
+							"operator",
+							"--namespace", deployment.Namespace,
+						},
+						Ports: []corev1.ContainerPort{{Name: "metrics", Protocol: "TCP", ContainerPort: 8443}},
 					},
 				},
 			},
@@ -164,6 +167,16 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			APIGroups: []string{"certificates.hypershift.openshift.io"},
 			Resources: []string{"certificatesigningrequestapprovals"},
 			Verbs:     []string{"get", "list", "watch"},
+		},
+		{ // for certificate revocation
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
+			Resources: []string{"certificaterevocationrequests"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		{ // for certificate revocation
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
+			Resources: []string{"certificaterevocationrequests/status"},
+			Verbs:     []string{"patch"},
 		},
 	}
 	return nil

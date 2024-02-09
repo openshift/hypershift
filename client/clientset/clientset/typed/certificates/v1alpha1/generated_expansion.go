@@ -17,4 +17,6 @@ limitations under the License.
 
 package v1alpha1
 
+type CertificateRevocationRequestExpansion interface{}
+
 type CertificateSigningRequestApprovalExpansion interface{}

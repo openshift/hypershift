@@ -923,11 +923,21 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
+	openShiftTrustedCABundleConfigMapForCPOExists, err := doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx, r.Client, hostedControlPlane.Namespace)
+	if err != nil {
+		return err
+	}
+
 	// Reconcile PKI
 	if _, exists := hostedControlPlane.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
 		r.Log.Info("Reconciling PKI")
 		if err := r.reconcilePKI(ctx, hostedControlPlane, infraStatus, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile PKI: %w", err)
+		}
+
+		r.Log.Info("Reconciling Control Plane PKI Operator")
+		if err := r.reconcileControlPlanePKIOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists, r.CertRotationScale); err != nil {
+			return fmt.Errorf("failed to reconcile control plane pki operator: %w", err)
 		}
 	}
 
@@ -1029,11 +1039,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	openShiftTrustedCABundleConfigMapForCPOExists, err := doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx, r.Client, hostedControlPlane.Namespace)
-	if err != nil {
-		return err
-	}
-
 	r.Log.Info("Reconciling ignition server")
 	if err := ignitionserver.ReconcileIgnitionServer(ctx,
 		r.Client,
@@ -1124,14 +1129,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
 	if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists); err != nil {
 		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
-	}
-
-	// Reconcile control plane pki operator
-	if _, exists := hostedControlPlane.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
-		r.Log.Info("Reconciling Control Plane PKI Operator")
-		if err := r.reconcileControlPlanePKIOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists, r.CertRotationScale); err != nil {
-			return fmt.Errorf("failed to reconcile control plane pki operator: %w", err)
-		}
 	}
 
 	// Reconcile cloud controller manager
@@ -3674,7 +3671,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlanePKIOperator(ctx cont
 
 	deployment := manifests.PKIOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-		return pkioperator.ReconcileDeployment(deployment, openShiftTrustedCABundleConfigMapForCPOExists, hcp, releaseImageProvider.GetImage("hypershift"), r.SetDefaultSecurityContext, sa, certRotationScale)
+		return pkioperator.ReconcileDeployment(deployment, openShiftTrustedCABundleConfigMapForCPOExists, hcp, releaseImageProvider.GetImage(util.CPPKIOImageName), r.SetDefaultSecurityContext, sa, certRotationScale)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile control plane pki operator deployment: %w", err)
 	}

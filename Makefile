@@ -184,7 +184,7 @@ fmt:
 # Run go vet against code
 .PHONY: vet
 vet:
-	$(GO) vet ./...
+	$(GO) vet -tags integration,e2e ./...
 
 .PHONY: promtool
 promtool:
@@ -204,6 +204,7 @@ deps:
 staticcheck: $(STATICCHECK)
 	$(STATICCHECK) \
 		./control-plane-operator/... \
+		./control-plane-pki-operator/... \
 		./hypershift-operator/controllers/... \
 		./ignition-server/... \
 		./cmd/... \
@@ -212,7 +213,8 @@ staticcheck: $(STATICCHECK)
 		./support/upsert/... \
 		./konnectivity-socks5-proxy/... \
 		./contrib/... \
-		./availability-prober/...
+		./availability-prober/... \
+		./test/integration/... \
 
 # Build the docker image with official golang image
 .PHONY: docker-build
@@ -261,3 +263,8 @@ ci-install-hypershift-private:
 .PHONY: ci-test-e2e
 ci-test-e2e:
 	hack/ci-test-e2e.sh ${CI_TESTS_RUN}
+
+.PHONY: regenerate-pki
+regenerate-pki:
+	REGENERATE_PKI=1 $(GO) test ./control-plane-pki-operator/...
+	REGENERATE_PKI=1 $(GO) test ./test/e2e/... -run TestRegeneratePKI

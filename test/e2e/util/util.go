@@ -1484,17 +1484,28 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
 	}
 
+	t.Logf("validating status for hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 	start := time.Now()
+	previousResourceVersion := ""
+	previousConditions := map[string]metav1.Condition{}
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 			t.Logf("Failed to get hostedcluster: %v", err)
 			return false, nil
 		}
 
-		for _, condition := range hostedCluster.Status.Conditions {
+		if hostedCluster.ResourceVersion == previousResourceVersion {
+			// nothing's changed since the last time we checked
+			return false, nil
+		}
+		previousResourceVersion = hostedCluster.ResourceVersion
+
+		currentConditions := map[string]metav1.Condition{}
+		conditionsValid := true
+		for i, condition := range hostedCluster.Status.Conditions {
 			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
 				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
-				t.Logf("observed condition %s status [%s]", condition.Type, condition.Status)
+				t.Logf("unchecked condition: %s", formatCondition(condition))
 				continue
 			}
 
@@ -1503,14 +1514,23 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 				return false, fmt.Errorf("unknown condition %s", condition.Type)
 			}
 
-			if condition.Status != expectedStatus {
-				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
-				return false, nil
-			}
-			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
-		}
+			conditionsValid = conditionsValid && (condition.Status == expectedStatus)
 
-		return true, nil
+			currentConditions[condition.Type] = hostedCluster.Status.Conditions[i]
+			if conditionsIdentical(currentConditions[condition.Type], previousConditions[condition.Type]) {
+				// no need to spam anything, we already said it when we processed this last time
+				continue
+			}
+			prefix := ""
+			if condition.Status != expectedStatus {
+				prefix = "in"
+			}
+			msg := fmt.Sprintf("%scorrect condition: wanted %s=%s, got %s", prefix, condition.Type, expectedStatus, formatCondition(condition))
+			t.Log(msg)
+		}
+		previousConditions = currentConditions
+
+		return conditionsValid, nil
 	})
 	duration := time.Since(start).Round(time.Second)
 
@@ -1518,6 +1538,21 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		t.Fatalf("Failed to validate HostedCluster conditions in %s: %v", duration, err)
 	}
 	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
+}
+
+func formatCondition(condition metav1.Condition) string {
+	msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
+	if condition.Reason != "" {
+		msg += ": " + condition.Reason
+	}
+	if condition.Message != "" {
+		msg += "(" + condition.Message + ")"
+	}
+	return msg
+}
+
+func conditionsIdentical(a, b metav1.Condition) bool {
+	return a.Type == b.Type && a.Status == b.Status && a.Reason == b.Reason && a.Message == b.Message
 }
 
 func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {

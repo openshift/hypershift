@@ -1114,25 +1114,26 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImageLabels, err := GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, r.ImageMetadataProvider)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 	}
+
 	cpoHasUtilities := false
-	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorSubcommandsLabel]; hasLabel {
+	if _, hasLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorSubcommandsLabel]; hasLabel {
 		cpoHasUtilities = true
 	}
 	utilitiesImage := controlPlaneOperatorImage
 	if !cpoHasUtilities {
 		utilitiesImage = r.HypershiftOperatorImage
 	}
-	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
-	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
-	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
-	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
-	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
-	_, controlPlanePKIOperatorSignsCSRs := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlanePKIOperatorSignsCSRsLabel]
-	_, useRestrictedPSA := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[useRestrictedPodSecurityLabel]
+	_, ignitionServerHasHealthzHandler := controlPlaneOperatorImageLabels[ignitionServerHealthzHandlerLabel]
+	_, controlplaneOperatorManagesIgnitionServer := controlPlaneOperatorImageLabels[controlplaneOperatorManagesIgnitionServerLabel]
+	_, controlPlaneOperatorManagesMachineAutoscaler := controlPlaneOperatorImageLabels[controlPlaneOperatorManagesMachineAutoscaler]
+	_, controlPlaneOperatorManagesMachineApprover := controlPlaneOperatorImageLabels[controlPlaneOperatorManagesMachineApprover]
+	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
+	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
+	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
 
 	// Reconcile the hosted cluster namespace
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
@@ -2335,6 +2336,35 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	return hypershiftOperatorImage, nil
 }
 
+// GetControlPlaneOperatorImageLabels resolves the appropriate control plane
+// operator image labels based on the following order of precedence (from most
+// to least preferred):
+//
+//  1. The labels specified by the ControlPlaneOperatorImageLabelsAnnotation on the
+//     HostedCluster resource itself
+//  2. The image labels in the medata of the image as resolved by GetControlPlaneOperatorImage
+func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedCluster, controlPlaneOperatorImage string, pullSecret []byte, imageMetadataProvider hyperutil.ImageMetadataProvider) (map[string]string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageLabelsAnnotation]; ok {
+		annotatedLabels := map[string]string{}
+		rawLabels := strings.Split(val, ",")
+		for i, rawLabel := range rawLabels {
+			parts := strings.Split(rawLabel, "=")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("hosted cluster %s/%s annotation %d malformed: label %s not in key=value form", hc.Namespace, hc.Name, i, rawLabel)
+			}
+			annotatedLabels[parts[0]] = parts[1]
+		}
+		return annotatedLabels, nil
+	}
+
+	controlPlaneOperatorImageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
+	}
+
+	return hyperutil.ImageLabels(controlPlaneOperatorImageMetadata), nil
+}
+
 func reconcileControlPlaneOperatorDeployment(
 	deployment *appsv1.Deployment,
 	openShiftTrustedCABundleConfigMapExists bool,
@@ -2442,6 +2472,26 @@ func reconcileControlPlaneOperatorDeployment(
 							{
 								Name:  "CERT_ROTATION_SCALE",
 								Value: certRotationScale.String(),
+							},
+							{
+								Name:  "CONTROL_PLANE_OPERATOR_IMAGE",
+								Value: cpoImage,
+							},
+							{
+								Name:  "HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE",
+								Value: cpoImage,
+							},
+							{
+								Name:  "SOCKS5_PROXY_IMAGE",
+								Value: utilitiesImage,
+							},
+							{
+								Name:  "AVAILABILITY_PROBER_IMAGE",
+								Value: utilitiesImage,
+							},
+							{
+								Name:  "TOKEN_MINTER_IMAGE",
+								Value: utilitiesImage,
 							},
 							metrics.MetricsSetToEnv(metricsSet),
 						},
