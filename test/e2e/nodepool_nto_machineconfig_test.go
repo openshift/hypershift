@@ -72,8 +72,8 @@ func NewNTOMachineConfigRolloutTest(ctx context.Context, mgmtClient crclient.Cli
 func (mc *NTOMachineConfigRolloutTest) Setup(t *testing.T) {
 	t.Log("Starting test NTOMachineConfigRolloutTest")
 
-	if mc.inplace && globalOpts.Platform == hyperv1.KubevirtPlatform {
-		t.Skip("test can't run for the platform kubevirt")
+	if globalOpts.Platform == hyperv1.KubevirtPlatform {
+		t.Skip("test is being skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
 	}
 }
 
