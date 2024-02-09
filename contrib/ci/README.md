@@ -30,3 +30,25 @@ Store the kubeconfig in Vault [under the clusters directory](https://vault.ci.op
 }
 ```
 
+## Template for developer namespaces
+
+Deploy the template for developer namespaces (only needs to be done one time per CI cluster):
+
+```shell
+oc apply -f dev-namespace-template.yaml
+```
+
+
+## Using the developer namespace template
+
+This will enable developers to create their own namespace (and kubeconfig) for their cluster using the following command:
+
+```shell
+NAME=your-name
+oc new-app developer-namespace -p NAME=$NAME
+token=$(oc get secrets -n $NAME -o name | grep $NAME-dev-token | xargs oc get -o jsonpath='{.data.token}' -n $NAME | base64 -d)
+oc login --token=$token
+```
+
+After doing this, the default context on your kubeconfig will be the low-privilege service account in your namespace, useful
+for creating HostedClusters and NodePools. If you still need privileged access, you can pass `--context=admin` to any `oc` command.
