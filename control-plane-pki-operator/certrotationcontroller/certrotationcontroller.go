@@ -85,8 +85,8 @@ func NewCertRotationController(
 		certrotation.RotatedSigningCASecret{
 			Namespace:     hostedControlPlane.Namespace,
 			Name:          pkimanifests.CustomerSystemAdminSigner(hostedControlPlane.Namespace).Name,
-			Validity:      7 * rotationDay,
-			Refresh:       2 * rotationDay,
+			Validity:      36 * rotationDay / 24,
+			Refresh:       7 * rotationDay / 24,
 			Informer:      kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
 			Lister:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
 			Client:        kubeClient.CoreV1(),
@@ -105,8 +105,8 @@ func NewCertRotationController(
 		certrotation.RotatedSelfSignedCertKeySecret{
 			Namespace: hostedControlPlane.Namespace,
 			Name:      pkimanifests.CustomerSystemAdminClientCertSecret(hostedControlPlane.Namespace).Name,
-			Validity:  36 * rotationDay / 24,
-			Refresh:   6 * rotationDay / 24,
+			Validity:  29 * rotationDay / 24,
+			Refresh:   5 * rotationDay / 24,
 			CertCreator: &certrotation.ClientRotation{
 				UserInfo: &user.DefaultInfo{Name: userName, UID: uid, Groups: []string{"system:masters"}},
 			},
