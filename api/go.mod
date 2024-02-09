@@ -4,8 +4,8 @@ go 1.21
 
 require (
 	github.com/openshift/api v0.0.0-20240108220607-355cd2586ec4
-	k8s.io/api v0.29.0
-	k8s.io/apimachinery v0.29.0
+	k8s.io/api v0.29.1
+	k8s.io/apimachinery v0.29.1
 )
 
 require (
