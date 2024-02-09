@@ -247,7 +247,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 						Name: name,
 					},
 					Spec: testCSRSpec(csrBuilder{
-						cn:         "test-client",
+						cn:         certificates.CommonNamePrefix(certificates.CustomerBreakGlassSigner) + "test-client",
 						org:        []string{"anything"},
 						signerName: "hypershift.openshift.io/hc-namespace-hc-name.customer-break-glass",
 						usages:     []certificatesv1.KeyUsage{certificatesv1.UsageContentCommitment},
@@ -290,7 +290,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 						Name: name,
 					},
 					Spec: testCSRSpec(csrBuilder{
-						cn:         "test-client",
+						cn:         certificates.CommonNamePrefix(certificates.CustomerBreakGlassSigner) + "test-client",
 						org:        []string{"system:masters"},
 						signerName: "hypershift.openshift.io/hc-namespace-hc-name.customer-break-glass",
 						usages:     []certificatesv1.KeyUsage{certificatesv1.UsageClientAuth},

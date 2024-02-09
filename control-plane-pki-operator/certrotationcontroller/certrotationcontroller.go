@@ -9,6 +9,7 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftv1beta1client "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/clienthelpers"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,7 +73,6 @@ func NewCertRotationController(
 	if err != nil {
 		return nil, err
 	}
-	userName := "customer-break-glass-" + userNameSuffix
 	uid, err := randomString(128)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,11 @@ func NewCertRotationController(
 			Validity:  36 * rotationDay / 24,
 			Refresh:   6 * rotationDay / 24,
 			CertCreator: &certrotation.ClientRotation{
-				UserInfo: &user.DefaultInfo{Name: userName, UID: uid, Groups: []string{"system:masters"}},
+				UserInfo: &user.DefaultInfo{
+					Name:   certificates.CommonNamePrefix(certificates.CustomerBreakGlassSigner) + userNameSuffix,
+					UID:    uid,
+					Groups: []string{"system:masters"},
+				},
 			},
 			Informer:      kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
 			Lister:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
