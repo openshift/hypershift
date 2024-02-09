@@ -49072,6 +49072,9 @@ objects:
                     Deprecated: Use versionStatus.history[0].startedTime instead.
                   format: date-time
                   type: string
+                nodeCount:
+                  description: NodeCount tracks the number of nodes in the HostedControlPlane.
+                  type: integer
                 oauthCallbackURLTemplate:
                   description: |-
                     OAuthCallbackURLTemplate contains a template for the URL to use as a callback
@@ -53319,6 +53322,9 @@ objects:
                     Deprecated: Use versionStatus.history[0].startedTime instead.
                   format: date-time
                   type: string
+                nodeCount:
+                  description: NodeCount tracks the number of nodes in the HostedControlPlane.
+                  type: integer
                 oauthCallbackURLTemplate:
                   description: |-
                     OAuthCallbackURLTemplate contains a template for the URL to use as a callback
