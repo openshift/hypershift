@@ -52,6 +52,9 @@ func NewNodePoolMachineconfigRolloutTest(ctx context.Context, mgmtClient crclien
 }
 
 func (mc *NodePoolMachineconfigRolloutTest) Setup(t *testing.T) {
+	if globalOpts.Platform == hyperv1.KubevirtPlatform {
+		t.Skip("test is being skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
+	}
 	t.Log("Starting test NodePoolMachineconfigRolloutTest")
 }
 
