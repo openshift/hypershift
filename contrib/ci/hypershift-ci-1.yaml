@@ -39,6 +39,11 @@ spec:
     count/nodepools.hypershift.openshift.io: "15"
 ---
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: clusters
+---
+apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: object-counts
