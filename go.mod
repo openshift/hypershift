@@ -42,6 +42,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
 	github.com/openshift/api v0.0.0-20240108220607-355cd2586ec4
+	github.com/openshift/assisted-service/api v0.0.0
 	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
@@ -171,6 +172,8 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.5 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/jinzhu/now v1.1.4 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/jongio/azidext/go/azidext v0.5.0 // indirect
@@ -193,6 +196,8 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
+	github.com/openshift/assisted-service v1.0.10-0.20230830164851-6573b5d7021d // indirect
+	github.com/openshift/assisted-service/models v0.0.0 // indirect
 	github.com/openshift/custom-resource-status v1.1.2 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
@@ -207,6 +212,7 @@ require (
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
+	github.com/thoas/go-funk v0.9.2 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
@@ -242,6 +248,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gorm.io/gorm v1.24.5 // indirect
 	k8s.io/kms v0.29.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20231214164306-ab13479f8bf8 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk v0.2.1 // indirect
@@ -254,9 +261,13 @@ require (
 
 replace (
 	github.com/google/cel-go => github.com/google/cel-go v0.17.7
+	github.com/openshift/assisted-service/api => github.com/openshift/assisted-service/api v0.0.0-20240206230104-80bb2b2204e9
+	github.com/openshift/assisted-service/client => github.com/openshift/assisted-service/client v0.0.0-20240206230104-80bb2b2204e9
+	github.com/openshift/assisted-service/models => github.com/openshift/assisted-service/models v0.0.0-20240206230104-80bb2b2204e9
 	github.com/openshift/hypershift/api => ./api
 	k8s.io/kubernetes => k8s.io/kubernetes v0.29.0
 	kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 	kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.1
+	sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20201022175424-d30c7a274820
 )

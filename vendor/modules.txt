@@ -627,6 +627,12 @@ github.com/imdario/mergo
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
+# github.com/jinzhu/inflection v1.0.0
+## explicit
+github.com/jinzhu/inflection
+# github.com/jinzhu/now v1.1.4
+## explicit; go 1.12
+github.com/jinzhu/now
 # github.com/jmespath/go-jmespath v0.4.0
 ## explicit; go 1.14
 github.com/jmespath/go-jmespath
@@ -794,6 +800,16 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
+# github.com/openshift/assisted-service v1.0.10-0.20230830164851-6573b5d7021d
+## explicit; go 1.18
+github.com/openshift/assisted-service/pkg/validations
+# github.com/openshift/assisted-service/api v0.0.0 => github.com/openshift/assisted-service/api v0.0.0-20240206230104-80bb2b2204e9
+## explicit; go 1.20
+github.com/openshift/assisted-service/api/common
+github.com/openshift/assisted-service/api/v1beta1
+# github.com/openshift/assisted-service/models v0.0.0 => github.com/openshift/assisted-service/models v0.0.0-20240206230104-80bb2b2204e9
+## explicit; go 1.20
+github.com/openshift/assisted-service/models
 # github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
 ## explicit; go 1.20
 github.com/openshift/client-go/config/applyconfigurations/config/v1
@@ -951,6 +967,9 @@ github.com/stoewer/go-strcase
 ## explicit; go 1.20
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
+# github.com/thoas/go-funk v0.9.2
+## explicit; go 1.13
+github.com/thoas/go-funk
 # github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75
 ## explicit; go 1.15
 github.com/tmc/grpc-websocket-proxy/wsproxy
@@ -1415,6 +1434,13 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
+# gorm.io/gorm v1.24.5
+## explicit; go 1.16
+gorm.io/gorm
+gorm.io/gorm/clause
+gorm.io/gorm/logger
+gorm.io/gorm/schema
+gorm.io/gorm/utils
 # k8s.io/api v0.29.1
 ## explicit; go 1.21
 k8s.io/api/admission/v1
@@ -2300,8 +2326,12 @@ sigs.k8s.io/structured-merge-diff/v4/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 # github.com/google/cel-go => github.com/google/cel-go v0.17.7
+# github.com/openshift/assisted-service/api => github.com/openshift/assisted-service/api v0.0.0-20240206230104-80bb2b2204e9
+# github.com/openshift/assisted-service/client => github.com/openshift/assisted-service/client v0.0.0-20240206230104-80bb2b2204e9
+# github.com/openshift/assisted-service/models => github.com/openshift/assisted-service/models v0.0.0-20240206230104-80bb2b2204e9
 # github.com/openshift/hypershift/api => ./api
 # k8s.io/kubernetes => k8s.io/kubernetes v0.29.0
 # kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 # kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.1
+# sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20201022175424-d30c7a274820
