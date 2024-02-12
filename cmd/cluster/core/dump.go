@@ -40,6 +40,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	aservicev1 "github.com/openshift/assisted-service/api/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
@@ -335,6 +336,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiaws.AWSMachineTemplate{},
 		&capiaws.AWSCluster{},
 		&hyperv1.AWSEndpointService{},
+		&aservicev1.Agent{},
 		&agentv1.AgentMachine{},
 		&agentv1.AgentMachineTemplate{},
 		&agentv1.AgentCluster{},
