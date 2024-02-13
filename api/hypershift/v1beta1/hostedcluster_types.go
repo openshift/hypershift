@@ -222,6 +222,9 @@ const (
 	// components should be scheduled on dedicated nodes in the management cluster.
 	DedicatedRequestServingComponentsTopology = "dedicated-request-serving-components"
 
+	// DisableMachineManagement Disable deployments related to machine management that includes cluster-api, cluster-autoscaler, machine-approver.
+	DisableMachineManagement = "hypershift.openshift.io/disable-machine-management"
+
 	// AllowGuestWebhooksServiceLabel marks a service deployed in the control plane as a valid target
 	// for validating/mutating webhooks running in the guest cluster.
 	AllowGuestWebhooksServiceLabel = "hypershift.openshift.io/allow-guest-webhooks"
