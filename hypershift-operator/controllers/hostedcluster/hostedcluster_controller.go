@@ -2852,6 +2852,21 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"update",
 			},
 		},
+		{ // Needed for the CPO PKI controller to approve certificate signing requests
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
+			Resources: []string{"certificatesigningrequestapprovals"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		{ // Needed for the CPO PKI controller to perform certificate revocation
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
+			Resources: []string{"certificaterevocationrequests"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		{ // Needed for the CPO PKI controller to perform certificate revocation
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
+			Resources: []string{"certificaterevocationrequests/status"},
+			Verbs:     []string{"patch"},
+		},
 	}
 	if enableCVOManagementClusterMetricsAccess {
 		role.Rules = append(role.Rules,
