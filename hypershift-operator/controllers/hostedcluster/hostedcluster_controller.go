@@ -1680,7 +1680,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
 
-	if controlPlanePKIOperatorSignsCSRs {
+	if _, pkiDisabled := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; controlPlanePKIOperatorSignsCSRs && !pkiDisabled {
 		// Reconcile the control plane PKI operator RBAC - the CPO does not have rights to do this itself
 		err = r.reconcileControlPlanePKIOperatorRBAC(ctx, createOrUpdate, hcluster)
 		if err != nil {
