@@ -131,11 +131,6 @@ func (in *ProfileStatus) DeepCopyInto(out *ProfileStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.Stalld != nil {
-		in, out := &in.Stalld, &out.Stalld
-		*out = new(bool)
-		**out = **in
-	}
 	return
 }
 

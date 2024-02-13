@@ -413,6 +413,51 @@ spec:
   kubeletConfig:
     maxPods: 100
 `
+	kubeletConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: set-max-pods
+spec:
+  kubeletConfig:
+    maxPods: 100
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+status:
+  conditions: null
+`
+	kubeletConfig2 := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: set-max-pods-2
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  kubeletConfig:
+    maxPods: 200
+`
+	kubeletConfig2Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: set-max-pods-2
+spec:
+  kubeletConfig:
+    maxPods: 200
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+status:
+  conditions: null
+`
+
 	haproxyIgnititionConfig := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -470,6 +515,17 @@ spec:
   kernelArguments: null
   kernelType: ""
   osImageURL: ""
+`
+	containerRuntimeConfig1 := `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: set-pids-limit
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  containerRuntimeConfig:
+    pidsLimit: 2048
 `
 
 	namespace := "test"
@@ -582,7 +638,7 @@ spec:
 				Spec: hyperv1.NodePoolSpec{
 					Config: []corev1.LocalObjectReference{
 						{
-							Name: "kubeletconfig-1",
+							Name: "containerRuntimeConfig-1",
 						},
 					},
 				},
@@ -590,15 +646,15 @@ spec:
 			config: []client.Object{
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "kubeletconfig-1",
+						Name:      "containerRuntimeConfig-1",
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						TokenSecretConfigKey: kubeletConfig1,
+						TokenSecretConfigKey: containerRuntimeConfig1,
 					},
 				},
 			},
-			expect: kubeletConfig1,
+			expect: containerRuntimeConfig1,
 			error:  false,
 		},
 		{
@@ -777,6 +833,77 @@ kind: Config`)},
 			expectedCoreConfigResources: 3,
 			expect:                      haproxyIgnititionConfig + "\n---\n" + coreMachineConfig1Defaulted + "\n---\n" + machineConfig1Defaulted,
 		},
+		{
+			name: "gets a single valid KubeletConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "kubeletconfig-1",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			config: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubeletconfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+					BinaryData: nil,
+				},
+			},
+			expect: kubeletConfig1Defaulted,
+			error:  false,
+		},
+		{
+			name: "gets two valid KubeletConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "kubeletconfig-1",
+						},
+						{
+							Name: "kubeletconfig-2",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			config: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubeletconfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubeletconfig-2",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig2,
+					},
+				},
+			},
+			expect: kubeletConfig1Defaulted + "\n---\n" + kubeletConfig2Defaulted,
+			error:  false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -924,17 +1051,80 @@ spec:
     profile: tuned-2-profile
 status: {}
 `
+	perfprofOne := `apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+    name: perfprofOne
+spec:
+    cpu:
+        isolated: 1,3-39,41,43-79
+        reserved: 0,2,40,42
+    machineConfigPoolSelector:
+        machineconfiguration.openshift.io/role: worker-cnf
+    nodeSelector:
+        node-role.kubernetes.io/worker-cnf: ""
+    numa:
+        topologyPolicy: restricted
+    realTimeKernel:
+        enabled: true
+    workloadHints:
+        highPowerConsumption: false
+        realTime: true
+`
+	perfprofTwo := `apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+    name: perfprofTwo
+spec:
+    cpu:
+        isolated: 1,3-39,41,43-79
+        reserved: 0,2,40,42
+    machineConfigPoolSelector:
+        machineconfiguration.openshift.io/role: worker-cnf
+    nodeSelector:
+        node-role.kubernetes.io/worker-cnf: ""
+    numa:
+        topologyPolicy: restricted
+    realTimeKernel:
+        enabled: false
+    workloadHints:
+        highPowerConsumption: false
+        realTime: true
+`
+	perfprofOneDefaulted := `apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+  creationTimestamp: null
+  name: perfprofOne
+spec:
+  cpu:
+    isolated: 1,3-39,41,43-79
+    reserved: 0,2,40,42
+  machineConfigPoolSelector:
+    machineconfiguration.openshift.io/role: worker-cnf
+  nodeSelector:
+    node-role.kubernetes.io/worker-cnf: ""
+  numa:
+    topologyPolicy: restricted
+  realTimeKernel:
+    enabled: true
+  workloadHints:
+    highPowerConsumption: false
+    realTime: true
+status: {}
+`
 
 	namespace := "test"
 	testCases := []struct {
-		name         string
-		nodePool     *hyperv1.NodePool
-		tuningConfig []client.Object
-		expect       string
-		error        bool
+		name           string
+		nodePool       *hyperv1.NodePool
+		tuningConfig   []client.Object
+		tunedExpect    string
+		perfprofExpect string
+		error          bool
 	}{
 		{
-			name: "gets a single valid TuningConfig",
+			name: "gets a single valid TunedConfig",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -960,11 +1150,12 @@ status: {}
 					BinaryData: nil,
 				},
 			},
-			expect: tuned1Defaulted,
-			error:  false,
+			tunedExpect:    tuned1Defaulted,
+			perfprofExpect: "",
+			error:          false,
 		},
 		{
-			name: "gets two valid TuningConfigs",
+			name: "gets two valid TunedConfigs",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1001,11 +1192,12 @@ status: {}
 					},
 				},
 			},
-			expect: tuned1Defaulted + "\n---\n" + tuned2Defaulted,
-			error:  false,
+			tunedExpect:    tuned1Defaulted + "\n---\n" + tuned2Defaulted,
+			perfprofExpect: "",
+			error:          false,
 		},
 		{
-			name: "fails if a non existent TuningConfig is referenced",
+			name: "fails if a non existent TunedConfig is referenced",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1019,9 +1211,158 @@ status: {}
 				},
 				Status: hyperv1.NodePoolStatus{},
 			},
-			tuningConfig: []client.Object{},
-			expect:       "",
-			error:        true,
+			tuningConfig:   []client.Object{},
+			tunedExpect:    "",
+			perfprofExpect: "",
+			error:          true,
+		},
+		//-------------------------------------------------------------------------
+		{
+			name: "gets a single valid PerformanceProfileConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "perfprofOne",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofOne",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofOne,
+					},
+					BinaryData: nil,
+				},
+			},
+			tunedExpect:    "",
+			perfprofExpect: perfprofOneDefaulted,
+			error:          false,
+		},
+		{
+			name: "Should be at most one PerformanceProfileConfig per NodePool",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "perfprofOne",
+						},
+						{
+							Name: "perfprofTwo",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofOne",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofOne,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofTwo",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofTwo,
+					},
+				},
+			},
+			tunedExpect:    "",
+			perfprofExpect: "",
+			error:          true,
+		},
+		{
+			name: "fails if a non existent PerformanceProfile is referenced",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "does-not-exist",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig:   []client.Object{},
+			tunedExpect:    "",
+			perfprofExpect: "",
+			error:          true,
+		},
+		{
+			name: "PerformanceProfiles and Tuned Configs could cohexists",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "tuned-1",
+						},
+						{
+							Name: "tuned-2",
+						},
+						{
+							Name: "perfprofOne",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: tuned1,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-2",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: tuned2,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofOne",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofOne,
+					},
+				},
+			},
+			tunedExpect:    tuned1Defaulted + "\n---\n" + tuned2Defaulted,
+			perfprofExpect: perfprofOneDefaulted,
+			error:          false,
 		},
 	}
 
@@ -1033,16 +1374,20 @@ status: {}
 				Client: fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build(),
 			}
 
-			got, err := r.getTuningConfig(context.Background(), tc.nodePool)
+			td, pp, err := r.getTuningConfig(context.Background(), tc.nodePool)
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
-			if diff := cmp.Diff(got, tc.expect); diff != "" {
-				t.Errorf("actual config differs from expected: %s", diff)
-				t.Logf("got: %s \n, expected: \n %s", got, tc.expect)
+			if diff := cmp.Diff(td, tc.tunedExpect); diff != "" {
+				t.Errorf("actual tuned config differs from expected: %s", diff)
+				t.Logf("got: %s \n, expected: \n %s", td, tc.tunedExpect)
+			}
+			if diff := cmp.Diff(pp, tc.perfprofExpect); diff != "" {
+				t.Errorf("actual Performance Profile config differs from expected: %s", diff)
+				t.Logf("got:\n%s\n, expected:\n%s\n", pp, tc.perfprofExpect)
 			}
 		})
 	}

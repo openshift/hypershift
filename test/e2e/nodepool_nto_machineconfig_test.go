@@ -46,7 +46,6 @@ spec:
 `
 
 	hypershiftNodePoolNameLabel = "hypershift.openshift.io/nodePoolName" // HyperShift-enabled NTO adds this label to Tuned CRs bound to NodePools
-	tuningConfigKey             = "tuning"
 )
 
 type NTOMachineConfigRolloutTest struct {

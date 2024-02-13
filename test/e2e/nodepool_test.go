@@ -116,6 +116,10 @@ func TestNodePool(t *testing.T) {
 				name: "KubeVirtNodeMultinetTest",
 				test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
 			},
+			{
+				name: "TestNTOPerformanceProfile",
+				test: NewNTOPerformanceProfileTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+			},
 		}
 
 		for _, testCase := range nodePoolTests {
@@ -124,7 +128,6 @@ func TestNodePool(t *testing.T) {
 			})
 		}
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-
 }
 
 // nodePoolScaleDownToZero function will scaleDown the nodePool created for the current tests

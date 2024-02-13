@@ -60,11 +60,20 @@ func TokenSecret(namespace, name, payloadInputHash string) *corev1.Secret {
 	}
 }
 
-func TuningConfigMap(namespace, name string) *corev1.ConfigMap {
+func TunedConfigMap(namespace, name string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      fmt.Sprintf("tuned-%s", name),
+		},
+	}
+}
+
+func PerformanceProfileConfigMap(namespace, name string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "perfprofile-" + name,
 		},
 	}
 }

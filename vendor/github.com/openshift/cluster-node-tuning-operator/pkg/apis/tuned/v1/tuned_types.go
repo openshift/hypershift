@@ -19,9 +19,12 @@ const (
 	// that reflects the node tuning operator status.
 	TunedClusterOperatorResourceName = "node-tuning"
 
-	// Annotation on Profiles to denote the operand version responsible for calculating and reporting
-	// the Profile status.
-	GeneratedByOperandVersionAnnotationKey string = "tuned.openshift.io/generated-by-operand-version"
+	// Name of the NTO operand for versioning in ClusterOperator.
+	TunedOperandName = "openshift-tuned"
+
+	// TunedBootcmdlineAnnotationKey is a Node-specific annotation denoting kernel command-line parameters
+	// calculated by TuneD for the current profile applied to that Node.
+	TunedBootcmdlineAnnotationKey string = "tuned.openshift.io/bootcmdline"
 )
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -62,6 +65,7 @@ type TunedSpec struct {
 // A Tuned profile.
 type TunedProfile struct {
 	// Name of the Tuned profile to be used in the recommend section.
+	// +kubebuilder:validation:MinLength=1
 	Name *string `json:"name"`
 	// Specification of the Tuned profile to be consumed by the Tuned daemon.
 	Data *string `json:"data"`
@@ -70,6 +74,7 @@ type TunedProfile struct {
 // Selection logic for a single Tuned profile.
 type TunedRecommend struct {
 	// Name of the Tuned profile to recommend.
+	// +kubebuilder:validation:MinLength=1
 	Profile *string `json:"profile"`
 
 	// Tuned profile priority. Highest priority is 0.
@@ -135,6 +140,7 @@ type TunedList struct {
 /////////////////////////////////////////////////////////////////////////////////
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:subresource:status
 
 // Profile is a specification for a Profile resource.
 type Profile struct {
@@ -165,10 +171,6 @@ type ProfileConfig struct {
 // ProfileStatus is the status for a Profile resource; the status is for internal use only
 // and its fields may be changed/removed in the future.
 type ProfileStatus struct {
-	// kernel parameters calculated by tuned for the active Tuned profile
-	// +optional
-	Bootcmdline string `json:"bootcmdline"`
-
 	// the current profile in use by the Tuned daemon
 	TunedProfile string `json:"tunedProfile"`
 
@@ -177,10 +179,6 @@ type ProfileStatus struct {
 	// +patchStrategy=merge
 	// +optional
 	Conditions []ProfileStatusCondition `json:"conditions,omitempty"  patchStrategy:"merge" patchMergeKey:"type"`
-
-	// deploy stall daemon: https://git.kernel.org/pub/scm/utils/stalld/stalld.git
-	// +optional
-	Stalld *bool `json:"stalld"`
 }
 
 // ProfileStatusCondition represents a partial state of the per-node Profile application.
