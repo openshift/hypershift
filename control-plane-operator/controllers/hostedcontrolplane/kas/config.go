@@ -202,7 +202,12 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("etcd-prefix", "kubernetes.io")
 	args.Set("etcd-servers", p.EtcdURL)
 	args.Set("event-ttl", "3h")
+
+	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
+	featureGates := append([]string{}, p.FeatureGates...)
+	featureGates = append(featureGates, "StructuredAuthenticationConfiguration")
 	args.Set("feature-gates", p.FeatureGates...)
+
 	args.Set("goaway-chance", "0")
 	args.Set("http2-max-streams-per-connection", "2000")
 	args.Set("kubelet-certificate-authority", cpath(kasVolumeKubeletClientCA().Name, certs.CASignerCertMapKey))
