@@ -105,6 +105,8 @@ func ManageClientCABundle(ctx context.Context, lister corev1listers.ConfigMapLis
 		"HOSTEDCP", "Kubernetes total client CA bundle.",
 		// this bundle is what this operator uses to mint new customer client certs it directly manages
 		resourcesynccontroller.ResourceLocation{Namespace: owner.Namespace, Name: pkimanifests.CustomerSystemAdminSignerCA(owner.Namespace).Name},
+		// this bundle is what this operator uses to mint new SRE client certs it directly manages
+		resourcesynccontroller.ResourceLocation{Namespace: owner.Namespace, Name: pkimanifests.SRESystemAdminSignerCA(owner.Namespace).Name},
 	)
 	if err != nil {
 		return nil, false, err

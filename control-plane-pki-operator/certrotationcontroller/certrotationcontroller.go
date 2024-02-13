@@ -57,7 +57,7 @@ func NewCertRotationController(
 		UID:        hostedControlPlane.UID,
 	}
 
-	// we need the user info we're creating certificates for to be discernable as coming from us,
+	// we need the user info we're creating certificates for to be discernible as coming from us,
 	// but not something that can be predicted by anyone - so, use a human-readable prefix and
 	// crypto/rand for the rest
 	randomString := func(bytes int) (string, error) {
@@ -129,6 +129,58 @@ func NewCertRotationController(
 		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
 	)
 	ret.certRotators = append(ret.certRotators, certRotator)
+
+	sreRotatorName := "SREAdminKubeconfigSigner"
+	sreCertRotator := certrotation.NewCertRotationController(
+		sreRotatorName,
+		certrotation.RotatedSigningCASecret{
+			Namespace:     hostedControlPlane.Namespace,
+			Name:          pkimanifests.SRESystemAdminSigner(hostedControlPlane.Namespace).Name,
+			Validity:      7 * rotationDay,
+			Refresh:       2 * rotationDay,
+			Informer:      kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
+			Lister:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
+			Client:        kubeClient.CoreV1(),
+			EventRecorder: eventRecorder,
+			Owner:         ownerRef,
+			JiraComponent: "HOSTEDCP",
+			Description:   "Root signer for SRE break-glass credentials.",
+		},
+		certrotation.CABundleConfigMap{
+			Namespace:     hostedControlPlane.Namespace,
+			Name:          pkimanifests.SRESystemAdminSignerCA(hostedControlPlane.Namespace).Name,
+			Informer:      kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().ConfigMaps(),
+			Lister:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().ConfigMaps().Lister(),
+			Client:        kubeClient.CoreV1(),
+			EventRecorder: eventRecorder,
+			Owner:         ownerRef,
+			JiraComponent: "HOSTEDCP",
+			Description:   "Trust bundle for SRE break-glass credentials.",
+		},
+		certrotation.RotatedSelfSignedCertKeySecret{
+			Namespace: hostedControlPlane.Namespace,
+			Name:      pkimanifests.SRESystemAdminClientCertSecret(hostedControlPlane.Namespace).Name,
+			Validity:  36 * rotationDay / 24,
+			Refresh:   6 * rotationDay / 24,
+			CertCreator: &certrotation.ClientRotation{
+				UserInfo: &user.DefaultInfo{
+					Name:   certificates.CommonNamePrefix(certificates.SREBreakGlassSigner) + userNameSuffix,
+					UID:    uid,
+					Groups: []string{"system:masters"},
+				},
+			},
+			Informer:      kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets(),
+			Lister:        kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Lister(),
+			Client:        kubeClient.CoreV1(),
+			EventRecorder: eventRecorder,
+			Owner:         ownerRef,
+			JiraComponent: "HOSTEDCP",
+			Description:   "Client certificate for SRE break-glass credentials.",
+		},
+		eventRecorder,
+		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
+	)
+	ret.certRotators = append(ret.certRotators, sreCertRotator)
 
 	return ret, nil
 }
