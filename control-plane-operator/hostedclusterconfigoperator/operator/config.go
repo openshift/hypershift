@@ -3,6 +3,8 @@ package operator
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"k8s.io/apimachinery/pkg/fields"
 	"os"
 	"time"
 
@@ -123,6 +125,13 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&operatorv1.CloudCredential{}: allSelector,
 				&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
 				&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
+
+				&corev1.Secret{}: cache.ObjectSelector{
+					Field: fields.AndSelectors(
+						fields.OneTermEqualSelector("metadata.namespace", namespace),
+						fields.OneTermEqualSelector("metadata.name", manifests.PullSecret(namespace).Name),
+					),
+				},
 
 				// Needed for inplace upgrader.
 				&corev1.Node{}: allSelector,
