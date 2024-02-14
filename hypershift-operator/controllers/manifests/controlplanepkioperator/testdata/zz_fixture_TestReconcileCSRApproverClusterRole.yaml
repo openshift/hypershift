@@ -25,6 +25,7 @@ rules:
   - certificates.k8s.io
   resourceNames:
   - hypershift.openshift.io/test-namespace-test-hc.customer-break-glass
+  - hypershift.openshift.io/test-namespace-test-hc.sre-break-glass
   resources:
   - signers
   verbs:

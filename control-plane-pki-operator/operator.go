@@ -82,9 +82,17 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 		return err
 	}
 
-	certSigningRequestApprovalController := certificatesigningrequestapprovalcontroller.NewCertificateSigningRequestApprovalController(
+	customerCertSigningRequestApprovalController := certificatesigningrequestapprovalcontroller.NewCertificateSigningRequestApprovalController(
 		hcp,
 		certificates.CustomerBreakGlassSigner,
+		kubeInformersForNamespaces,
+		hypershiftInformerFactory,
+		kubeClient,
+		controllerContext.EventRecorder,
+	)
+	sreCertSigningRequestApprovalController := certificatesigningrequestapprovalcontroller.NewCertificateSigningRequestApprovalController(
+		hcp,
+		certificates.SREBreakGlassSigner,
 		kubeInformersForNamespaces,
 		hypershiftInformerFactory,
 		kubeClient,
@@ -107,9 +115,18 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 		controllerContext.EventRecorder,
 	)
 
-	certSigningController := certificatesigningcontroller.NewCertificateSigningController(
+	customerBreakGlassCertSigningController := certificatesigningcontroller.NewCertificateSigningController(
 		hcp,
 		certificates.CustomerBreakGlassSigner,
+		currentCA,
+		kubeInformersForNamespaces,
+		kubeClient,
+		controllerContext.EventRecorder,
+		36*certRotationScale/24,
+	)
+	sreBreakGlassCertSigningController := certificatesigningcontroller.NewCertificateSigningController(
+		hcp,
+		certificates.SREBreakGlassSigner,
 		currentCA,
 		kubeInformersForNamespaces,
 		kubeClient,
@@ -122,9 +139,11 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 
 	go targetConfigReconciler.Run(ctx, 1)
 	go certRotationController.Run(ctx, 1)
-	go certSigningRequestApprovalController.Run(ctx, 1)
+	go customerCertSigningRequestApprovalController.Run(ctx, 1)
+	go sreCertSigningRequestApprovalController.Run(ctx, 1)
 	go certLoadingController.Run(ctx, 1)
-	go certSigningController.Run(ctx, 1)
+	go customerBreakGlassCertSigningController.Run(ctx, 1)
+	go sreBreakGlassCertSigningController.Run(ctx, 1)
 	go certRevocationController.Run(ctx, 1)
 
 	<-ctx.Done()
