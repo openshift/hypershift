@@ -130,6 +130,15 @@ func KASConfig(controlPlaneNamespace string) *corev1.ConfigMap {
 	}
 }
 
+func AuthConfig(controlPlaneNamespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "auth-config",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func KASOAuthMetadata(controlPlaneNamespace string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
