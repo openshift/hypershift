@@ -148,7 +148,6 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 	var errs []error
 	combined := make(map[string]sets.String)
 	combinedDisplayNames := make(map[string]sets.String)
-	kubectlVersions := sets.New[string]()
 	for _, tag := range is.Spec.Tags {
 		versions, ok := tag.Annotations[annotationBuildVersions]
 		if !ok {
@@ -160,7 +159,6 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 		}
 		for k, v := range all {
 			if k == "kubectl" {
-				kubectlVersions.Insert(v.Version)
 				if tag.Name != "cli" && tag.Name != "cli-artifacts" {
 					continue
 				}
@@ -182,9 +180,6 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 	}
 
 	multiples := sets.NewString()
-	if kubectlVersions.Len() > 2 {
-		multiples.Insert("kubectl")
-	}
 	var out ComponentVersions
 	var keys []string
 	for k := range combined {
