@@ -1,7 +1,6 @@
 package nodecount
 
 import (
-	"fmt"
 	"time"
 
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
@@ -20,20 +19,16 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	if err != nil {
 		return err
 	}
-	if _, err := ctrl.NewControllerManagedBy(opts.Manager).
+	return ctrl.NewControllerManagedBy(opts.Manager).
 		Named(ControllerName).
 		For(&corev1.Node{}).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
-		}).Build(&reconciler{
+		}).Complete(&reconciler{
 		hcpName:            opts.HCPName,
 		hcpNamespace:       opts.Namespace,
 		client:             hypershiftClient,
 		lister:             opts.CPCluster.GetClient(),
 		guestClusterClient: opts.Manager.GetClient(),
-	}); err != nil {
-		return fmt.Errorf("failed setting up with a controller manager %w", err)
-	}
-
-	return nil
+	})
 }

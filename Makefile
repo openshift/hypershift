@@ -46,7 +46,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
 
 .PHONY: update
-update: deps api api-docs app-sre-saas-template clients
+update: api-deps api api-docs deps clients app-sre-saas-template
 
 .PHONY: verify
 verify: update staticcheck fmt vet promtool
@@ -202,6 +202,9 @@ deps:
 	$(GO) mod verify
 	$(GO) list -m -mod=readonly -json all > /dev/null
 	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+
+.PHONY: api-deps
+api-deps:
 	cd api && \
 	  $(GO) mod tidy && \
 	  $(GO) mod vendor && \

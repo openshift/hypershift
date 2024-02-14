@@ -53,6 +53,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 
 	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(r.hcpName, r.hcpNamespace)
 	cfg.Status = hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().WithNodeCount(len(nodes.Items))
-	_, err := r.client.HypershiftV1beta1().HostedControlPlanes(r.hcpNamespace).Apply(ctx, cfg, metav1.ApplyOptions{FieldManager: ControllerName})
+	_, err := r.client.HypershiftV1beta1().HostedControlPlanes(r.hcpNamespace).ApplyStatus(ctx, cfg, metav1.ApplyOptions{FieldManager: ControllerName})
 	return reconcile.Result{}, err
 }
