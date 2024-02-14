@@ -45,6 +45,7 @@ var (
 		},
 		kasContainerMain().Name: {
 			kasVolumeWorkLogs().Name:               "/var/log/kube-apiserver",
+			kasVolumeAuthConfig().Name:             "/etc/kubernetes/auth",
 			kasVolumeConfig().Name:                 "/etc/kubernetes/config",
 			kasVolumeAuditConfig().Name:            "/etc/kubernetes/audit",
 			kasVolumeKonnectivityCA().Name:         "/etc/kubernetes/certs/konnectivity-ca",
@@ -220,6 +221,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeLocalhostKubeconfig(), buildKASVolumeLocalhostKubeconfig),
 				util.BuildVolume(kasVolumeWorkLogs(), buildKASVolumeWorkLogs),
 				util.BuildVolume(kasVolumeConfig(), buildKASVolumeConfig),
+				util.BuildVolume(kasVolumeAuthConfig(), buildKASVolumeAuthConfig),
 				util.BuildVolume(kasVolumeAuditConfig(), buildKASVolumeAuditConfig),
 				util.BuildVolume(kasVolumeKonnectivityCA(), buildKASVolumeKonnectivityCA),
 				util.BuildVolume(kasVolumeServerCert(), buildKASVolumeServerCert),
@@ -506,6 +508,18 @@ func buildKASVolumeConfig(v *corev1.Volume) {
 	}
 	v.ConfigMap.DefaultMode = pointer.Int32(420)
 	v.ConfigMap.Name = manifests.KASConfig("").Name
+}
+func kasVolumeAuthConfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "auth-config",
+	}
+}
+func buildKASVolumeAuthConfig(v *corev1.Volume) {
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
+	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.Name = manifests.AuthConfig("").Name
 }
 func kasVolumeAuditConfig() *corev1.Volume {
 	return &corev1.Volume{
