@@ -3861,6 +3861,11 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              upstream:
+                description: |-
+                  upstream may be used to specify the preferred update server. By default
+                  it will use the appropriate update server for the cluster and region.
+                type: string
             required:
             - dns
             - etcd
@@ -8091,6 +8096,11 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              upstream:
+                description: |-
+                  upstream may be used to specify the preferred update server. By default
+                  it will use the appropriate update server for the cluster and region.
+                type: string
             required:
             - dns
             - etcd

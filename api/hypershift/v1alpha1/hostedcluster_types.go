@@ -166,6 +166,12 @@ type HostedClusterSpec struct {
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
 
+	// upstream may be used to specify the preferred update server. By default
+	// it will use the appropriate update server for the cluster and region.
+	//
+	// +optional
+	Upstream configv1.URL `json:"upstream,omitempty"`
+
 	// channel is an identifier for explicitly requesting that a non-default
 	// set of updates be applied to this cluster. The default channel will be
 	// contain stable updates that are appropriate for production clusters.

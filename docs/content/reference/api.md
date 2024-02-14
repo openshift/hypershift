@@ -212,6 +212,21 @@ immutable.</p>
 </tr>
 <tr>
 <td>
+<code>upstream</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.URL
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>upstream may be used to specify the preferred update server. By default
+it will use the appropriate update server for the cluster and region.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>channel</code></br>
 <em>
 string
@@ -3494,6 +3509,21 @@ immutable.</p>
 </tr>
 <tr>
 <td>
+<code>upstream</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.URL
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>upstream may be used to specify the preferred update server. By default
+it will use the appropriate update server for the cluster and region.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>channel</code></br>
 <em>
 string
@@ -4008,6 +4038,21 @@ string
 <p>ControlPlaneReleaseImage specifies the desired OCP release payload for
 control plane components running on the management cluster.
 If not defined, ReleaseImage is used</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>upstream</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.URL
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>upstream may be used to specify the preferred update server. By default
+it will use the appropriate update server for the cluster and region.</p>
 </td>
 </tr>
 <tr>
