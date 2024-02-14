@@ -1,10 +1,13 @@
 package powervs
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
+	"text/template"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"strings"
 
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
 
@@ -12,6 +15,10 @@ import (
 	cco "github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud"
 	ccoibmcloud "github.com/openshift/cloud-credential-operator/pkg/ibmcloud"
 )
+
+type PolicyParams struct {
+	CloudInstanceID string
+}
 
 var kubeCloudControllerManagerCR = `
 apiVersion: cloudcredential.openshift.io/v1
@@ -44,6 +51,9 @@ spec:
     - attributes:
       - name: serviceName
         value: power-iaas
+      - name: serviceInstance
+        value: {{.CloudInstanceID}}
+        operator: stringEquals
       roles:
       - crn:v1:bluemix:public:iam::::role:Viewer
       - crn:v1:bluemix:public:iam::::serviceRole:Reader
@@ -63,6 +73,9 @@ spec:
     - attributes:
       - name: serviceName
         value: power-iaas
+      - name: serviceInstance
+        value: {{.CloudInstanceID}}
+        operator: stringEquals
       roles:
       - crn:v1:bluemix:public:iam::::serviceRole:Manager
       - crn:v1:bluemix:public:iam::::role:Editor
@@ -101,6 +114,9 @@ spec:
     - attributes:
       - name: serviceName
         value: power-iaas
+      - name: serviceInstance
+        value: {{.CloudInstanceID}}
+        operator: stringEquals
       roles:
       - crn:v1:bluemix:public:iam::::serviceRole:Manager
       - crn:v1:bluemix:public:iam::::role:Editor
@@ -186,6 +202,23 @@ func deleteServiceID(name, APIKey, accountID, resourceGroupID, crYaml, secretRef
 	}
 
 	return nil
+}
+
+func updateCRYaml(crYaml, templateName string, serviceInstanceValue string) (string, error) {
+	params := PolicyParams{
+		CloudInstanceID: serviceInstanceValue,
+	}
+
+	tmpl, err := template.New(templateName).Parse(crYaml)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse the template %s, err: %w", templateName, err)
+	}
+
+	b := &bytes.Buffer{}
+	if err = tmpl.Execute(b, params); err != nil {
+		return "", fmt.Errorf("failed to execute %s: err: %w", templateName, err)
+	}
+	return b.String(), nil
 }
 
 func extractServiceIDFromCRN(crn string) string {
