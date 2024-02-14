@@ -1262,7 +1262,6 @@ AWSResourceReference
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>Subnet is the subnet to use for node instances.</p>
 </td>
 </tr>
