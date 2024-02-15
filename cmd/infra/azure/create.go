@@ -16,10 +16,10 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
@@ -213,6 +213,20 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 	l.Info("Successfully created private DNS zone link")
 
+	// Create a public IP address for the egress load balancer
+	publicIPAddress, err := createPublicIPAddressForLB(ctx, subscriptionID, resourceGroupName, o.InfraID, o.Location, azureCreds)
+	if err != nil {
+		return nil, err
+	}
+	l.Info("Successfully created public IP address for guest cluster egress load balancer")
+
+	// Create a load balancer for guest cluster egress
+	err = createLoadBalancer(ctx, subscriptionID, resourceGroupName, o.InfraID, o.Location, publicIPAddress, azureCreds)
+	if err != nil {
+		return nil, err
+	}
+	l.Info("Successfully created guest cluster egress load balancer")
+
 	// Upload RHCOS image and create a bootable image
 	result.BootImageID, err = createRhcosImages(ctx, l, o, subscriptionID, resourceGroupName, azureCreds)
 	if err != nil {
@@ -264,7 +278,7 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 		// Create a resource group since none was provided
 		resourceGroupName := o.Name + "-" + o.InfraID
 		parameters := armresources.ResourceGroup{
-			Location: to.Ptr(o.Location),
+			Location: ptr.To(o.Location),
 			Tags:     resourceGroupTags,
 		}
 		response, err := resourceGroupClient.CreateOrUpdate(ctx, resourceGroupName, parameters, nil)
@@ -356,7 +370,7 @@ func setManagedIdentityRole(ctx context.Context, subscriptionID string, resource
 			armauthorization.RoleAssignmentCreateParameters{
 				Properties: &armauthorization.RoleAssignmentProperties{
 					RoleDefinitionID: roleDefinition.ID,
-					PrincipalID:      to.Ptr(identityRolePrincipalID),
+					PrincipalID:      ptr.To(identityRolePrincipalID),
 				},
 			}, nil)
 		if err != nil {
@@ -401,13 +415,13 @@ func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGr
 		Properties: &armnetwork.VirtualNetworkPropertiesFormat{
 			AddressSpace: &armnetwork.AddressSpace{
 				AddressPrefixes: []*string{
-					to.Ptr(VirtualNetworkAddressPrefix),
+					ptr.To(VirtualNetworkAddressPrefix),
 				},
 			},
 			Subnets: []*armnetwork.Subnet{{
-				Name: to.Ptr(SubnetName),
+				Name: ptr.To(SubnetName),
 				Properties: &armnetwork.SubnetPropertiesFormat{
-					AddressPrefix:        to.Ptr(VirtualNetworkSubnetAddressPrefix),
+					AddressPrefix:        ptr.To(VirtualNetworkSubnetAddressPrefix),
 					NetworkSecurityGroup: &armnetwork.SecurityGroup{ID: &securityGroupID},
 				},
 			}},
@@ -434,7 +448,7 @@ func createPrivateDNSZone(ctx context.Context, subscriptionID string, resourceGr
 		return "", "", fmt.Errorf("failed to create new private zones client: %w", err)
 	}
 	privateZoneParams := armprivatedns.PrivateZone{
-		Location: to.Ptr("global"),
+		Location: ptr.To("global"),
 	}
 	privateDNSZonePromise, err := privateZoneClient.BeginCreateOrUpdate(ctx, resourceGroupName, name+"-azurecluster."+baseDomain, privateZoneParams, nil)
 	if err != nil {
@@ -456,10 +470,10 @@ func createPrivateDNSZoneLink(ctx context.Context, subscriptionID string, resour
 	}
 
 	virtualNetworkLinkParams := armprivatedns.VirtualNetworkLink{
-		Location: to.Ptr(VirtualNetworkLinkLocation),
+		Location: ptr.To(VirtualNetworkLinkLocation),
 		Properties: &armprivatedns.VirtualNetworkLinkProperties{
 			VirtualNetwork:      &armprivatedns.SubResource{ID: &vnetID},
-			RegistrationEnabled: to.Ptr(false),
+			RegistrationEnabled: ptr.To(false),
 		},
 	}
 	networkLinkPromise, err := privateZoneLinkClient.BeginCreateOrUpdate(ctx, resourceGroupName, privateDNSZoneName, name+"-"+infraID, virtualNetworkLinkParams, nil)
@@ -485,10 +499,10 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	storageAccountFuture, err := storageAccountClient.BeginCreate(ctx, resourceGroupName, storageAccountName,
 		armstorage.AccountCreateParameters{
 			SKU: &armstorage.SKU{
-				Name: to.Ptr(armstorage.SKUNamePremiumLRS),
-				Tier: to.Ptr(armstorage.SKUTierStandard),
+				Name: ptr.To(armstorage.SKUNamePremiumLRS),
+				Tier: ptr.To(armstorage.SKUTierStandard),
 			},
-			Location: to.Ptr(o.Location),
+			Location: ptr.To(o.Location),
 		}, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create storage account: %w", err)
@@ -523,7 +537,7 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	if err != nil {
 		return "", fmt.Errorf("failed to create new accounts client: %w", err)
 	}
-	storageAccountKeyResult, err := accountsClient.ListKeys(ctx, resourceGroupName, storageAccountName, &armstorage.AccountsClientListKeysOptions{Expand: to.Ptr("kerb")})
+	storageAccountKeyResult, err := accountsClient.ListKeys(ctx, resourceGroupName, storageAccountName, &armstorage.AccountsClientListKeysOptions{Expand: ptr.To("kerb")})
 	if err != nil {
 		return "", fmt.Errorf("failed to list storage account keys: %w", err)
 	}
@@ -559,14 +573,14 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 		Properties: &armcompute.ImageProperties{
 			StorageProfile: &armcompute.ImageStorageProfile{
 				OSDisk: &armcompute.ImageOSDisk{
-					OSType:  to.Ptr(armcompute.OperatingSystemTypesLinux),
-					OSState: to.Ptr(armcompute.OperatingSystemStateTypesGeneralized),
-					BlobURI: to.Ptr(imageBlobURL),
+					OSType:  ptr.To(armcompute.OperatingSystemTypesLinux),
+					OSState: ptr.To(armcompute.OperatingSystemStateTypesGeneralized),
+					BlobURI: ptr.To(imageBlobURL),
 				},
 			},
-			HyperVGeneration: to.Ptr(armcompute.HyperVGenerationTypesV1),
+			HyperVGeneration: ptr.To(armcompute.HyperVGenerationTypesV1),
 		},
-		Location: to.Ptr(o.Location),
+		Location: ptr.To(o.Location),
 	}
 	imageCreationFuture, err := imagesClient.BeginCreateOrUpdate(ctx, resourceGroupName, blobName, imageInput, nil)
 	if err != nil {
@@ -580,4 +594,120 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	l.Info("Successfully created image", "resourceID", *imageCreationResult.ID, "result", imageCreationResult)
 
 	return bootImageID, nil
+}
+
+// createPublicIPAddressForLB creates a public IP address to use for the outbound rule in the load balancer
+func createPublicIPAddressForLB(ctx context.Context, subscriptionID string, resourceGroupName string, infraID string, location string, azureCreds azcore.TokenCredential) (*armnetwork.PublicIPAddress, error) {
+	publicIPAddressClient, err := armnetwork.NewPublicIPAddressesClient(subscriptionID, azureCreds, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create public IP address client, %w", err)
+	}
+
+	pollerResp, err := publicIPAddressClient.BeginCreateOrUpdate(
+		ctx,
+		resourceGroupName,
+		infraID,
+		armnetwork.PublicIPAddress{
+			Name:     ptr.To(infraID),
+			Location: ptr.To(location),
+			Properties: &armnetwork.PublicIPAddressPropertiesFormat{
+				PublicIPAddressVersion:   ptr.To(armnetwork.IPVersionIPv4),
+				PublicIPAllocationMethod: ptr.To(armnetwork.IPAllocationMethodStatic),
+				IdleTimeoutInMinutes:     ptr.To(int32(4)),
+			},
+			SKU: &armnetwork.PublicIPAddressSKU{
+				Name: ptr.To(armnetwork.PublicIPAddressSKUNameStandard),
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create public IP address, %w", err)
+	}
+
+	resp, err := pollerResp.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed while waiting create public IP address, %w", err)
+	}
+	return &resp.PublicIPAddress, nil
+}
+
+// createLoadBalancer creates a load balancer (LB) with an outbound rule for guest cluster egress; azure cloud provider will reuse this LB to add a public ip address and the load balancer rules
+func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGroupName string, infraID string, location string, publicIPAddress *armnetwork.PublicIPAddress, azureCreds azcore.TokenCredential) error {
+	idPrefix := fmt.Sprintf("subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/loadBalancers", subscriptionID, resourceGroupName)
+	loadBalancerName := infraID
+
+	loadBalancerClient, err := armnetwork.NewLoadBalancersClient(subscriptionID, azureCreds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create load balancer client, %w", err)
+	}
+
+	pollerResp, err := loadBalancerClient.BeginCreateOrUpdate(ctx,
+		resourceGroupName,
+		loadBalancerName,
+		armnetwork.LoadBalancer{
+			Location: ptr.To(location),
+			SKU: &armnetwork.LoadBalancerSKU{
+				Name: ptr.To(armnetwork.LoadBalancerSKUNameStandard),
+			},
+			Properties: &armnetwork.LoadBalancerPropertiesFormat{
+				FrontendIPConfigurations: []*armnetwork.FrontendIPConfiguration{
+					{
+						Name: &infraID,
+						Properties: &armnetwork.FrontendIPConfigurationPropertiesFormat{
+							PrivateIPAllocationMethod: ptr.To(armnetwork.IPAllocationMethodDynamic),
+							PublicIPAddress:           publicIPAddress,
+						},
+					},
+				},
+				BackendAddressPools: []*armnetwork.BackendAddressPool{
+					{
+						Name: &infraID,
+					},
+				},
+				Probes: []*armnetwork.Probe{
+					{
+						Name: &infraID,
+						Properties: &armnetwork.ProbePropertiesFormat{
+							Protocol:          ptr.To(armnetwork.ProbeProtocolHTTP),
+							Port:              ptr.To[int32](30595),
+							IntervalInSeconds: ptr.To[int32](5),
+							NumberOfProbes:    ptr.To[int32](2),
+							RequestPath:       ptr.To("/healthz"),
+						},
+					},
+				},
+				// This outbound rule follows the guidance found here
+				// https://learn.microsoft.com/en-us/azure/load-balancer/load-balancer-outbound-connections#outboundrules
+				OutboundRules: []*armnetwork.OutboundRule{
+					{
+						Name: ptr.To(infraID),
+						Properties: &armnetwork.OutboundRulePropertiesFormat{
+							BackendAddressPool: &armnetwork.SubResource{
+								ID: ptr.To(fmt.Sprintf("/%s/%s/backendAddressPools/%s", idPrefix, loadBalancerName, infraID)),
+							},
+							FrontendIPConfigurations: []*armnetwork.SubResource{
+								{
+									ID: ptr.To(fmt.Sprintf("/%s/%s/frontendIPConfigurations/%s", idPrefix, loadBalancerName, infraID)),
+								},
+							},
+							Protocol:               ptr.To(armnetwork.LoadBalancerOutboundRuleProtocolAll),
+							AllocatedOutboundPorts: ptr.To(int32(1024)),
+							EnableTCPReset:         ptr.To(true),
+							IdleTimeoutInMinutes:   ptr.To(int32(4)),
+						},
+					},
+				},
+			},
+		}, nil)
+
+	if err != nil {
+		return fmt.Errorf("failed to create guest cluster egress load balancer: %w", err)
+	}
+
+	_, err = pollerResp.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed waiting to create guest cluster egress load balancer: %w", err)
+	}
+	return nil
 }

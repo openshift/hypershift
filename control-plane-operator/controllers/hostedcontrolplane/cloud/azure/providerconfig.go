@@ -58,6 +58,7 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		VnetResourceGroup:            hcp.Spec.Platform.Azure.ResourceGroupName,
 		SubnetName:                   hcp.Spec.Platform.Azure.SubnetName,
 		SecurityGroupName:            hcp.Spec.Platform.Azure.SecurityGroupName,
+		LoadBalancerName:             hcp.Spec.InfraID,
 		CloudProviderBackoff:         true,
 		CloudProviderBackoffDuration: 6,
 		UseInstanceMetadata:          true,
@@ -90,4 +91,5 @@ type AzureConfig struct {
 	UseInstanceMetadata          bool   `json:"useInstanceMetadata"`
 	LoadBalancerSku              string `json:"loadBalancerSku"`
 	DisableOutboundSNAT          bool   `json:"disableOutboundSNAT"`
+	LoadBalancerName             string `json:"loadBalancerName"`
 }
