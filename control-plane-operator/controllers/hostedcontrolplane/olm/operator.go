@@ -20,6 +20,11 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	catalogOperatorName = "catalog-operator"
+	olmOperatorName     = "olm-operator"
+)
+
 var (
 	catalogOperatorMetricsService = assets.MustService(content.ReadFile, "assets/catalog-metrics-service.yaml")
 	catalogOperatorDeployment     = assets.MustDeployment(content.ReadFile, "assets/catalog-operator-deployment.yaml")
@@ -29,7 +34,7 @@ var (
 )
 
 func olmOperatorLabels() map[string]string {
-	return map[string]string{"app": "olm-operator", hyperv1.ControlPlaneComponent: "olm-operator"}
+	return map[string]string{"app": olmOperatorName, hyperv1.ControlPlaneComponent: olmOperatorName}
 }
 
 func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config.OwnerRef) error {
@@ -47,11 +52,16 @@ func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config
 }
 
 func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string) error {
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(catalogOperatorName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		dc.SetContainerResourcesIfPresent(mainContainer)
+	}
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = catalogOperatorDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
 		switch container.Name {
-		case "catalog-operator":
+		case catalogOperatorName:
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
@@ -101,10 +111,17 @@ func ReconcileOLMOperatorMetricsService(svc *corev1.Service, ownerRef config.Own
 
 func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string) error {
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(olmOperatorName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		dc.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec = olmOperatorDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
 		switch container.Name {
-		case "olm-operator":
+		case olmOperatorName:
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
