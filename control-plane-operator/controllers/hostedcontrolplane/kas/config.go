@@ -6,8 +6,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/blang/semver"
-
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -37,16 +35,12 @@ const (
 	DefaultEtcdPort         = 2379
 )
 
-func ReconcileConfig(config *corev1.ConfigMap,
-	ownerRef hcpconfig.OwnerRef,
-	p KubeAPIServerConfigParams,
-	version semver.Version,
-) error {
+func ReconcileConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
 	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	kasConfig := generateConfig(p, version)
+	kasConfig := generateConfig(p)
 	serializedConfig, err := json.Marshal(kasConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver config: %w", err)
@@ -63,7 +57,7 @@ func (a kubeAPIServerArgs) Set(name string, values ...string) {
 	a[name] = v
 }
 
-func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.KubeAPIServerConfig {
+func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
@@ -163,12 +157,6 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
-	if version.Minor == 10 {
-		// This is explicitly disabled in OCP 4.10
-		// This is enabled by default in 4.11 but currently disabled by OCP. It is planned to get re-enabled but currently
-		// breaks conformance testing, ref: https://github.com/openshift/cluster-kube-apiserver-operator/pull/1262
-		args.Set("disable-admission-plugins", "PodSecurity")
-	}
 	if util.ConfigOAuthEnabled(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
