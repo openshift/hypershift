@@ -2662,6 +2662,16 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
 	}
 
+	authConfig := manifests.AuthConfig(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, authConfig, func() error {
+		return kas.ReconcileAuthConfig(authConfig,
+			p.OwnerRef,
+			p.ConfigParams(),
+		)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server authentication config: %w", err)
+	}
+
 	kubeAPIServerEgressSelectorConfig := manifests.KASEgressSelectorConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kubeAPIServerEgressSelectorConfig, func() error {
 		return kas.ReconcileEgressSelectorConfig(kubeAPIServerEgressSelectorConfig, p.OwnerRef)
