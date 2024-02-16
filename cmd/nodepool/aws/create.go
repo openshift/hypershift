@@ -97,7 +97,7 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 	nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 		InstanceType:    instanceType,
 		InstanceProfile: o.InstanceProfile,
-		Subnet: &hyperv1.AWSResourceReference{
+		Subnet: hyperv1.AWSResourceReference{
 			ID: &o.SubnetID,
 		},
 		SecurityGroups: []hyperv1.AWSResourceReference{

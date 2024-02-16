@@ -633,7 +633,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 				InstanceType:    o.AWS.InstanceType,
 				InstanceProfile: o.AWS.InstanceProfile,
-				Subnet: &hyperv1.AWSResourceReference{
+				Subnet: hyperv1.AWSResourceReference{
 					ID: zone.SubnetID,
 				},
 				RootVolume: &hyperv1.Volume{
