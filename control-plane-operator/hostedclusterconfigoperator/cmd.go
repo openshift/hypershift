@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/node"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/pkg/version"
@@ -62,6 +63,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	resources.ControllerName: resources.Setup,
 	"inplaceupgrader":        inplaceupgrader.Setup,
 	"node":                   node.Setup,
+	nodecount.ControllerName: nodecount.Setup,
 	"machine":                machine.Setup,
 	"drainer":                drainer.Setup,
 	hcpstatus.ControllerName: hcpstatus.Setup,
@@ -263,6 +265,15 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
+	controllersToRun := map[string]operator.ControllerSetupFunc{}
+	for _, controllerName := range o.Controllers {
+		if setup, registered := controllerFuncs[controllerName]; !registered {
+			return fmt.Errorf("requested to run unknown controller %q", controllerName)
+		} else {
+			controllersToRun[controllerName] = setup
+		}
+	}
+
 	operatorConfig := &operator.HostedClusterConfigOperatorConfig{
 		TargetCreateOrUpdateProvider: &labelenforcingclient.LabelEnforcingUpsertProvider{
 			Upstream:  upsert.New(o.enableCIDebugOutput),
@@ -277,8 +288,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		HCPName:               o.HostedControlPlaneName,
 		InitialCA:             string(o.initialCA),
 		ClusterSignerCA:       string(o.clusterSignerCA),
-		Controllers:           o.Controllers,
-		ControllerFuncs:       controllerFuncs,
+		ControllerFuncs:       controllersToRun,
 		Versions:              versions,
 		PlatformType:          hyperv1.PlatformType(o.platformType),
 		CPCluster:             cpCluster,

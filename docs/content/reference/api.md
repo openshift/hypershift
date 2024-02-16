@@ -4560,6 +4560,17 @@ PlatformStatus
 <p>Platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nodeCount</code></br>
+<em>
+int
+</em>
+</td>
+<td>
+<p>NodeCount tracks the number of nodes in the HostedControlPlane.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###IBMCloudKMSAuthSpec { #hypershift.openshift.io/v1beta1.IBMCloudKMSAuthSpec }
