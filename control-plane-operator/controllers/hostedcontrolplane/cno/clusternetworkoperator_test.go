@@ -36,7 +36,7 @@ func TestReconcileDeployment(t *testing.T) {
 			}
 
 			dep := &appsv1.Deployment{}
-			if err := ReconcileDeployment(dep, tc.params); err != nil {
+			if err := ReconcileDeployment(dep, tc.params, hyperv1.NonePlatform); err != nil {
 				t.Fatalf("ReconcileDeployment: %v", err)
 			}
 

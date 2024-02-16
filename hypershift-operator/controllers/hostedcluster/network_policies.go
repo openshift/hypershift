@@ -165,6 +165,9 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 
 func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
 	port := intstr.FromInt(config.KASSVCPort)
+	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		port = intstr.FromInt(config.KASSVCIBMCloudPort)
+	}
 	protocol := corev1.ProtocolTCP
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{

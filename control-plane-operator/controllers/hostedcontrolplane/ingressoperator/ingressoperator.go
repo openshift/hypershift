@@ -96,7 +96,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	return p
 }
 
-func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
+func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
 	dep.Spec.Replicas = utilpointer.Int32(1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
@@ -203,7 +203,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
 	}
 
 	util.AvailabilityProber(
-		kas.InClusterKASReadyURL(),
+		kas.InClusterKASReadyURL(platformType),
 		params.AvailabilityProberImage,
 		&dep.Spec.Template.Spec,
 		func(o *util.AvailabilityProberOpts) {

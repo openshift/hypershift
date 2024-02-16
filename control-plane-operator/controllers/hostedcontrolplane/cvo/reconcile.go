@@ -148,7 +148,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	deploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(
-		kas.InClusterKASReadyURL(),
+		kas.InClusterKASReadyURL(platformType),
 		availabilityProberImage,
 		&deployment.Spec.Template.Spec,
 		func(o *util.AvailabilityProberOpts) {
