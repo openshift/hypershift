@@ -85,7 +85,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	return params
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) error {
 	params.OwnerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -111,7 +111,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 	}
 
 	params.deploymentConfig.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), params.availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), params.availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = volumeServiceAccountKubeconfig().Name
 		o.WaitForInfrastructureResource = true
 		o.RequiredAPIs = []schema.GroupVersionKind{
