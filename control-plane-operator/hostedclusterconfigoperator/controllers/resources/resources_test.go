@@ -161,6 +161,116 @@ func TestReconcileErrorHandling(t *testing.T) {
 	}
 }
 
+func TestReconcileOLM(t *testing.T) {
+	var errs []error
+	hcp := fakeHCP()
+	hcp.Namespace = "openshift-operator-lifecycle-manager"
+	fakeCPService := manifests.OLMPackageServerControlPlaneService(hcp.Namespace)
+	fakeCPService.Spec.ClusterIP = "172.30.108.248"
+	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name                string
+		hcpClusterConfig    *hyperv1.ClusterConfiguration
+		olmCatalogPlacement hyperv1.OLMCatalogPlacement
+		want                *configv1.OperatorHubSpec
+	}{
+		{
+			name:                "PlacementStrategy is management and no configuration provided",
+			hcpClusterConfig:    nil,
+			olmCatalogPlacement: hyperv1.ManagementOLMCatalogPlacement,
+			want:                &configv1.OperatorHubSpec{},
+		},
+		{
+			name: "PlacementStrategy is management and allDefaultSources disabled",
+			hcpClusterConfig: &hyperv1.ClusterConfiguration{
+				OperatorHub: &configv1.OperatorHubSpec{
+					DisableAllDefaultSources: true,
+				},
+			},
+			olmCatalogPlacement: hyperv1.ManagementOLMCatalogPlacement,
+			want: &configv1.OperatorHubSpec{
+				DisableAllDefaultSources: true,
+			},
+		},
+		{
+			name: "PlacementStrategy is management and allDefaultSources enabled",
+			hcpClusterConfig: &hyperv1.ClusterConfiguration{
+				OperatorHub: &configv1.OperatorHubSpec{
+					DisableAllDefaultSources: false,
+				},
+			},
+			olmCatalogPlacement: hyperv1.ManagementOLMCatalogPlacement,
+			want: &configv1.OperatorHubSpec{
+				DisableAllDefaultSources: false,
+			},
+		},
+		{
+			name:                "PlacementStrategy is guest and no configuration provided",
+			hcpClusterConfig:    nil,
+			olmCatalogPlacement: hyperv1.GuestOLMCatalogPlacement,
+			want:                &configv1.OperatorHubSpec{},
+		},
+		{
+			// We expect here the OperatorHub in guest to keep the already set value and
+			// don't overwrite the value with the new one.
+			name: "PlacementStrategy is guest and allDefaultSources disabled, the first reconciliation loop already happened",
+			hcpClusterConfig: &hyperv1.ClusterConfiguration{
+				OperatorHub: &configv1.OperatorHubSpec{
+					DisableAllDefaultSources: true,
+				},
+			},
+			olmCatalogPlacement: hyperv1.GuestOLMCatalogPlacement,
+			want: &configv1.OperatorHubSpec{
+				DisableAllDefaultSources: false,
+			},
+		},
+		{
+			name: "PlacementStrategy is guest and allDefaultSources enabled",
+			hcpClusterConfig: &hyperv1.ClusterConfiguration{
+				OperatorHub: &configv1.OperatorHubSpec{
+					DisableAllDefaultSources: false,
+				},
+			},
+			olmCatalogPlacement: hyperv1.GuestOLMCatalogPlacement,
+			want: &configv1.OperatorHubSpec{
+				DisableAllDefaultSources: false,
+			},
+		},
+	}
+
+	cpClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(rootCA, fakeCPService, hcp).
+		Build()
+	hcCLient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(rootCA).
+		Build()
+
+	r := &reconciler{
+		client:                 hcCLient,
+		cpClient:               cpClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		rootCA:                 "fake",
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			hcp.Spec.Configuration = tc.hcpClusterConfig
+			hcp.Spec.OLMCatalogPlacement = tc.olmCatalogPlacement
+			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			g.Expect(errs).To(BeEmpty(), "unexpected errors")
+			hcOpHub := manifests.OperatorHub()
+			err := r.client.Get(ctx, client.ObjectKeyFromObject(hcOpHub), hcOpHub)
+			g.Expect(err).To(BeNil(), "error checking HC OperatorHub")
+			g.Expect(hcOpHub.Spec).To(Equal(*tc.want))
+		})
+	}
+}
+
 type simpleCreateOrUpdater struct{}
 
 func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
