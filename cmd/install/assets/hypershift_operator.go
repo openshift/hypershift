@@ -344,6 +344,7 @@ type HyperShiftOperatorDeployment struct {
 	MonitoringDashboards                    bool
 	CertRotationScale                       time.Duration
 	EnableCVOManagementClusterMetricsAccess bool
+	EnableDedicatedRequestServingIsolation  bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -352,6 +353,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		"--namespace=$(MY_NAMESPACE)",
 		"--pod-name=$(MY_NAME)",
 		"--metrics-addr=:9000",
+		fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", o.EnableDedicatedRequestServingIsolation),
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
