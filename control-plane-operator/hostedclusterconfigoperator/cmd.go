@@ -16,7 +16,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"k8s.io/apimachinery/pkg/fields"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -214,6 +216,9 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
 		opt.Namespace = o.Namespace
 		opt.Scheme = api.Scheme
+		opt.NewCache = cache.BuilderWithOptions(cache.Options{
+			DefaultSelector: cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", o.Namespace)},
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create control plane cluster: %v", err)
