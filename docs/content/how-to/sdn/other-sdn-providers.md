@@ -279,6 +279,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     oc apply -f ciliumconfig.yaml
     ~~~
 
+
 === "Dual stack"
 
     ~~~yaml
@@ -326,6 +327,10 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     oc apply -f ciliumconfig.yaml
     ~~~
+
+!!! important
+
+    Make sure you've changed the networking values according to your platform details `spec.ipam.operator.clusterPoolIPv4PodCIDRList`, `spec.ipam.operator.clusterPoolIPv4MaskSize` and `nativeRoutingCIDR` in IPv4 and `spec.ipam.operator.clusterPoolIPv6PodCIDRList`, `spec.ipam.operator.clusterPoolIPv6MaskSize` and `nativeRoutingCIDR` in IPv6 case.
 
 ### Checks
 
@@ -378,7 +383,40 @@ The nodes should've moved to `Ready` state:
 
 The HostedCluster deployment will continue, at this point the SDN is running.
 
-Additionally you have some conformance tests that could be deployed into the HostedCluster in order to validate if the Cilium SDN was deployed and working properly:
+### Validation
+
+Additionally you have some conformance tests that could be deployed into the HostedCluster in order to validate if the Cilium SDN was deployed and working properly.
+
+In order for Cilium connectivity test pods to run on OpenShift, a simple custom SecurityContextConstraints object is required to allow hostPort/hostNetwork which the connectivity test pods relies on. it should only set allowHostPorts and allowHostNetwork without any other privileges.
+
+  ~~~sh
+  oc apply -f - <<EOF
+  apiVersion: security.openshift.io/v1
+  kind: SecurityContextConstraints
+  metadata:
+    name: cilium-test
+  allowHostPorts: true
+  allowHostNetwork: true
+  users:
+    - system:serviceaccount:cilium-test:default
+  priority: null
+  readOnlyRootFilesystem: false
+  runAsUser:
+    type: MustRunAsRange
+  seLinuxContext:
+    type: MustRunAs
+  volumes: null
+  allowHostDirVolumePlugin: false
+  allowHostIPC: false
+  allowHostPID: false
+  allowPrivilegeEscalation: false
+  allowPrivilegedContainer: false
+  allowedCapabilities: null
+  defaultAddCapabilities: null
+  requiredDropCapabilities: null
+  groups: null
+  EOF
+  ~~~
 
   ~~~sh
   version="1.14.5"
