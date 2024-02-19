@@ -23,7 +23,7 @@ func ExpectedHCConditions() map[hyperv1.ConditionType]metav1.ConditionStatus {
 		hyperv1.ReconciliationSucceeded:              metav1.ConditionTrue,
 		hyperv1.ValidOIDCConfiguration:               metav1.ConditionTrue,
 		hyperv1.ValidAWSIdentityProvider:             metav1.ConditionTrue,
-		hyperv1.AWSDefaultSecurityGroupCreated:       metav1.ConditionTrue,
+		hyperv1.AWSSecurityGroupsReconciled:          metav1.ConditionTrue,
 		hyperv1.ValidHostedControlPlaneConfiguration: metav1.ConditionTrue,
 		hyperv1.ValidReleaseImage:                    metav1.ConditionTrue,
 		hyperv1.PlatformCredentialsFound:             metav1.ConditionTrue,

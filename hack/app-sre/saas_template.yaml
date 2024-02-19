@@ -40495,6 +40495,12 @@ objects:
                             the control plane operator. It is always added to worker machines in
                             addition to any security groups specified in the NodePool.
                           type: string
+                        vpcEndpointSecurityGroupID:
+                          description: |-
+                            VPCEendpointSecurityGroup is the ID of a security group created by
+                            the control plane operator. It is used to control access to the VPC
+                            endpoint in Private and PublicAndPrivate clusters.
+                          type: string
                       type: object
                   type: object
                 version:
@@ -44792,6 +44798,12 @@ objects:
                             DefaultWorkerSecurityGroupID is the ID of a security group created by
                             the control plane operator. It is always added to worker machines in
                             addition to any security groups specified in the NodePool.
+                          type: string
+                        vpcEndpointSecurityGroupID:
+                          description: |-
+                            VPCEendpointSecurityGroup is the ID of a security group created by
+                            the control plane operator. It is used to control access to the VPC
+                            endpoint in Private and PublicAndPrivate clusters.
                           type: string
                       type: object
                   type: object
@@ -49282,6 +49294,12 @@ objects:
                             the control plane operator. It is always added to worker machines in
                             addition to any security groups specified in the NodePool.
                           type: string
+                        vpcEndpointSecurityGroupID:
+                          description: |-
+                            VPCEendpointSecurityGroup is the ID of a security group created by
+                            the control plane operator. It is used to control access to the VPC
+                            endpoint in Private and PublicAndPrivate clusters.
+                          type: string
                       type: object
                   type: object
                 ready:
@@ -53552,6 +53570,12 @@ objects:
                             DefaultWorkerSecurityGroupID is the ID of a security group created by
                             the control plane operator. It is always added to worker machines in
                             addition to any security groups specified in the NodePool.
+                          type: string
+                        vpcEndpointSecurityGroupID:
+                          description: |-
+                            VPCEendpointSecurityGroup is the ID of a security group created by
+                            the control plane operator. It is used to control access to the VPC
+                            endpoint in Private and PublicAndPrivate clusters.
                           type: string
                       type: object
                   type: object

@@ -21,6 +21,7 @@ package v1alpha1
 // with apply.
 type AWSPlatformStatusApplyConfiguration struct {
 	DefaultWorkerSecurityGroupID *string `json:"defaultWorkerSecurityGroupID,omitempty"`
+	VPCEndpointSecurityGroupID   *string `json:"vpcEndpointSecurityGroupID,omitempty"`
 }
 
 // AWSPlatformStatusApplyConfiguration constructs an declarative configuration of the AWSPlatformStatus type for use with
@@ -34,5 +35,13 @@ func AWSPlatformStatus() *AWSPlatformStatusApplyConfiguration {
 // If called multiple times, the DefaultWorkerSecurityGroupID field is set to the value of the last call.
 func (b *AWSPlatformStatusApplyConfiguration) WithDefaultWorkerSecurityGroupID(value string) *AWSPlatformStatusApplyConfiguration {
 	b.DefaultWorkerSecurityGroupID = &value
+	return b
+}
+
+// WithVPCEndpointSecurityGroupID sets the VPCEndpointSecurityGroupID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the VPCEndpointSecurityGroupID field is set to the value of the last call.
+func (b *AWSPlatformStatusApplyConfiguration) WithVPCEndpointSecurityGroupID(value string) *AWSPlatformStatusApplyConfiguration {
+	b.VPCEndpointSecurityGroupID = &value
 	return b
 }

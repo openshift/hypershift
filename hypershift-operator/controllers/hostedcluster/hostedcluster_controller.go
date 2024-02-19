@@ -376,24 +376,31 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
+	// Bubble up AWSSecurityGroupsDeleted condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
 	{
 		if hcp != nil && hcp.DeletionTimestamp != nil {
 			freshCondition := &metav1.Condition{
-				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
+				Type:               string(hyperv1.AWSSecurityGroupsDeleted),
 				Status:             metav1.ConditionUnknown,
 				Reason:             hyperv1.StatusUnknownReason,
 				ObservedGeneration: hcluster.Generation,
 			}
 
-			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSSecurityGroupsDeleted))
+			if securityGroupDeletionCondition == nil {
+				// If the new condition is not found, look for the deprecated condition
+				securityGroupDeletionCondition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+				if securityGroupDeletionCondition != nil {
+					securityGroupDeletionCondition.Type = string(hyperv1.AWSSecurityGroupsDeleted)
+				}
+			}
 			if securityGroupDeletionCondition != nil {
 				freshCondition = securityGroupDeletionCondition
 			}
 
-			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
-			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSSecurityGroupsDeleted))
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message || oldCondition.Status != freshCondition.Status {
 				freshCondition.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
@@ -727,13 +734,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Status.Platform = hcp.Status.Platform
 	}
 
-	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
+	// Copy the AWSSecurityGroupsReconciled condition from the hostedcontrolplane
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcp != nil {
-			sgCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
-			if sgCreated != nil {
-				sgCreated.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *sgCreated)
+			sgReconciled := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSSecurityGroupsReconciled))
+			if sgReconciled == nil {
+				// If the new condition is not found, try the deprecated condition
+				sgReconciled = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
+			}
+			if sgReconciled != nil {
+				sgReconciled.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *sgReconciled)
 			}
 
 			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSKMSConfig))

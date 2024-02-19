@@ -454,7 +454,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		for _, group := range output.VpcEndpoints[0].Groups {
 			exitingSG = append(exitingSG, group.GroupId)
 		}
-		addedSG, removedSG := diffIDs([]string{hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID}, exitingSG)
+		addedSG, removedSG := diffIDs([]string{hcp.Status.Platform.AWS.VPCEndpointSecurityGroupID}, exitingSG)
 
 		if addedSubnet != nil || removedSubnet != nil || addedSG != nil || removedSG != nil {
 			log.Info("endpoint subnets or security groups have changed")
@@ -520,11 +520,11 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 				subnetIDs = append(subnetIDs, &awsEndpointService.Spec.SubnetIDs[i])
 			}
 
-			if hcp.Status.Platform == nil || hcp.Status.Platform.AWS == nil || hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
-				return fmt.Errorf("DefaultWorkerSecurityGroupID doesn't exist yet for the endpoint to use")
+			if hcp.Status.Platform == nil || hcp.Status.Platform.AWS == nil || hcp.Status.Platform.AWS.VPCEndpointSecurityGroupID == "" {
+				return fmt.Errorf("VPCEndpointSecurityGroupID doesn't exist yet for the endpoint to use")
 			}
 			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, &ec2.CreateVpcEndpointInput{
-				SecurityGroupIds: []*string{aws.String(hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)},
+				SecurityGroupIds: []*string{aws.String(hcp.Status.Platform.AWS.VPCEndpointSecurityGroupID)},
 				ServiceName:      aws.String(awsEndpointService.Status.EndpointServiceName),
 				VpcId:            aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
 				VpcEndpointType:  aws.String(ec2.VpcEndpointTypeInterface),

@@ -109,9 +109,12 @@ const (
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
 	resourceDeletionTimeout = 10 * time.Minute
+	sgDeletionTimeout       = 10 * time.Minute
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+
+	minimumAWSSecurityGroupReconcileInterval = 2 * time.Minute
 )
 
 type InfrastructureStatus struct {
@@ -305,46 +308,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	originalHostedControlPlane = hostedControlPlane.DeepCopy()
 
+	originalHostedControlPlane = hostedControlPlane.DeepCopy()
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		condition := &metav1.Condition{
-			Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
-		}
 		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
-			if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
-				condition.Message = "failed to delete AWS default security group"
-				if code == "DependencyViolation" {
-					condition.Message = destroyErr.Error()
-				}
-				condition.Reason = hyperv1.AWSErrorReason
-				condition.Status = metav1.ConditionFalse
-				meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
-
-				if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
-				}
-
-				if code == "UnauthorizedOperation" {
-					r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
-				}
-				if code == "DependencyViolation" {
-					r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
-				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
-				}
-			} else {
-				condition.Message = hyperv1.AllIsWellMessage
-				condition.Reason = hyperv1.AsExpectedReason
-				condition.Status = metav1.ConditionTrue
-				meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
-
-				if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition message: %v", err, condition.Message)
-				}
+			if err := r.destroyAWSSecurityGroups(ctx, hostedControlPlane); err != nil {
+				return ctrl.Result{}, err
 			}
-
 			done, err := r.removeCloudResources(ctx, hostedControlPlane)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
@@ -1219,9 +1190,9 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	r.Log.Info("Reconciling default security group")
-	if err := r.reconcileDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
-		return fmt.Errorf("failed to reconcile default security group")
+	r.Log.Info("Reconciling AWS security groups")
+	if err := r.reconcileAWSSecurityGroups(ctx, hostedControlPlane); err != nil {
+		return fmt.Errorf("failed to reconcile AWS security groups: %w", err)
 	}
 
 	// TODO: consider using a side container in the etcd pod instead.
@@ -4498,55 +4469,63 @@ func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControl
 	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 }
 
-func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) reconcileAWSSecurityGroups(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	logger := ctrl.LoggerFrom(ctx)
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
 		// Not AWS platform, skip
 		return nil
 	}
-	if hcp.Status.Platform != nil && hcp.Status.Platform.AWS != nil && hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID != "" {
-		// Security group has already been created, nothing to do
-		return nil
-	}
+
 	validProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
 	if validProvider == nil || validProvider.Status != metav1.ConditionTrue {
 		logger.Info("Identity provider not ready. Skipping security group creation.")
 		return nil
 	}
 
+	securityGroupsReconciled := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSSecurityGroupsReconciled))
+	if securityGroupsReconciled != nil && !securityGroupsReconciled.LastTransitionTime.IsZero() && time.Since(securityGroupsReconciled.LastTransitionTime.Time) < minimumAWSSecurityGroupReconcileInterval {
+		logger.Info("AWS security groups reconciled recently. Skipping reconcile.")
+		return nil
+	}
+
 	originalHCP := hcp.DeepCopy()
-	var condition *metav1.Condition
-	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC, hcp.Spec.Platform.AWS.ResourceTags)
-	if creationErr != nil {
-		condition = &metav1.Condition{
-			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
-			Status:  metav1.ConditionFalse,
-			Message: creationErr.Error(),
-			Reason:  hyperv1.AWSErrorReason,
-		}
-	} else {
-		condition = &metav1.Condition{
-			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
-			Status:  metav1.ConditionTrue,
-			Message: hyperv1.AllIsWellMessage,
-			Reason:  hyperv1.AsExpectedReason,
-		}
-		hcp.Status.Platform = &hyperv1.PlatformStatus{
-			AWS: &hyperv1.AWSPlatformStatus{
-				DefaultWorkerSecurityGroupID: sgID,
-			},
+	if securityGroupsReconciled == nil {
+		securityGroupsReconciled = &metav1.Condition{
+			Type: string(hyperv1.AWSSecurityGroupsReconciled),
 		}
 	}
-	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+	securityGroupsReconciled.LastTransitionTime = metav1.Now()
+
+	if defaultSG, vpcEndpointSG, err := r.ensureAWSSecurityGroups(ctx, hcp); err != nil {
+		securityGroupsReconciled.Status = metav1.ConditionFalse
+		securityGroupsReconciled.Reason = hyperv1.AWSErrorReason
+		securityGroupsReconciled.Message = fmt.Sprintf("Error: %v", err)
+	} else {
+		securityGroupsReconciled.Status = metav1.ConditionTrue
+		securityGroupsReconciled.Reason = hyperv1.AsExpectedReason
+		securityGroupsReconciled.Message = hyperv1.AllIsWellMessage
+		if hcp.Status.Platform == nil {
+			hcp.Status.Platform = &hyperv1.PlatformStatus{}
+		}
+		if hcp.Status.Platform.AWS == nil {
+			hcp.Status.Platform.AWS = &hyperv1.AWSPlatformStatus{}
+		}
+		hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID = defaultSG
+		hcp.Status.Platform.AWS.VPCEndpointSecurityGroupID = vpcEndpointSG
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, *securityGroupsReconciled)
+	// Ensure the LastTransitionTime is always updated so we can keep track of when
+	// the last reconcile was done.
+	cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSSecurityGroupsReconciled))
+	cond.LastTransitionTime = securityGroupsReconciled.LastTransitionTime
 
 	if err := r.Client.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to update status: %w", err)
+		return fmt.Errorf("failed to update status for AWS security groups: %w", err)
 	}
-
-	return creationErr
+	return nil
 }
 
-func awsSecurityGroupFilters(infraID string) []*ec2.Filter {
+func awsSecurityGroupFilters(infraID, name string) []*ec2.Filter {
 	return []*ec2.Filter{
 		{
 			Name:   awssdk.String(fmt.Sprintf("tag:kubernetes.io/cluster/%s", infraID)),
@@ -4554,19 +4533,193 @@ func awsSecurityGroupFilters(infraID string) []*ec2.Filter {
 		},
 		{
 			Name:   awssdk.String("tag:Name"),
-			Values: []*string{awssdk.String(awsSecurityGroupName(infraID))},
+			Values: []*string{awssdk.String(name)},
 		},
 	}
 }
 
-func awsSecurityGroupName(infraID string) string {
+func awsDefaultSecurityGroupName(infraID string) string {
 	return fmt.Sprintf("%s-default-sg", infraID)
 }
 
-func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, infraID, vpcID string, additionalTags []hyperv1.AWSResourceTag) (string, error) {
+func awsVPCEndpointSecurityGroupName(infraID string) string {
+	return fmt.Sprintf("%s-vpc-endpoint-sg", infraID)
+}
+
+func (r *HostedControlPlaneReconciler) ensureAWSSecurityGroups(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, string, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	// Determine VPC cidr
+	vpcID := hcp.Spec.Platform.AWS.CloudProviderConfig.VPC
+	shouldReconcileVPCEndpointSG := util.IsPrivateHCP(hcp)
+	defaultSG, err := existingSG(ctx, r.ec2Client, awsDefaultSecurityGroupName(hcp.Spec.InfraID), hcp.Spec.InfraID)
+	if err != nil {
+		return "", "", err
+	}
+	var vpcEndpointSG *ec2.SecurityGroup
+	if shouldReconcileVPCEndpointSG {
+		vpcEndpointSG, err = existingSG(ctx, r.ec2Client, awsVPCEndpointSecurityGroupName(hcp.Spec.InfraID), hcp.Spec.InfraID)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if defaultSG == nil {
+		defaultSG, err = createAWSSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, vpcID, awsDefaultSecurityGroupName(hcp.Spec.InfraID), "default worker security group", hcp.Spec.Platform.AWS.ResourceTags)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if shouldReconcileVPCEndpointSG && vpcEndpointSG == nil {
+		vpcEndpointSG, err = createAWSSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, vpcID, awsVPCEndpointSecurityGroupName(hcp.Spec.InfraID), "vpc endpoint security group", hcp.Spec.Platform.AWS.ResourceTags)
+		if err != nil {
+			return "", "", err
+		}
+	}
+
+	vpcCIDR, err := getVPCCIDR(ctx, r.ec2Client, vpcID)
+	if err != nil {
+		return "", "", err
+	}
+
+	defaultSGIngressRules := supportawsutil.DefaultWorkerSGIngressRules(vpcCIDR, awssdk.StringValue(defaultSG.GroupId), awssdk.StringValue(defaultSG.OwnerId))
+	// For the default security group, we don't remove extra rules because rules are added by CCM for load balancers.
+	if err := ensureSecurityGroupRules(ctx, logger, r.ec2Client, defaultSG, defaultSGIngressRules, false); err != nil {
+		return "", "", err
+	}
+
+	if shouldReconcileVPCEndpointSG {
+		vpcEndpointSGIngressRules := supportawsutil.VPCEndpointIngressRules(awssdk.StringValue(defaultSG.GroupId), awssdk.StringValue(defaultSG.OwnerId))
+		if err := ensureSecurityGroupRules(ctx, logger, r.ec2Client, vpcEndpointSG, vpcEndpointSGIngressRules, true); err != nil {
+			return "", "", err
+		}
+	}
+
+	defaultSGID := awssdk.StringValue(defaultSG.GroupId)
+	vpcEndpointSGID := ""
+	if shouldReconcileVPCEndpointSG {
+		vpcEndpointSGID = awssdk.StringValue(vpcEndpointSG.GroupId)
+	}
+	return defaultSGID, vpcEndpointSGID, nil
+}
+
+func createAWSSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, infraID, vpcID, name, description string, additionalTags []hyperv1.AWSResourceTag) (*ec2.SecurityGroup, error) {
+	logger := ctrl.LoggerFrom(ctx)
+
+	tagKeys := sets.NewString()
+	var tags []*ec2.Tag
+	for _, tag := range additionalTags {
+		tagKeys.Insert(tag.Key)
+		tags = append(tags, &ec2.Tag{
+			Key:   awssdk.String(tag.Key),
+			Value: awssdk.String(tag.Value),
+		})
+	}
+	clusterKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
+	if !tagKeys.Has(clusterKey) {
+		tags = append(tags, &ec2.Tag{
+			Key:   awssdk.String(clusterKey),
+			Value: awssdk.String("owned"),
+		})
+	}
+	if !tagKeys.Has("Name") {
+		tags = append(tags, &ec2.Tag{
+			Key:   awssdk.String("Name"),
+			Value: awssdk.String(name),
+		})
+	}
+	createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+		GroupName:   awssdk.String(name),
+		Description: awssdk.String(description),
+		VpcId:       awssdk.String(vpcID),
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: awssdk.String("security-group"),
+				Tags:         tags,
+			},
+		},
+	})
+	if err != nil {
+		logger.Error(err, "Failed to create security group")
+		return nil, fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
+	}
+	sgID := awssdk.StringValue(createSGResult.GroupId)
+
+	// Fetch just-created SG
+	describeSGInput := &ec2.DescribeSecurityGroupsInput{
+		GroupIds: []*string{awssdk.String(sgID)},
+	}
+	if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
+		logger.Error(err, "Failed to wait for security group to exist")
+		return nil, fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
+	}
+
+	sg, err := existingSG(ctx, ec2Client, name, infraID)
+	if err != nil || sg == nil {
+		logger.Error(err, "Failed to fetch security group", "name", name)
+		return nil, fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
+	}
+	return sg, nil
+}
+
+func ensureSecurityGroupRules(ctx context.Context, logger logr.Logger, ec2Client ec2iface.EC2API, sg *ec2.SecurityGroup, ingressPermissions []*ec2.IpPermission, removeExtraRules bool) error {
+	var ingressToAuthorize, ingressToRevoke []*ec2.IpPermission
+
+	for _, permission := range ingressPermissions {
+		if !awsSGIncludesPermission(sg.IpPermissions, permission) {
+			ingressToAuthorize = append(ingressToAuthorize, permission)
+		}
+	}
+
+	if removeExtraRules {
+		for _, permission := range sg.IpPermissions {
+			if !awsSGIncludesPermission(ingressPermissions, permission) {
+				ingressToRevoke = append(ingressToRevoke, permission)
+			}
+		}
+	}
+
+	if len(ingressToAuthorize) > 0 {
+		logger.Info("Authorizing security group ingress rules", "sgID", awssdk.StringValue(sg.GroupId), "ingressToAuthorize", ingressToAuthorize)
+		_, err := ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+			GroupId:       sg.GroupId,
+			IpPermissions: ingressToAuthorize,
+		})
+		if err != nil {
+			logger.Error(err, "Failed to authorize security group ingress rules", "sgID", awssdk.StringValue(sg.GroupId), "ingressToAuthorize", ingressToAuthorize)
+			return fmt.Errorf("failed to authorize security group ingress rules, code: %s", awsErrorCode(err))
+		}
+	}
+
+	if len(ingressToRevoke) > 0 {
+		logger.Info("Revoking security group ingress rules", "sgID", awssdk.StringValue(sg.GroupId), "ingressToRevoke", ingressToRevoke)
+		_, err := ec2Client.RevokeSecurityGroupIngress(&ec2.RevokeSecurityGroupIngressInput{
+			GroupId:       sg.GroupId,
+			IpPermissions: ingressToRevoke,
+		})
+		if err != nil {
+			logger.Error(err, "Failed to revoke security group ingress rules", "sgID", awssdk.StringValue(sg.GroupId), "ingressToRevoke", ingressToRevoke)
+			return fmt.Errorf("failed to revoke security group ingress rules, code: %s", awsErrorCode(err))
+		}
+	}
+
+	return nil
+}
+
+func existingSG(ctx context.Context, ec2Client ec2iface.EC2API, name, infraID string) (*ec2.SecurityGroup, error) {
+	logger := ctrl.LoggerFrom(ctx)
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID, name)})
+	if err != nil {
+		logger.Error(err, "Failed to list security groups")
+		return nil, fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
+	}
+	if len(describeSGResult.SecurityGroups) > 0 {
+		return describeSGResult.SecurityGroups[0], nil
+	}
+	return nil, nil
+}
+
+func getVPCCIDR(ctx context.Context, ec2Client ec2iface.EC2API, vpcID string) (string, error) {
+	logger := ctrl.LoggerFrom(ctx)
 	vpcResult, err := ec2Client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
 		VpcIds: []*string{awssdk.String(vpcID)},
 	})
@@ -4577,108 +4730,24 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	if len(vpcResult.Vpcs) == 0 {
 		return "", fmt.Errorf("vpc %s not found", vpcID)
 	}
-	vpcCIDR := awssdk.StringValue(vpcResult.Vpcs[0].CidrBlock)
-	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
-	if err != nil {
-		logger.Error(err, "Failed to list security groups")
-		return "", fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
-	}
-	sgID := ""
-	var sg *ec2.SecurityGroup
-	if len(describeSGResult.SecurityGroups) > 0 {
-		sg = describeSGResult.SecurityGroups[0]
-		sgID = awssdk.StringValue(sg.GroupId)
-	}
-	if sgID == "" {
-		// Create a security group if one is not found
-
-		tagKeys := sets.NewString()
-		var tags []*ec2.Tag
-		for _, tag := range additionalTags {
-			tagKeys.Insert(tag.Key)
-			tags = append(tags, &ec2.Tag{
-				Key:   awssdk.String(tag.Key),
-				Value: awssdk.String(tag.Value),
-			})
-		}
-		clusterKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
-		if !tagKeys.Has(clusterKey) {
-			tags = append(tags, &ec2.Tag{
-				Key:   awssdk.String(clusterKey),
-				Value: awssdk.String("owned"),
-			})
-		}
-		if !tagKeys.Has("Name") {
-			tags = append(tags, &ec2.Tag{
-				Key:   awssdk.String("Name"),
-				Value: awssdk.String(awsSecurityGroupName(infraID)),
-			})
-		}
-		createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
-			GroupName:   awssdk.String(awsSecurityGroupName(infraID)),
-			Description: awssdk.String("default worker security group"),
-			VpcId:       awssdk.String(vpcID),
-			TagSpecifications: []*ec2.TagSpecification{
-				{
-					ResourceType: awssdk.String("security-group"),
-					Tags:         tags,
-				},
-			},
-		})
-		if err != nil {
-			logger.Error(err, "Failed to create security group")
-			return "", fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
-		}
-		sgID = awssdk.StringValue(createSGResult.GroupId)
-
-		// Fetch just-created SG
-		describeSGInput := &ec2.DescribeSecurityGroupsInput{
-			GroupIds: []*string{awssdk.String(sgID)},
-		}
-		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
-			logger.Error(err, "Failed to wait for security group to exist")
-			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
-		}
-
-		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
-		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
-			logger.Error(err, "Failed to fetch security group", "sgID", sgID)
-			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
-		}
-
-		sg = describeSGResult.SecurityGroups[0]
-		logger.Info("Created security group", "id", sgID)
-	}
-	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(vpcCIDR, sgID, awssdk.StringValue(sg.OwnerId))
-	_, err = ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
-		GroupId:       awssdk.String(sgID),
-		IpPermissions: ingressPermissions,
-	})
-	if err != nil {
-		if awsErrorCode(err) != "InvalidPermission.Duplicate" {
-			logger.Error(err, "Failed to set security group ingress rules")
-			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
-		}
-		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
-	}
-	return sgID, nil
+	return awssdk.StringValue(vpcResult.Vpcs[0].CidrBlock), nil
 }
 
-func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+func (r *HostedControlPlaneReconciler) destroySecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane, name string) (string, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return "", nil
 	}
 
-	describeSGResult, err := r.ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(hcp.Spec.InfraID)})
+	sg, err := existingSG(ctx, r.ec2Client, name, hcp.Spec.InfraID)
 	if err != nil {
-		return "", fmt.Errorf("cannot list security groups: %w", err)
+		return "", err
 	}
-	if len(describeSGResult.SecurityGroups) == 0 {
+
+	if sg == nil {
 		return "", nil
 	}
-	sg := describeSGResult.SecurityGroups[0]
 
 	if len(sg.IpPermissions) > 0 {
 		if _, err = r.ec2Client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
@@ -4723,7 +4792,60 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	}
 
 	return "", nil
+}
 
+func (r *HostedControlPlaneReconciler) destroyAWSSecurityGroups(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if time.Since(hcp.DeletionTimestamp.Time) > sgDeletionTimeout {
+		r.Log.Info("Timed out waiting for AWS security groups to be deleted")
+		return nil
+	}
+
+	condition := &metav1.Condition{
+		Type: string(hyperv1.AWSSecurityGroupsDeleted),
+	}
+	originalHostedControlPlane := hcp.DeepCopy()
+
+	defaultSGErrCode, defaultSGErr := r.destroySecurityGroup(ctx, hcp, awsDefaultSecurityGroupName(hcp.Spec.InfraID))
+	var vpcEndpointSGErr error
+	var vpcEndpointSGErrCode string
+	if util.IsPrivateHCP(hcp) {
+		vpcEndpointSGErrCode, vpcEndpointSGErr = r.destroySecurityGroup(ctx, hcp, awsVPCEndpointSecurityGroupName(hcp.Spec.InfraID))
+	}
+
+	skippableErrors := sets.New("UnauthorizedOperation", "DependencyViolation")
+
+	if defaultSGErr != nil || vpcEndpointSGErr != nil {
+
+		// Only give up on deletion if both security groups are failing with known errors
+		if skippableErrors.Has(defaultSGErrCode) && skippableErrors.Has(vpcEndpointSGErrCode) {
+			r.Log.Error(defaultSGErr, "Skipping AWS default security group deletion", "code", defaultSGErrCode)
+			r.Log.Error(vpcEndpointSGErr, "Skipping AWS VPC endpoint security group deletion", "code", vpcEndpointSGErrCode)
+			return nil
+		}
+
+		err := utilerrors.NewAggregate([]error{defaultSGErr, vpcEndpointSGErr})
+		condition.Message = fmt.Sprintf("Error: %v", err)
+		condition.Reason = hyperv1.AWSErrorReason
+		condition.Status = metav1.ConditionFalse
+		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+
+		if err := r.Client.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
+		}
+
+		return fmt.Errorf("failed to destroy AWS security groups: %w", err)
+
+	} else {
+		condition.Message = hyperv1.AllIsWellMessage
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Status = metav1.ConditionTrue
+		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+
+		if err := r.Client.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition message: %v", err, condition.Message)
+		}
+	}
+	return nil
 }
 
 func awsErrorCode(err error) string {
@@ -4961,4 +5083,23 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 		return true, nil
 	}
 	return false, nil
+}
+
+func awsSGIncludesPermission(list []*ec2.IpPermission, permission *ec2.IpPermission) bool {
+	for _, p := range list {
+		if awsSGSamePermission(p, permission) {
+			return true
+		}
+	}
+	return false
+}
+
+func awsSGSamePermission(a, b *ec2.IpPermission) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.String() == b.String() {
+		return true
+	}
+	return false
 }

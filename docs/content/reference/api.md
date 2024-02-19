@@ -1489,6 +1489,20 @@ the control plane operator. It is always added to worker machines in
 addition to any security groups specified in the NodePool.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>vpcEndpointSecurityGroupID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>VPCEendpointSecurityGroup is the ID of a security group created by
+the control plane operator. It is used to control access to the VPC
+endpoint in Private and PublicAndPrivate clusters.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSResourceReference { #hypershift.openshift.io/v1beta1.AWSResourceReference }
@@ -3021,6 +3035,14 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AWSSecurityGroupsDeleted&#34;</p></td>
+<td><p>AWSSecurityGroupsDeleted indicates whether the security groups for AWS
+have been deleted.</p>
+</td>
+</tr><tr><td><p>&#34;AWSSecurityGroupsReconciled&#34;</p></td>
+<td><p>AWSSecurityGroupsReconciled indicates whether the security groups for AWS
+have been reconciled.</p>
 </td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
