@@ -588,7 +588,8 @@ spec:
                                   items:
                                     minLength: 1
                                     type: string
-                                  maxItems: 1
+                                  maxItems: 10
+                                  minItems: 1
                                   type: array
                                   x-kubernetes-list-type: set
                                 issuerCertificateAuthority:
@@ -4745,7 +4746,8 @@ spec:
                                   items:
                                     minLength: 1
                                     type: string
-                                  maxItems: 1
+                                  maxItems: 10
+                                  minItems: 1
                                   type: array
                                   x-kubernetes-list-type: set
                                 issuerCertificateAuthority:
