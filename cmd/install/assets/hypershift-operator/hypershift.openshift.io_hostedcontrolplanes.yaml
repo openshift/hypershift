@@ -2101,6 +2101,9 @@ spec:
                   policy applied to critical control plane components. The default
                   value is SingleReplica.
                 type: string
+                x-kubernetes-validations:
+                - message: ControllerAvailabilityPolicy is immutable
+                  rule: self == oldSelf
               dns:
                 description: DNSSpec specifies the DNS configuration in the cluster.
                 properties:
@@ -6073,6 +6076,9 @@ spec:
                   policy applied to critical control plane components. The default
                   value is SingleReplica.
                 type: string
+                x-kubernetes-validations:
+                - message: ControllerAvailabilityPolicy is immutable
+                  rule: self == oldSelf
               dns:
                 description: DNSSpec specifies the DNS configuration in the cluster.
                 properties:
