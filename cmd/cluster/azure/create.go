@@ -88,7 +88,11 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
 
-		infraID := infraid.New(opts.Name)
+		infraID := opts.InfraID
+		if len(infraID) == 0 {
+			infraID = infraid.New(opts.Name)
+		}
+
 		infra, err = (&azureinfra.CreateInfraOptions{
 			Name:                 opts.Name,
 			Location:             opts.AzurePlatform.Location,
