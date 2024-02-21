@@ -87,7 +87,6 @@ FROM quay.io/${os}/${os}:${version}
 COPY ./* /usr/bin
 ENTRYPOINT /usr/bin/hypershift
 EOF
-  grep LABEL Dockerfile >> ./bin/Dockerfile
   podman build -f bin/Dockerfile -t "${image_name}"
   kind load docker-image --name ${kind_cluster_name} "${image_name}"
 }
