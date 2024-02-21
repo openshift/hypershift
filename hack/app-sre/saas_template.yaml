@@ -710,9 +710,7 @@ objects:
     namespace: ${NAMESPACE}
   spec:
     endpoints:
-    - bearerTokenSecret:
-        key: ""
-      interval: 30s
+    - interval: 30s
       port: metrics
     jobLabel: component
     namespaceSelector: {}
