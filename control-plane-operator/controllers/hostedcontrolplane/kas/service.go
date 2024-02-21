@@ -169,6 +169,9 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	}
 
 	portSpec.Port = int32(config.KASSVCPort)
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		portSpec.Port = int32(config.KASSVCIBMCloudPort)
+	}
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromString("client")
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer

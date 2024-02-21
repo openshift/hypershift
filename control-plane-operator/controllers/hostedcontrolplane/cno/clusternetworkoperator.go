@@ -294,7 +294,7 @@ func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef
 	return nil
 }
 
-func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
+func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) error {
 	params.OwnerRef.ApplyTo(dep)
 
 	dep.Spec.Replicas = utilpointer.Int32(1)
@@ -559,7 +559,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), params.AvailabilityProberImage, &dep.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), params.AvailabilityProberImage, &dep.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "hosted-etc-kube"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "operator.openshift.io", Version: "v1", Kind: "Network"},

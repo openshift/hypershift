@@ -37,7 +37,7 @@ func TestReconcileDeployment(t *testing.T) {
 	deployment := manifests.CloudCredentialOperatorDeployment("test-namespace")
 	imageProvider := imageprovider.NewFromImages(images)
 	params := NewParams(hcp, "1.0.0", imageProvider, true)
-	if err := ReconcileDeployment(deployment, params); err != nil {
+	if err := ReconcileDeployment(deployment, params, hcp.Spec.Platform.Type); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	deploymentYaml, err := util.SerializeResource(deployment, api.Scheme)
