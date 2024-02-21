@@ -309,13 +309,6 @@ func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, avail
 		}
 	}
 	ownerRef.ApplyTo(pdb)
-	var minAvailable intstr.IntOrString
-	switch availability {
-	case hyperv1.SingleReplica:
-		minAvailable = intstr.FromInt(0)
-	case hyperv1.HighlyAvailable:
-		minAvailable = intstr.FromInt(1)
-	}
+	minAvailable := intstr.FromInt(1)
 	pdb.Spec.MinAvailable = &minAvailable
-
 }

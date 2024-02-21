@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
@@ -659,14 +658,7 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *EtcdPara
 
 	p.OwnerRef.ApplyTo(pdb)
 
-	var minAvailable int
-	switch p.Availability {
-	case hyperv1.SingleReplica:
-		minAvailable = 0
-	case hyperv1.HighlyAvailable:
-		// For HA clusters, only tolerate disruption of a minority of members
-		minAvailable = p.DeploymentConfig.Replicas/2 + 1
-	}
+	minAvailable := 1
 	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
 
 	return nil
