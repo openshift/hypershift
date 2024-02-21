@@ -42,7 +42,8 @@ then wait for `SIGINT` indefinitely. On interrupt, the process will clean up aft
 
 ### Tests
 
-Run the following for quick iteration - the test process will expect that setup is complete.
+Run the following for quick iteration - the test process will expect that setup is complete. Use `${GO_TEST_FLAGS}` to
+specify what subset of the tests to run.
 
 ```shell
 ./test/integration/run.sh \

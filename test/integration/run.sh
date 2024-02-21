@@ -121,7 +121,7 @@ function run_setup() {
 
 function run_test() {
   echo "Running test..."
-  go test ./test/integration -tags integration -v \
+  go test ./test/integration -tags integration -v ${GO_TEST_FLAGS:-} \
     --kubeconfig "${workdir}/kubeconfig" \
     --pull-secret "${PULL_SECRET}" \
     --artifact-dir "${workdir}/artifacts" \
@@ -163,4 +163,3 @@ for arg in "$@"; do
       ;;
   esac
 done
-
