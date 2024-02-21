@@ -943,6 +943,7 @@ func buildKonnectivityServerContainer(image string, serverCount int) func(c *cor
 			strconv.Itoa(KonnectivityServerPort),
 			"--health-port",
 			strconv.Itoa(KonnectivityHealthPort),
+			"--tls-cipher-suites=" + KonnectivityServerCipherSuites,
 			"--admin-port=8093",
 			"--mode=http-connect",
 			"--proxy-strategies=destHost,defaultRoute",
