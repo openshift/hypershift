@@ -141,7 +141,7 @@ func validateInvalidCN(t *testing.T, ctx context.Context, hostedCluster *hypersh
 	hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	_, _, _, wrongCsr := framework.CertKeyRequest(t, signer)
 	signerName := certificates.SignerNameForHC(hostedCluster, signer)
-	wrongCSRName := base36sum224(append(append([]byte(hostedControlPlaneNamespace), []byte(signer)...), []byte(`invalid`)...))
+	wrongCSRName := base36sum224(append(append([]byte(hostedControlPlaneNamespace), []byte(signer)...), []byte(t.Name())...))
 	t.Logf("creating invalid CSR %q for signer %q, requesting client auth usages", wrongCSRName, signerName)
 	wrongCSRCfg := certificatesv1applyconfigurations.CertificateSigningRequest(wrongCSRName)
 	wrongCSRCfg.Spec = certificatesv1applyconfigurations.CertificateSigningRequestSpec().
@@ -206,7 +206,7 @@ func validateCSRFlow(t *testing.T, ctx context.Context, hostedCluster *hypershif
 	hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	_, key, csr, _ := framework.CertKeyRequest(t, signer)
 	signerName := certificates.SignerNameForHC(hostedCluster, signer)
-	csrName := base36sum224(append([]byte(hostedControlPlaneNamespace), []byte(signer)...))
+	csrName := base36sum224(append(append([]byte(hostedControlPlaneNamespace), []byte(signer)...), []byte(t.Name())...))
 	t.Logf("creating CSR %q for signer %q, requesting client auth usages", csrName, signer)
 	csrCfg := certificatesv1applyconfigurations.CertificateSigningRequest(csrName)
 	csrCfg.Spec = certificatesv1applyconfigurations.CertificateSigningRequestSpec().
@@ -280,7 +280,7 @@ func validateRevocation(t *testing.T, ctx context.Context, hostedCluster *hypers
 
 	hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	_, key, _, _ := framework.CertKeyRequest(t, signer)
-	crrName := string(signer) + "-revocation"
+	crrName := base36sum224(append(append([]byte(hostedControlPlaneNamespace), []byte(signer)...), []byte(t.Name())...))
 	t.Logf("creating CRR %s/%s to trigger signer certificate revocation", hostedControlPlaneNamespace, crrName)
 	crrCfg := certificatesv1alpha1applyconfigurations.CertificateRevocationRequest(crrName, hostedControlPlaneNamespace).
 		WithSpec(certificatesv1alpha1applyconfigurations.CertificateRevocationRequestSpec().WithSignerClass(string(signer)))
