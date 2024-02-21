@@ -308,13 +308,7 @@ func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisrup
 
 	p.OwnerRef.ApplyTo(pdb)
 
-	var minAvailable int
-	switch p.Availability {
-	case hyperv1.SingleReplica:
-		minAvailable = 0
-	case hyperv1.HighlyAvailable:
-		minAvailable = 1
-	}
+	minAvailable := 1
 	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
 
 	return nil
