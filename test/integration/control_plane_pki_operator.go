@@ -82,8 +82,22 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 				})
 			})
 		}
+		t.Run("independent signers", func(t *testing.T) {
+			t.Log("generating new break-glass credentials for more than one signer")
+			customerSignedCrt := validateCSRFlow(t, ctx, hostedCluster, mgmt, guest, certificates.CustomerBreakGlassSigner)
+			sreSignedCrt := validateCSRFlow(t, ctx, hostedCluster, mgmt, guest, certificates.SREBreakGlassSigner)
 
+			t.Logf("revoking the %q signer", certificates.CustomerBreakGlassSigner)
+			validateRevocation(t, ctx, hostedCluster, mgmt, guest, certificates.CustomerBreakGlassSigner, customerSignedCrt)
 
+			t.Logf("ensuring the break-glass credentials from %q signer still work", certificates.SREBreakGlassSigner)
+			_, sreKey, _, _ := framework.CertKeyRequest(t, certificates.SREBreakGlassSigner)
+			validateCertificateAuth(t, ctx, guest.Cfg, sreSignedCrt, sreKey, func(s string) bool {
+				return s == framework.CommonNameFor(certificates.SREBreakGlassSigner)
+			})
+		})
+	})
+}
 
 func base36sum224(data []byte) string {
 	hash := sha256.Sum224(data)
