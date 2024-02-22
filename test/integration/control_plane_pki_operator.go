@@ -71,7 +71,6 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 
 				t.Run("CSR flow", func(t *testing.T) {
 					t.Run("invalid CN flagged in status", func(t *testing.T) {
-						t.Skip("TODO(skuznets): enable these tests when we're running against KAS 1.29+")
 						validateInvalidCN(t, ctx, hostedCluster, mgmt, guest, testCase.signer)
 					})
 					signedCrt := validateCSRFlow(t, ctx, hostedCluster, mgmt, guest, testCase.signer)
