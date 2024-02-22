@@ -87,7 +87,6 @@ FROM quay.io/${os}/${os}:${version}
 COPY ./* /usr/bin
 ENTRYPOINT /usr/bin/hypershift
 EOF
-  grep LABEL Dockerfile >> ./bin/Dockerfile
   podman build -f bin/Dockerfile -t "${image_name}"
   kind load docker-image --name ${kind_cluster_name} "${image_name}"
 }
@@ -122,7 +121,7 @@ function run_setup() {
 
 function run_test() {
   echo "Running test..."
-  go test ./test/integration -tags integration -v \
+  go test ./test/integration -tags integration -v ${GO_TEST_FLAGS:-} \
     --kubeconfig "${workdir}/kubeconfig" \
     --pull-secret "${PULL_SECRET}" \
     --artifact-dir "${workdir}/artifacts" \
@@ -164,4 +163,3 @@ for arg in "$@"; do
       ;;
   esac
 done
-
