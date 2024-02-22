@@ -93,21 +93,22 @@ func main() {
 }
 
 type StartOptions struct {
-	Namespace                        string
-	DeploymentName                   string
-	PodName                          string
-	MetricsAddr                      string
-	CertDir                          string
-	EnableOCPClusterMonitoring       bool
-	EnableCIDebugOutput              bool
-	ControlPlaneOperatorImage        string
-	RegistryOverrides                map[string]string
-	PrivatePlatform                  string
-	OIDCStorageProviderS3BucketName  string
-	OIDCStorageProviderS3Region      string
-	OIDCStorageProviderS3Credentials string
-	EnableUWMTelemetryRemoteWrite    bool
-	EnableValidatingWebhook          bool
+	Namespace                              string
+	DeploymentName                         string
+	PodName                                string
+	MetricsAddr                            string
+	CertDir                                string
+	EnableOCPClusterMonitoring             bool
+	EnableCIDebugOutput                    bool
+	ControlPlaneOperatorImage              string
+	RegistryOverrides                      map[string]string
+	PrivatePlatform                        string
+	OIDCStorageProviderS3BucketName        string
+	OIDCStorageProviderS3Region            string
+	OIDCStorageProviderS3Credentials       string
+	EnableUWMTelemetryRemoteWrite          bool
+	EnableValidatingWebhook                bool
+	EnableDedicatedRequestServingIsolation bool
 }
 
 func NewStartCommand() *cobra.Command {
@@ -143,6 +144,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
+	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -151,7 +153,7 @@ func NewStartCommand() *cobra.Command {
 		switch hyperv1.PlatformType(opts.PrivatePlatform) {
 		case hyperv1.AWSPlatform, hyperv1.NonePlatform:
 		default:
-			fmt.Println(fmt.Sprintf("Unsupported private platform: %q", opts.PrivatePlatform))
+			fmt.Printf("Unsupported private platform: %q\n", opts.PrivatePlatform)
 			os.Exit(1)
 		}
 
@@ -431,17 +433,21 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controllers to manage dedicated request serving isolation
-	nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
-		Client: mgr.GetClient(),
-	}
-	if err := nodeReaper.SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
-	}
-	hcScheduler := scheduler.DedicatedServingComponentScheduler{
-		Client: mgr.GetClient(),
-	}
-	if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
-		return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
+	if opts.EnableDedicatedRequestServingIsolation {
+		nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+			Client: mgr.GetClient(),
+		}
+		if err := nodeReaper.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
+		}
+		hcScheduler := scheduler.DedicatedServingComponentScheduler{
+			Client: mgr.GetClient(),
+		}
+		if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
+			return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
+		}
+	} else {
+		log.Info("Dedicated request serving isolation controllers disabled")
 	}
 
 	// If it exists, block default ingress controller from admitting HCP private routes

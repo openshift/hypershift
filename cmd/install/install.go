@@ -93,6 +93,7 @@ type Options struct {
 	SLOsAlerts                                bool
 	MonitoringDashboards                      bool
 	CertRotationScale                         time.Duration
+	EnableDedicatedRequestServingIsolation    bool
 }
 
 func (o *Options) Validate() error {
@@ -208,6 +209,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
 	cmd.PersistentFlags().DurationVar(&opts.CertRotationScale, "cert-rotation-scale", opts.CertRotationScale, "The scaling factor for certificate rotation. It is not supported to set this to anything other than 24h.")
+	cmd.PersistentFlags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -604,6 +606,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		MonitoringDashboards:                    opts.MonitoringDashboards,
 		CertRotationScale:                       opts.CertRotationScale,
 		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
+		EnableDedicatedRequestServingIsolation:  opts.EnableDedicatedRequestServingIsolation,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
