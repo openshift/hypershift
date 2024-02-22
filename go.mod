@@ -247,7 +247,7 @@ require (
 	k8s.io/kms v0.29.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20231214164306-ab13479f8bf8 // indirect
 	k8s.io/kubelet v0.28.4 // indirect
-	kubevirt.io/controller-lifecycle-operator-sdk v0.2.1 // indirect
+	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.29.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
@@ -258,11 +258,11 @@ require (
 replace (
 	github.com/google/cel-go => github.com/google/cel-go v0.17.7
 	github.com/openshift/hypershift/api => ./api
-	k8s.io/cri-api => k8s.io/cri-api v0.28.3
-	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.28.3
-	k8s.io/kubernetes => k8s.io/kubernetes v0.29.0
-	k8s.io/mount-utils => k8s.io/mount-utils v0.28.3
-	kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
-	kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
-	sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.1
+)
+
+// These are because of github.com/openshift/cluster-node-tuning-operator@v0.0.0-20240131125539-0e319439e65a
+replace (
+	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.29.2
+	k8s.io/kubernetes => k8s.io/kubernetes v0.29.2
+	k8s.io/mount-utils => k8s.io/mount-utils v0.29.2
 )
