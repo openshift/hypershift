@@ -314,10 +314,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 		}
 		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
-			if err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+			if code, err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
 				condition.Message = "failed to delete AWS default security group"
-				if awsErrorCode(err) == "DependencyViolation" {
-					condition.Message = "failed to delete AWS default security group due to dependency violation, security group: " + hostedControlPlane.Status.Platform.AWS.DefaultWorkerSecurityGroupID
+				if code == "DependencyViolation" {
+					condition.Message = err.Error()
 				}
 				condition.Reason = hyperv1.AWSErrorReason
 				condition.Status = metav1.ConditionFalse
@@ -327,10 +327,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 					return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
 				}
 
-				if awsErrorCode(err) == "UnauthorizedOperation" {
+				if code == "UnauthorizedOperation" {
 					r.Log.Info("Skipping AWS default security group deletion because the operator is not authorized to delete it.")
 				}
-				if awsErrorCode(err) == "DependencyViolation" {
+				if code == "DependencyViolation" {
 					r.Log.Info("Skipping AWS default security group deletion because of dependency violation.")
 				} else {
 					return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", err)
@@ -4646,19 +4646,19 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	return sgID, nil
 }
 
-func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
-		return nil
+		return "", nil
 	}
 
 	describeSGResult, err := r.ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(hcp.Spec.InfraID)})
 	if err != nil {
-		return fmt.Errorf("cannot list security groups: %w", err)
+		return "", fmt.Errorf("cannot list security groups: %w", err)
 	}
 	if len(describeSGResult.SecurityGroups) == 0 {
-		return nil
+		return "", nil
 	}
 	sg := describeSGResult.SecurityGroups[0]
 
@@ -4673,7 +4673,7 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 			}
 			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", awssdk.StringValue(sg.GroupId), "code", code)
 
-			return fmt.Errorf("failed to revoke security group ingress rules: %s", code)
+			return code, fmt.Errorf("failed to revoke security group ingress rules: %s", code)
 		}
 	}
 
@@ -4688,7 +4688,7 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 			}
 			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", awssdk.StringValue(sg.GroupId), "code", code)
 
-			return fmt.Errorf("failed to revoke security group egress rules: %s", code)
+			return code, fmt.Errorf("failed to revoke security group egress rules: %s", code)
 		}
 	}
 
@@ -4701,14 +4701,10 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 		}
 		log.Error(err, "failed to delete security group", "SecurityGroupID", awssdk.StringValue(sg.GroupId), "code", code)
 
-		if code == "DependencyViolation" {
-			return err
-		}
-
-		return fmt.Errorf("failed to delete security group %s: %s", awssdk.StringValue(sg.GroupId), code)
+		return code, fmt.Errorf("failed to delete security group %s: %s", awssdk.StringValue(sg.GroupId), code)
 	}
 
-	return nil
+	return "", nil
 
 }
 
