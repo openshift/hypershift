@@ -77,10 +77,9 @@ type KubeAPIServerServiceParams struct {
 }
 
 const (
-	KonnectivityHealthPort         = 2041
-	KonnectivityServerLocalPort    = 8090
-	KonnectivityServerPort         = 8091
-	KonnectivityServerCipherSuites = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_256_GCM_SHA384"
+	KonnectivityHealthPort      = 2041
+	KonnectivityServerLocalPort = 8090
+	KonnectivityServerPort      = 8091
 )
 
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
@@ -460,6 +459,13 @@ func (p *KubeAPIServerParams) FeatureGates() []string {
 			FeatureSet: configv1.Default,
 		})
 	}
+}
+
+func (p *KubeAPIServerParams) CipherSuites() []string {
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
 }
 
 func (p *KubeAPIServerParams) ServiceNodePortRange() string {
