@@ -3,7 +3,7 @@ module github.com/openshift/hypershift
 go 1.21
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.1
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.2
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.5.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
@@ -15,17 +15,17 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.5.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.1.0
 	github.com/Azure/go-autorest/autorest v0.11.29
-	github.com/IBM-Cloud/power-go-client v1.5.6
+	github.com/IBM-Cloud/power-go-client v1.5.9
 	github.com/IBM/go-sdk-core/v5 v5.15.1
-	github.com/IBM/ibm-cos-sdk-go v1.9.4
+	github.com/IBM/ibm-cos-sdk-go v1.10.2
 	github.com/IBM/networking-go-sdk v0.44.0
-	github.com/IBM/platform-services-go-sdk v0.56.3
-	github.com/IBM/vpc-go-sdk v0.46.0
+	github.com/IBM/platform-services-go-sdk v0.56.4
+	github.com/IBM/vpc-go-sdk v0.48.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/aws/aws-sdk-go v1.44.298
+	github.com/aws/aws-sdk-go v1.50.24
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
-	github.com/coreos/ignition/v2 v2.16.2
+	github.com/coreos/ignition/v2 v2.17.0
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/evanphx/json-patch/v5 v5.9.0
 	github.com/go-jose/go-jose/v3 v3.0.1
@@ -36,11 +36,11 @@ require (
 	github.com/google/gofuzz v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
-	github.com/hashicorp/go-uuid v1.0.1
-	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.0.1
-	github.com/onsi/gomega v1.30.0
+	github.com/hashicorp/go-uuid v1.0.3
+	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
+	github.com/onsi/gomega v1.31.1
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
+	github.com/opencontainers/image-spec v1.1.0
 	github.com/openshift/api v0.0.0-20240214165302-89248c87b7fc
 	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
@@ -48,13 +48,13 @@ require (
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20240131125539-0e319439e65a
 	github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000
 	github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
-	github.com/operator-framework/api v0.10.7
+	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.2
 	github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/client_model v0.6.0
-	github.com/prometheus/common v0.47.0
+	github.com/prometheus/common v0.48.0
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4
 	github.com/tombuildsstuff/giovanni v0.18.0
@@ -99,7 +99,7 @@ require (
 )
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.5.1 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.5.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.4.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.0.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
@@ -139,16 +139,16 @@ require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/analysis v0.21.4 // indirect
+	github.com/go-openapi/analysis v0.21.5 // indirect
 	github.com/go-openapi/errors v0.21.0 // indirect
 	github.com/go-openapi/jsonpointer v0.20.2 // indirect
 	github.com/go-openapi/jsonreference v0.20.4 // indirect
-	github.com/go-openapi/loads v0.21.2 // indirect
+	github.com/go-openapi/loads v0.21.3 // indirect
 	github.com/go-openapi/runtime v0.26.2 // indirect
-	github.com/go-openapi/spec v0.20.11 // indirect
+	github.com/go-openapi/spec v0.20.12 // indirect
 	github.com/go-openapi/strfmt v0.22.0 // indirect
 	github.com/go-openapi/swag v0.22.7 // indirect
-	github.com/go-openapi/validate v0.22.3 // indirect
+	github.com/go-openapi/validate v0.22.4 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.17.0 // indirect
