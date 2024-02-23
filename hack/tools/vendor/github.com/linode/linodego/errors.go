@@ -1,6 +1,7 @@
 package linodego
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -97,8 +98,20 @@ func (e APIError) Error() string {
 	return strings.Join(x, "; ")
 }
 
-func (g Error) Error() string {
-	return fmt.Sprintf("[%03d] %s", g.Code, g.Message)
+func (err Error) Error() string {
+	return fmt.Sprintf("[%03d] %s", err.Code, err.Message)
+}
+
+func (err Error) StatusCode() int {
+	return err.Code
+}
+
+func (err Error) Is(target error) bool {
+	if x, ok := target.(interface{ StatusCode() int }); ok || errors.As(target, &x) {
+		return err.StatusCode() == x.StatusCode()
+	}
+
+	return false
 }
 
 // NewError creates a linodego.Error with a Code identifying the source err type,

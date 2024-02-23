@@ -39,31 +39,6 @@ var (
 	_ = namegenerator.GetRandomName
 )
 
-// API: this API allows to manage your Elastic Metal server.
-// Elastic Metal API.
-type API struct {
-	client *scw.Client
-}
-
-// NewAPI returns a API object from a Scaleway client.
-func NewAPI(client *scw.Client) *API {
-	return &API{
-		client: client,
-	}
-}
-
-// PrivateNetworkAPI: elastic Metal Private Network API.
-type PrivateNetworkAPI struct {
-	client *scw.Client
-}
-
-// NewPrivateNetworkAPI returns a PrivateNetworkAPI object from a Scaleway client.
-func NewPrivateNetworkAPI(client *scw.Client) *PrivateNetworkAPI {
-	return &PrivateNetworkAPI{
-		client: client,
-	}
-}
-
 type IPReverseStatus string
 
 const (
@@ -542,176 +517,7 @@ func (enum *SettingType) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// BMCAccess: bmc access.
-type BMCAccess struct {
-	// URL: URL to access to the server console.
-	URL string `json:"url"`
-	// Login: the login to use for the BMC (Baseboard Management Controller) access authentification.
-	Login string `json:"login"`
-	// Password: the password to use for the BMC (Baseboard Management Controller) access authentification.
-	Password string `json:"password"`
-	// ExpiresAt: the date after which the BMC (Baseboard Management Controller) access will be closed.
-	ExpiresAt *time.Time `json:"expires_at"`
-}
-
-// CPU: cpu.
-type CPU struct {
-	// Name: name of the CPU.
-	Name string `json:"name"`
-	// CoreCount: number of CPU cores.
-	CoreCount uint32 `json:"core_count"`
-	// ThreadCount: number CPU threads.
-	ThreadCount uint32 `json:"thread_count"`
-	// Frequency: frequency of the CPU in MHz.
-	Frequency uint32 `json:"frequency"`
-	// Benchmark: benchmark of the CPU.
-	Benchmark string `json:"benchmark"`
-}
-
-// CreateServerRequestInstall: create server request. install.
-type CreateServerRequestInstall struct {
-	// OsID: ID of the OS to installation on the server.
-	OsID string `json:"os_id"`
-	// Hostname: hostname of the server.
-	Hostname string `json:"hostname"`
-	// SSHKeyIDs: SSH key IDs authorized on the server.
-	SSHKeyIDs []string `json:"ssh_key_ids"`
-	// User: user for the installation.
-	User *string `json:"user"`
-	// Password: password for the installation.
-	Password *string `json:"password"`
-	// ServiceUser: regular user that runs the service to be installed on the server.
-	ServiceUser *string `json:"service_user"`
-	// ServicePassword: password used for the service to install.
-	ServicePassword *string `json:"service_password"`
-}
-
-// Disk: disk.
-type Disk struct {
-	// Capacity: capacity of the disk in bytes.
-	Capacity scw.Size `json:"capacity"`
-	// Type: type of the disk.
-	Type string `json:"type"`
-}
-
-// GetServerMetricsResponse: get server metrics response.
-type GetServerMetricsResponse struct {
-	// Pings: timeseries object representing pings on the server.
-	Pings *scw.TimeSeries `json:"pings"`
-}
-
-// IP: ip.
-type IP struct {
-	// ID: ID of the IP.
-	ID string `json:"id"`
-	// Address: address of the IP.
-	Address net.IP `json:"address"`
-	// Reverse: reverse IP value.
-	Reverse string `json:"reverse"`
-	// Version: version of IP (v4 or v6).
-	// Default value: IPv4
-	Version IPVersion `json:"version"`
-	// ReverseStatus: status of the reverse.
-	// Default value: unknown
-	ReverseStatus IPReverseStatus `json:"reverse_status"`
-	// ReverseStatusMessage: a message related to the reverse status, e.g. in case of an error.
-	ReverseStatusMessage string `json:"reverse_status_message"`
-}
-
-// ListOSResponse: list os response.
-type ListOSResponse struct {
-	// TotalCount: total count of matching OS.
-	TotalCount uint32 `json:"total_count"`
-	// Os: oS that match filters.
-	Os []*OS `json:"os"`
-}
-
-// ListOffersResponse: list offers response.
-type ListOffersResponse struct {
-	// TotalCount: total count of matching offers.
-	TotalCount uint32 `json:"total_count"`
-	// Offers: offers that match filters.
-	Offers []*Offer `json:"offers"`
-}
-
-// ListOptionsResponse: list options response.
-type ListOptionsResponse struct {
-	// TotalCount: total count of matching options.
-	TotalCount uint32 `json:"total_count"`
-	// Options: options that match filters.
-	Options []*Option `json:"options"`
-}
-
-// ListServerEventsResponse: list server events response.
-type ListServerEventsResponse struct {
-	// TotalCount: total count of matching events.
-	TotalCount uint32 `json:"total_count"`
-	// Events: server events that match filters.
-	Events []*ServerEvent `json:"events"`
-}
-
-type ListServerPrivateNetworksResponse struct {
-	ServerPrivateNetworks []*ServerPrivateNetwork `json:"server_private_networks"`
-
-	TotalCount uint32 `json:"total_count"`
-}
-
-// ListServersResponse: list servers response.
-type ListServersResponse struct {
-	// TotalCount: total count of matching servers.
-	TotalCount uint32 `json:"total_count"`
-	// Servers: array of Elastic Metal server objects matching the filters in the request.
-	Servers []*Server `json:"servers"`
-}
-
-// ListSettingsResponse: list settings response.
-type ListSettingsResponse struct {
-	// TotalCount: total count of matching settings.
-	TotalCount uint32 `json:"total_count"`
-	// Settings: settings that match filters.
-	Settings []*Setting `json:"settings"`
-}
-
-// Memory: memory.
-type Memory struct {
-	// Capacity: capacity of the memory in bytes.
-	Capacity scw.Size `json:"capacity"`
-	// Type: type of the memory.
-	Type string `json:"type"`
-	// Frequency: frequency of the memory in MHz.
-	Frequency uint32 `json:"frequency"`
-	// IsEcc: true if the memory is an error-correcting code memory.
-	IsEcc bool `json:"is_ecc"`
-}
-
-// OS: os.
-type OS struct {
-	// ID: ID of the OS.
-	ID string `json:"id"`
-	// Name: name of the OS.
-	Name string `json:"name"`
-	// Version: version of the OS.
-	Version string `json:"version"`
-	// LogoURL: URL of this OS's logo.
-	LogoURL string `json:"logo_url"`
-	// SSH: object defining the SSH requirements to install the OS.
-	SSH *OSOSField `json:"ssh"`
-	// User: object defining the username requirements to install the OS.
-	User *OSOSField `json:"user"`
-	// Password: object defining the password requirements to install the OS.
-	Password *OSOSField `json:"password"`
-	// ServiceUser: object defining the username requirements to install the service.
-	ServiceUser *OSOSField `json:"service_user"`
-	// ServicePassword: object defining the password requirements to install the service.
-	ServicePassword *OSOSField `json:"service_password"`
-	// Enabled: defines if the operating system is enabled or not.
-	Enabled bool `json:"enabled"`
-	// LicenseRequired: license required (check server options for pricing details).
-	LicenseRequired bool `json:"license_required"`
-	// Allowed: defines if a specific Organization is allowed to install this OS type.
-	Allowed bool `json:"allowed"`
-}
-
+// OSOSField: osos field.
 type OSOSField struct {
 	Editable bool `json:"editable"`
 
@@ -720,272 +526,1111 @@ type OSOSField struct {
 	DefaultValue *string `json:"default_value"`
 }
 
-// Offer: offer.
-type Offer struct {
-	// ID: ID of the offer.
-	ID string `json:"id"`
-	// Name: name of the offer.
+// CPU: cpu.
+type CPU struct {
+	// Name: name of the CPU.
 	Name string `json:"name"`
-	// Stock: stock level.
-	// Default value: empty
-	Stock OfferStock `json:"stock"`
-	// Bandwidth: public bandwidth available (in bits/s) with the offer.
-	Bandwidth uint64 `json:"bandwidth"`
-	// CommercialRange: commercial range of the offer.
-	CommercialRange string `json:"commercial_range"`
-	// PricePerHour: price of the offer for the next 60 minutes (a server order at 11h32 will be payed until 12h32).
-	PricePerHour *scw.Money `json:"price_per_hour"`
-	// PricePerMonth: monthly price of the offer, if subscribing on a monthly basis.
-	PricePerMonth *scw.Money `json:"price_per_month"`
-	// Disks: disks specifications of the offer.
-	Disks []*Disk `json:"disks"`
-	// Enable: defines whether the offer is currently available.
-	Enable bool `json:"enable"`
-	// CPUs: CPU specifications of the offer.
-	CPUs []*CPU `json:"cpus"`
-	// Memories: memory specifications of the offer.
-	Memories []*Memory `json:"memories"`
-	// QuotaName: name of the quota associated to the offer.
-	QuotaName string `json:"quota_name"`
-	// PersistentMemories: persistent memory specifications of the offer.
-	PersistentMemories []*PersistentMemory `json:"persistent_memories"`
-	// RaidControllers: raid controller specifications of the offer.
-	RaidControllers []*RaidController `json:"raid_controllers"`
-	// IncompatibleOsIDs: array of OS images IDs incompatible with the server.
-	IncompatibleOsIDs []string `json:"incompatible_os_ids"`
-	// SubscriptionPeriod: period of subscription for the offer.
-	// Default value: unknown_subscription_period
-	SubscriptionPeriod OfferSubscriptionPeriod `json:"subscription_period"`
-	// OperationPath: operation path of the service.
-	OperationPath string `json:"operation_path"`
-	// Fee: one time fee invoiced by Scaleway for the setup and activation of the server.
-	Fee *scw.Money `json:"fee"`
-	// Options: available options for customization of the server.
-	Options []*OfferOptionOffer `json:"options"`
-	// PrivateBandwidth: private bandwidth available in bits/s with the offer.
-	PrivateBandwidth uint64 `json:"private_bandwidth"`
-	// SharedBandwidth: defines whether the offer's bandwidth is shared or not.
-	SharedBandwidth bool `json:"shared_bandwidth"`
-	// Tags: array of tags attached to the offer.
-	Tags []string `json:"tags"`
+
+	// CoreCount: number of CPU cores.
+	CoreCount uint32 `json:"core_count"`
+
+	// ThreadCount: number CPU threads.
+	ThreadCount uint32 `json:"thread_count"`
+
+	// Frequency: frequency of the CPU in MHz.
+	Frequency uint32 `json:"frequency"`
+
+	// Benchmark: benchmark of the CPU.
+	Benchmark string `json:"benchmark"`
 }
 
-// OfferOptionOffer: offer. option offer.
+// Disk: disk.
+type Disk struct {
+	// Capacity: capacity of the disk in bytes.
+	Capacity scw.Size `json:"capacity"`
+
+	// Type: type of the disk.
+	Type string `json:"type"`
+}
+
+// Memory: memory.
+type Memory struct {
+	// Capacity: capacity of the memory in bytes.
+	Capacity scw.Size `json:"capacity"`
+
+	// Type: type of the memory.
+	Type string `json:"type"`
+
+	// Frequency: frequency of the memory in MHz.
+	Frequency uint32 `json:"frequency"`
+
+	// IsEcc: true if the memory is an error-correcting code memory.
+	IsEcc bool `json:"is_ecc"`
+}
+
+// OfferOptionOffer: offer option offer.
 type OfferOptionOffer struct {
 	// ID: ID of the option.
 	ID string `json:"id"`
+
 	// Name: name of the option.
 	Name string `json:"name"`
-	// Enabled: if true the option is enabled and included by default in the offer.
+
+	// Enabled: if true the option is enabled and included by default in the offer
 	// If false the option is available for the offer but not included by default.
 	Enabled bool `json:"enabled"`
+
 	// SubscriptionPeriod: period of subscription for the offer.
 	// Default value: unknown_subscription_period
 	SubscriptionPeriod OfferSubscriptionPeriod `json:"subscription_period"`
+
 	// Price: price of the option.
 	Price *scw.Money `json:"price"`
+
 	// Manageable: boolean to know if option could be managed.
 	Manageable bool `json:"manageable"`
+
 	// OsID: ID of the OS linked to the option.
 	OsID *string `json:"os_id"`
-}
-
-// Option: option.
-type Option struct {
-	// ID: ID of the option.
-	ID string `json:"id"`
-	// Name: name of the option.
-	Name string `json:"name"`
-	// Manageable: defines whether the option is manageable (could be added or removed).
-	Manageable bool `json:"manageable"`
 }
 
 // PersistentMemory: persistent memory.
 type PersistentMemory struct {
 	// Capacity: capacity of the memory in bytes.
 	Capacity scw.Size `json:"capacity"`
+
 	// Type: type of the memory.
 	Type string `json:"type"`
+
 	// Frequency: frequency of the memory in MHz.
 	Frequency uint32 `json:"frequency"`
 }
 
+// RaidController: raid controller.
 type RaidController struct {
 	Model string `json:"model"`
 
 	RaidLevel []string `json:"raid_level"`
 }
 
-// Server: server.
-type Server struct {
-	// ID: ID of the server.
+// IP: ip.
+type IP struct {
+	// ID: ID of the IP.
 	ID string `json:"id"`
-	// OrganizationID: organization ID the server is attached to.
-	OrganizationID string `json:"organization_id"`
-	// ProjectID: project ID the server is attached to.
-	ProjectID string `json:"project_id"`
-	// Name: name of the server.
-	Name string `json:"name"`
-	// Description: description of the server.
-	Description string `json:"description"`
-	// UpdatedAt: last modification date of the server.
-	UpdatedAt *time.Time `json:"updated_at"`
-	// CreatedAt: creation date of the server.
-	CreatedAt *time.Time `json:"created_at"`
-	// Status: status of the server.
+
+	// Address: address of the IP.
+	Address net.IP `json:"address"`
+
+	// Reverse: reverse IP value.
+	Reverse string `json:"reverse"`
+
+	// Version: version of IP (v4 or v6).
+	// Default value: IPv4
+	Version IPVersion `json:"version"`
+
+	// ReverseStatus: status of the reverse.
 	// Default value: unknown
-	Status ServerStatus `json:"status"`
-	// OfferID: offer ID of the server.
-	OfferID string `json:"offer_id"`
-	// OfferName: offer name of the server.
-	OfferName string `json:"offer_name"`
-	// Tags: array of custom tags attached to the server.
+	ReverseStatus IPReverseStatus `json:"reverse_status"`
+
+	// ReverseStatusMessage: a message related to the reverse status, e.g. in case of an error.
+	ReverseStatusMessage string `json:"reverse_status_message"`
+}
+
+// ServerInstall: server install.
+type ServerInstall struct {
+	// OsID: ID of the OS.
+	OsID string `json:"os_id"`
+
+	// Hostname: host defined during the server installation.
+	Hostname string `json:"hostname"`
+
+	// SSHKeyIDs: SSH public key IDs defined during server installation.
+	SSHKeyIDs []string `json:"ssh_key_ids"`
+
+	// Status: status of the server installation.
+	// Default value: unknown
+	Status ServerInstallStatus `json:"status"`
+
+	// User: user defined in the server installation, or the default user if none were specified.
+	User string `json:"user"`
+
+	// ServiceUser: service user defined in the server installation, or the default user if none were specified.
+	ServiceUser string `json:"service_user"`
+
+	// ServiceURL: address of the installed service.
+	ServiceURL string `json:"service_url"`
+}
+
+// ServerOption: server option.
+type ServerOption struct {
+	// ID: ID of the option.
+	ID string `json:"id"`
+
+	// Name: name of the option.
+	Name string `json:"name"`
+
+	// Status: status of the option on this server.
+	// Default value: option_status_unknown
+	Status ServerOptionOptionStatus `json:"status"`
+
+	// Manageable: defines whether the option can be managed (added or removed).
+	Manageable bool `json:"manageable"`
+
+	// ExpiresAt: auto expiration date for compatible options.
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+// ServerRescueServer: server rescue server.
+type ServerRescueServer struct {
+	// User: rescue user name.
+	User string `json:"user"`
+
+	// Password: rescue password.
+	Password string `json:"password"`
+}
+
+// CreateServerRequestInstall: create server request install.
+type CreateServerRequestInstall struct {
+	// OsID: ID of the OS to installation on the server.
+	OsID string `json:"os_id"`
+
+	// Hostname: hostname of the server.
+	Hostname string `json:"hostname"`
+
+	// SSHKeyIDs: SSH key IDs authorized on the server.
+	SSHKeyIDs []string `json:"ssh_key_ids"`
+
+	// User: user for the installation.
+	User *string `json:"user"`
+
+	// Password: password for the installation.
+	Password *string `json:"password"`
+
+	// ServiceUser: regular user that runs the service to be installed on the server.
+	ServiceUser *string `json:"service_user"`
+
+	// ServicePassword: password used for the service to install.
+	ServicePassword *string `json:"service_password"`
+}
+
+// OS: os.
+type OS struct {
+	// ID: ID of the OS.
+	ID string `json:"id"`
+
+	// Name: name of the OS.
+	Name string `json:"name"`
+
+	// Version: version of the OS.
+	Version string `json:"version"`
+
+	// LogoURL: URL of this OS's logo.
+	LogoURL string `json:"logo_url"`
+
+	// SSH: object defining the SSH requirements to install the OS.
+	SSH *OSOSField `json:"ssh"`
+
+	// User: object defining the username requirements to install the OS.
+	User *OSOSField `json:"user"`
+
+	// Password: object defining the password requirements to install the OS.
+	Password *OSOSField `json:"password"`
+
+	// ServiceUser: object defining the username requirements to install the service.
+	ServiceUser *OSOSField `json:"service_user"`
+
+	// ServicePassword: object defining the password requirements to install the service.
+	ServicePassword *OSOSField `json:"service_password"`
+
+	// Enabled: defines if the operating system is enabled or not.
+	Enabled bool `json:"enabled"`
+
+	// LicenseRequired: license required (check server options for pricing details).
+	LicenseRequired bool `json:"license_required"`
+
+	// Allowed: defines if a specific Organization is allowed to install this OS type.
+	Allowed bool `json:"allowed"`
+}
+
+// Offer: offer.
+type Offer struct {
+	// ID: ID of the offer.
+	ID string `json:"id"`
+
+	// Name: name of the offer.
+	Name string `json:"name"`
+
+	// Stock: stock level.
+	// Default value: empty
+	Stock OfferStock `json:"stock"`
+
+	// Bandwidth: public bandwidth available (in bits/s) with the offer.
+	Bandwidth uint64 `json:"bandwidth"`
+
+	// CommercialRange: commercial range of the offer.
+	CommercialRange string `json:"commercial_range"`
+
+	// PricePerHour: price of the offer for the next 60 minutes (a server order at 11h32 will be payed until 12h32).
+	PricePerHour *scw.Money `json:"price_per_hour"`
+
+	// PricePerMonth: monthly price of the offer, if subscribing on a monthly basis.
+	PricePerMonth *scw.Money `json:"price_per_month"`
+
+	// Disks: disks specifications of the offer.
+	Disks []*Disk `json:"disks"`
+
+	// Enable: defines whether the offer is currently available.
+	Enable bool `json:"enable"`
+
+	// CPUs: CPU specifications of the offer.
+	CPUs []*CPU `json:"cpus"`
+
+	// Memories: memory specifications of the offer.
+	Memories []*Memory `json:"memories"`
+
+	// QuotaName: name of the quota associated to the offer.
+	QuotaName string `json:"quota_name"`
+
+	// PersistentMemories: persistent memory specifications of the offer.
+	PersistentMemories []*PersistentMemory `json:"persistent_memories"`
+
+	// RaidControllers: raid controller specifications of the offer.
+	RaidControllers []*RaidController `json:"raid_controllers"`
+
+	// IncompatibleOsIDs: array of OS images IDs incompatible with the server.
+	IncompatibleOsIDs []string `json:"incompatible_os_ids"`
+
+	// SubscriptionPeriod: period of subscription for the offer.
+	// Default value: unknown_subscription_period
+	SubscriptionPeriod OfferSubscriptionPeriod `json:"subscription_period"`
+
+	// OperationPath: operation path of the service.
+	OperationPath string `json:"operation_path"`
+
+	// Fee: one time fee invoiced by Scaleway for the setup and activation of the server.
+	Fee *scw.Money `json:"fee"`
+
+	// Options: available options for customization of the server.
+	Options []*OfferOptionOffer `json:"options"`
+
+	// PrivateBandwidth: private bandwidth available in bits/s with the offer.
+	PrivateBandwidth uint64 `json:"private_bandwidth"`
+
+	// SharedBandwidth: defines whether the offer's bandwidth is shared or not.
+	SharedBandwidth bool `json:"shared_bandwidth"`
+
+	// Tags: array of tags attached to the offer.
 	Tags []string `json:"tags"`
-	// IPs: array of IPs attached to the server.
-	IPs []*IP `json:"ips"`
-	// Domain: domain of the server.
-	Domain string `json:"domain"`
-	// BootType: boot type of the server.
-	// Default value: unknown_boot_type
-	BootType ServerBootType `json:"boot_type"`
-	// Zone: zone in which is the server located.
-	Zone scw.Zone `json:"zone"`
-	// Install: configuration of the installation.
-	Install *ServerInstall `json:"install"`
-	// PingStatus: status of server ping.
-	// Default value: ping_status_unknown
-	PingStatus ServerPingStatus `json:"ping_status"`
-	// Options: options enabled on the server.
-	Options []*ServerOption `json:"options"`
-	// RescueServer: configuration of rescue boot.
-	RescueServer *ServerRescueServer `json:"rescue_server"`
+}
+
+// Option: option.
+type Option struct {
+	// ID: ID of the option.
+	ID string `json:"id"`
+
+	// Name: name of the option.
+	Name string `json:"name"`
+
+	// Manageable: defines whether the option is manageable (could be added or removed).
+	Manageable bool `json:"manageable"`
 }
 
 // ServerEvent: server event.
 type ServerEvent struct {
 	// ID: ID of the server to which the action will be applied.
 	ID string `json:"id"`
+
 	// Action: the action that will be applied to the server.
 	Action string `json:"action"`
+
 	// UpdatedAt: date of last modification of the action.
 	UpdatedAt *time.Time `json:"updated_at"`
+
 	// CreatedAt: date of creation of the action.
 	CreatedAt *time.Time `json:"created_at"`
-}
-
-// ServerInstall: server. install.
-type ServerInstall struct {
-	// OsID: ID of the OS.
-	OsID string `json:"os_id"`
-	// Hostname: host defined during the server installation.
-	Hostname string `json:"hostname"`
-	// SSHKeyIDs: SSH public key IDs defined during server installation.
-	SSHKeyIDs []string `json:"ssh_key_ids"`
-	// Status: status of the server installation.
-	// Default value: unknown
-	Status ServerInstallStatus `json:"status"`
-	// User: user defined in the server installation, or the default user if none were specified.
-	User string `json:"user"`
-	// ServiceUser: service user defined in the server installation, or the default user if none were specified.
-	ServiceUser string `json:"service_user"`
-	// ServiceURL: address of the installed service.
-	ServiceURL string `json:"service_url"`
-}
-
-// ServerOption: server. option.
-type ServerOption struct {
-	// ID: ID of the option.
-	ID string `json:"id"`
-	// Name: name of the option.
-	Name string `json:"name"`
-	// Status: status of the option on this server.
-	// Default value: option_status_unknown
-	Status ServerOptionOptionStatus `json:"status"`
-	// Manageable: defines whether the option can be managed (added or removed).
-	Manageable bool `json:"manageable"`
-	// ExpiresAt: auto expiration date for compatible options.
-	ExpiresAt *time.Time `json:"expires_at"`
 }
 
 // ServerPrivateNetwork: server private network.
 type ServerPrivateNetwork struct {
 	// ID: the Private Network ID.
 	ID string `json:"id"`
+
 	// ProjectID: the Private Network Project ID.
 	ProjectID string `json:"project_id"`
+
 	// ServerID: the server ID.
 	ServerID string `json:"server_id"`
+
 	// PrivateNetworkID: the Private Network ID.
 	PrivateNetworkID string `json:"private_network_id"`
+
 	// Vlan: the VLAN ID associated to the Private Network.
 	Vlan *uint32 `json:"vlan"`
+
 	// Status: the configuration status of the Private Network.
 	// Default value: unknown
 	Status ServerPrivateNetworkStatus `json:"status"`
+
 	// CreatedAt: the Private Network creation date.
 	CreatedAt *time.Time `json:"created_at"`
+
 	// UpdatedAt: the date the Private Network was last modified.
 	UpdatedAt *time.Time `json:"updated_at"`
 }
 
-// ServerRescueServer: server. rescue server.
-type ServerRescueServer struct {
-	// User: rescue user name.
-	User string `json:"user"`
-	// Password: rescue password.
-	Password string `json:"password"`
-}
+// Server: server.
+type Server struct {
+	// ID: ID of the server.
+	ID string `json:"id"`
 
-type SetServerPrivateNetworksResponse struct {
-	ServerPrivateNetworks []*ServerPrivateNetwork `json:"server_private_networks"`
+	// OrganizationID: organization ID the server is attached to.
+	OrganizationID string `json:"organization_id"`
+
+	// ProjectID: project ID the server is attached to.
+	ProjectID string `json:"project_id"`
+
+	// Name: name of the server.
+	Name string `json:"name"`
+
+	// Description: description of the server.
+	Description string `json:"description"`
+
+	// UpdatedAt: last modification date of the server.
+	UpdatedAt *time.Time `json:"updated_at"`
+
+	// CreatedAt: creation date of the server.
+	CreatedAt *time.Time `json:"created_at"`
+
+	// Status: status of the server.
+	// Default value: unknown
+	Status ServerStatus `json:"status"`
+
+	// OfferID: offer ID of the server.
+	OfferID string `json:"offer_id"`
+
+	// OfferName: offer name of the server.
+	OfferName string `json:"offer_name"`
+
+	// Tags: array of custom tags attached to the server.
+	Tags []string `json:"tags"`
+
+	// IPs: array of IPs attached to the server.
+	IPs []*IP `json:"ips"`
+
+	// Domain: domain of the server.
+	Domain string `json:"domain"`
+
+	// BootType: boot type of the server.
+	// Default value: unknown_boot_type
+	BootType ServerBootType `json:"boot_type"`
+
+	// Zone: zone in which is the server located.
+	Zone scw.Zone `json:"zone"`
+
+	// Install: configuration of the installation.
+	Install *ServerInstall `json:"install"`
+
+	// PingStatus: status of server ping.
+	// Default value: ping_status_unknown
+	PingStatus ServerPingStatus `json:"ping_status"`
+
+	// Options: options enabled on the server.
+	Options []*ServerOption `json:"options"`
+
+	// RescueServer: configuration of rescue boot.
+	RescueServer *ServerRescueServer `json:"rescue_server"`
 }
 
 // Setting: setting.
 type Setting struct {
 	// ID: ID of the setting.
 	ID string `json:"id"`
+
 	// Type: type of the setting.
 	// Default value: unknown
 	Type SettingType `json:"type"`
+
 	// ProjectID: ID of the Project ID.
 	ProjectID string `json:"project_id"`
+
 	// Enabled: defines whether the setting is enabled.
 	Enabled bool `json:"enabled"`
 }
 
-// Service API
+// AddOptionServerRequest: add option server request.
+type AddOptionServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
 
-// Zones list localities the api is available in
-func (s *API) Zones() []scw.Zone {
-	return []scw.Zone{scw.ZoneFrPar1, scw.ZoneFrPar2, scw.ZoneNlAms1, scw.ZoneNlAms2}
+	// ServerID: ID of the server.
+	ServerID string `json:"-"`
+
+	// OptionID: ID of the option to add.
+	OptionID string `json:"-"`
+
+	// ExpiresAt: auto expire the option after this date.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
+// BMCAccess: bmc access.
+type BMCAccess struct {
+	// URL: URL to access to the server console.
+	URL string `json:"url"`
+
+	// Login: the login to use for the BMC (Baseboard Management Controller) access authentification.
+	Login string `json:"login"`
+
+	// Password: the password to use for the BMC (Baseboard Management Controller) access authentification.
+	Password string `json:"password"`
+
+	// ExpiresAt: the date after which the BMC (Baseboard Management Controller) access will be closed.
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+// CreateServerRequest: create server request.
+type CreateServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// OfferID: offer ID of the new server.
+	OfferID string `json:"offer_id"`
+
+	// Deprecated: OrganizationID: organization ID with which the server will be created.
+	// Precisely one of ProjectID, OrganizationID must be set.
+	OrganizationID *string `json:"organization_id,omitempty"`
+
+	// ProjectID: project ID with which the server will be created.
+	// Precisely one of ProjectID, OrganizationID must be set.
+	ProjectID *string `json:"project_id,omitempty"`
+
+	// Name: name of the server (≠hostname).
+	Name string `json:"name"`
+
+	// Description: description associated with the server, max 255 characters.
+	Description string `json:"description"`
+
+	// Tags: tags to associate to the server.
+	Tags []string `json:"tags"`
+
+	// Install: object describing the configuration details of the OS installation on the server.
+	Install *CreateServerRequestInstall `json:"install,omitempty"`
+
+	// OptionIDs: iDs of options to enable on server.
+	OptionIDs []string `json:"option_ids"`
+}
+
+// DeleteOptionServerRequest: delete option server request.
+type DeleteOptionServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server.
+	ServerID string `json:"-"`
+
+	// OptionID: ID of the option to delete.
+	OptionID string `json:"-"`
+}
+
+// DeleteServerRequest: delete server request.
+type DeleteServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server to delete.
+	ServerID string `json:"-"`
+}
+
+// GetBMCAccessRequest: get bmc access request.
+type GetBMCAccessRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server.
+	ServerID string `json:"-"`
+}
+
+// GetOSRequest: get os request.
+type GetOSRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// OsID: ID of the OS.
+	OsID string `json:"-"`
+}
+
+// GetOfferRequest: get offer request.
+type GetOfferRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// OfferID: ID of the researched Offer.
+	OfferID string `json:"-"`
+}
+
+// GetOptionRequest: get option request.
+type GetOptionRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// OptionID: ID of the option.
+	OptionID string `json:"-"`
+}
+
+// GetServerMetricsRequest: get server metrics request.
+type GetServerMetricsRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: server ID to get the metrics.
+	ServerID string `json:"-"`
+}
+
+// GetServerMetricsResponse: get server metrics response.
+type GetServerMetricsResponse struct {
+	// Pings: timeseries object representing pings on the server.
+	Pings *scw.TimeSeries `json:"pings"`
+}
+
+// GetServerRequest: get server request.
+type GetServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server.
+	ServerID string `json:"-"`
+}
+
+// InstallServerRequest: install server request.
+type InstallServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: server ID to install.
+	ServerID string `json:"-"`
+
+	// OsID: ID of the OS to installation on the server.
+	OsID string `json:"os_id"`
+
+	// Hostname: hostname of the server.
+	Hostname string `json:"hostname"`
+
+	// SSHKeyIDs: SSH key IDs authorized on the server.
+	SSHKeyIDs []string `json:"ssh_key_ids"`
+
+	// User: user used for the installation.
+	User *string `json:"user,omitempty"`
+
+	// Password: password used for the installation.
+	Password *string `json:"password,omitempty"`
+
+	// ServiceUser: user used for the service to install.
+	ServiceUser *string `json:"service_user,omitempty"`
+
+	// ServicePassword: password used for the service to install.
+	ServicePassword *string `json:"service_password,omitempty"`
+}
+
+// ListOSRequest: list os request.
+type ListOSRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// Page: page number.
+	Page *int32 `json:"-"`
+
+	// PageSize: number of OS per page.
+	PageSize *uint32 `json:"-"`
+
+	// OfferID: offer IDs to filter OSes for.
+	OfferID *string `json:"-"`
+}
+
+// ListOSResponse: list os response.
+type ListOSResponse struct {
+	// TotalCount: total count of matching OS.
+	TotalCount uint32 `json:"total_count"`
+
+	// Os: oS that match filters.
+	Os []*OS `json:"os"`
+}
+
+// UnsafeGetTotalCount should not be used
+// Internal usage only
+func (r *ListOSResponse) UnsafeGetTotalCount() uint32 {
+	return r.TotalCount
+}
+
+// UnsafeAppend should not be used
+// Internal usage only
+func (r *ListOSResponse) UnsafeAppend(res interface{}) (uint32, error) {
+	results, ok := res.(*ListOSResponse)
+	if !ok {
+		return 0, errors.New("%T type cannot be appended to type %T", res, r)
+	}
+
+	r.Os = append(r.Os, results.Os...)
+	r.TotalCount += uint32(len(results.Os))
+	return uint32(len(results.Os)), nil
+}
+
+// ListOffersRequest: list offers request.
+type ListOffersRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// Page: page number.
+	Page *int32 `json:"-"`
+
+	// PageSize: number of offers per page.
+	PageSize *uint32 `json:"-"`
+
+	// SubscriptionPeriod: subscription period type to filter offers by.
+	// Default value: unknown_subscription_period
+	SubscriptionPeriod OfferSubscriptionPeriod `json:"-"`
+}
+
+// ListOffersResponse: list offers response.
+type ListOffersResponse struct {
+	// TotalCount: total count of matching offers.
+	TotalCount uint32 `json:"total_count"`
+
+	// Offers: offers that match filters.
+	Offers []*Offer `json:"offers"`
+}
+
+// UnsafeGetTotalCount should not be used
+// Internal usage only
+func (r *ListOffersResponse) UnsafeGetTotalCount() uint32 {
+	return r.TotalCount
+}
+
+// UnsafeAppend should not be used
+// Internal usage only
+func (r *ListOffersResponse) UnsafeAppend(res interface{}) (uint32, error) {
+	results, ok := res.(*ListOffersResponse)
+	if !ok {
+		return 0, errors.New("%T type cannot be appended to type %T", res, r)
+	}
+
+	r.Offers = append(r.Offers, results.Offers...)
+	r.TotalCount += uint32(len(results.Offers))
+	return uint32(len(results.Offers)), nil
+}
+
+// ListOptionsRequest: list options request.
+type ListOptionsRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// Page: page number.
+	Page *int32 `json:"-"`
+
+	// PageSize: number of options per page.
+	PageSize *uint32 `json:"-"`
+
+	// OfferID: offer ID to filter options for.
+	OfferID *string `json:"-"`
+
+	// Name: name to filter options for.
+	Name *string `json:"-"`
+}
+
+// ListOptionsResponse: list options response.
+type ListOptionsResponse struct {
+	// TotalCount: total count of matching options.
+	TotalCount uint32 `json:"total_count"`
+
+	// Options: options that match filters.
+	Options []*Option `json:"options"`
+}
+
+// UnsafeGetTotalCount should not be used
+// Internal usage only
+func (r *ListOptionsResponse) UnsafeGetTotalCount() uint32 {
+	return r.TotalCount
+}
+
+// UnsafeAppend should not be used
+// Internal usage only
+func (r *ListOptionsResponse) UnsafeAppend(res interface{}) (uint32, error) {
+	results, ok := res.(*ListOptionsResponse)
+	if !ok {
+		return 0, errors.New("%T type cannot be appended to type %T", res, r)
+	}
+
+	r.Options = append(r.Options, results.Options...)
+	r.TotalCount += uint32(len(results.Options))
+	return uint32(len(results.Options)), nil
+}
+
+// ListServerEventsRequest: list server events request.
+type ListServerEventsRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server events searched.
+	ServerID string `json:"-"`
+
+	// Page: page number.
+	Page *int32 `json:"-"`
+
+	// PageSize: number of server events per page.
+	PageSize *uint32 `json:"-"`
+
+	// OrderBy: order of the server events.
+	// Default value: created_at_asc
+	OrderBy ListServerEventsRequestOrderBy `json:"-"`
+}
+
+// ListServerEventsResponse: list server events response.
+type ListServerEventsResponse struct {
+	// TotalCount: total count of matching events.
+	TotalCount uint32 `json:"total_count"`
+
+	// Events: server events that match filters.
+	Events []*ServerEvent `json:"events"`
+}
+
+// UnsafeGetTotalCount should not be used
+// Internal usage only
+func (r *ListServerEventsResponse) UnsafeGetTotalCount() uint32 {
+	return r.TotalCount
+}
+
+// UnsafeAppend should not be used
+// Internal usage only
+func (r *ListServerEventsResponse) UnsafeAppend(res interface{}) (uint32, error) {
+	results, ok := res.(*ListServerEventsResponse)
+	if !ok {
+		return 0, errors.New("%T type cannot be appended to type %T", res, r)
+	}
+
+	r.Events = append(r.Events, results.Events...)
+	r.TotalCount += uint32(len(results.Events))
+	return uint32(len(results.Events)), nil
+}
+
+// ListServerPrivateNetworksResponse: list server private networks response.
+type ListServerPrivateNetworksResponse struct {
+	ServerPrivateNetworks []*ServerPrivateNetwork `json:"server_private_networks"`
+
+	TotalCount uint32 `json:"total_count"`
+}
+
+// UnsafeGetTotalCount should not be used
+// Internal usage only
+func (r *ListServerPrivateNetworksResponse) UnsafeGetTotalCount() uint32 {
+	return r.TotalCount
+}
+
+// UnsafeAppend should not be used
+// Internal usage only
+func (r *ListServerPrivateNetworksResponse) UnsafeAppend(res interface{}) (uint32, error) {
+	results, ok := res.(*ListServerPrivateNetworksResponse)
+	if !ok {
+		return 0, errors.New("%T type cannot be appended to type %T", res, r)
+	}
+
+	r.ServerPrivateNetworks = append(r.ServerPrivateNetworks, results.ServerPrivateNetworks...)
+	r.TotalCount += uint32(len(results.ServerPrivateNetworks))
+	return uint32(len(results.ServerPrivateNetworks)), nil
+}
+
+// ListServersRequest: list servers request.
 type ListServersRequest struct {
 	// Zone: zone to target. If none is passed will use default zone from the config.
 	Zone scw.Zone `json:"-"`
+
 	// Page: page number.
 	Page *int32 `json:"-"`
+
 	// PageSize: number of servers per page.
 	PageSize *uint32 `json:"-"`
+
 	// OrderBy: order of the servers.
 	// Default value: created_at_asc
 	OrderBy ListServersRequestOrderBy `json:"-"`
+
 	// Tags: tags to filter for.
 	Tags []string `json:"-"`
+
 	// Status: status to filter for.
 	Status []string `json:"-"`
+
 	// Name: names to filter for.
 	Name *string `json:"-"`
+
 	// OrganizationID: organization ID to filter for.
 	OrganizationID *string `json:"-"`
+
 	// ProjectID: project ID to filter for.
 	ProjectID *string `json:"-"`
+
 	// OptionID: option ID to filter for.
 	OptionID *string `json:"-"`
 }
 
-// ListServers: list Elastic Metal servers for an Organization.
-// List Elastic Metal servers for a specific Organization.
+// ListServersResponse: list servers response.
+type ListServersResponse struct {
+	// TotalCount: total count of matching servers.
+	TotalCount uint32 `json:"total_count"`
+
+	// Servers: array of Elastic Metal server objects matching the filters in the request.
+	Servers []*Server `json:"servers"`
+}
+
+// UnsafeGetTotalCount should not be used
+// Internal usage only
+func (r *ListServersResponse) UnsafeGetTotalCount() uint32 {
+	return r.TotalCount
+}
+
+// UnsafeAppend should not be used
+// Internal usage only
+func (r *ListServersResponse) UnsafeAppend(res interface{}) (uint32, error) {
+	results, ok := res.(*ListServersResponse)
+	if !ok {
+		return 0, errors.New("%T type cannot be appended to type %T", res, r)
+	}
+
+	r.Servers = append(r.Servers, results.Servers...)
+	r.TotalCount += uint32(len(results.Servers))
+	return uint32(len(results.Servers)), nil
+}
+
+// ListSettingsRequest: list settings request.
+type ListSettingsRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// Page: page number.
+	Page *int32 `json:"-"`
+
+	// PageSize: set the maximum list size.
+	PageSize *uint32 `json:"-"`
+
+	// OrderBy: sort order for items in the response.
+	// Default value: created_at_asc
+	OrderBy ListSettingsRequestOrderBy `json:"-"`
+
+	// ProjectID: ID of the Project.
+	ProjectID *string `json:"-"`
+}
+
+// ListSettingsResponse: list settings response.
+type ListSettingsResponse struct {
+	// TotalCount: total count of matching settings.
+	TotalCount uint32 `json:"total_count"`
+
+	// Settings: settings that match filters.
+	Settings []*Setting `json:"settings"`
+}
+
+// UnsafeGetTotalCount should not be used
+// Internal usage only
+func (r *ListSettingsResponse) UnsafeGetTotalCount() uint32 {
+	return r.TotalCount
+}
+
+// UnsafeAppend should not be used
+// Internal usage only
+func (r *ListSettingsResponse) UnsafeAppend(res interface{}) (uint32, error) {
+	results, ok := res.(*ListSettingsResponse)
+	if !ok {
+		return 0, errors.New("%T type cannot be appended to type %T", res, r)
+	}
+
+	r.Settings = append(r.Settings, results.Settings...)
+	r.TotalCount += uint32(len(results.Settings))
+	return uint32(len(results.Settings)), nil
+}
+
+// PrivateNetworkAPIAddServerPrivateNetworkRequest: private network api add server private network request.
+type PrivateNetworkAPIAddServerPrivateNetworkRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: the ID of the server.
+	ServerID string `json:"-"`
+
+	// PrivateNetworkID: the ID of the Private Network.
+	PrivateNetworkID string `json:"private_network_id"`
+}
+
+// PrivateNetworkAPIDeleteServerPrivateNetworkRequest: private network api delete server private network request.
+type PrivateNetworkAPIDeleteServerPrivateNetworkRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: the ID of the server.
+	ServerID string `json:"-"`
+
+	// PrivateNetworkID: the ID of the Private Network.
+	PrivateNetworkID string `json:"-"`
+}
+
+// PrivateNetworkAPIListServerPrivateNetworksRequest: private network api list server private networks request.
+type PrivateNetworkAPIListServerPrivateNetworksRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// OrderBy: the sort order for the returned Private Networks.
+	// Default value: created_at_asc
+	OrderBy ListServerPrivateNetworksRequestOrderBy `json:"-"`
+
+	// Page: the page number for the returned Private Networks.
+	Page *int32 `json:"-"`
+
+	// PageSize: the maximum number of Private Networks per page.
+	PageSize *uint32 `json:"-"`
+
+	// ServerID: filter Private Networks by server ID.
+	ServerID *string `json:"-"`
+
+	// PrivateNetworkID: filter Private Networks by Private Network ID.
+	PrivateNetworkID *string `json:"-"`
+
+	// OrganizationID: filter Private Networks by Organization ID.
+	OrganizationID *string `json:"-"`
+
+	// ProjectID: filter Private Networks by Project ID.
+	ProjectID *string `json:"-"`
+}
+
+// PrivateNetworkAPISetServerPrivateNetworksRequest: private network api set server private networks request.
+type PrivateNetworkAPISetServerPrivateNetworksRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: the ID of the server.
+	ServerID string `json:"-"`
+
+	// PrivateNetworkIDs: the IDs of the Private Networks.
+	PrivateNetworkIDs []string `json:"private_network_ids"`
+}
+
+// RebootServerRequest: reboot server request.
+type RebootServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server to reboot.
+	ServerID string `json:"-"`
+
+	// BootType: the type of boot.
+	// Default value: unknown_boot_type
+	BootType ServerBootType `json:"boot_type"`
+}
+
+// SetServerPrivateNetworksResponse: set server private networks response.
+type SetServerPrivateNetworksResponse struct {
+	ServerPrivateNetworks []*ServerPrivateNetwork `json:"server_private_networks"`
+}
+
+// StartBMCAccessRequest: start bmc access request.
+type StartBMCAccessRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server.
+	ServerID string `json:"-"`
+
+	// IP: the IP authorized to connect to the server.
+	IP net.IP `json:"ip"`
+}
+
+// StartServerRequest: start server request.
+type StartServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server to start.
+	ServerID string `json:"-"`
+
+	// BootType: the type of boot.
+	// Default value: unknown_boot_type
+	BootType ServerBootType `json:"boot_type"`
+}
+
+// StopBMCAccessRequest: stop bmc access request.
+type StopBMCAccessRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server.
+	ServerID string `json:"-"`
+}
+
+// StopServerRequest: stop server request.
+type StopServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server to stop.
+	ServerID string `json:"-"`
+}
+
+// UpdateIPRequest: update ip request.
+type UpdateIPRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server.
+	ServerID string `json:"-"`
+
+	// IPID: ID of the IP to update.
+	IPID string `json:"-"`
+
+	// Reverse: new reverse IP to update, not updated if null.
+	Reverse *string `json:"reverse,omitempty"`
+}
+
+// UpdateServerRequest: update server request.
+type UpdateServerRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// ServerID: ID of the server to update.
+	ServerID string `json:"-"`
+
+	// Name: name of the server (≠hostname), not updated if null.
+	Name *string `json:"name,omitempty"`
+
+	// Description: description associated with the server, max 255 characters, not updated if null.
+	Description *string `json:"description,omitempty"`
+
+	// Tags: tags associated with the server, not updated if null.
+	Tags *[]string `json:"tags,omitempty"`
+}
+
+// UpdateSettingRequest: update setting request.
+type UpdateSettingRequest struct {
+	// Zone: zone to target. If none is passed will use default zone from the config.
+	Zone scw.Zone `json:"-"`
+
+	// SettingID: ID of the setting.
+	SettingID string `json:"-"`
+
+	// Enabled: defines whether the setting is enabled.
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// This API allows to manage your Elastic Metal server.
+type API struct {
+	client *scw.Client
+}
+
+// NewAPI returns a API object from a Scaleway client.
+func NewAPI(client *scw.Client) *API {
+	return &API{
+		client: client,
+	}
+}
+func (s *API) Zones() []scw.Zone {
+	return []scw.Zone{scw.ZoneFrPar1, scw.ZoneFrPar2, scw.ZoneNlAms1, scw.ZoneNlAms2}
+}
+
+// ListServers: List Elastic Metal servers for a specific Organization.
 func (s *API) ListServers(req *ListServersRequest, opts ...scw.RequestOption) (*ListServersResponse, error) {
 	var err error
 
@@ -1015,10 +1660,9 @@ func (s *API) ListServers(req *ListServersRequest, opts ...scw.RequestOption) (*
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers",
-		Query:   query,
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers",
+		Query:  query,
 	}
 
 	var resp ListServersResponse
@@ -1030,15 +1674,7 @@ func (s *API) ListServers(req *ListServersRequest, opts ...scw.RequestOption) (*
 	return &resp, nil
 }
 
-type GetServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server.
-	ServerID string `json:"-"`
-}
-
-// GetServer: get a specific Elastic Metal server.
-// Get full details of an existing Elastic Metal server associated with the ID.
+// GetServer: Get full details of an existing Elastic Metal server associated with the ID.
 func (s *API) GetServer(req *GetServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1056,9 +1692,8 @@ func (s *API) GetServer(req *GetServerRequest, opts ...scw.RequestOption) (*Serv
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "",
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "",
 	}
 
 	var resp Server
@@ -1070,47 +1705,23 @@ func (s *API) GetServer(req *GetServerRequest, opts ...scw.RequestOption) (*Serv
 	return &resp, nil
 }
 
-type CreateServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// OfferID: offer ID of the new server.
-	OfferID string `json:"offer_id"`
-	// Deprecated: OrganizationID: organization ID with which the server will be created.
-	// Precisely one of OrganizationID, ProjectID must be set.
-	OrganizationID *string `json:"organization_id,omitempty"`
-	// ProjectID: project ID with which the server will be created.
-	// Precisely one of OrganizationID, ProjectID must be set.
-	ProjectID *string `json:"project_id,omitempty"`
-	// Name: name of the server (≠hostname).
-	Name string `json:"name"`
-	// Description: description associated with the server, max 255 characters.
-	Description string `json:"description"`
-	// Tags: tags to associate to the server.
-	Tags []string `json:"tags"`
-	// Install: object describing the configuration details of the OS installation on the server.
-	Install *CreateServerRequestInstall `json:"install"`
-	// OptionIDs: iDs of options to enable on server.
-	OptionIDs []string `json:"option_ids"`
-}
-
-// CreateServer: create an Elastic Metal server.
-// Create a new Elastic Metal server. Once the server is created, proceed with the [installation of an OS](#post-3e949e).
+// CreateServer: Create a new Elastic Metal server. Once the server is created, proceed with the [installation of an OS](#post-3e949e).
 func (s *API) CreateServer(req *CreateServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
-
-	defaultProjectID, exist := s.client.GetDefaultProjectID()
-	if exist && req.OrganizationID == nil && req.ProjectID == nil {
-		req.ProjectID = &defaultProjectID
-	}
-
-	defaultOrganizationID, exist := s.client.GetDefaultOrganizationID()
-	if exist && req.OrganizationID == nil && req.ProjectID == nil {
-		req.OrganizationID = &defaultOrganizationID
-	}
 
 	if req.Zone == "" {
 		defaultZone, _ := s.client.GetDefaultZone()
 		req.Zone = defaultZone
+	}
+
+	defaultProjectID, exist := s.client.GetDefaultProjectID()
+	if exist && req.ProjectID == nil && req.OrganizationID == nil {
+		req.ProjectID = &defaultProjectID
+	}
+
+	defaultOrganizationID, exist := s.client.GetDefaultOrganizationID()
+	if exist && req.ProjectID == nil && req.OrganizationID == nil {
+		req.OrganizationID = &defaultOrganizationID
 	}
 
 	if fmt.Sprint(req.Zone) == "" {
@@ -1118,9 +1729,8 @@ func (s *API) CreateServer(req *CreateServerRequest, opts ...scw.RequestOption) 
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1137,21 +1747,7 @@ func (s *API) CreateServer(req *CreateServerRequest, opts ...scw.RequestOption) 
 	return &resp, nil
 }
 
-type UpdateServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server to update.
-	ServerID string `json:"-"`
-	// Name: name of the server (≠hostname), not updated if null.
-	Name *string `json:"name"`
-	// Description: description associated with the server, max 255 characters, not updated if null.
-	Description *string `json:"description"`
-	// Tags: tags associated with the server, not updated if null.
-	Tags *[]string `json:"tags"`
-}
-
-// UpdateServer: update an Elastic Metal server.
-// Update the server associated with the ID. You can update parameters such as the server's name, tags and description. Any parameters left null in the request body are not updated.
+// UpdateServer: Update the server associated with the ID. You can update parameters such as the server's name, tags and description. Any parameters left null in the request body are not updated.
 func (s *API) UpdateServer(req *UpdateServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1169,9 +1765,8 @@ func (s *API) UpdateServer(req *UpdateServerRequest, opts ...scw.RequestOption) 
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "PATCH",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "",
-		Headers: http.Header{},
+		Method: "PATCH",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1188,29 +1783,7 @@ func (s *API) UpdateServer(req *UpdateServerRequest, opts ...scw.RequestOption) 
 	return &resp, nil
 }
 
-type InstallServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: server ID to install.
-	ServerID string `json:"-"`
-	// OsID: ID of the OS to installation on the server.
-	OsID string `json:"os_id"`
-	// Hostname: hostname of the server.
-	Hostname string `json:"hostname"`
-	// SSHKeyIDs: SSH key IDs authorized on the server.
-	SSHKeyIDs []string `json:"ssh_key_ids"`
-	// User: user used for the installation.
-	User *string `json:"user"`
-	// Password: password used for the installation.
-	Password *string `json:"password"`
-	// ServiceUser: user used for the service to install.
-	ServiceUser *string `json:"service_user"`
-	// ServicePassword: password used for the service to install.
-	ServicePassword *string `json:"service_password"`
-}
-
-// InstallServer: install an Elastic Metal server.
-// Install an Operating System (OS) on the Elastic Metal server with a specific ID.
+// InstallServer: Install an Operating System (OS) on the Elastic Metal server with a specific ID.
 func (s *API) InstallServer(req *InstallServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1228,9 +1801,8 @@ func (s *API) InstallServer(req *InstallServerRequest, opts ...scw.RequestOption
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/install",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/install",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1247,15 +1819,7 @@ func (s *API) InstallServer(req *InstallServerRequest, opts ...scw.RequestOption
 	return &resp, nil
 }
 
-type GetServerMetricsRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: server ID to get the metrics.
-	ServerID string `json:"-"`
-}
-
-// GetServerMetrics: return server metrics.
-// Get the ping status of the server associated with the ID.
+// GetServerMetrics: Get the ping status of the server associated with the ID.
 func (s *API) GetServerMetrics(req *GetServerMetricsRequest, opts ...scw.RequestOption) (*GetServerMetricsResponse, error) {
 	var err error
 
@@ -1273,9 +1837,8 @@ func (s *API) GetServerMetrics(req *GetServerMetricsRequest, opts ...scw.Request
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/metrics",
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/metrics",
 	}
 
 	var resp GetServerMetricsResponse
@@ -1287,15 +1850,7 @@ func (s *API) GetServerMetrics(req *GetServerMetricsRequest, opts ...scw.Request
 	return &resp, nil
 }
 
-type DeleteServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server to delete.
-	ServerID string `json:"-"`
-}
-
-// DeleteServer: delete an Elastic Metal server.
-// Delete the server associated with the ID.
+// DeleteServer: Delete the server associated with the ID.
 func (s *API) DeleteServer(req *DeleteServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1313,9 +1868,8 @@ func (s *API) DeleteServer(req *DeleteServerRequest, opts ...scw.RequestOption) 
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "DELETE",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "",
-		Headers: http.Header{},
+		Method: "DELETE",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "",
 	}
 
 	var resp Server
@@ -1327,18 +1881,7 @@ func (s *API) DeleteServer(req *DeleteServerRequest, opts ...scw.RequestOption) 
 	return &resp, nil
 }
 
-type RebootServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server to reboot.
-	ServerID string `json:"-"`
-	// BootType: the type of boot.
-	// Default value: unknown_boot_type
-	BootType ServerBootType `json:"boot_type"`
-}
-
-// RebootServer: reboot an Elastic Metal server.
-// Reboot the Elastic Metal server associated with the ID, use the `boot_type` `rescue` to reboot the server in rescue mode.
+// RebootServer: Reboot the Elastic Metal server associated with the ID, use the `boot_type` `rescue` to reboot the server in rescue mode.
 func (s *API) RebootServer(req *RebootServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1356,9 +1899,8 @@ func (s *API) RebootServer(req *RebootServerRequest, opts ...scw.RequestOption) 
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/reboot",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/reboot",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1375,18 +1917,7 @@ func (s *API) RebootServer(req *RebootServerRequest, opts ...scw.RequestOption) 
 	return &resp, nil
 }
 
-type StartServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server to start.
-	ServerID string `json:"-"`
-	// BootType: the type of boot.
-	// Default value: unknown_boot_type
-	BootType ServerBootType `json:"boot_type"`
-}
-
-// StartServer: start an Elastic Metal server.
-// Start the server associated with the ID.
+// StartServer: Start the server associated with the ID.
 func (s *API) StartServer(req *StartServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1404,9 +1935,8 @@ func (s *API) StartServer(req *StartServerRequest, opts ...scw.RequestOption) (*
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/start",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/start",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1423,15 +1953,7 @@ func (s *API) StartServer(req *StartServerRequest, opts ...scw.RequestOption) (*
 	return &resp, nil
 }
 
-type StopServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server to stop.
-	ServerID string `json:"-"`
-}
-
-// StopServer: stop an Elastic Metal server.
-// Stop the server associated with the ID. The server remains allocated to your account and all data remains on the local storage of the server.
+// StopServer: Stop the server associated with the ID. The server remains allocated to your account and all data remains on the local storage of the server.
 func (s *API) StopServer(req *StopServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1449,9 +1971,8 @@ func (s *API) StopServer(req *StopServerRequest, opts ...scw.RequestOption) (*Se
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/stop",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/stop",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1468,22 +1989,7 @@ func (s *API) StopServer(req *StopServerRequest, opts ...scw.RequestOption) (*Se
 	return &resp, nil
 }
 
-type ListServerEventsRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server events searched.
-	ServerID string `json:"-"`
-	// Page: page number.
-	Page *int32 `json:"-"`
-	// PageSize: number of server events per page.
-	PageSize *uint32 `json:"-"`
-	// OrderBy: order of the server events.
-	// Default value: created_at_asc
-	OrderBy ListServerEventsRequestOrderBy `json:"-"`
-}
-
-// ListServerEvents: list server events.
-// List event (i.e. start/stop/reboot) associated to the server ID.
+// ListServerEvents: List event (i.e. start/stop/reboot) associated to the server ID.
 func (s *API) ListServerEvents(req *ListServerEventsRequest, opts ...scw.RequestOption) (*ListServerEventsResponse, error) {
 	var err error
 
@@ -1511,10 +2017,9 @@ func (s *API) ListServerEvents(req *ListServerEventsRequest, opts ...scw.Request
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/events",
-		Query:   query,
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/events",
+		Query:  query,
 	}
 
 	var resp ListServerEventsResponse
@@ -1526,17 +2031,7 @@ func (s *API) ListServerEvents(req *ListServerEventsRequest, opts ...scw.Request
 	return &resp, nil
 }
 
-type StartBMCAccessRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server.
-	ServerID string `json:"-"`
-	// IP: the IP authorized to connect to the server.
-	IP net.IP `json:"ip"`
-}
-
-// StartBMCAccess: start BMC access.
-// Start BMC (Baseboard Management Controller) access associated with the ID.
+// StartBMCAccess: Start BMC (Baseboard Management Controller) access associated with the ID.
 // The BMC (Baseboard Management Controller) access is available one hour after the installation of the server.
 // You need first to create an option Remote Access. You will find the ID and the price with a call to listOffers (https://developers.scaleway.com/en/products/baremetal/api/#get-78db92). Then add the option https://developers.scaleway.com/en/products/baremetal/api/#post-b14abd.
 // After adding the BMC option, you need to Get Remote Access to get the login/password https://developers.scaleway.com/en/products/baremetal/api/#get-cefc0f. Do not forget to delete the Option after use.
@@ -1557,9 +2052,8 @@ func (s *API) StartBMCAccess(req *StartBMCAccessRequest, opts ...scw.RequestOpti
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/bmc-access",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/bmc-access",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1576,15 +2070,7 @@ func (s *API) StartBMCAccess(req *StartBMCAccessRequest, opts ...scw.RequestOpti
 	return &resp, nil
 }
 
-type GetBMCAccessRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server.
-	ServerID string `json:"-"`
-}
-
-// GetBMCAccess: get BMC access.
-// Get the BMC (Baseboard Management Controller) access associated with the ID, including the URL and login information needed to connect.
+// GetBMCAccess: Get the BMC (Baseboard Management Controller) access associated with the ID, including the URL and login information needed to connect.
 func (s *API) GetBMCAccess(req *GetBMCAccessRequest, opts ...scw.RequestOption) (*BMCAccess, error) {
 	var err error
 
@@ -1602,9 +2088,8 @@ func (s *API) GetBMCAccess(req *GetBMCAccessRequest, opts ...scw.RequestOption) 
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/bmc-access",
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/bmc-access",
 	}
 
 	var resp BMCAccess
@@ -1616,15 +2101,7 @@ func (s *API) GetBMCAccess(req *GetBMCAccessRequest, opts ...scw.RequestOption) 
 	return &resp, nil
 }
 
-type StopBMCAccessRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server.
-	ServerID string `json:"-"`
-}
-
-// StopBMCAccess: stop BMC access.
-// Stop BMC (Baseboard Management Controller) access associated with the ID.
+// StopBMCAccess: Stop BMC (Baseboard Management Controller) access associated with the ID.
 func (s *API) StopBMCAccess(req *StopBMCAccessRequest, opts ...scw.RequestOption) error {
 	var err error
 
@@ -1642,9 +2119,8 @@ func (s *API) StopBMCAccess(req *StopBMCAccessRequest, opts ...scw.RequestOption
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "DELETE",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/bmc-access",
-		Headers: http.Header{},
+		Method: "DELETE",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/bmc-access",
 	}
 
 	err = s.client.Do(scwReq, nil, opts...)
@@ -1654,19 +2130,7 @@ func (s *API) StopBMCAccess(req *StopBMCAccessRequest, opts ...scw.RequestOption
 	return nil
 }
 
-type UpdateIPRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server.
-	ServerID string `json:"-"`
-	// IPID: ID of the IP to update.
-	IPID string `json:"-"`
-	// Reverse: new reverse IP to update, not updated if null.
-	Reverse *string `json:"reverse"`
-}
-
-// UpdateIP: update IP.
-// Configure the IP address associated with the server ID and IP ID. You can use this method to set a reverse DNS for an IP address.
+// UpdateIP: Configure the IP address associated with the server ID and IP ID. You can use this method to set a reverse DNS for an IP address.
 func (s *API) UpdateIP(req *UpdateIPRequest, opts ...scw.RequestOption) (*IP, error) {
 	var err error
 
@@ -1688,9 +2152,8 @@ func (s *API) UpdateIP(req *UpdateIPRequest, opts ...scw.RequestOption) (*IP, er
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "PATCH",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/ips/" + fmt.Sprint(req.IPID) + "",
-		Headers: http.Header{},
+		Method: "PATCH",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/ips/" + fmt.Sprint(req.IPID) + "",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1707,19 +2170,7 @@ func (s *API) UpdateIP(req *UpdateIPRequest, opts ...scw.RequestOption) (*IP, er
 	return &resp, nil
 }
 
-type AddOptionServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server.
-	ServerID string `json:"-"`
-	// OptionID: ID of the option to add.
-	OptionID string `json:"-"`
-	// ExpiresAt: auto expire the option after this date.
-	ExpiresAt *time.Time `json:"expires_at"`
-}
-
-// AddOptionServer: add server option.
-// Add an option, such as Private Networks, to a specific server.
+// AddOptionServer: Add an option, such as Private Networks, to a specific server.
 func (s *API) AddOptionServer(req *AddOptionServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1741,9 +2192,8 @@ func (s *API) AddOptionServer(req *AddOptionServerRequest, opts ...scw.RequestOp
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/options/" + fmt.Sprint(req.OptionID) + "",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/options/" + fmt.Sprint(req.OptionID) + "",
 	}
 
 	err = scwReq.SetBody(req)
@@ -1760,17 +2210,7 @@ func (s *API) AddOptionServer(req *AddOptionServerRequest, opts ...scw.RequestOp
 	return &resp, nil
 }
 
-type DeleteOptionServerRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: ID of the server.
-	ServerID string `json:"-"`
-	// OptionID: ID of the option to delete.
-	OptionID string `json:"-"`
-}
-
-// DeleteOptionServer: delete server option.
-// Delete an option from a specific server.
+// DeleteOptionServer: Delete an option from a specific server.
 func (s *API) DeleteOptionServer(req *DeleteOptionServerRequest, opts ...scw.RequestOption) (*Server, error) {
 	var err error
 
@@ -1792,9 +2232,8 @@ func (s *API) DeleteOptionServer(req *DeleteOptionServerRequest, opts ...scw.Req
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "DELETE",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/options/" + fmt.Sprint(req.OptionID) + "",
-		Headers: http.Header{},
+		Method: "DELETE",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/options/" + fmt.Sprint(req.OptionID) + "",
 	}
 
 	var resp Server
@@ -1806,20 +2245,7 @@ func (s *API) DeleteOptionServer(req *DeleteOptionServerRequest, opts ...scw.Req
 	return &resp, nil
 }
 
-type ListOffersRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// Page: page number.
-	Page *int32 `json:"-"`
-	// PageSize: number of offers per page.
-	PageSize *uint32 `json:"-"`
-	// SubscriptionPeriod: subscription period type to filter offers by.
-	// Default value: unknown_subscription_period
-	SubscriptionPeriod OfferSubscriptionPeriod `json:"-"`
-}
-
-// ListOffers: list offers.
-// List all available Elastic Metal server configurations.
+// ListOffers: List all available Elastic Metal server configurations.
 func (s *API) ListOffers(req *ListOffersRequest, opts ...scw.RequestOption) (*ListOffersResponse, error) {
 	var err error
 
@@ -1843,10 +2269,9 @@ func (s *API) ListOffers(req *ListOffersRequest, opts ...scw.RequestOption) (*Li
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/offers",
-		Query:   query,
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/offers",
+		Query:  query,
 	}
 
 	var resp ListOffersResponse
@@ -1858,15 +2283,7 @@ func (s *API) ListOffers(req *ListOffersRequest, opts ...scw.RequestOption) (*Li
 	return &resp, nil
 }
 
-type GetOfferRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// OfferID: ID of the researched Offer.
-	OfferID string `json:"-"`
-}
-
-// GetOffer: get offer.
-// Get details of an offer identified by its offer ID.
+// GetOffer: Get details of an offer identified by its offer ID.
 func (s *API) GetOffer(req *GetOfferRequest, opts ...scw.RequestOption) (*Offer, error) {
 	var err error
 
@@ -1884,9 +2301,8 @@ func (s *API) GetOffer(req *GetOfferRequest, opts ...scw.RequestOption) (*Offer,
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/offers/" + fmt.Sprint(req.OfferID) + "",
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/offers/" + fmt.Sprint(req.OfferID) + "",
 	}
 
 	var resp Offer
@@ -1898,15 +2314,7 @@ func (s *API) GetOffer(req *GetOfferRequest, opts ...scw.RequestOption) (*Offer,
 	return &resp, nil
 }
 
-type GetOptionRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// OptionID: ID of the option.
-	OptionID string `json:"-"`
-}
-
-// GetOption: get option.
-// Return specific option for the ID.
+// GetOption: Return specific option for the ID.
 func (s *API) GetOption(req *GetOptionRequest, opts ...scw.RequestOption) (*Option, error) {
 	var err error
 
@@ -1924,9 +2332,8 @@ func (s *API) GetOption(req *GetOptionRequest, opts ...scw.RequestOption) (*Opti
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/options/" + fmt.Sprint(req.OptionID) + "",
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/options/" + fmt.Sprint(req.OptionID) + "",
 	}
 
 	var resp Option
@@ -1938,21 +2345,7 @@ func (s *API) GetOption(req *GetOptionRequest, opts ...scw.RequestOption) (*Opti
 	return &resp, nil
 }
 
-type ListOptionsRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// Page: page number.
-	Page *int32 `json:"-"`
-	// PageSize: number of options per page.
-	PageSize *uint32 `json:"-"`
-	// OfferID: offer ID to filter options for.
-	OfferID *string `json:"-"`
-	// Name: name to filter options for.
-	Name *string `json:"-"`
-}
-
-// ListOptions: list options.
-// List all options matching with filters.
+// ListOptions: List all options matching with filters.
 func (s *API) ListOptions(req *ListOptionsRequest, opts ...scw.RequestOption) (*ListOptionsResponse, error) {
 	var err error
 
@@ -1977,10 +2370,9 @@ func (s *API) ListOptions(req *ListOptionsRequest, opts ...scw.RequestOption) (*
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/options",
-		Query:   query,
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/options",
+		Query:  query,
 	}
 
 	var resp ListOptionsResponse
@@ -1992,22 +2384,7 @@ func (s *API) ListOptions(req *ListOptionsRequest, opts ...scw.RequestOption) (*
 	return &resp, nil
 }
 
-type ListSettingsRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// Page: page number.
-	Page *int32 `json:"-"`
-	// PageSize: set the maximum list size.
-	PageSize *uint32 `json:"-"`
-	// OrderBy: sort order for items in the response.
-	// Default value: created_at_asc
-	OrderBy ListSettingsRequestOrderBy `json:"-"`
-	// ProjectID: ID of the Project.
-	ProjectID *string `json:"-"`
-}
-
-// ListSettings: list all settings.
-// Return all settings for a Project ID.
+// ListSettings: Return all settings for a Project ID.
 func (s *API) ListSettings(req *ListSettingsRequest, opts ...scw.RequestOption) (*ListSettingsResponse, error) {
 	var err error
 
@@ -2032,10 +2409,9 @@ func (s *API) ListSettings(req *ListSettingsRequest, opts ...scw.RequestOption) 
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/settings",
-		Query:   query,
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/settings",
+		Query:  query,
 	}
 
 	var resp ListSettingsResponse
@@ -2047,17 +2423,7 @@ func (s *API) ListSettings(req *ListSettingsRequest, opts ...scw.RequestOption) 
 	return &resp, nil
 }
 
-type UpdateSettingRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// SettingID: ID of the setting.
-	SettingID string `json:"-"`
-	// Enabled: defines whether the setting is enabled.
-	Enabled *bool `json:"enabled"`
-}
-
-// UpdateSetting: update setting.
-// Update a setting for a Project ID (enable or disable).
+// UpdateSetting: Update a setting for a Project ID (enable or disable).
 func (s *API) UpdateSetting(req *UpdateSettingRequest, opts ...scw.RequestOption) (*Setting, error) {
 	var err error
 
@@ -2075,9 +2441,8 @@ func (s *API) UpdateSetting(req *UpdateSettingRequest, opts ...scw.RequestOption
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "PATCH",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/settings/" + fmt.Sprint(req.SettingID) + "",
-		Headers: http.Header{},
+		Method: "PATCH",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/settings/" + fmt.Sprint(req.SettingID) + "",
 	}
 
 	err = scwReq.SetBody(req)
@@ -2094,19 +2459,7 @@ func (s *API) UpdateSetting(req *UpdateSettingRequest, opts ...scw.RequestOption
 	return &resp, nil
 }
 
-type ListOSRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// Page: page number.
-	Page *int32 `json:"-"`
-	// PageSize: number of OS per page.
-	PageSize *uint32 `json:"-"`
-	// OfferID: offer IDs to filter OSes for.
-	OfferID *string `json:"-"`
-}
-
-// ListOS: list available OSes.
-// List all OSes that are available for installation on Elastic Metal servers.
+// ListOS: List all OSes that are available for installation on Elastic Metal servers.
 func (s *API) ListOS(req *ListOSRequest, opts ...scw.RequestOption) (*ListOSResponse, error) {
 	var err error
 
@@ -2130,10 +2483,9 @@ func (s *API) ListOS(req *ListOSRequest, opts ...scw.RequestOption) (*ListOSResp
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/os",
-		Query:   query,
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/os",
+		Query:  query,
 	}
 
 	var resp ListOSResponse
@@ -2145,15 +2497,7 @@ func (s *API) ListOS(req *ListOSRequest, opts ...scw.RequestOption) (*ListOSResp
 	return &resp, nil
 }
 
-type GetOSRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// OsID: ID of the OS.
-	OsID string `json:"-"`
-}
-
-// GetOS: get OS with an ID.
-// Return the specific OS for the ID.
+// GetOS: Return the specific OS for the ID.
 func (s *API) GetOS(req *GetOSRequest, opts ...scw.RequestOption) (*OS, error) {
 	var err error
 
@@ -2171,9 +2515,8 @@ func (s *API) GetOS(req *GetOSRequest, opts ...scw.RequestOption) (*OS, error) {
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/os/" + fmt.Sprint(req.OsID) + "",
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/os/" + fmt.Sprint(req.OsID) + "",
 	}
 
 	var resp OS
@@ -2185,23 +2528,22 @@ func (s *API) GetOS(req *GetOSRequest, opts ...scw.RequestOption) (*OS, error) {
 	return &resp, nil
 }
 
-// Service PrivateNetworkAPI
+// Elastic Metal Private Network API.
+type PrivateNetworkAPI struct {
+	client *scw.Client
+}
 
-// Zones list localities the api is available in
+// NewPrivateNetworkAPI returns a PrivateNetworkAPI object from a Scaleway client.
+func NewPrivateNetworkAPI(client *scw.Client) *PrivateNetworkAPI {
+	return &PrivateNetworkAPI{
+		client: client,
+	}
+}
 func (s *PrivateNetworkAPI) Zones() []scw.Zone {
 	return []scw.Zone{scw.ZoneFrPar2}
 }
 
-type PrivateNetworkAPIAddServerPrivateNetworkRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: the ID of the server.
-	ServerID string `json:"-"`
-	// PrivateNetworkID: the ID of the Private Network.
-	PrivateNetworkID string `json:"private_network_id"`
-}
-
-// AddServerPrivateNetwork: add a server to a Private Network.
+// AddServerPrivateNetwork: Add a server to a Private Network.
 func (s *PrivateNetworkAPI) AddServerPrivateNetwork(req *PrivateNetworkAPIAddServerPrivateNetworkRequest, opts ...scw.RequestOption) (*ServerPrivateNetwork, error) {
 	var err error
 
@@ -2219,9 +2561,8 @@ func (s *PrivateNetworkAPI) AddServerPrivateNetwork(req *PrivateNetworkAPIAddSer
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "POST",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/private-networks",
-		Headers: http.Header{},
+		Method: "POST",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/private-networks",
 	}
 
 	err = scwReq.SetBody(req)
@@ -2238,16 +2579,7 @@ func (s *PrivateNetworkAPI) AddServerPrivateNetwork(req *PrivateNetworkAPIAddSer
 	return &resp, nil
 }
 
-type PrivateNetworkAPISetServerPrivateNetworksRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: the ID of the server.
-	ServerID string `json:"-"`
-	// PrivateNetworkIDs: the IDs of the Private Networks.
-	PrivateNetworkIDs []string `json:"private_network_ids"`
-}
-
-// SetServerPrivateNetworks: set multiple Private Networks on a server.
+// SetServerPrivateNetworks: Set multiple Private Networks on a server.
 func (s *PrivateNetworkAPI) SetServerPrivateNetworks(req *PrivateNetworkAPISetServerPrivateNetworksRequest, opts ...scw.RequestOption) (*SetServerPrivateNetworksResponse, error) {
 	var err error
 
@@ -2265,9 +2597,8 @@ func (s *PrivateNetworkAPI) SetServerPrivateNetworks(req *PrivateNetworkAPISetSe
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "PUT",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/private-networks",
-		Headers: http.Header{},
+		Method: "PUT",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/private-networks",
 	}
 
 	err = scwReq.SetBody(req)
@@ -2284,27 +2615,7 @@ func (s *PrivateNetworkAPI) SetServerPrivateNetworks(req *PrivateNetworkAPISetSe
 	return &resp, nil
 }
 
-type PrivateNetworkAPIListServerPrivateNetworksRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// OrderBy: the sort order for the returned Private Networks.
-	// Default value: created_at_asc
-	OrderBy ListServerPrivateNetworksRequestOrderBy `json:"-"`
-	// Page: the page number for the returned Private Networks.
-	Page *int32 `json:"-"`
-	// PageSize: the maximum number of Private Networks per page.
-	PageSize *uint32 `json:"-"`
-	// ServerID: filter Private Networks by server ID.
-	ServerID *string `json:"-"`
-	// PrivateNetworkID: filter Private Networks by Private Network ID.
-	PrivateNetworkID *string `json:"-"`
-	// OrganizationID: filter Private Networks by Organization ID.
-	OrganizationID *string `json:"-"`
-	// ProjectID: filter Private Networks by Project ID.
-	ProjectID *string `json:"-"`
-}
-
-// ListServerPrivateNetworks: list the Private Networks of a server.
+// ListServerPrivateNetworks: List the Private Networks of a server.
 func (s *PrivateNetworkAPI) ListServerPrivateNetworks(req *PrivateNetworkAPIListServerPrivateNetworksRequest, opts ...scw.RequestOption) (*ListServerPrivateNetworksResponse, error) {
 	var err error
 
@@ -2332,10 +2643,9 @@ func (s *PrivateNetworkAPI) ListServerPrivateNetworks(req *PrivateNetworkAPIList
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "GET",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/server-private-networks",
-		Query:   query,
-		Headers: http.Header{},
+		Method: "GET",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/server-private-networks",
+		Query:  query,
 	}
 
 	var resp ListServerPrivateNetworksResponse
@@ -2347,16 +2657,7 @@ func (s *PrivateNetworkAPI) ListServerPrivateNetworks(req *PrivateNetworkAPIList
 	return &resp, nil
 }
 
-type PrivateNetworkAPIDeleteServerPrivateNetworkRequest struct {
-	// Zone: zone to target. If none is passed will use default zone from the config.
-	Zone scw.Zone `json:"-"`
-	// ServerID: the ID of the server.
-	ServerID string `json:"-"`
-	// PrivateNetworkID: the ID of the Private Network.
-	PrivateNetworkID string `json:"-"`
-}
-
-// DeleteServerPrivateNetwork: delete a Private Network.
+// DeleteServerPrivateNetwork: Delete a Private Network.
 func (s *PrivateNetworkAPI) DeleteServerPrivateNetwork(req *PrivateNetworkAPIDeleteServerPrivateNetworkRequest, opts ...scw.RequestOption) error {
 	var err error
 
@@ -2378,9 +2679,8 @@ func (s *PrivateNetworkAPI) DeleteServerPrivateNetwork(req *PrivateNetworkAPIDel
 	}
 
 	scwReq := &scw.ScalewayRequest{
-		Method:  "DELETE",
-		Path:    "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/private-networks/" + fmt.Sprint(req.PrivateNetworkID) + "",
-		Headers: http.Header{},
+		Method: "DELETE",
+		Path:   "/baremetal/v1/zones/" + fmt.Sprint(req.Zone) + "/servers/" + fmt.Sprint(req.ServerID) + "/private-networks/" + fmt.Sprint(req.PrivateNetworkID) + "",
 	}
 
 	err = s.client.Do(scwReq, nil, opts...)
@@ -2388,137 +2688,4 @@ func (s *PrivateNetworkAPI) DeleteServerPrivateNetwork(req *PrivateNetworkAPIDel
 		return err
 	}
 	return nil
-}
-
-// UnsafeGetTotalCount should not be used
-// Internal usage only
-func (r *ListServersResponse) UnsafeGetTotalCount() uint32 {
-	return r.TotalCount
-}
-
-// UnsafeAppend should not be used
-// Internal usage only
-func (r *ListServersResponse) UnsafeAppend(res interface{}) (uint32, error) {
-	results, ok := res.(*ListServersResponse)
-	if !ok {
-		return 0, errors.New("%T type cannot be appended to type %T", res, r)
-	}
-
-	r.Servers = append(r.Servers, results.Servers...)
-	r.TotalCount += uint32(len(results.Servers))
-	return uint32(len(results.Servers)), nil
-}
-
-// UnsafeGetTotalCount should not be used
-// Internal usage only
-func (r *ListServerEventsResponse) UnsafeGetTotalCount() uint32 {
-	return r.TotalCount
-}
-
-// UnsafeAppend should not be used
-// Internal usage only
-func (r *ListServerEventsResponse) UnsafeAppend(res interface{}) (uint32, error) {
-	results, ok := res.(*ListServerEventsResponse)
-	if !ok {
-		return 0, errors.New("%T type cannot be appended to type %T", res, r)
-	}
-
-	r.Events = append(r.Events, results.Events...)
-	r.TotalCount += uint32(len(results.Events))
-	return uint32(len(results.Events)), nil
-}
-
-// UnsafeGetTotalCount should not be used
-// Internal usage only
-func (r *ListOffersResponse) UnsafeGetTotalCount() uint32 {
-	return r.TotalCount
-}
-
-// UnsafeAppend should not be used
-// Internal usage only
-func (r *ListOffersResponse) UnsafeAppend(res interface{}) (uint32, error) {
-	results, ok := res.(*ListOffersResponse)
-	if !ok {
-		return 0, errors.New("%T type cannot be appended to type %T", res, r)
-	}
-
-	r.Offers = append(r.Offers, results.Offers...)
-	r.TotalCount += uint32(len(results.Offers))
-	return uint32(len(results.Offers)), nil
-}
-
-// UnsafeGetTotalCount should not be used
-// Internal usage only
-func (r *ListOptionsResponse) UnsafeGetTotalCount() uint32 {
-	return r.TotalCount
-}
-
-// UnsafeAppend should not be used
-// Internal usage only
-func (r *ListOptionsResponse) UnsafeAppend(res interface{}) (uint32, error) {
-	results, ok := res.(*ListOptionsResponse)
-	if !ok {
-		return 0, errors.New("%T type cannot be appended to type %T", res, r)
-	}
-
-	r.Options = append(r.Options, results.Options...)
-	r.TotalCount += uint32(len(results.Options))
-	return uint32(len(results.Options)), nil
-}
-
-// UnsafeGetTotalCount should not be used
-// Internal usage only
-func (r *ListSettingsResponse) UnsafeGetTotalCount() uint32 {
-	return r.TotalCount
-}
-
-// UnsafeAppend should not be used
-// Internal usage only
-func (r *ListSettingsResponse) UnsafeAppend(res interface{}) (uint32, error) {
-	results, ok := res.(*ListSettingsResponse)
-	if !ok {
-		return 0, errors.New("%T type cannot be appended to type %T", res, r)
-	}
-
-	r.Settings = append(r.Settings, results.Settings...)
-	r.TotalCount += uint32(len(results.Settings))
-	return uint32(len(results.Settings)), nil
-}
-
-// UnsafeGetTotalCount should not be used
-// Internal usage only
-func (r *ListOSResponse) UnsafeGetTotalCount() uint32 {
-	return r.TotalCount
-}
-
-// UnsafeAppend should not be used
-// Internal usage only
-func (r *ListOSResponse) UnsafeAppend(res interface{}) (uint32, error) {
-	results, ok := res.(*ListOSResponse)
-	if !ok {
-		return 0, errors.New("%T type cannot be appended to type %T", res, r)
-	}
-
-	r.Os = append(r.Os, results.Os...)
-	r.TotalCount += uint32(len(results.Os))
-	return uint32(len(results.Os)), nil
-}
-
-// UnsafeGetTotalCount should not be used
-// Internal usage only
-func (r *ListServerPrivateNetworksResponse) UnsafeGetTotalCount() uint32 {
-	return r.TotalCount
-}
-
-// UnsafeAppend should not be used
-// Internal usage only
-func (r *ListServerPrivateNetworksResponse) UnsafeAppend(res interface{}) (uint32, error) {
-	results, ok := res.(*ListServerPrivateNetworksResponse)
-	if !ok {
-		return 0, errors.New("%T type cannot be appended to type %T", res, r)
-	}
-
-	r.ServerPrivateNetworks = append(r.ServerPrivateNetworks, results.ServerPrivateNetworks...)
-	r.TotalCount += uint32(len(results.ServerPrivateNetworks))
-	return uint32(len(results.ServerPrivateNetworks)), nil
 }

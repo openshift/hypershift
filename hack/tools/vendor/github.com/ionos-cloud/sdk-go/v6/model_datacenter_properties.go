@@ -22,7 +22,7 @@ type DatacenterProperties struct {
 	Description *string `json:"description,omitempty"`
 	// List of features supported by the location where this data center is provisioned.
 	Features *[]string `json:"features,omitempty"`
-	// [The IPv6 feature is in beta phase and not ready for production usage.] This value is either 'null' or contains an automatically-assigned /56 IPv6 CIDR block if IPv6 is enabled on this virtual data center. It can neither be changed nor removed.
+	// This value is either 'null' or contains an automatically-assigned /56 IPv6 CIDR block if IPv6 is enabled on this virtual data center. It can neither be changed nor removed.
 	// to set this field to `nil` in order to be marshalled, the explicit nil address `Nilstring` can be used, or the setter `SetIpv6CidrBlockNil`
 	Ipv6CidrBlock *string `json:"ipv6CidrBlock,omitempty"`
 	// The physical location where the datacenter will be created. This will be where all of your servers live. Property cannot be modified after datacenter creation (disallowed in update requests).

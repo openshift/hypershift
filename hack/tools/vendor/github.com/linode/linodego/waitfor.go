@@ -669,7 +669,7 @@ func (p *EventPoller) WaitForLatestUnknownEvent(ctx context.Context) (*Event, er
 			}
 
 			for _, event := range events {
-				if !eventMatchesSecondary(p.SecondaryEntityID, event) {
+				if p.SecondaryEntityID != nil && !eventMatchesSecondary(p.SecondaryEntityID, event) {
 					continue
 				}
 
@@ -781,10 +781,10 @@ func (client Client) WaitForResourceFree(
 // matches the configured secondary ID.
 // This logic has been broken out to improve readability.
 func eventMatchesSecondary(configuredID any, e Event) bool {
-	// Always return true if the user is not filtering
-	// on a secondary ID.
-	if configuredID == nil {
-		return true
+	// We should return false if the event has no secondary entity.
+	// e.g. A previous disk deletion has completed.
+	if e.SecondaryEntity == nil {
+		return false
 	}
 
 	secondaryID := e.SecondaryEntity.ID

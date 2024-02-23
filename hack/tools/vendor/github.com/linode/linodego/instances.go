@@ -35,6 +35,13 @@ const (
 	InstanceResizing     InstanceStatus = "resizing"
 )
 
+type InstanceMigrationType string
+
+const (
+	WarmMigration InstanceMigrationType = "warm"
+	ColdMigration InstanceMigrationType = "cold"
+)
+
 // Instance represents a linode object
 type Instance struct {
 	ID              int             `json:"id"`
@@ -192,10 +199,17 @@ type InstanceCloneOptions struct {
 
 // InstanceResizeOptions is an options struct used when resizing an instance
 type InstanceResizeOptions struct {
-	Type string `json:"type"`
+	Type          string                `json:"type"`
+	MigrationType InstanceMigrationType `json:"migration_type,omitempty"`
 
 	// When enabled, an instance resize will also resize a data disk if the instance has no more than one data disk and one swap disk
 	AllowAutoDiskResize *bool `json:"allow_auto_disk_resize,omitempty"`
+}
+
+// InstanceResizeOptions is an options struct used when resizing an instance
+type InstanceMigrateOptions struct {
+	Type   InstanceMigrationType `json:"type,omitempty"`
+	Region string                `json:"region,omitempty"`
 }
 
 // InstancesPagedResponse represents a linode API response for listing
@@ -417,8 +431,14 @@ func (c *Client) MutateInstance(ctx context.Context, id int) error {
 }
 
 // MigrateInstance - Migrate an instance
-func (c *Client) MigrateInstance(ctx context.Context, id int) error {
-	return c.simpleInstanceAction(ctx, "migrate", id)
+func (c *Client) MigrateInstance(ctx context.Context, linodeID int, opts InstanceMigrateOptions) error {
+	body, err := json.Marshal(opts)
+	if err != nil {
+		return err
+	}
+	e := fmt.Sprintf("linode/instances/%d/migrate", linodeID)
+	_, err = coupleAPIErrors(c.R(ctx).SetBody(string(body)).Post(e))
+	return err
 }
 
 // simpleInstanceAction is a helper for Instance actions that take no parameters
