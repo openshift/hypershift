@@ -64,12 +64,14 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -181,6 +183,46 @@ type HostedClusterReconciler struct {
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
 
+// predicatesForHostedCluster will ignore incoming event requests for hostedcluster resources that do not exist in the namespace
+// specified in the HOSTED_CLUSTERS_NAMESPACE env var.  If the env var is empty, the default behavior is to accept all events.
+func predicatesForHostedCluster() predicate.Predicate {
+	hostedClustersNamespace := os.Getenv("HOSTED_CLUSTERS_NAMESPACE")
+	filter := func(obj client.Object) bool {
+		if hostedClustersNamespace == "" {
+			return true
+		}
+		if obj.GetNamespace() != hostedClustersNamespace {
+			return false
+		}
+		return true
+	}
+	return predicate.NewPredicateFuncs(filter)
+}
+
+// predicatesForHostedClusterOwnedResources will ignore incoming event requests for resources in which the parent hostedcluster does not
+// exist in the namespace specified in the HOSTED_CLUSTERS_NAMESPACE env var.  If the env var is empty, the default behavior is to accept all events.
+func predicatesForHostedClusterOwnedResources() predicate.Predicate {
+	hostedClustersNamespace := os.Getenv("HOSTED_CLUSTERS_NAMESPACE")
+	filter := func(obj client.Object) bool {
+		if hostedClustersNamespace == "" {
+			return true
+		}
+		hostedClusterName := ""
+		if obj.GetAnnotations() != nil {
+			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
+		}
+		if hostedClusterName == "" {
+			return false
+		}
+		namespacedName := hyperutil.ParseNamespacedName(hostedClusterName)
+		if namespacedName.Namespace != hostedClustersNamespace {
+			return false
+		}
+		return true
+	}
+	return predicate.NewPredicateFuncs(filter)
+}
+
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider, metricsSet metrics.MetricsSet, operatorNamespace string) error {
 	if r.Clock == nil {
 		r.Clock = clock.RealClock{}
@@ -194,14 +236,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// ignitionserver manifests packages. Since we're receiving watch events across
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
-	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}).
+	bldr := ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(predicatesForHostedCluster())).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())))
+		bldr.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(predicatesForHostedClusterOwnedResources()))
 	}
 
 	// Set based on SCC capability
@@ -209,7 +251,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
-	return builder.Complete(r)
+	return bldr.Complete(r)
 }
 
 // managedResources are all the resources that are managed as childresources for a HostedCluster
