@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -119,7 +120,7 @@ func (r *DedicatedServingComponentScheduler) SetupWithManager(mgr ctrl.Manager, 
 
 	r.createOrUpdate = createOrUpdateProvider.CreateOrUpdate
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(util.PredicatesForHostedClusterAnnotationScoping())).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
