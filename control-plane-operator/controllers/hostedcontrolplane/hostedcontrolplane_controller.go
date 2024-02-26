@@ -3591,6 +3591,14 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router deployment: %w", err)
 		}
+
+		pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
+			ingress.ReconcileRouterPodDisruptionBudget(pdb, hcp.Spec.ControllerAvailabilityPolicy, config.OwnerRefFrom(hcp))
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
+		}
 	}
 
 	// "Admit" routes that we manage so that other code depending on routes continues

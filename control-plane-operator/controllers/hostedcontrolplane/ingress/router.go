@@ -9,6 +9,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -299,4 +300,15 @@ func ReconcileRouteStatus(route *routev1.Route, externalHostname, internalHostna
 		}
 	}
 	route.Status.Ingress = []routev1.RouteIngress{ingress}
+}
+
+func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, availability hyperv1.AvailabilityPolicy, ownerRef config.OwnerRef) {
+	if pdb.CreationTimestamp.IsZero() {
+		pdb.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: hcpRouterLabels(),
+		}
+	}
+	ownerRef.ApplyTo(pdb)
+	minAvailable := intstr.FromInt(1)
+	pdb.Spec.MinAvailable = &minAvailable
 }
