@@ -1,12 +1,10 @@
 package olm
 
 import (
-	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"time"
 )
 
 func ReconcileCertifiedOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {
@@ -37,7 +35,8 @@ func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address string,
 		Priority:    priority,
 		UpdateStrategy: &operatorsv1alpha1.UpdateStrategy{
 			RegistryPoll: &operatorsv1alpha1.RegistryPoll{
-				Interval: &metav1.Duration{Duration: 10 * time.Minute},
+				RawInterval: "10m",
+				Interval:    &metav1.Duration{Duration: 10 * time.Minute},
 			},
 		},
 	}
