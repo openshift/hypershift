@@ -6,8 +6,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/blang/semver"
-
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -31,22 +29,19 @@ import (
 
 const (
 	KubeAPIServerConfigKey  = "config.json"
+	AuthenticationConfigKey = "auth.json"
 	OauthMetadataConfigKey  = "oauthMetadata.json"
 	AuditLogFile            = "audit.log"
 	EgressSelectorConfigKey = "config.yaml"
 	DefaultEtcdPort         = 2379
 )
 
-func ReconcileConfig(config *corev1.ConfigMap,
-	ownerRef hcpconfig.OwnerRef,
-	p KubeAPIServerConfigParams,
-	version semver.Version,
-) error {
+func ReconcileConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
 	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	kasConfig := generateConfig(p, version)
+	kasConfig := generateConfig(p)
 	serializedConfig, err := json.Marshal(kasConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver config: %w", err)
@@ -63,7 +58,7 @@ func (a kubeAPIServerArgs) Set(name string, values ...string) {
 	a[name] = v
 }
 
-func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.KubeAPIServerConfig {
+func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
@@ -163,34 +158,12 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
-	if version.Minor == 10 {
-		// This is explicitly disabled in OCP 4.10
-		// This is enabled by default in 4.11 but currently disabled by OCP. It is planned to get re-enabled but currently
-		// breaks conformance testing, ref: https://github.com/openshift/cluster-kube-apiserver-operator/pull/1262
-		args.Set("disable-admission-plugins", "PodSecurity")
-	}
 	if util.ConfigOAuthEnabled(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
 	} else {
-		if len(p.Authentication.OIDCProviders) > 0 {
-			provider := p.Authentication.OIDCProviders[0]
-			args.Set("oidc-issuer-url", provider.Issuer.URL)
-			args.Set("oidc-client-id", string(provider.Issuer.Audiences[0]))
-			args.Set("oidc-username-claim", provider.ClaimMappings.Username.Claim)
-			if provider.ClaimMappings.Username.PrefixPolicy == configv1.Prefix &&
-				provider.ClaimMappings.Username.Prefix != nil {
-				args.Set("oidc-username-prefix", provider.ClaimMappings.Username.Prefix.PrefixString)
-			}
-			args.Set("oidc-groups-claim", provider.ClaimMappings.Groups.Claim)
-			args.Set("oidc-groups-prefix", provider.ClaimMappings.Groups.Prefix)
-			for _, cvr := range provider.ClaimValidationRules {
-				// TODO: currently can only support a single required claim because of how kubeAPIServerArgs dedups config fields
-				// In order to specify multiple required claims, the flag must be used multiple times
-				// https://kubernetes.io/docs/reference/access-authn-authz/authentication/#configuring-the-api-server
-				args.Set("oidc-required-claim", fmt.Sprintf("%s=%s", cvr.RequiredClaim.Claim, cvr.RequiredClaim.RequiredValue))
-			}
-			args.Set("oidc-ca-file", oidcCAFile(provider.Issuer.CertificateAuthority.Name))
+		if p.Authentication != nil && len(p.Authentication.OIDCProviders) > 0 {
+			args.Set("authentication-config", cpath(kasVolumeAuthConfig().Name, AuthenticationConfigKey))
 		}
 	}
 	args.Set("enable-aggregator-routing", "true")
@@ -202,7 +175,10 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("etcd-prefix", "kubernetes.io")
 	args.Set("etcd-servers", p.EtcdURL)
 	args.Set("event-ttl", "3h")
-	args.Set("feature-gates", p.FeatureGates...)
+	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
+	featureGates := append([]string{}, p.FeatureGates...)
+	featureGates = append(featureGates, "StructuredAuthenticationConfiguration=true")
+	args.Set("feature-gates", featureGates...)
 	args.Set("goaway-chance", "0")
 	args.Set("http2-max-streams-per-connection", "2000")
 	args.Set("kubelet-certificate-authority", cpath(kasVolumeKubeletClientCA().Name, certs.CASignerCertMapKey))

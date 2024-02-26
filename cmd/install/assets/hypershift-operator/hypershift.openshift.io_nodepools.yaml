@@ -539,6 +539,11 @@ spec:
                             description: ID of resource
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: subnet is invalid, a valid subnet id or filters
+                            must be set, but not both
+                          rule: 'has(self.id) && self.id.startsWith(''subnet-'') ?
+                            !has(self.filters) : size(self.filters) > 0'
                     required:
                     - instanceType
                     type: object
@@ -1612,8 +1617,14 @@ spec:
                             description: ID of resource
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: subnet is invalid, a valid subnet id or filters
+                            must be set, but not both
+                          rule: 'has(self.id) && self.id.startsWith(''subnet-'') ?
+                            !has(self.filters) : size(self.filters) > 0'
                     required:
                     - instanceType
+                    - subnet
                     type: object
                   azure:
                     properties:

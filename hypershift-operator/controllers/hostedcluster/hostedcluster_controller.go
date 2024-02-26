@@ -4588,7 +4588,6 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	subnetIDs := []string{}
 	for _, nodePool := range nodePools {
 		if nodePool.Spec.Platform.AWS != nil &&
-			nodePool.Spec.Platform.AWS.Subnet != nil &&
 			nodePool.Spec.Platform.AWS.Subnet.ID != nil {
 			subnetIDs = append(subnetIDs, *nodePool.Spec.Platform.AWS.Subnet.ID)
 		}

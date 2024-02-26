@@ -8,6 +8,7 @@ metadata:
   namespace: test-namespace
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       name: cluster-image-registry-operator

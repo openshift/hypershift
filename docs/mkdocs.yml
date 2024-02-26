@@ -72,6 +72,7 @@ nav:
     - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
+    - 'Other SDN providers': how-to/aws/other-sdn-providers.md
     - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md
         - how-to/aws/troubleshooting/debug-nodes.md
@@ -84,6 +85,7 @@ nav:
         - how-to/azure/troubleshooting/debug-nodes.md
   - 'Agent':
     - how-to/agent/create-agent-cluster.md
+    - 'Other SDN providers': how-to/agent/other-sdn-providers.md
   - 'Disconnected':
     - how-to/disconnected/automatically-initialize-registry-overrides.md
     - how-to/disconnected/image-content-sources.md
@@ -93,6 +95,8 @@ nav:
     - how-to/kubevirt/create-kubevirt-cluster.md
     - how-to/kubevirt/ingress-and-dns.md
     - how-to/kubevirt/configuring-storage.md
+    - how-to/kubevirt/configuring-network.md
+    - how-to/kubevirt/performance-tuning.md
     - how-to/kubevirt/external-infrastructure.md
     - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
   - 'None':

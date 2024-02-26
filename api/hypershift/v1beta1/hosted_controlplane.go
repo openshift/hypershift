@@ -285,6 +285,11 @@ type HostedControlPlaneStatus struct {
 	// Platform contains platform-specific status of the HostedCluster
 	// +optional
 	Platform *PlatformStatus `json:"platform,omitempty"`
+
+	// +optional
+
+	// NodeCount tracks the number of nodes in the HostedControlPlane.
+	NodeCount *int `json:"nodeCount,omitempty"`
 }
 
 type APIEndpoint struct {

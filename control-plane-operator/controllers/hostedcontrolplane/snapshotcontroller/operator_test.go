@@ -35,7 +35,7 @@ func TestReconcileOperatorDeployment(t *testing.T) {
 	deployment := manifests.CSISnapshotControllerOperatorDeployment("test-namespace")
 	imageProvider := imageprovider.NewFromImages(images)
 	params := NewParams(hcp, "1.0.0", imageProvider, true)
-	if err := ReconcileOperatorDeployment(deployment, params); err != nil {
+	if err := ReconcileOperatorDeployment(deployment, params, hyperv1.NonePlatform); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	deploymentYaml, err := util.SerializeResource(deployment, api.Scheme)

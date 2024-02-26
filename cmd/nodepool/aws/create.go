@@ -59,27 +59,6 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 			return fmt.Errorf("subnet ID was not specified and cannot be determined from HostedCluster")
 		}
 	}
-	if len(o.SecurityGroupID) == 0 {
-		nodePoolList := &hyperv1.NodePoolList{}
-		if err := client.List(ctx, nodePoolList, &crclient.ListOptions{Namespace: hcluster.Namespace}); err != nil {
-			return fmt.Errorf("security group ID was not specified and cannot be determined from default nodepool: %v", err)
-		}
-		var defaultNodePool *hyperv1.NodePool
-		for i, nodePool := range nodePoolList.Items {
-			if nodePool.Spec.ClusterName == hcluster.Name {
-				defaultNodePool = &nodePoolList.Items[i]
-				break
-			}
-		}
-		if defaultNodePool == nil {
-			return fmt.Errorf("--securitygroup-id flag is required when there are no existing nodepools")
-		}
-		if defaultNodePool.Spec.Platform.AWS == nil || len(defaultNodePool.Spec.Platform.AWS.SecurityGroups) == 0 ||
-			defaultNodePool.Spec.Platform.AWS.SecurityGroups[0].ID == nil {
-			return fmt.Errorf("security group ID was not specified and cannot be determined from default nodepool")
-		}
-		o.SecurityGroupID = *defaultNodePool.Spec.Platform.AWS.SecurityGroups[0].ID
-	}
 
 	var instanceType string
 	if o.InstanceType != "" {
@@ -97,13 +76,8 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 	nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 		InstanceType:    instanceType,
 		InstanceProfile: o.InstanceProfile,
-		Subnet: &hyperv1.AWSResourceReference{
+		Subnet: hyperv1.AWSResourceReference{
 			ID: &o.SubnetID,
-		},
-		SecurityGroups: []hyperv1.AWSResourceReference{
-			{
-				ID: &o.SecurityGroupID,
-			},
 		},
 		RootVolume: &hyperv1.Volume{
 			Type:          o.RootVolumeType,
@@ -111,6 +85,11 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 			IOPS:          o.RootVolumeIOPS,
 			EncryptionKey: o.RootVolumeEncryptionKey,
 		},
+	}
+	if len(o.SecurityGroupID) > 0 {
+		nodePool.Spec.Platform.AWS.SecurityGroups = []hyperv1.AWSResourceReference{
+			{ID: &o.SecurityGroupID},
+		}
 	}
 	return nil
 }

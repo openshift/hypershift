@@ -5,8 +5,10 @@ go 1.21
 toolchain go1.21.6
 
 require (
-	gomodules.xyz/jsonpatch/v2 v2.4.0
+	github.com/google/go-cmp v0.6.0
+	github.com/mattbaird/jsonpatch v0.0.0-20240118010651-0ba75a80ca38
 	k8s.io/api v0.29.1
+	k8s.io/apimachinery v0.29.1
 )
 
 require (
@@ -20,7 +22,6 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/apimachinery v0.29.1 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect

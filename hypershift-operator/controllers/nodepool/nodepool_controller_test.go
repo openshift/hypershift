@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -177,7 +177,7 @@ func TestValidateAutoscaling(t *testing.T) {
 			name: "fails when both nodeCount and autoscaling are set",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
-					Replicas: k8sutilspointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: 1,
 						Max: 2,
@@ -1406,7 +1406,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Replicas: k8sutilspointer.Int32(5),
+					Replicas: ptr.To[int32](5),
 				},
 			},
 			machineDeployment: &capiv1.MachineDeployment{
@@ -1436,7 +1436,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 			},
 			expectReplicas: 3,
@@ -1481,7 +1481,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32(0),
+					Replicas: ptr.To[int32](0),
 				},
 			},
 			expectReplicas: 1,
@@ -1559,7 +1559,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 				},
 			},
 			expectReplicas: 2,
@@ -1585,7 +1585,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32(10),
+					Replicas: ptr.To[int32](10),
 				},
 			},
 			expectReplicas: 5,
@@ -1770,7 +1770,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 				AWS: &hyperv1.AWSNodePoolPlatform{
 					InstanceType:    "",
 					InstanceProfile: "",
-					Subnet:          nil,
+					Subnet:          hyperv1.AWSResourceReference{ID: ptr.To("subnet-xyz")},
 					AMI:             ami,
 					RootVolume: &hyperv1.Volume{
 						Size: 16,
@@ -1793,11 +1793,11 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 				Template: capiaws.AWSMachineTemplateResource{
 					Spec: capiaws.AWSMachineSpec{
 						AMI: capiaws.AMIReference{
-							ID: k8sutilspointer.String(ami),
+							ID: ptr.To(ami),
 						},
 						IAMInstanceProfile:   "test-worker-profile",
 						Subnet:               &capiaws.AWSResourceReference{},
-						UncompressedUserData: k8sutilspointer.Bool(true),
+						UncompressedUserData: ptr.To(true),
 					},
 				},
 			},
@@ -1816,11 +1816,13 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 			Template: capiaws.AWSMachineTemplateResource{
 				Spec: capiaws.AWSMachineSpec{
 					AMI: capiaws.AMIReference{
-						ID: k8sutilspointer.String(ami),
+						ID: ptr.To(ami),
 					},
-					IAMInstanceProfile:   "test-worker-profile",
-					Subnet:               &capiaws.AWSResourceReference{},
-					UncompressedUserData: k8sutilspointer.Bool(true),
+					IAMInstanceProfile: "test-worker-profile",
+					Subnet: &capiaws.AWSResourceReference{
+						ID: ptr.To("subnet-xyz"),
+					},
+					UncompressedUserData: ptr.To(true),
 					CloudInit: capiaws.CloudInit{
 						InsecureSkipSecretsManager: true,
 						SecureSecretsBackend:       "secrets-manager",
@@ -1830,7 +1832,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 					},
 					AdditionalSecurityGroups: []capiaws.AWSResourceReference{
 						{
-							ID: k8sutilspointer.String("default-sg"),
+							ID: ptr.To("default-sg"),
 						},
 					},
 					RootVolume: &capiaws.Volume{
@@ -2220,7 +2222,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 					Management: hyperv1.NodePoolManagement{
 						InPlace: &hyperv1.InPlaceUpgrade{},
 					},
-					Replicas: k8sutilspointer.Int32(4),
+					Replicas: ptr.To[int32](4),
 				},
 			},
 			expect: 1,
@@ -2234,7 +2236,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &intPointer1,
 						},
 					},
-					Replicas: k8sutilspointer.Int32(4),
+					Replicas: ptr.To[int32](4),
 				},
 			},
 			expect: 1,
@@ -2248,7 +2250,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &intPointer2,
 						},
 					},
-					Replicas: k8sutilspointer.Int32(4),
+					Replicas: ptr.To[int32](4),
 				},
 			},
 			expect: 2,
@@ -2262,7 +2264,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &strPointer75,
 						},
 					},
-					Replicas: k8sutilspointer.Int32(4),
+					Replicas: ptr.To[int32](4),
 				},
 			},
 			expect: 3,
@@ -2276,7 +2278,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &strPointer10,
 						},
 					},
-					Replicas: k8sutilspointer.Int32(4),
+					Replicas: ptr.To[int32](4),
 				},
 			},
 			expect: 1,

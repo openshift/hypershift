@@ -42,6 +42,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				"--namespace=$(MY_NAMESPACE)",
 				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
@@ -91,6 +92,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				"--namespace=$(MY_NAMESPACE)",
 				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
@@ -125,6 +127,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				"--namespace=$(MY_NAMESPACE)",
 				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
@@ -185,6 +188,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				"--namespace=$(MY_NAMESPACE)",
 				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.AWSPlatform)),
@@ -238,6 +242,66 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 						},
 					},
 				},
+			},
+		},
+		"specify dedicated request serving isolation parameter (true) result in appropriate arguments": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                               3,
+				PrivatePlatform:                        string(hyperv1.NonePlatform),
+				EnableDedicatedRequestServingIsolation: true,
+			},
+			expectedVolumeMounts: nil,
+			expectedVolumes:      nil,
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", true),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+			},
+		},
+		"specify dedicated request serving isolation parameter (false) result in appropriate arguments": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                               3,
+				PrivatePlatform:                        string(hyperv1.NonePlatform),
+				EnableDedicatedRequestServingIsolation: false,
+			},
+			expectedVolumeMounts: nil,
+			expectedVolumes:      nil,
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
 			},
 		},
 	}

@@ -54,7 +54,7 @@ func openShiftOAuthAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, auditConfig *corev1.ConfigMap, p *OAuthDeploymentParams) error {
+func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, auditConfig *corev1.ConfigMap, p *OAuthDeploymentParams, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth apiserver container
@@ -132,7 +132,7 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		applyOauthAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, p.AuditWebhookRef)
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	p.DeploymentConfig.ApplyTo(deployment)
 	return nil
 }
@@ -164,7 +164,7 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 			fmt.Sprintf("--etcd-cafile=%s", cpath(oauthVolumeEtcdClientCA().Name, certs.CASignerCertMapKey)),
 			fmt.Sprintf("--etcd-keyfile=%s", cpath(oauthVolumeEtcdClientCert().Name, pki.EtcdClientKeyKey)),
 			fmt.Sprintf("--etcd-certfile=%s", cpath(oauthVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey)),
-			"--shutdown-delay-duration=3s",
+			"--shutdown-delay-duration=15s",
 			fmt.Sprintf("--tls-private-key-file=%s", cpath(oauthVolumeServingCert().Name, corev1.TLSPrivateKeyKey)),
 			fmt.Sprintf("--tls-cert-file=%s", cpath(oauthVolumeServingCert().Name, corev1.TLSCertKey)),
 			fmt.Sprintf("--audit-policy-file=%s", cpath(oauthVolumeAuditConfig().Name, auditPolicyConfigMapKey)),
@@ -308,13 +308,7 @@ func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisrup
 
 	p.OwnerRef.ApplyTo(pdb)
 
-	var minAvailable int
-	switch p.Availability {
-	case hyperv1.SingleReplica:
-		minAvailable = 0
-	case hyperv1.HighlyAvailable:
-		minAvailable = 1
-	}
+	minAvailable := 1
 	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
 
 	return nil

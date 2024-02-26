@@ -185,11 +185,8 @@ func (c *HostedClusterConfigOperatorConfig) Fatal(err error, msg string) {
 }
 
 func (c *HostedClusterConfigOperatorConfig) Start(ctx context.Context) error {
-	for _, controllerName := range c.Controllers {
-		setupFunc, ok := c.ControllerFuncs[controllerName]
-		if !ok {
-			return fmt.Errorf("unknown controller specified: %s", controllerName)
-		}
+	for controllerName, setupFunc := range c.ControllerFuncs {
+		c.Logger.Info("setting up controller", "controller", controllerName)
 		if err := setupFunc(c); err != nil {
 			return fmt.Errorf("cannot setup controller %s: %v", controllerName, err)
 		}

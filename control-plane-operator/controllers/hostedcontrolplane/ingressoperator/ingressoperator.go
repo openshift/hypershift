@@ -96,7 +96,21 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	return p
 }
 
-func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
+func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
+	ingressOpResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("80Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(ingressOperatorContainerName, dep.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			ingressOpResources = mainContainer.Resources
+		}
+	}
+
 	dep.Spec.Replicas = utilpointer.Int32(1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
@@ -147,13 +161,10 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
 				Value: manifests.KubeAPIServerService("").Name,
 			},
 		},
-		Name:            ingressOperatorContainerName,
-		Image:           params.IngressOperatorImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("80Mi"),
-		}},
+		Name:                     ingressOperatorContainerName,
+		Image:                    params.IngressOperatorImage,
+		ImagePullPolicy:          corev1.PullIfNotPresent,
+		Resources:                ingressOpResources,
 		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "ingress-operator-kubeconfig", MountPath: "/etc/kubernetes"},
@@ -203,7 +214,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
 	}
 
 	util.AvailabilityProber(
-		kas.InClusterKASReadyURL(),
+		kas.InClusterKASReadyURL(platformType),
 		params.AvailabilityProberImage,
 		&dep.Spec.Template.Spec,
 		func(o *util.AvailabilityProberOpts) {

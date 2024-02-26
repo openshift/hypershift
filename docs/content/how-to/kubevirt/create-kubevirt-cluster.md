@@ -159,6 +159,38 @@ NAME      VERSION       AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.14.0        True        False         5m39s   Cluster version is 4.14.0
 ```
 
+## Influencing VM Scheduling
+
+By default, KubeVirt VMs created by a NodePool are scheduled to any available
+node with the appropriate capacity to run the VM. There are affinity rules
+that attempt to spread VMs for a NodePool out across multiple underlying
+nodes, but in general it is possible for the VMs to be scheduled to any node
+that meets the requirements for running KubeVirt VMs.
+
+It is possible to influence where the KubeVirt VMs within a NodePool are
+scheduled through the use of NodeSelectors. Below is an example of using a
+NodeSelector on the VMs to place the VMs only on nodes with a specific label
+through usage of the hcp command line and the --vm-node-selector argument.
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+
+hcp create cluster kubevirt \
+--name $CLUSTER_NAME \
+--node-pool-replicas $WORKER_COUNT \
+--pull-secret $PULL_SECRET \
+--memory $MEM \
+--cores $CPU \
+--vm-node-selector labelKey1=labelVal1,labeKey2=labelVal2
+```
+
+In the example above, the KubeVirt VMs will only be scheduled to nodes that
+ contain the labels labelKey1=labelVal1 and labelKey2=labelVal2.
+
 ## Scaling an existing NodePool
 
 Manually scale a NodePool using the `oc scale` command:

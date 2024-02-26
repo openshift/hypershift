@@ -41,6 +41,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroup, "network-security-group", opts.AzurePlatform.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network created for HostedCluster.")
 	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
+	cmd.Flags().StringToStringVarP(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", "t", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -87,7 +88,11 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
 
-		infraID := infraid.New(opts.Name)
+		infraID := opts.InfraID
+		if len(infraID) == 0 {
+			infraID = infraid.New(opts.Name)
+		}
+
 		infra, err = (&azureinfra.CreateInfraOptions{
 			Name:                 opts.Name,
 			Location:             opts.AzurePlatform.Location,
@@ -97,6 +102,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			RHCOSImage:           rhcosImage,
 			ResourceGroupName:    opts.AzurePlatform.ResourceGroupName,
 			NetworkSecurityGroup: opts.AzurePlatform.NetworkSecurityGroup,
+			ResourceGroupTags:    opts.AzurePlatform.ResourceGroupTags,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)

@@ -72,6 +72,26 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 		releaseImage = hcluster.Spec.Release.Image
 	}
 
+	// Set default upgrade type when the flag is empty
+	if o.NodeUpgradeType == "" {
+		switch hcluster.Spec.Platform.Type {
+		case hyperv1.AWSPlatform:
+			o.NodeUpgradeType = hyperv1.UpgradeTypeReplace
+		case hyperv1.KubevirtPlatform:
+			o.NodeUpgradeType = hyperv1.UpgradeTypeReplace
+		case hyperv1.NonePlatform:
+			o.NodeUpgradeType = hyperv1.UpgradeTypeInPlace
+		case hyperv1.AgentPlatform:
+			o.NodeUpgradeType = hyperv1.UpgradeTypeInPlace
+		case hyperv1.AzurePlatform:
+			o.NodeUpgradeType = hyperv1.UpgradeTypeReplace
+		case hyperv1.PowerVSPlatform:
+			o.NodeUpgradeType = hyperv1.UpgradeTypeReplace
+		default:
+			panic("Unsupported platform")
+		}
+	}
+
 	nodePool = &hyperv1.NodePool{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "NodePool",

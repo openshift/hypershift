@@ -1262,7 +1262,6 @@ AWSResourceReference
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>Subnet is the subnet to use for node instances.</p>
 </td>
 </tr>
@@ -4559,6 +4558,17 @@ PlatformStatus
 <td>
 <em>(Optional)</em>
 <p>Platform contains platform-specific status of the HostedCluster</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeCount</code></br>
+<em>
+int
+</em>
+</td>
+<td>
+<p>NodeCount tracks the number of nodes in the HostedControlPlane.</p>
 </td>
 </tr>
 </tbody>

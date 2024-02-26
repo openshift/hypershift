@@ -528,6 +528,20 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 		selectorLabels = deployment.Spec.Selector.MatchLabels
 	}
 
+	ignitionServerResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("40Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(ignitionserver.ResourceName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			ignitionServerResources = mainContainer.Resources
+		}
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selectorLabels,
@@ -665,12 +679,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 								ContainerPort: 8080,
 							},
 						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("40Mi"),
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-							},
-						},
+						Resources: ignitionServerResources,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "serving-cert",

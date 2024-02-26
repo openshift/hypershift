@@ -23,16 +23,15 @@ func awsClusterCloudProviderTagKey(id string) string {
 func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool) (*capiaws.AWSMachineTemplateSpec, error) {
 
 	subnet := &capiaws.AWSResourceReference{}
-	if nodePool.Spec.Platform.AWS.Subnet != nil {
-		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
-		for k := range nodePool.Spec.Platform.AWS.Subnet.Filters {
-			filter := capiaws.Filter{
-				Name:   nodePool.Spec.Platform.AWS.Subnet.Filters[k].Name,
-				Values: nodePool.Spec.Platform.AWS.Subnet.Filters[k].Values,
-			}
-			subnet.Filters = append(subnet.Filters, filter)
+	subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
+	for k := range nodePool.Spec.Platform.AWS.Subnet.Filters {
+		filter := capiaws.Filter{
+			Name:   nodePool.Spec.Platform.AWS.Subnet.Filters[k].Name,
+			Values: nodePool.Spec.Platform.AWS.Subnet.Filters[k].Values,
 		}
+		subnet.Filters = append(subnet.Filters, filter)
 	}
+
 	rootVolume := &capiaws.Volume{
 		Size: EC2VolumeDefaultSize,
 	}

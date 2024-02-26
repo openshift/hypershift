@@ -757,10 +757,11 @@ type AWSNodePoolPlatform struct {
 	// InstanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.
 	InstanceProfile string `json:"instanceProfile,omitempty"`
 
-	// Subnet is the subnet to use for node instances.
+	// +kubebuilder:validation:XValidation:rule="has(self.id) && self.id.startsWith('subnet-') ? !has(self.filters) : size(self.filters) > 0", message="subnet is invalid, a valid subnet id or filters must be set, but not both"
+	// +kubebuilder:validation:Required
 	//
-	// +optional
-	Subnet *AWSResourceReference `json:"subnet,omitempty"`
+	// Subnet is the subnet to use for node instances.
+	Subnet AWSResourceReference `json:"subnet"`
 
 	// AMI is the image id to use for node instances. If unspecified, the default
 	// is chosen based on the NodePool release payload image.
