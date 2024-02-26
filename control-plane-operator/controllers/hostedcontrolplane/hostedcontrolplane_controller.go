@@ -314,10 +314,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 		}
 		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
-			if code, err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+			if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
 				condition.Message = "failed to delete AWS default security group"
 				if code == "DependencyViolation" {
-					condition.Message = err.Error()
+					condition.Message = destroyErr.Error()
 				}
 				condition.Reason = hyperv1.AWSErrorReason
 				condition.Status = metav1.ConditionFalse
@@ -328,12 +328,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				}
 
 				if code == "UnauthorizedOperation" {
-					r.Log.Info("Skipping AWS default security group deletion because the operator is not authorized to delete it.")
+					r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
 				}
 				if code == "DependencyViolation" {
-					r.Log.Info("Skipping AWS default security group deletion because of dependency violation.")
+					r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
 				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", err)
+					return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
 				}
 			} else {
 				condition.Message = hyperv1.AllIsWellMessage
