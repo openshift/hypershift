@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -21,12 +22,17 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
 	// DebugDeploymentsAnnotation contains a comma separated list of deployment names which should always be scaled to 0
 	// for development.
-	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
+	DebugDeploymentsAnnotation               = "hypershift.openshift.io/debug-deployments"
+	EnableHostedClustersAnnotationScopingEnv = "ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING"
+	HostedClustersScopeAnnotationEnv         = "HOSTEDCLUSTERS_SCOPE_ANNOTATION"
+	HostedClustersScopeAnnotation            = "hypershift.openshift.io/scope"
+	HostedClusterAnnotation                  = "hypershift.openshift.io/cluster"
 )
 
 // ParseNamespacedName expects a string with the format "namespace/name"
@@ -320,4 +326,70 @@ func ParseNodeSelector(str string) map[string]string {
 		result[kv[0]] = kv[1]
 	}
 	return result
+}
+
+// PredicatesForHostedClusterAnnotationScoping returns predicate filters for all event types that will ignore incoming
+// event requests for hostedcluster resources that do not match the "scope" annotation
+// specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the default behavior is to accept all events for hostedclusters that do not have the annotation.
+// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
+func PredicatesForHostedClusterAnnotationScoping() predicate.Predicate {
+	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
+	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
+	filter := func(obj client.Object) bool {
+		if hcAnnotationScopingEnabledEnvVal != "true" {
+			return true
+		}
+		hostedClusterScopeAnnotation := ""
+		if obj.GetAnnotations() != nil {
+			hostedClusterScopeAnnotation = obj.GetAnnotations()[HostedClustersScopeAnnotation]
+		}
+		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
+			return true
+		}
+		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
+			return false // ignore event; the hostedcluster has a scope annotation that does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
+		}
+		return true
+	}
+	return predicate.NewPredicateFuncs(filter)
+}
+
+// PredicatesForHostedClusterChildResourcesAnnotationScoping returns predicate filters for all event types that will ignore incoming
+// event requests for resources in which the parent hostedcluster does not
+// match the "scope" annotation specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the
+// default behavior is to accept all events for hostedclusters that do not have the annotation.
+// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
+func PredicatesForHostedClusterChildResourcesAnnotationScoping(r client.Reader) predicate.Predicate {
+	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
+	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
+	filter := func(obj client.Object) bool {
+		if hcAnnotationScopingEnabledEnvVal != "true" {
+			return true
+		}
+		hostedClusterName := ""
+		if obj.GetAnnotations() != nil {
+			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
+		}
+		if hostedClusterName == "" {
+			return false // ignore event; unable to find associated hostedcluster annotation
+		}
+		namespacedName := ParseNamespacedName(hostedClusterName)
+		hcluster := &hyperv1.HostedCluster{}
+		err := r.Get(context.Background(), namespacedName, hcluster)
+		if err != nil {
+			return true
+		}
+		hostedClusterScopeAnnotation := ""
+		if hcluster.GetAnnotations() != nil {
+			hostedClusterScopeAnnotation = hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
+		}
+		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
+			return true
+		}
+		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
+			return false // ignore event; the parent hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
+		}
+		return true
+	}
+	return predicate.NewPredicateFuncs(filter)
 }
