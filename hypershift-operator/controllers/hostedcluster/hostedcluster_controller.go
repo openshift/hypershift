@@ -2887,6 +2887,19 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"update",
 			},
 		},
+		{
+			APIGroups: []string{
+				"snapshot.storage.k8s.io",
+			},
+			Resources: []string{
+				"volumesnapshots",
+			},
+			Verbs: []string{
+				"get",
+				"create",
+				"delete",
+			},
+		},
 	}
 	if enableCVOManagementClusterMetricsAccess {
 		role.Rules = append(role.Rules,

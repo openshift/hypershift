@@ -20,6 +20,7 @@ package v1beta1
 // KubevirtStorageClassMappingApplyConfiguration represents an declarative configuration of the KubevirtStorageClassMapping type for use
 // with apply.
 type KubevirtStorageClassMappingApplyConfiguration struct {
+	Group                 *string `json:"group,omitempty"`
 	InfraStorageClassName *string `json:"infraStorageClassName,omitempty"`
 	GuestStorageClassName *string `json:"guestStorageClassName,omitempty"`
 }
@@ -28,6 +29,14 @@ type KubevirtStorageClassMappingApplyConfiguration struct {
 // apply.
 func KubevirtStorageClassMapping() *KubevirtStorageClassMappingApplyConfiguration {
 	return &KubevirtStorageClassMappingApplyConfiguration{}
+}
+
+// WithGroup sets the Group field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Group field is set to the value of the last call.
+func (b *KubevirtStorageClassMappingApplyConfiguration) WithGroup(value string) *KubevirtStorageClassMappingApplyConfiguration {
+	b.Group = &value
+	return b
 }
 
 // WithInfraStorageClassName sets the InfraStorageClassName field in the declarative configuration to the given value

@@ -5352,6 +5352,19 @@ Guest Cluster.</p>
 storageclass will be present for the corresponding guest clusters storageclass.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>volumeSnapshotClassMapping</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtVolumeSnapshotClassMapping">
+[]KubevirtVolumeSnapshotClassMapping
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtNetwork { #hypershift.openshift.io/v1beta1.KubevirtNetwork }
@@ -5780,6 +5793,17 @@ KubevirtCachingStrategy
 <tbody>
 <tr>
 <td>
+<code>group</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Group contains which group this mapping belongs to.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infraStorageClassName</code></br>
 <em>
 string
@@ -5787,7 +5811,7 @@ string
 </td>
 <td>
 <p>InfraStorageClassName is the name of the infra cluster storage class that
-will be exposed into the guest.</p>
+will be exposed to the guest.</p>
 </td>
 </tr>
 <tr>
@@ -5922,6 +5946,58 @@ KubevirtPersistentVolume
 <p>Persistent volume type means the VM&rsquo;s storage is backed by a PVC
 VMs that use persistent volumes can survive disruption events like restart and eviction
 This is the default type used when no storage type is defined.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtVolumeSnapshotClassMapping { #hypershift.openshift.io/v1beta1.KubevirtVolumeSnapshotClassMapping }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig">KubevirtManualStorageDriverConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>group</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Group contains which group this mapping belongs to.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraVolumeSnapshotClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InfraStorageClassName is the name of the infra cluster volume snapshot class that
+will be exposed to the guest.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVolumeSnapshotClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+be called within the guest cluster</p>
 </td>
 </tr>
 </tbody>

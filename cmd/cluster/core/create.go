@@ -147,24 +147,25 @@ type NonePlatformCreateOptions struct {
 }
 
 type KubevirtPlatformCreateOptions struct {
-	ServicePublishingStrategy  string
-	APIServerAddress           string
-	Memory                     string
-	Cores                      uint32
-	ContainerDiskImage         string
-	RootVolumeSize             uint32
-	RootVolumeStorageClass     string
-	RootVolumeAccessModes      string
-	RootVolumeVolumeMode       string
-	InfraKubeConfigFile        string
-	InfraNamespace             string
-	CacheStrategyType          string
-	InfraStorageClassMappings  []string
-	NetworkInterfaceMultiQueue string
-	QoSClass                   string
-	AdditionalNetworks         []string
-	AttachDefaultNetwork       *bool
-	VmNodeSelector             map[string]string
+	ServicePublishingStrategy        string
+	APIServerAddress                 string
+	Memory                           string
+	Cores                            uint32
+	ContainerDiskImage               string
+	RootVolumeSize                   uint32
+	RootVolumeStorageClass           string
+	RootVolumeAccessModes            string
+	RootVolumeVolumeMode             string
+	InfraKubeConfigFile              string
+	InfraNamespace                   string
+	CacheStrategyType                string
+	InfraStorageClassMappings        []string
+	InfraVolumeSnapshotClassMappings []string
+	NetworkInterfaceMultiQueue       string
+	QoSClass                         string
+	AdditionalNetworks               []string
+	AttachDefaultNetwork             *bool
+	VmNodeSelector                   map[string]string
 }
 
 type AWSPlatformOptions struct {

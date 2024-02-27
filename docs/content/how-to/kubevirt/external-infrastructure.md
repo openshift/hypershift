@@ -63,6 +63,10 @@ The user or service account used in the provided kubeconfig should have full per
 * `endpointslices`
 * `endpointslices/restricted`
 * `routes`
+The user or service account used in the provided kubeconfig should also have get/create/delete permissions over the following resources:
+* `volumesnapshots`
+As well as get permission for:
+* `persistentvolumeclaims`
 
 All of these permissions are needed only on the target namespace on the infra cluster (passed through the `--infra-namespace` command-line argument).
 This can be achieved by binding the following Role to the user used in the external infra kubeconfig:
@@ -113,4 +117,18 @@ rules:
       - secrets
     verbs:
       - '*'
+  - apiGroups:
+    - snapshot.storage.k8s.io
+    resources:
+    - volumesnapshots
+    verbs:
+    - get
+    - create
+    - delete
+  - apiGroups:
+    - ''
+    resources:
+    - persistentvolumeclaims
+    verbs:
+    - get
 ```
