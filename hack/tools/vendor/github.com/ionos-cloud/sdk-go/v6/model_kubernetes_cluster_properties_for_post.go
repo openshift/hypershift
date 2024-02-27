@@ -19,10 +19,18 @@ type KubernetesClusterPropertiesForPost struct {
 	// Access to the K8s API server is restricted to these CIDRs. Intra-cluster traffic is not affected by this restriction. If no AllowList is specified, access is not limited. If an IP is specified without a subnet mask, the default value is 32 for IPv4 and 128 for IPv6.
 	ApiSubnetAllowList *[]string `json:"apiSubnetAllowList,omitempty"`
 	// The Kubernetes version that the cluster is running. This limits which Kubernetes versions can run in a cluster's node pools. Also, not all Kubernetes versions are suitable upgrade targets for all earlier versions.
-	K8sVersion        *string                      `json:"k8sVersion,omitempty"`
+	K8sVersion *string `json:"k8sVersion,omitempty"`
+	// This attribute is mandatory if the cluster is private. The location must be enabled for your contract, or you must have a data center at that location. This property is not adjustable.
+	Location          *string                      `json:"location,omitempty"`
 	MaintenanceWindow *KubernetesMaintenanceWindow `json:"maintenanceWindow,omitempty"`
 	// A Kubernetes cluster name. Valid Kubernetes cluster name must be 63 characters or less and must be empty or begin and end with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between.
 	Name *string `json:"name"`
+	// The nat gateway IP of the cluster if the cluster is private. This property is immutable. Must be a reserved IP in the same location as the cluster's location. This attribute is mandatory if the cluster is private.
+	NatGatewayIp *string `json:"natGatewayIp,omitempty"`
+	// The node subnet of the cluster, if the cluster is private. This property is optional and immutable. Must be a valid CIDR notation for an IPv4 network prefix of 16 bits length.
+	NodeSubnet *string `json:"nodeSubnet,omitempty"`
+	// The indicator whether the cluster is public or private. Note that the status FALSE is still in the beta phase.
+	Public *bool `json:"public,omitempty"`
 	// List of S3 buckets configured for K8s usage. At the moment, it contains only one S3 bucket that is used to store K8s API audit logs.
 	S3Buckets *[]S3Bucket `json:"s3Buckets,omitempty"`
 }
@@ -35,6 +43,8 @@ func NewKubernetesClusterPropertiesForPost(name string) *KubernetesClusterProper
 	this := KubernetesClusterPropertiesForPost{}
 
 	this.Name = &name
+	var public bool = true
+	this.Public = &public
 
 	return &this
 }
@@ -44,6 +54,8 @@ func NewKubernetesClusterPropertiesForPost(name string) *KubernetesClusterProper
 // but it doesn't guarantee that properties required by API are set
 func NewKubernetesClusterPropertiesForPostWithDefaults() *KubernetesClusterPropertiesForPost {
 	this := KubernetesClusterPropertiesForPost{}
+	var public bool = true
+	this.Public = &public
 	return &this
 }
 
@@ -117,6 +129,44 @@ func (o *KubernetesClusterPropertiesForPost) SetK8sVersion(v string) {
 // HasK8sVersion returns a boolean if a field has been set.
 func (o *KubernetesClusterPropertiesForPost) HasK8sVersion() bool {
 	if o != nil && o.K8sVersion != nil {
+		return true
+	}
+
+	return false
+}
+
+// GetLocation returns the Location field value
+// If the value is explicit nil, nil is returned
+func (o *KubernetesClusterPropertiesForPost) GetLocation() *string {
+	if o == nil {
+		return nil
+	}
+
+	return o.Location
+
+}
+
+// GetLocationOk returns a tuple with the Location field value
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KubernetesClusterPropertiesForPost) GetLocationOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+
+	return o.Location, true
+}
+
+// SetLocation sets field value
+func (o *KubernetesClusterPropertiesForPost) SetLocation(v string) {
+
+	o.Location = &v
+
+}
+
+// HasLocation returns a boolean if a field has been set.
+func (o *KubernetesClusterPropertiesForPost) HasLocation() bool {
+	if o != nil && o.Location != nil {
 		return true
 	}
 
@@ -199,6 +249,120 @@ func (o *KubernetesClusterPropertiesForPost) HasName() bool {
 	return false
 }
 
+// GetNatGatewayIp returns the NatGatewayIp field value
+// If the value is explicit nil, nil is returned
+func (o *KubernetesClusterPropertiesForPost) GetNatGatewayIp() *string {
+	if o == nil {
+		return nil
+	}
+
+	return o.NatGatewayIp
+
+}
+
+// GetNatGatewayIpOk returns a tuple with the NatGatewayIp field value
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KubernetesClusterPropertiesForPost) GetNatGatewayIpOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+
+	return o.NatGatewayIp, true
+}
+
+// SetNatGatewayIp sets field value
+func (o *KubernetesClusterPropertiesForPost) SetNatGatewayIp(v string) {
+
+	o.NatGatewayIp = &v
+
+}
+
+// HasNatGatewayIp returns a boolean if a field has been set.
+func (o *KubernetesClusterPropertiesForPost) HasNatGatewayIp() bool {
+	if o != nil && o.NatGatewayIp != nil {
+		return true
+	}
+
+	return false
+}
+
+// GetNodeSubnet returns the NodeSubnet field value
+// If the value is explicit nil, nil is returned
+func (o *KubernetesClusterPropertiesForPost) GetNodeSubnet() *string {
+	if o == nil {
+		return nil
+	}
+
+	return o.NodeSubnet
+
+}
+
+// GetNodeSubnetOk returns a tuple with the NodeSubnet field value
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KubernetesClusterPropertiesForPost) GetNodeSubnetOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+
+	return o.NodeSubnet, true
+}
+
+// SetNodeSubnet sets field value
+func (o *KubernetesClusterPropertiesForPost) SetNodeSubnet(v string) {
+
+	o.NodeSubnet = &v
+
+}
+
+// HasNodeSubnet returns a boolean if a field has been set.
+func (o *KubernetesClusterPropertiesForPost) HasNodeSubnet() bool {
+	if o != nil && o.NodeSubnet != nil {
+		return true
+	}
+
+	return false
+}
+
+// GetPublic returns the Public field value
+// If the value is explicit nil, nil is returned
+func (o *KubernetesClusterPropertiesForPost) GetPublic() *bool {
+	if o == nil {
+		return nil
+	}
+
+	return o.Public
+
+}
+
+// GetPublicOk returns a tuple with the Public field value
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KubernetesClusterPropertiesForPost) GetPublicOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+
+	return o.Public, true
+}
+
+// SetPublic sets field value
+func (o *KubernetesClusterPropertiesForPost) SetPublic(v bool) {
+
+	o.Public = &v
+
+}
+
+// HasPublic returns a boolean if a field has been set.
+func (o *KubernetesClusterPropertiesForPost) HasPublic() bool {
+	if o != nil && o.Public != nil {
+		return true
+	}
+
+	return false
+}
+
 // GetS3Buckets returns the S3Buckets field value
 // If the value is explicit nil, nil is returned
 func (o *KubernetesClusterPropertiesForPost) GetS3Buckets() *[]S3Bucket {
@@ -247,12 +411,28 @@ func (o KubernetesClusterPropertiesForPost) MarshalJSON() ([]byte, error) {
 		toSerialize["k8sVersion"] = o.K8sVersion
 	}
 
+	if o.Location != nil {
+		toSerialize["location"] = o.Location
+	}
+
 	if o.MaintenanceWindow != nil {
 		toSerialize["maintenanceWindow"] = o.MaintenanceWindow
 	}
 
 	if o.Name != nil {
 		toSerialize["name"] = o.Name
+	}
+
+	if o.NatGatewayIp != nil {
+		toSerialize["natGatewayIp"] = o.NatGatewayIp
+	}
+
+	if o.NodeSubnet != nil {
+		toSerialize["nodeSubnet"] = o.NodeSubnet
+	}
+
+	if o.Public != nil {
+		toSerialize["public"] = o.Public
 	}
 
 	if o.S3Buckets != nil {

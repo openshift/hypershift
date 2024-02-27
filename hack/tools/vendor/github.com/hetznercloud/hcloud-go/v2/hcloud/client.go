@@ -65,7 +65,7 @@ type Client struct {
 	applicationVersion      string
 	userAgent               string
 	debugWriter             io.Writer
-	instrumentationRegistry *prometheus.Registry
+	instrumentationRegistry prometheus.Registerer
 
 	Action           ActionClient
 	Certificate      CertificateClient
@@ -163,7 +163,7 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 }
 
 // WithInstrumentation configures a Client to collect metrics about the performed HTTP requests.
-func WithInstrumentation(registry *prometheus.Registry) ClientOption {
+func WithInstrumentation(registry prometheus.Registerer) ClientOption {
 	return func(client *Client) {
 		client.instrumentationRegistry = registry
 	}
@@ -286,8 +286,8 @@ func (c *Client) Do(r *http.Request, v interface{}) (*Response, error) {
 			return response, fmt.Errorf("hcloud: error reading response meta data: %s", err)
 		}
 
-		if resp.StatusCode >= 400 && resp.StatusCode <= 599 {
-			err = errorFromResponse(resp, body)
+		if response.StatusCode >= 400 && response.StatusCode <= 599 {
+			err = errorFromResponse(response, body)
 			if err == nil {
 				err = fmt.Errorf("hcloud: server responded with status code %d", resp.StatusCode)
 			} else if IsError(err, ErrorCodeConflict) {
@@ -359,7 +359,7 @@ func dumpRequest(r *http.Request) ([]byte, error) {
 	return dumpReq, nil
 }
 
-func errorFromResponse(resp *http.Response, body []byte) error {
+func errorFromResponse(resp *Response, body []byte) error {
 	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
 		return nil
 	}
@@ -371,7 +371,10 @@ func errorFromResponse(resp *http.Response, body []byte) error {
 	if respBody.Error.Code == "" && respBody.Error.Message == "" {
 		return nil
 	}
-	return ErrorFromSchema(respBody.Error)
+
+	hcErr := ErrorFromSchema(respBody.Error)
+	hcErr.response = resp
+	return hcErr
 }
 
 // Response represents a response from the API. It embeds http.Response.
