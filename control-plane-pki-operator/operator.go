@@ -108,9 +108,9 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 		controllerContext.EventRecorder,
 	)
 
-	secret := manifests.CustomerSystemAdminSigner(namespace)
-	currentCA, certLoadingController := certificatesigningcontroller.NewCertificateLoadingController(
-		secret.Namespace, secret.Name,
+	customerSystemAdminSigner := manifests.CustomerSystemAdminSigner(namespace)
+	currentCustomerCA, customerCertLoadingController := certificatesigningcontroller.NewCertificateLoadingController(
+		customerSystemAdminSigner.Namespace, customerSystemAdminSigner.Name,
 		kubeInformersForNamespaces,
 		controllerContext.EventRecorder,
 	)
@@ -118,16 +118,23 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 	customerBreakGlassCertSigningController := certificatesigningcontroller.NewCertificateSigningController(
 		hcp,
 		certificates.CustomerBreakGlassSigner,
-		currentCA,
+		currentCustomerCA,
 		kubeInformersForNamespaces,
 		kubeClient,
 		controllerContext.EventRecorder,
 		36*certRotationScale/24,
 	)
+
+	sreSystemAdminSigner := manifests.SRESystemAdminSigner(namespace)
+	currentSRECA, sreCertLoadingController := certificatesigningcontroller.NewCertificateLoadingController(
+		sreSystemAdminSigner.Namespace, sreSystemAdminSigner.Name,
+		kubeInformersForNamespaces,
+		controllerContext.EventRecorder,
+	)
 	sreBreakGlassCertSigningController := certificatesigningcontroller.NewCertificateSigningController(
 		hcp,
 		certificates.SREBreakGlassSigner,
-		currentCA,
+		currentSRECA,
 		kubeInformersForNamespaces,
 		kubeClient,
 		controllerContext.EventRecorder,
@@ -141,7 +148,8 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 	go certRotationController.Run(ctx, 1)
 	go customerCertSigningRequestApprovalController.Run(ctx, 1)
 	go sreCertSigningRequestApprovalController.Run(ctx, 1)
-	go certLoadingController.Run(ctx, 1)
+	go customerCertLoadingController.Run(ctx, 1)
+	go sreCertLoadingController.Run(ctx, 1)
 	go customerBreakGlassCertSigningController.Run(ctx, 1)
 	go sreBreakGlassCertSigningController.Run(ctx, 1)
 	go certRevocationController.Run(ctx, 1)

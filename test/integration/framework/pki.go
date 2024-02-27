@@ -21,7 +21,7 @@ import (
 //go:embed testdata
 var testdata embed.FS
 
-func CertKeyRequest(t *testing.T, signer certificates.SignerClass) ([]byte, []byte, []byte) {
+func CertKeyRequest(t *testing.T, signer certificates.SignerClass) ([]byte, []byte, []byte, []byte) {
 	if os.Getenv("REGENERATE_PKI") != "" {
 		t.Logf("$REGENERATE_PKI set, generating a new cert/key pair for signer %s", signer)
 		cfg, err := librarygocrypto.MakeSelfSignedCAConfigForDuration("test-signer", time.Hour*24*365*100)
@@ -55,7 +55,21 @@ func CertKeyRequest(t *testing.T, signer certificates.SignerClass) ([]byte, []by
 			t.Fatalf("failed to write re-generated certificate request: %v", err)
 		}
 
-		return certb, keyb, csrb
+		wrongCsr, err := x509.CreateCertificateRequest(rand.New(rand.NewSource(0)), &x509.CertificateRequest{
+			Subject: pkix.Name{
+				CommonName:   "invalid-name",
+				Organization: []string{"system:masters"},
+			},
+		}, cfg.Key)
+		if err != nil {
+			t.Fatalf("failed to create certificate request")
+		}
+		wrongCsrb := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: wrongCsr})
+		if err := os.WriteFile(filepath.Join("testdata", string(signer)+"-invalid-csr.pem"), wrongCsrb, 0666); err != nil {
+			t.Fatalf("failed to write re-generated certificate request: %v", err)
+		}
+
+		return certb, keyb, csrb, wrongCsrb
 	}
 
 	t.Logf("loading certificate/key pair from disk for signer %s, use $REGENERATE_PKI to generate new ones", signer)
@@ -73,7 +87,12 @@ func CertKeyRequest(t *testing.T, signer certificates.SignerClass) ([]byte, []by
 	if err != nil {
 		t.Fatalf("failed to read certificate request: %v", err)
 	}
-	return crtb, keyb, csrb
+
+	wrongCsrb, err := testdata.ReadFile(filepath.Join("testdata", string(signer)+"-invalid-csr.pem"))
+	if err != nil {
+		t.Fatalf("failed to read certificate request: %v", err)
+	}
+	return crtb, keyb, csrb, wrongCsrb
 }
 
 func CommonNameFor(signer certificates.SignerClass) string {
