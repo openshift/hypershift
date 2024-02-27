@@ -1,6 +1,7 @@
 package manifests
 
 import (
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -64,6 +65,22 @@ func KubevirtCSIDriverInfraRoleBinding(ns string) *rbacv1.RoleBinding {
 	}
 }
 
+func KubevirtCSIDriverInfraClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubevirt-csi",
+		},
+	}
+}
+
+func KubevirtCSIDriverInfraClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubevirt-csi",
+		},
+	}
+}
+
 func KubevirtCSIDriverTenantControllerSA(ns string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -118,6 +135,14 @@ func KubevirtCSIDriverDefaultTenantStorageClass() *storagev1.StorageClass {
 	return &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "kubevirt-csi-infra-default",
+		},
+	}
+}
+
+func KubevirtCSIDriverVolumeSnapshotClass() *snapshotv1.VolumeSnapshotClass {
+	return &snapshotv1.VolumeSnapshotClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubevirt-csi-snapshot",
 		},
 	}
 }

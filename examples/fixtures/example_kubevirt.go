@@ -7,28 +7,30 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 )
 
 type ExampleKubevirtOptions struct {
-	ServicePublishingStrategy  string
-	APIServerAddress           string
-	Memory                     string
-	Cores                      uint32
-	Image                      string
-	RootVolumeSize             uint32
-	RootVolumeStorageClass     string
-	RootVolumeAccessModes      string
-	RootVolumeVolumeMode       string
-	BaseDomainPassthrough      bool
-	InfraKubeConfig            []byte
-	InfraNamespace             string
-	CacheStrategyType          string
-	InfraStorageClassMappings  []string
-	NetworkInterfaceMultiQueue *hyperv1.MultiQueueSetting
-	QoSClass                   *hyperv1.QoSClass
-	AdditionalNetworks         []hyperv1.KubevirtNetwork
-	AttachDefaultNetwork       *bool
-	VmNodeSelector             map[string]string
+	ServicePublishingStrategy        string
+	APIServerAddress                 string
+	Memory                           string
+	Cores                            uint32
+	Image                            string
+	RootVolumeSize                   uint32
+	RootVolumeStorageClass           string
+	RootVolumeAccessModes            string
+	RootVolumeVolumeMode             string
+	BaseDomainPassthrough            bool
+	InfraKubeConfig                  []byte
+	InfraNamespace                   string
+	CacheStrategyType                string
+	InfraStorageClassMappings        []string
+	InfraVolumeSnapshotClassMappings []string
+	NetworkInterfaceMultiQueue       *hyperv1.MultiQueueSetting
+	QoSClass                         *hyperv1.QoSClass
+	AdditionalNetworks               []hyperv1.KubevirtNetwork
+	AttachDefaultNetwork             *bool
+	VmNodeSelector                   map[string]string
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
@@ -105,4 +107,33 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 	}
 
 	return exampleTemplate
+}
+
+func parseTenantClassString(optionString string) (string, map[hyperv1.KubeVirtMappingOption]string) {
+	options := make(map[hyperv1.KubeVirtMappingOption]string)
+	guestName := optionString
+	optionsSplit := strings.Split(optionString, ",")
+	if len(optionsSplit) > 1 {
+		guestName = optionsSplit[0]
+		for i := 1; i < len(optionsSplit); i++ {
+			optionSplit := strings.Split(optionsSplit[i], "=")
+			if len(optionSplit) != 2 {
+				panic(fmt.Sprintf("invalid KubeVirt infra storage class mapping option [%s]", optionsSplit[i]))
+			}
+			option := convertStringToKubeVirtMappingOption(optionSplit[0])
+			if option != nil {
+				options[*option] = optionSplit[1]
+			}
+		}
+	}
+	return guestName, options
+}
+
+func convertStringToKubeVirtMappingOption(input string) *hyperv1.KubeVirtMappingOption {
+	switch strings.TrimSpace(strings.ToLower(input)) {
+	case "group":
+		return ptr.To[hyperv1.KubeVirtMappingOption](hyperv1.StorageGrouping)
+	default:
+		return nil
+	}
 }

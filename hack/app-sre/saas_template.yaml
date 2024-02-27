@@ -261,6 +261,14 @@ objects:
     verbs:
     - '*'
   - apiGroups:
+    - snapshot.storage.k8s.io
+    resources:
+    - volumesnapshots
+    verbs:
+    - get
+    - create
+    - delete
+  - apiGroups:
     - extensions.hive.openshift.io
     resources:
     - agentclusterinstalls
@@ -40946,8 +40954,15 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the storage class mapping
+                                          such as which group it belongs to.
+                                        type: object
                                     required:
                                     - guestStorageClassName
                                     - infraStorageClassName
@@ -40955,6 +40970,34 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the volumesnapshot class
+                                          mapping such as which group it belongs to.
+                                        type: object
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:
@@ -45267,8 +45310,15 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the storage class mapping
+                                          such as which group it belongs to.
+                                        type: object
                                     required:
                                     - guestStorageClassName
                                     - infraStorageClassName
@@ -45276,6 +45326,34 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the volumesnapshot class
+                                          mapping such as which group it belongs to.
+                                        type: object
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:
@@ -49728,8 +49806,15 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the storage class mapping
+                                          such as which group it belongs to.
+                                        type: object
                                     required:
                                     - guestStorageClassName
                                     - infraStorageClassName
@@ -49737,6 +49822,34 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the volumesnapshot class
+                                          mapping such as which group it belongs to.
+                                        type: object
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:
@@ -54032,8 +54145,15 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the storage class mapping
+                                          such as which group it belongs to.
+                                        type: object
                                     required:
                                     - guestStorageClassName
                                     - infraStorageClassName
@@ -54041,6 +54161,34 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                      options:
+                                        additionalProperties:
+                                          type: string
+                                        description: Options contains options that
+                                          are related to the volumesnapshot class
+                                          mapping such as which group it belongs to.
+                                        type: object
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:

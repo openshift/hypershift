@@ -1063,6 +1063,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"agents"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
+			{ // This allows hypershift operator to grant RBAC permissions for kubevirt-csi to create/delete volumesnapshots.
+				APIGroups: []string{"snapshot.storage.k8s.io"},
+				Resources: []string{"volumesnapshots"},
+				Verbs:     []string{"get", "create", "delete"},
+			},
 			{
 				APIGroups: []string{"extensions.hive.openshift.io"},
 				Resources: []string{"agentclusterinstalls"},

@@ -17,17 +17,36 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // KubevirtStorageClassMappingApplyConfiguration represents an declarative configuration of the KubevirtStorageClassMapping type for use
 // with apply.
 type KubevirtStorageClassMappingApplyConfiguration struct {
-	InfraStorageClassName *string `json:"infraStorageClassName,omitempty"`
-	GuestStorageClassName *string `json:"guestStorageClassName,omitempty"`
+	Options               map[v1beta1.KubeVirtMappingOption]string `json:"options,omitempty"`
+	InfraStorageClassName *string                                  `json:"infraStorageClassName,omitempty"`
+	GuestStorageClassName *string                                  `json:"guestStorageClassName,omitempty"`
 }
 
 // KubevirtStorageClassMappingApplyConfiguration constructs an declarative configuration of the KubevirtStorageClassMapping type for use with
 // apply.
 func KubevirtStorageClassMapping() *KubevirtStorageClassMappingApplyConfiguration {
 	return &KubevirtStorageClassMappingApplyConfiguration{}
+}
+
+// WithOptions puts the entries into the Options field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the Options field,
+// overwriting an existing map entries in Options field with the same key.
+func (b *KubevirtStorageClassMappingApplyConfiguration) WithOptions(entries map[v1beta1.KubeVirtMappingOption]string) *KubevirtStorageClassMappingApplyConfiguration {
+	if b.Options == nil && len(entries) > 0 {
+		b.Options = make(map[v1beta1.KubeVirtMappingOption]string, len(entries))
+	}
+	for k, v := range entries {
+		b.Options[k] = v
+	}
+	return b
 }
 
 // WithInfraStorageClassName sets the InfraStorageClassName field in the declarative configuration to the given value

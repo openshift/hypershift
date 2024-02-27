@@ -154,6 +154,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.KubevirtStorageDriverSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtVolume"):
 		return &applyconfigurationhypershiftv1alpha1.KubevirtVolumeApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtVolumeSnapshotClassMapping"):
+		return &applyconfigurationhypershiftv1alpha1.KubevirtVolumeSnapshotClassMappingApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("LoadBalancerPublishingStrategy"):
 		return &applyconfigurationhypershiftv1alpha1.LoadBalancerPublishingStrategyApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):
@@ -334,6 +336,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.KubevirtStorageDriverSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubevirtVolume"):
 		return &hypershiftv1beta1.KubevirtVolumeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KubevirtVolumeSnapshotClassMapping"):
+		return &hypershiftv1beta1.KubevirtVolumeSnapshotClassMappingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("LoadBalancerPublishingStrategy"):
 		return &hypershiftv1beta1.LoadBalancerPublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):

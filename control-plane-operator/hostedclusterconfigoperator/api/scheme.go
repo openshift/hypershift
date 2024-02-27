@@ -1,6 +1,7 @@
 package api
 
 import (
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	oauthv1 "github.com/openshift/api/oauth/v1"
@@ -68,4 +69,5 @@ func init() {
 	prometheusoperatorv1.AddToScheme(Scheme)
 	imageregistryv1.AddToScheme(Scheme)
 	operatorsv1alpha1.AddToScheme(Scheme)
+	snapshotv1.AddToScheme(Scheme)
 }
