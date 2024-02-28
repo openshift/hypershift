@@ -13,6 +13,8 @@ import (
 
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -22,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	certificatesv1applyconfigurations "k8s.io/client-go/applyconfigurations/certificates/v1"
 	"k8s.io/client-go/kubernetes"
+	corev1Client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	controllerruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -66,7 +69,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 
 					validateCertificateAuth(t, ctx, guest.Cfg, testCase.clientCertificate.Data["tls.crt"], testCase.clientCertificate.Data["tls.key"], func(s string) bool {
 						return strings.HasPrefix(s, certificates.CommonNamePrefix(testCase.signer))
-					})
+					}, mgmt.KubeClient.CoreV1().Secrets(testCase.clientCertificate.Namespace))
 				})
 
 				t.Run("CSR flow", func(t *testing.T) {
@@ -94,7 +97,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 			_, sreKey, _, _ := framework.CertKeyRequest(t, certificates.SREBreakGlassSigner)
 			validateCertificateAuth(t, ctx, guest.Cfg, sreSignedCrt, sreKey, func(s string) bool {
 				return s == framework.CommonNameFor(certificates.SREBreakGlassSigner)
-			})
+			}, mgmt.KubeClient.CoreV1().Secrets(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)))
 		})
 	})
 }
@@ -120,13 +123,27 @@ func clientForCertKey(t *testing.T, root *rest.Config, crt, key []byte) *kuberne
 	return breakGlassTenantClient
 }
 
-func validateCertificateAuth(t *testing.T, ctx context.Context, root *rest.Config, crt, key []byte, usernameValid func(string) bool) {
+func validateCertificateAuth(t *testing.T, ctx context.Context, root *rest.Config, crt, key []byte, usernameValid func(string) bool, mgmtDebugClient corev1Client.SecretInterface) {
 	t.Log("validating that the client certificate provides the appropriate access")
 	breakGlassTenantClient := clientForCertKey(t, root, crt, key)
 
 	t.Log("issuing SSR to identify the subject we are given using the client certificate")
 	response, err := breakGlassTenantClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 	if err != nil {
+		if apierrors.IsUnauthorized(err) {
+			t.Logf("got an unauthorized error for SSR, debugging certificates")
+			t.Logf("client certificate: %s", string(crt))
+			caBundle, err := mgmtDebugClient.Get(ctx, cpomanifests.TotalClientCABundle("").Name, metav1.GetOptions{})
+			if err != nil {
+				t.Logf("failed to get total client CA bundle: %v", err)
+			}
+			t.Logf("server total certificate trust bundle: %s", string(caBundle.Data[certs.CASignerCertMapKey]))
+			caBundle, err = mgmtDebugClient.Get(ctx, pkimanifests.TotalKASClientCABundle("").Name, metav1.GetOptions{})
+			if err != nil {
+				t.Logf("failed to get KAS total client CA bundle: %v", err)
+			}
+			t.Logf("KAS certificate trust bundle: %s", string(caBundle.Data[certs.OCPCASignerCertMapKey]))
+		}
 		t.Fatalf("could not send SSR: %v", err)
 	}
 
@@ -268,7 +285,7 @@ func validateCSRFlow(t *testing.T, ctx context.Context, hostedCluster *hypershif
 
 	validateCertificateAuth(t, ctx, guest.Cfg, signedCrt, key, func(s string) bool {
 		return s == framework.CommonNameFor(signer)
-	})
+	}, mgmt.KubeClient.CoreV1().Secrets(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)))
 
 	return signedCrt
 }
