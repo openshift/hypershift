@@ -12,6 +12,10 @@ import (
 	hcpconfig "github.com/openshift/hypershift/support/config"
 )
 
+const (
+	AuthConfigMapKey = "auth.json"
+)
+
 func ReconcileAuthConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
 	ownerRef.ApplyTo(config)
 	if config.Data == nil {
