@@ -466,6 +466,10 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if strings.HasPrefix(pod.Name, "ingress-operator-") {
 				continue
 			}
+			// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
+			if strings.HasPrefix(pod.Name, "cloud-credential-operator-") {
+				continue
+			}
 			// Restart built into OLM by design by
 			// https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
 			if strings.HasPrefix(pod.Name, "olm-operator-") {
