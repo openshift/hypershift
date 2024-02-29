@@ -32,7 +32,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string, platformType hyperv1.PlatformType) error {
 	// preserve existing resource requirements for main CPC container
 	mainContainer := util.FindContainer(cpcContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
@@ -64,7 +64,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
 	deploymentConfig.ApplyTo(deployment)
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

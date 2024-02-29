@@ -199,7 +199,7 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		},
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
 		Scheduling: config.Scheduling{

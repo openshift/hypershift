@@ -94,8 +94,7 @@ func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *cor
 	if err := reconcileSignedCert(secret, csrSigner, config.OwnerRef{}, cn, serviceaccount.MakeGroupNames(serviceAccountNamespace), X509UsageClientAuth); err != nil {
 		return fmt.Errorf("failed to reconcile serviceaccount client cert: %w", err)
 	}
-	svcURL := inClusterKASURL()
-
+	svcURL := inClusterKASURL(hcp.Spec.Platform.Type)
 	return ReconcileKubeConfig(secret, secret, ca, svcURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
 }
 
@@ -153,7 +152,10 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 	return clientcmd.Write(kubeCfg)
 }
 
-func inClusterKASURL() string {
+func inClusterKASURL(platformType hyperv1.PlatformType) string {
+	if platformType == hyperv1.IBMCloudPlatform {
+		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
+	}
 	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
 }
 
