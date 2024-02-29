@@ -1,4 +1,4 @@
 build_root_image:
-  name: release
-  namespace: openshift
-  tag: rhel-9-release-golang-1.21-openshift-4.16
+  name: builder
+  namespace: ocp
+  tag: rhel-9-golang-1.21-ci-build-root-multi-openshift-4.16
