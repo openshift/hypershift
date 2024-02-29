@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strconv"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -122,6 +123,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	payloadVersion string,
 	featureGateSpec *configv1.FeatureGateSpec,
 	oidcCA *corev1.LocalObjectReference,
+	cipherSuites []string,
 ) error {
 
 	secretEncryptionData := hcp.Spec.SecretEncryption
@@ -208,7 +210,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
 				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS, hcp)),
-				util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(images.KonnectivityServer, deploymentConfig.Replicas)),
+				util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(images.KonnectivityServer, deploymentConfig.Replicas, cipherSuites)),
 				{
 					Name:            "audit-logs",
 					Image:           images.CLI,
@@ -918,7 +920,7 @@ func konnectivityServerContainer() *corev1.Container {
 	}
 }
 
-func buildKonnectivityServerContainer(image string, serverCount int) func(c *corev1.Container) {
+func buildKonnectivityServerContainer(image string, serverCount int, cipherSuites []string) func(c *corev1.Container) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(konnectivityServerContainer().Name, volume), file)
 	}
@@ -957,6 +959,11 @@ func buildKonnectivityServerContainer(image string, serverCount int) func(c *cor
 			"--server-count",
 			strconv.Itoa(serverCount),
 		}
+
+		if len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
+
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.Lifecycle = &corev1.Lifecycle{
 			PreStop: &corev1.LifecycleHandler{
