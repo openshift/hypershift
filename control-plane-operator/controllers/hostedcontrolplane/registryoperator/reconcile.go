@@ -271,6 +271,10 @@ func buildMainContainer(image, registryImage, prunerImage, releaseVersion string
 				Value: operatorName,
 			},
 			{
+				Name:  "OPERATOR_IMAGE",
+				Value: image,
+			},
+			{
 				Name:  "IMAGE",
 				Value: registryImage,
 			},
