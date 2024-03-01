@@ -214,14 +214,6 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 
-	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Name:      manifests.PullSecret(opts.Namespace).Name,
-		Namespace: opts.Namespace,
-	},
-	}), eventHandler()); err != nil {
-		return fmt.Errorf("failed to watch HCP pullsecret: %w", err)
-	}
-
 	return nil
 }
 
