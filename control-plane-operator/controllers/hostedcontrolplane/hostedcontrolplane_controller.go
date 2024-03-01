@@ -2408,12 +2408,9 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
 	}
 
-	authConfig := manifests.AuthConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, authConfig, func() error {
-		return kas.ReconcileAuthConfig(authConfig,
-			p.OwnerRef,
-			p.ConfigParams(),
-		)
+	kubeAPIServerAuthConfig := manifests.AuthConfig(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kubeAPIServerAuthConfig, func() error {
+		return kas.ReconcileAuthConfig(kubeAPIServerAuthConfig, p.OwnerRef, p.ConfigParams())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server authentication config: %w", err)
 	}
@@ -2426,7 +2423,9 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	}
 
 	userOauthMetadata := ""
-	if hcp.Spec.Configuration.Authentication != nil && len(hcp.Spec.Configuration.Authentication.OAuthMetadata.Name) > 0 {
+	if hcp.Spec.Configuration != nil &&
+		hcp.Spec.Configuration.Authentication != nil &&
+		len(hcp.Spec.Configuration.Authentication.OAuthMetadata.Name) > 0 {
 		var userOauthMetadataConfigMap corev1.ConfigMap
 		err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Configuration.Authentication.OAuthMetadata.Name}, &userOauthMetadataConfigMap)
 		if err != nil {
@@ -2587,6 +2586,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.Images,
 			kubeAPIServerConfig,
 			kubeAPIServerAuditConfig,
+			kubeAPIServerAuthConfig,
 			p.AuditWebhookRef,
 			aesCBCActiveKey,
 			aesCBCBackupKey,
