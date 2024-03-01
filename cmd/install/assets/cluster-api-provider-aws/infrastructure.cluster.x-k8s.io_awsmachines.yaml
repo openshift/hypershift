@@ -511,7 +511,7 @@ spec:
                 type: boolean
             type: object
         type: object
-    served: true
+    served: false
     storage: false
     subresources:
       status: {}
@@ -665,6 +665,30 @@ spec:
                 description: Ignition defined options related to the bootstrapping
                   systems where Ignition is used.
                 properties:
+                  storageType:
+                    default: ClusterObjectStore
+                    description: |-
+                      StorageType defines how to store the boostrap user data for Ignition.
+                      This can be used to instruct Ignition from where to fetch the user data to bootstrap an instance.
+
+
+                      When omitted, the storage option will default to ClusterObjectStore.
+
+
+                      When set to "ClusterObjectStore", if the capability is available and a Cluster ObjectStore configuration
+                      is correctly provided in the Cluster object (under .spec.s3Bucket),
+                      an object store will be used to store bootstrap user data.
+
+
+                      When set to "UnencryptedUserData", EC2 Instance User Data will be used to store the machine bootstrap user data, unencrypted.
+                      This option is considered less secure than others as user data may contain sensitive informations (keys, certificates, etc.)
+                      and users with ec2:DescribeInstances permission or users running pods
+                      that can access the ec2 metadata service have access to this sensitive information.
+                      So this is only to be used at ones own risk, and only when other more secure options are not viable.
+                    enum:
+                    - ClusterObjectStore
+                    - UnencryptedUserData
+                    type: string
                   version:
                     default: "2.3"
                     description: Version defines which version of Ignition will be
@@ -834,6 +858,25 @@ spec:
                 description: PlacementGroupName specifies the name of the placement
                   group in which to launch the instance.
                 type: string
+              privateDnsName:
+                description: PrivateDNSName is the options for the instance hostname.
+                properties:
+                  enableResourceNameDnsAAAARecord:
+                    description: EnableResourceNameDNSAAAARecord indicates whether
+                      to respond to DNS queries for instance hostnames with DNS AAAA
+                      records.
+                    type: boolean
+                  enableResourceNameDnsARecord:
+                    description: EnableResourceNameDNSARecord indicates whether to
+                      respond to DNS queries for instance hostnames with DNS A records.
+                    type: boolean
+                  hostnameType:
+                    description: The type of hostname to assign to an instance.
+                    enum:
+                    - ip-name
+                    - resource-name
+                    type: string
+                type: object
               providerID:
                 description: ProviderID is the unique identifier as specified by the
                   cloud provider.
@@ -885,6 +928,13 @@ spec:
                     type: string
                 required:
                 - size
+                type: object
+              securityGroupOverrides:
+                additionalProperties:
+                  type: string
+                description: |-
+                  SecurityGroupOverrides is an optional set of security groups to use for the node.
+                  This is optional - if not provided security groups from the cluster will be used.
                 type: object
               spotMarketOptions:
                 description: SpotMarketOptions allows users to configure instances
