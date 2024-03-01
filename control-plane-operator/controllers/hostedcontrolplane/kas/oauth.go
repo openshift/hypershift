@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 )
 
-func ReconcileOauthMetadata(cfg *corev1.ConfigMap, ownerRef config.OwnerRef, userOauthMetadata string, externalOAuthAddress string, externalOAuthPort int32) error {
+func ReconcileOauthMetadata(cfg *corev1.ConfigMap, ownerRef config.OwnerRef, userOauthMetadata string, oauthIssuerURL string) error {
 	ownerRef.ApplyTo(cfg)
 	if cfg.Data == nil {
 		cfg.Data = map[string]string{}
@@ -21,8 +21,7 @@ func ReconcileOauthMetadata(cfg *corev1.ConfigMap, ownerRef config.OwnerRef, use
 		cfg.Data[OauthMetadataConfigKey] = userOauthMetadata
 		return nil
 	}
-	oauthURL := fmt.Sprintf("https://%s:%d", externalOAuthAddress, externalOAuthPort)
-	cfg.Data[OauthMetadataConfigKey] = fmt.Sprintf(oauthMetadata, oauthURL)
+	cfg.Data[OauthMetadataConfigKey] = fmt.Sprintf(oauthMetadata, oauthIssuerURL)
 	return nil
 }
 

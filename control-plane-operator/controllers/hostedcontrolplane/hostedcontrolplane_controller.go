@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -976,8 +978,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Reconcile kube apiserver
 	r.Log.Info("Reconciling Kube API Server")
+	oauthIssuerURL := fmt.Sprintf("https://%s", net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
+	if !util.HCPOAuthEnabled(hostedControlPlane) &&
+		len(hostedControlPlane.Spec.Configuration.Authentication.OIDCProviders) != 0 {
+		oauthIssuerURL = hostedControlPlane.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.URL
+	}
 	kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment); err != nil {
+	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, oauthIssuerURL, createOrUpdate, kubeAPIServerDeployment); err != nil {
 		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
 	}
 
@@ -2595,8 +2602,8 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
-	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthIssuerURL string, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
+	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthIssuerURL, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -2701,7 +2708,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	}
 	oauthMetadata := manifests.KASOAuthMetadata(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oauthMetadata, func() error {
-		return kas.ReconcileOauthMetadata(oauthMetadata, p.OwnerRef, userOauthMetadata, p.ExternalOAuthAddress, p.ExternalOAuthPort)
+		return kas.ReconcileOauthMetadata(oauthMetadata, p.OwnerRef, userOauthMetadata, p.OAuthIssuerURL)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth metadata: %w", err)
 	}

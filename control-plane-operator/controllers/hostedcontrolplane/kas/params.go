@@ -53,15 +53,14 @@ type KubeAPIServerParams struct {
 	ExternalPort    int32  `json:"externalPort"`
 	InternalAddress string `json:"internalAddress"`
 	// KASPodPort is the port to expose in the KAS Pod.
-	KASPodPort           int32                        `json:"apiServerPort"`
-	ExternalOAuthAddress string                       `json:"externalOAuthAddress"`
-	ExternalOAuthPort    int32                        `json:"externalOAuthPort"`
-	OIDCCAConfigMap      *corev1.LocalObjectReference `json:"oidcCAConfigMap"`
-	EtcdURL              string                       `json:"etcdAddress"`
-	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
-	AuditWebhookRef      *corev1.LocalObjectReference `json:"auditWebhookRef"`
-	ConsolePublicURL     string                       `json:"consolePublicURL"`
-	DisableProfiling     bool                         `json:"disableProfiling"`
+	KASPodPort       int32                        `json:"apiServerPort"`
+	OAuthIssuerURL   string                       `json:"oauthIssuerURL"`
+	OIDCCAConfigMap  *corev1.LocalObjectReference `json:"oidcCAConfigMap"`
+	EtcdURL          string                       `json:"etcdAddress"`
+	KubeConfigRef    *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
+	AuditWebhookRef  *corev1.LocalObjectReference `json:"auditWebhookRef"`
+	ConsolePublicURL string                       `json:"consolePublicURL"`
+	DisableProfiling bool                         `json:"disableProfiling"`
 	config.DeploymentConfig
 	config.OwnerRef
 
@@ -82,15 +81,14 @@ const (
 	KonnectivityServerPort      = 8091
 )
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, oauthIssuerURL string, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 	params := &KubeAPIServerParams{
 		ExternalAddress:      externalAPIAddress,
 		ExternalPort:         externalAPIPort,
 		InternalAddress:      fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
-		ExternalOAuthAddress: externalOAuthAddress,
-		ExternalOAuthPort:    externalOAuthPort,
+		OAuthIssuerURL:       oauthIssuerURL,
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
 		ServiceCIDRs:         util.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork),
 		ClusterCIDRs:         util.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork),
