@@ -314,7 +314,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 		}
 		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
-			if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+			if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
 				condition.Message = "failed to delete AWS default security group"
 				if code == "DependencyViolation" {
 					condition.Message = destroyErr.Error()
