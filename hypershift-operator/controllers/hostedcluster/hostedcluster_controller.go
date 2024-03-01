@@ -1620,15 +1620,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp, pullSecretBytes)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
-	}
+	// Disable machine management components if enabled
+	if _, exists := hcluster.Annotations[hyperv1.DisableMachineManagement]; !exists {
+		// Reconcile the CAPI manager components
+		err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp, pullSecretBytes)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
+		}
 
-	// Reconcile the CAPI provider components
-	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, hcp, capiProviderDeploymentSpec, p); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
+		// Reconcile the CAPI provider components
+		if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, hcp, capiProviderDeploymentSpec, p); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
+		}
 	}
 
 	// Get release image version
@@ -1774,6 +1777,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.EtcdPriorityClass,
 		hyperv1.EnsureExistsPullSecretReconciliation,
 		hyperv1.TopologyAnnotation,
+		hyperv1.DisableMachineManagement,
 		hyperv1.CertifiedOperatorsCatalogImageAnnotation,
 		hyperv1.CommunityOperatorsCatalogImageAnnotation,
 		hyperv1.RedHatMarketplaceCatalogImageAnnotation,
