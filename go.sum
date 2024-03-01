@@ -938,8 +938,8 @@ k8s.io/utils v0.0.0-20240102154912-e7106e64919e h1:eQ/4ljkx21sObifjzXwlPKpdGLrCf
 k8s.io/utils v0.0.0-20240102154912-e7106e64919e/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 kubevirt.io/api v1.1.1 h1:vt5bOpACArNFIudx1bcE1VeejQdh5wCd7Oz/uFBIkH8=
 kubevirt.io/api v1.1.1/go.mod h1:CJ4vZsaWhVN3jNbyc9y3lIZhw8nUHbWjap0xHABQiqc=
-kubevirt.io/containerized-data-importer-api v1.57.0 h1:IpRCUyDS0x7BaVa5q5MCzuWRAfvXT54GpEnNJke5hSE=
-kubevirt.io/containerized-data-importer-api v1.57.0/go.mod h1:Y/8ETgHS1GjO89bl682DPtQOYEU/1ctPFBz6Sjxm4DM=
+kubevirt.io/containerized-data-importer-api v1.58.1 h1:Zbf0pCvxb4fBvtMR6uI2OIJZ4UfwFxripzOLMO4HPbI=
+kubevirt.io/containerized-data-importer-api v1.58.1/go.mod h1:Y/8ETgHS1GjO89bl682DPtQOYEU/1ctPFBz6Sjxm4DM=
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 h1:QMrd0nKP0BGbnxTqakhDZAUhGKxPiPiN5gSDqKUmGGc=
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90/go.mod h1:018lASpFYBsYN6XwmA2TIrPCx6e0gviTd/ZNtSitKgc=
 sigs.k8s.io/apiserver-network-proxy v0.29.0 h1:4N+QiVBucLicDSP8V1Izf5h4t8DsKFZ346hA8kQlXDw=
@@ -948,8 +948,8 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.29.0 h1:/U5vjBbQn3RCh
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.29.0/go.mod h1:z7+wmGM2dfIiLRfrC6jb5kV2Mq/sK1ZP303cxzkV5Y4=
 sigs.k8s.io/cluster-api v1.6.2 h1:ruUi4q/9jXFuI+hmnDjo9izHgrBk4bjfQXLKx678PQE=
 sigs.k8s.io/cluster-api v1.6.2/go.mod h1:Anm4cA6R/AIP6KdIuVje8CdFc/TdGl+382bi5oPawRc=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.3.4 h1:M1NtWRgmFu/WJXQWs48l7FX93moL/1Oev65un89JRKI=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.3.4/go.mod h1:+fon0h4f6XADCfAxjmlcmHtHFfxB/bQ8GnCiE1y4prQ=
+sigs.k8s.io/cluster-api-provider-aws/v2 v2.4.0 h1:m8mDWGDkTbOgia5br9Gklzf9X/6RfvmHDnW0f/cfQhc=
+sigs.k8s.io/cluster-api-provider-aws/v2 v2.4.0/go.mod h1:E/7VHYlm0fxDC5Rupfp5aR49+gIgdGCPOboR1g9rL+w=
 sigs.k8s.io/cluster-api-provider-azure v1.13.2 h1:BmfCt3RO8ZIr+wWW1biwZ/DwVPywaXzTyC0IGrhs6u8=
 sigs.k8s.io/cluster-api-provider-azure v1.13.2/go.mod h1:N8E4yVqi/Op0xaTHsrjUb5I3TYh3bB7MXK0JAJGl8yI=
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0 h1:3IDw0U2ZFX/RQmJ2mFu3ibQ5mBUUcG1ShcHm7eLHGJ4=
