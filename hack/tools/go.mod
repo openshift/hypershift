@@ -4,7 +4,7 @@ go 1.21.3
 
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
-	github.com/prometheus/prometheus v0.50.0
+	github.com/prometheus/prometheus v0.50.1
 	gotest.tools/gotestsum v1.11.0
 	honnef.co/go/tools v0.4.7
 	k8s.io/code-generator v0.29.0
