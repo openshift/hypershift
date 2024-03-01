@@ -86,10 +86,10 @@ require (
 	k8s.io/pod-security-admission v0.29.2
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 	kubevirt.io/api v1.1.1
-	kubevirt.io/containerized-data-importer-api v1.57.0
+	kubevirt.io/containerized-data-importer-api v1.58.1
 	sigs.k8s.io/apiserver-network-proxy v0.29.0
 	sigs.k8s.io/cluster-api v1.6.2
-	sigs.k8s.io/cluster-api-provider-aws/v2 v2.3.4
+	sigs.k8s.io/cluster-api-provider-aws/v2 v2.4.0
 	sigs.k8s.io/cluster-api-provider-azure v1.13.2
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.8
