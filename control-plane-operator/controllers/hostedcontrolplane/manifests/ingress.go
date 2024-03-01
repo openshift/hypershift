@@ -30,15 +30,6 @@ func IngressDefaultIngressController() *operatorv1.IngressController {
 	}
 }
 
-func IngressPrivateIngressController(name string) *operatorv1.IngressController {
-	return &operatorv1.IngressController{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "openshift-ingress-operator",
-		},
-	}
-}
-
 func RouterServiceAccount(ns string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{

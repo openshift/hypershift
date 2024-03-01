@@ -46,8 +46,6 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
@@ -213,9 +211,6 @@ func NewStartCommand() *cobra.Command {
 			HealthProbeBindAddress:        healthProbeAddr,
 			Cache: cache.Options{
 				DefaultFieldSelector: fields.OneTermEqualSelector("metadata.namespace", namespace),
-				ByObject: map[crclient.Object]cache.ByObject{
-					&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)},
-				},
 			},
 		})
 		if err != nil {
