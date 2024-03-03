@@ -28,6 +28,7 @@ type ExampleKubevirtOptions struct {
 	QoSClass                   *hyperv1.QoSClass
 	AdditionalNetworks         []hyperv1.KubevirtNetwork
 	AttachDefaultNetwork       *bool
+	VmNodeSelector             map[string]string
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
@@ -97,6 +98,10 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 
 	if o.NetworkInterfaceMultiQueue != nil && *o.NetworkInterfaceMultiQueue == hyperv1.MultiQueueEnable {
 		exampleTemplate.NetworkInterfaceMultiQueue = o.NetworkInterfaceMultiQueue
+	}
+
+	if o.VmNodeSelector != nil && len(o.VmNodeSelector) > 0 {
+		exampleTemplate.NodeSelector = o.VmNodeSelector
 	}
 
 	return exampleTemplate

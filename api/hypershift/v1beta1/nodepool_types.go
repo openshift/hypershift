@@ -720,6 +720,13 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:default=true
 	AttachDefaultNetwork *bool `json:"attachDefaultNetwork,omitempty"`
+
+	// NodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
+	// Selector which must match a node's labels for the VM to be scheduled on that node. More info:
+	// https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
+	//
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 }
 
 // KubevirtNetwork specifies the configuration for a virtual machine
