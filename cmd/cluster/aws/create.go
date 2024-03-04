@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -12,6 +13,8 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +33,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		RootVolumeSize:     120,
 		RootVolumeIOPS:     0,
 		EndpointAccess:     string(hyperv1.Public),
+		MultiArch:          true,
 	}
 
 	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
@@ -48,6 +52,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: aws-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.SingleNATGateway, "single-nat-gateway", opts.AWSPlatform.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
+	cmd.PersistentFlags().BoolVar(&opts.AWSPlatform.MultiArch, "multi-arch", opts.AWSPlatform.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -57,7 +62,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		err := ValidateCreateCredentialInfo(opts)
+		err := validateAWSOptions(ctx, opts)
 		if err != nil {
 			return err
 		}
@@ -263,6 +268,46 @@ func ValidateCreateCredentialInfo(opts *core.CreateOptions) error {
 		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// validateMultiArchRelease validates a release image or release stream is multi-arch if the multi-arch flag is set
+func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions) error {
+	// Validate the release image is multi-arch when the multi-arch flag is set and a release image is provided
+	if opts.AWSPlatform.MultiArch && len(opts.ReleaseImage) > 0 {
+		pullSecret, err := os.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		validMultiArchRelease, err := registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
+		if err != nil {
+			return err
+		}
+
+		if !validMultiArchRelease {
+			return fmt.Errorf("release image is not a multi-arch image")
+		}
+	}
+
+	// Validate the release stream is multi-arch when the multi-arch flag is set and a release stream is provided
+	if opts.AWSPlatform.MultiArch && len(opts.ReleaseStream) > 0 && !strings.Contains(opts.ReleaseStream, "multi") {
+		return fmt.Errorf("release stream is not a multi-arch stream")
+	}
+
+	return nil
+}
+
+// validateAWSOptions validates different AWS flag parameters
+func validateAWSOptions(ctx context.Context, opts *core.CreateOptions) error {
+	if err := ValidateCreateCredentialInfo(opts); err != nil {
+		return err
+	}
+
+	if err := validateMultiArchRelease(ctx, opts); err != nil {
+		return err
 	}
 
 	return nil
