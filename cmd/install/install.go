@@ -94,6 +94,7 @@ type Options struct {
 	MonitoringDashboards                      bool
 	CertRotationScale                         time.Duration
 	EnableDedicatedRequestServingIsolation    bool
+	PullSecretFile                            string
 }
 
 func (o *Options) Validate() error {
@@ -210,6 +211,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
 	cmd.PersistentFlags().DurationVar(&opts.CertRotationScale, "cert-rotation-scale", opts.CertRotationScale, "The scaling factor for certificate rotation. It is not supported to set this to anything other than 24h.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
+	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -446,6 +448,19 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 			Namespace: operatorNamespace.Name,
 		}.Build()
 		objects = append(objects, validatingWebhookConfiguration)
+	}
+
+	if len(opts.PullSecretFile) > 0 {
+		pullSecretBytes, err := os.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		pullSecret := assets.HyperShiftPullSecret{
+			Namespace:       operatorNamespace.Name,
+			PullSecretBytes: pullSecretBytes,
+		}.Build()
+		objects = append(objects, pullSecret)
 	}
 
 	var oidcSecret *corev1.Secret
