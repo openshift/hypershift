@@ -98,6 +98,7 @@ func (mc *NTOMachineConfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyp
 }
 
 func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
+	t.Skip("skipping test until MCO fix is available https://issues.redhat.com/browse/OCPBUGS-30149")
 	g := NewWithT(t)
 
 	ctx := mc.ctx
