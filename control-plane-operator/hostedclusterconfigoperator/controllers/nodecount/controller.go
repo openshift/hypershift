@@ -51,8 +51,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 		return ctrl.Result{}, fmt.Errorf("failed to get Nodes: %w", err)
 	}
 
-	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(r.hcpName, r.hcpNamespace)
-	cfg.Status = hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().WithNodeCount(len(nodes.Items))
-	_, err := r.client.HypershiftV1beta1().HostedControlPlanes(r.hcpNamespace).ApplyStatus(ctx, cfg, metav1.ApplyOptions{FieldManager: ControllerName})
-	return reconcile.Result{}, err
+	if hcp.Status.NodeCount == nil || *hcp.Status.NodeCount != len(nodes.Items) {
+		cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(r.hcpName, r.hcpNamespace)
+		cfg.Status = hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().WithNodeCount(len(nodes.Items))
+		_, err := r.client.HypershiftV1beta1().HostedControlPlanes(r.hcpNamespace).ApplyStatus(ctx, cfg, metav1.ApplyOptions{FieldManager: ControllerName})
+		return reconcile.Result{}, err
+	}
+	return reconcile.Result{}, nil
 }
