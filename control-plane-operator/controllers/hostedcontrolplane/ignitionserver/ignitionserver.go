@@ -653,22 +653,6 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 							"--platform", string(hcp.Spec.Platform.Type),
 							"--feature-gate-manifest=/shared/99_feature-gate.yaml",
 						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler:        probeHandler,
-							InitialDelaySeconds: 120,
-							TimeoutSeconds:      5,
-							PeriodSeconds:       60,
-							FailureThreshold:    6,
-							SuccessThreshold:    1,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler:        probeHandler,
-							InitialDelaySeconds: 5,
-							TimeoutSeconds:      5,
-							PeriodSeconds:       60,
-							FailureThreshold:    3,
-							SuccessThreshold:    1,
-						},
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "https",
@@ -732,6 +716,16 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	deploymentConfig := config.DeploymentConfig{
 		AdditionalLabels: map[string]string{
 			config.NeedManagementKASAccessLabel: "true",
+		},
+		LivenessProbes: config.LivenessProbes{
+			ignitionserver.ResourceName: {
+				ProbeHandler: probeHandler,
+			},
+		},
+		ReadinessProbes: config.ReadinessProbes{
+			ignitionserver.ResourceName: {
+				ProbeHandler: probeHandler,
+			},
 		},
 	}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass

@@ -90,13 +90,22 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfigur
 	return encryptionConfig, nil
 }
 
-func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
+func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec, deploymentConfig config.DeploymentConfig) error {
 	podSpec.Volumes = append(podSpec.Volumes,
 		util.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
 		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
 	)
 
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAzureKMS(), p.buildKASContainerAzureKMS))
+	deploymentConfig.LivenessProbes[kasContainerAzureKMS().Name] = corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Scheme: corev1.URISchemeHTTP,
+				Port:   intstr.FromInt(azureKMSHealthPort),
+				Path:   "/healthz",
+			},
+		},
+	}
 
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
@@ -136,20 +145,6 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(c *corev1.Container) {
 		"-v=1",
 	}
 	c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
-	c.LivenessProbe = &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Scheme: corev1.URISchemeHTTP,
-				Port:   intstr.FromInt(azureKMSHealthPort),
-				Path:   "/healthz",
-			},
-		},
-		InitialDelaySeconds: 120,
-		PeriodSeconds:       300,
-		TimeoutSeconds:      160,
-		FailureThreshold:    3,
-		SuccessThreshold:    1,
-	}
 	c.Resources = corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("10Mi"),

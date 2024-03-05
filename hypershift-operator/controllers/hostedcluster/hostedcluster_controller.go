@@ -2523,9 +2523,7 @@ func reconcileControlPlaneOperatorDeployment(
 							},
 							InitialDelaySeconds: 60,
 							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
+							TimeoutSeconds:      30,
 						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
@@ -2535,11 +2533,8 @@ func reconcileControlPlaneOperatorDeployment(
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    3,
-							TimeoutSeconds:      5,
+							PeriodSeconds:  10,
+							TimeoutSeconds: 5,
 						},
 						Resources: cpoResources,
 					},
@@ -3117,9 +3112,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							},
 							InitialDelaySeconds: 60,
 							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
+							TimeoutSeconds:      30,
 						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
@@ -3129,11 +3122,8 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    3,
-							TimeoutSeconds:      5,
+							PeriodSeconds:  10,
+							TimeoutSeconds: 5,
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{

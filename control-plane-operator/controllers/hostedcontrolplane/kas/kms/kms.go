@@ -1,6 +1,7 @@
 package kms
 
 import (
+	"github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apiserver/pkg/apis/config/v1"
 )
@@ -8,7 +9,7 @@ import (
 type IKMSProvider interface {
 	GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error)
 
-	ApplyKMSConfig(podSpec *corev1.PodSpec) error
+	ApplyKMSConfig(podSpec *corev1.PodSpec, deploymentConfig config.DeploymentConfig) error
 }
 
 const (

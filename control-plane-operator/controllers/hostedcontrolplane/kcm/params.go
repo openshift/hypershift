@@ -76,11 +76,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 45,
-			TimeoutSeconds:      10,
-			PeriodSeconds:       10,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
@@ -92,11 +87,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 10,
-			TimeoutSeconds:      10,
-			PeriodSeconds:       10,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
 		},
 	}
 	params.Resources = map[string]corev1.ResourceRequirements{

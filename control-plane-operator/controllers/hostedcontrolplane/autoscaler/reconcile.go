@@ -157,35 +157,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						Resources: autoscalerResources,
 						Command:   []string{"/usr/bin/cluster-autoscaler"},
 						Args:      args,
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 60,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    3,
-							TimeoutSeconds:      5,
-						},
-						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8085}},
+						Ports:     []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8085}},
 					},
 				},
 			},
@@ -202,6 +174,28 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
+		LivenessProbes: config.LivenessProbes{
+			autoscalerName: {
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path:   "/health-check",
+						Port:   intstr.FromInt(8085),
+						Scheme: corev1.URISchemeHTTP,
+					},
+				},
+			},
+		},
+		ReadinessProbes: config.ReadinessProbes{
+			autoscalerName: {
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path:   "/health-check",
+						Port:   intstr.FromInt(8085),
+						Scheme: corev1.URISchemeHTTP,
+					},
+				},
+			},
+		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]

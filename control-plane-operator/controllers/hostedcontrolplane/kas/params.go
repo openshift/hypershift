@@ -146,11 +146,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 				Path:   "livez?exclude=etcd",
 			},
 		},
-		InitialDelaySeconds: 300,
-		PeriodSeconds:       180,
-		TimeoutSeconds:      160,
-		FailureThreshold:    6,
-		SuccessThreshold:    1,
 	}
 	if hcp.Spec.SecretEncryption != nil {
 		// Adjust KAS liveness probe to not have a hard depdendency on kms so problems isolated to kms don't
@@ -189,11 +184,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Path:   "/health/liveness",
 				},
 			},
-			InitialDelaySeconds: 120,
-			PeriodSeconds:       300,
-			TimeoutSeconds:      160,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 		konnectivityServerContainer().Name: {
 			ProbeHandler: corev1.ProbeHandler{
@@ -203,11 +193,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
@@ -219,11 +204,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Path:   "readyz",
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       30,
-			TimeoutSeconds:      120,
-			FailureThreshold:    6,
-			SuccessThreshold:    1,
 		},
 		konnectivityServerContainer().Name: {
 			ProbeHandler: corev1.ProbeHandler{
@@ -233,11 +213,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			TimeoutSeconds:      5,
 		},
 	}
 	params.Resources = map[string]corev1.ResourceRequirements{

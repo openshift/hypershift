@@ -129,14 +129,32 @@ func (p *awsKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfigurat
 	return encryptionConfig, nil
 }
 
-func (p *awsKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
+func (p *awsKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec, deploymentConfig config.DeploymentConfig) error {
 	if len(p.activeKey.ARN) == 0 || len(p.kmsImage) == 0 {
 		return fmt.Errorf("aws kms active key metadata is nil")
 	}
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSTokenMinter(), buildKASContainerAWSKMSTokenMinter(p.tokenMinterImage)))
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSActive(), buildKASContainerAWSKMS(p.kmsImage, p.activeKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName), activeAWSKMSHealthPort)))
+	deploymentConfig.LivenessProbes[kasContainerAWSKMSActive().Name] = corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Scheme: corev1.URISchemeHTTP,
+				Port:   intstr.FromInt(activeAWSKMSHealthPort),
+				Path:   "healthz",
+			},
+		},
+	}
 	if p.backupKey != nil && len(p.backupKey.ARN) > 0 {
 		podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(p.kmsImage, p.backupKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
+		deploymentConfig.LivenessProbes[kasContainerAWSKMSBackup().Name] = corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(backupAWSKMSHealthPort),
+					Path:   "healthz",
+				},
+			},
+		}
 	}
 	if len(p.awsAuth.AWSKMSRoleARN) == 0 {
 		return fmt.Errorf("aws kms role arn not specified")
@@ -210,20 +228,6 @@ func buildKASContainerAWSKMS(image string, arn string, region string, unixSocket
 			fmt.Sprintf("--health-port=:%d", healthPort),
 		}
 		c.VolumeMounts = awsKMSVolumeMounts.ContainerMounts(c.Name)
-		c.LivenessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(healthPort),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			PeriodSeconds:       300,
-			TimeoutSeconds:      160,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		}
 		c.Resources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("10Mi"),

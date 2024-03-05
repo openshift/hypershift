@@ -49,11 +49,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 	}
 	// check apiserver-network-proxy image in ocp payload and use it

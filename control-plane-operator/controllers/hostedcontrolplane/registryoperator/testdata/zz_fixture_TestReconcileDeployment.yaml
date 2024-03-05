@@ -89,7 +89,7 @@ spec:
           value: /tmp/azurestackcloud.json
         image: quay.io/openshift/cluster-image-registry-operator:latest
         livenessProbe:
-          failureThreshold: 5
+          failureThreshold: 3
           httpGet:
             path: /metrics
             port: 60000
@@ -97,7 +97,7 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 60
           successThreshold: 1
-          timeoutSeconds: 5
+          timeoutSeconds: 30
         name: cluster-image-registry-operator
         ports:
         - containerPort: 60000
@@ -108,8 +108,7 @@ spec:
             path: /metrics
             port: 60000
             scheme: HTTPS
-          initialDelaySeconds: 15
-          periodSeconds: 60
+          periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 5
         resources:

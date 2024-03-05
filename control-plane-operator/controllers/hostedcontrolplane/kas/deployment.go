@@ -321,7 +321,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
 		switch secretEncryptionData.Type {
 		case hyperv1.KMS:
-			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryptionData, images); err != nil {
+			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryptionData, images, deploymentConfig); err != nil {
 				return err
 			}
 		case hyperv1.AESCBC:

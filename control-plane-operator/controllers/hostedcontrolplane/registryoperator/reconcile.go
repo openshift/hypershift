@@ -122,11 +122,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 							Scheme: corev1.URISchemeHTTPS,
 						},
 					},
-					InitialDelaySeconds: 15,
-					PeriodSeconds:       60,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
-					TimeoutSeconds:      5,
 				},
 			},
 			LivenessProbes: config.LivenessProbes{
@@ -138,11 +133,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 							Scheme: corev1.URISchemeHTTPS,
 						},
 					},
-					InitialDelaySeconds: 60,
-					PeriodSeconds:       60,
-					SuccessThreshold:    1,
-					FailureThreshold:    5,
-					TimeoutSeconds:      5,
 				},
 			},
 			Resources: config.ResourcesSpec{
