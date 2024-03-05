@@ -401,6 +401,57 @@ spec:
   kernelType: ""
   osImageURL: ""
 `
+	machineConfig3 := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: config-3
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents:
+        source: "[Service]\nType=oneshot\nExecStart=/usr/bin/echo Hello World 3\n\n[Install]\nWantedBy=multi-user.target"
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/file3.sh
+`
+	machineConfig3Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: config-3
+spec:
+  baseOSExtensionsContainerImage: ""
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents: null
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/file3.sh
+        source: |-
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/echo Hello World 3
+
+          [Install]
+          WantedBy=multi-user.target
+  extensions: null
+  fips: false
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: ""
+`
+
 	kubeletConfig1 := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
@@ -570,7 +621,7 @@ spec:
 			error:  false,
 		},
 		{
-			name: "gets two valid MachineConfig",
+			name: "gets three valid MachineConfig, two of them in a single config-map",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -603,11 +654,11 @@ spec:
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						TokenSecretConfigKey: machineConfig2,
+						TokenSecretConfigKey: "---" + machineConfig2 + "\n---\n  \n  \n---\n" + machineConfig3,
 					},
 				},
 			},
-			expect: machineConfig1Defaulted + "\n---\n" + machineConfig2Defaulted,
+			expect: machineConfig1Defaulted + "\n---\n" + machineConfig2Defaulted + "\n---\n" + machineConfig3Defaulted,
 			error:  false,
 		},
 		{

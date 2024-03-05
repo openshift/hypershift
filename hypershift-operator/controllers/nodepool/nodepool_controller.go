@@ -103,6 +103,8 @@ const (
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
+
+	yamlDocDelimiter = "\n---\n"
 )
 
 type NodePoolReconciler struct {
@@ -1977,21 +1979,27 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	configs = append(configs, nodeTuningGeneratedConfigs.Items...)
 
 	for _, config := range configs {
-		manifestRaw := config.Data[TokenSecretConfigKey]
-		manifest, err := defaultAndValidateConfigManifest([]byte(manifestRaw))
-		if err != nil {
-			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
-			continue
+		cmPayload := config.Data[TokenSecretConfigKey]
+		// ignition config-map payload may have multiple yaml documents
+		manifestList := strings.Split(cmPayload, yamlDocDelimiter)
+		for _, manifestRaw := range manifestList {
+			if strings.TrimSpace(manifestRaw) == "" {
+				continue // disregard empty yamls
+			}
+			manifest, err := defaultAndValidateConfigManifest([]byte(manifestRaw))
+			if err != nil {
+				errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
+				continue
+			}
+			allConfigPlainText = append(allConfigPlainText, string(manifest))
 		}
-
-		allConfigPlainText = append(allConfigPlainText, string(manifest))
 	}
 
 	// These configs are the input to a hash func whose output is used as part of the name of the user-data secret,
 	// so our output must be deterministic.
 	sort.Strings(allConfigPlainText)
 
-	return strings.Join(allConfigPlainText, "\n---\n"), missingConfigs, utilerrors.NewAggregate(errors)
+	return strings.Join(allConfigPlainText, yamlDocDelimiter), missingConfigs, utilerrors.NewAggregate(errors)
 }
 
 func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
