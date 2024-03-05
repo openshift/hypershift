@@ -1,12 +1,14 @@
 package nodepool
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	coreerrors "errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"regexp"
 	"sort"
@@ -53,6 +55,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -2189,16 +2192,30 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	configs = append(configs, nodeTuningGeneratedConfigs.Items...)
 
 	for i, config := range configs {
-		manifestRaw := config.Data[TokenSecretConfigKey]
-		manifest, mirrorConfig, err := defaultAndValidateConfigManifest([]byte(manifestRaw))
-		if err != nil {
-			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
-			continue
-		}
-		allConfigPlainText = append(allConfigPlainText, string(manifest))
-		if mirrorConfig != nil && config.Namespace == nodePool.Namespace {
-			mirrorConfig.ConfigMap = &configs[i]
-			mirroredConfigs = append(mirroredConfigs, mirrorConfig)
+		cmPayload := config.Data[TokenSecretConfigKey]
+		// ignition config-map payload may contain multiple manifests
+		yamlReader := yaml.NewYAMLReader(bufio.NewReader(strings.NewReader(cmPayload)))
+		for {
+			manifestRaw, err := yamlReader.Read()
+			if err != nil && err != io.EOF {
+				errors = append(errors, fmt.Errorf("configmap %q contains invalid yaml: %w", config.Name, err))
+				continue
+			}
+			if len(manifestRaw) != 0 && strings.TrimSpace(string(manifestRaw)) != "" {
+				manifest, mirrorConfig, err := defaultAndValidateConfigManifest(manifestRaw)
+				if err != nil {
+					errors = append(errors, fmt.Errorf("configmap %q yaml document failed validation: %w", config.Name, err))
+					continue
+				}
+				allConfigPlainText = append(allConfigPlainText, string(manifest))
+				if mirrorConfig != nil && config.Namespace == nodePool.Namespace {
+					mirrorConfig.ConfigMap = &configs[i]
+					mirroredConfigs = append(mirroredConfigs, mirrorConfig)
+				}
+			}
+			if err == io.EOF {
+				break
+			}
 		}
 	}
 
