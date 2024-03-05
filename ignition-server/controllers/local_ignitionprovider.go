@@ -238,6 +238,22 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("failed to extract templates from image: %w", err)
 	}
 
+	payloadVersion, err := semver.Parse(imageProvider.Version())
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse payload version: %w", err)
+	}
+
+	// set the component to the correct binary name and file path based on the payload version
+	clusterConfigComponent := "cluster-config-api"
+	clusterConfigComponentShort := "cca"
+	clusterConfigFile := "usr/bin/render"
+
+	if payloadVersion.Minor < 15 {
+		clusterConfigComponent = "cluster-config-operator"
+		clusterConfigComponentShort = "cco"
+		clusterConfigFile = "usr/bin/cluster-config-operator"
+	}
+
 	// Extract binaries from the MCO image into the bin directory
 	err = func() error {
 		start := time.Now()
@@ -258,27 +274,26 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			}
 		}
 
-		component = "cluster-config-api"
-		clusterConfigAPIImage, ok := imageProvider.ImageExist(component)
+		clusterConfigImage, ok := imageProvider.ImageExist(clusterConfigComponent)
 		if !ok {
-			return fmt.Errorf("release image does not contain cluster-config-api (images: %v)", imageProvider.ComponentImages())
+			return fmt.Errorf("release image does not contain $%s (images: %v)", clusterConfigComponent, imageProvider.ComponentImages())
 		}
 
-		clusterConfigAPIImage, err = registryclient.GetCorrectArchImage(ctx, component, clusterConfigAPIImage, pullSecret)
+		clusterConfigImage, err = registryclient.GetCorrectArchImage(ctx, clusterConfigComponent, clusterConfigImage, pullSecret)
 		if err != nil {
 			return err
 		}
 
-		log.Info("discovered cluster config api image", "image", clusterConfigAPIImage)
+		log.Info(fmt.Sprintf("discovered  image %s image %v", clusterConfigComponent, clusterConfigImage))
 
-		file, err := os.Create(filepath.Join(binDir, component))
+		file, err := os.Create(filepath.Join(binDir, clusterConfigComponent))
 		if err != nil {
 			return fmt.Errorf("failed to create file: %w", err)
 		}
 		if err := file.Chmod(0777); err != nil {
 			return fmt.Errorf("failed to chmod file: %w", err)
 		}
-		if err := p.ImageFileCache.extractImageFile(ctx, clusterConfigAPIImage, pullSecret, "usr/bin/render", file); err != nil {
+		if err := p.ImageFileCache.extractImageFile(ctx, clusterConfigImage, pullSecret, clusterConfigFile, file); err != nil {
 			return fmt.Errorf("failed to extract image file: %w", err)
 		}
 		if err := file.Close(); err != nil {
@@ -292,11 +307,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("failed to download binaries: %w", err)
 	}
 
-	payloadVersion, err := semver.Parse(imageProvider.Version())
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse payload version: %w", err)
-	}
-
 	featureGateBytes, err := os.ReadFile(p.FeatureGateManifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read feature gate: %w", err)
@@ -307,19 +317,19 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 
 		args := []string{
 			"-c",
-			invokeFeatureGateRenderScript(filepath.Join(binDir, "cluster-config-api"), filepath.Join(workDir, "cca"), mccBaseDir, payloadVersion, string(featureGateBytes)),
+			invokeFeatureGateRenderScript(filepath.Join(binDir, clusterConfigComponent), filepath.Join(workDir, clusterConfigComponentShort), mccBaseDir, payloadVersion, string(featureGateBytes)),
 		}
 
 		cmd := exec.CommandContext(ctx, "/bin/bash", args...)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("cluster-config-api process failed: %s: %w", string(out), err)
+			return fmt.Errorf("%s process failed: %s: %w", clusterConfigComponent, string(out), err)
 		}
-		log.Info("cluster-config-api process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
+		log.Info(fmt.Sprintf("%s process completed", clusterConfigComponent), "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		return nil
 	}()
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute cluster-config-api: %w", err)
+		return nil, fmt.Errorf("failed to execute %s: %w", clusterConfigComponent, err)
 	}
 
 	// First, run the MCO using templates and image refs as input. This generates
@@ -661,11 +671,52 @@ EOF
 
 %[1]s \
    --asset-output-dir %[2]s/output \
+   --image-manifests=input \
    --rendered-manifest-dir=%[2]s/manifests \
    --cluster-profile=ibm-cloud-managed \
    --payload-version=%[4]s 
 cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 `
+
+	// Depending on the version, we need different args.
+	if payloadVersion.Minor < 15 {
+		script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+cd %[2]s
+mkdir -p input output manifests
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output \
+   --rendered-manifest-files=%[2]s/manifests \
+   --payload-version=%[4]s 
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
+	}
+
+	// Depending on the version, we need different args.
+	if payloadVersion.Minor < 14 {
+		script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+cd %[2]s
+mkdir -p input output manifests
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
+	}
 
 	return fmt.Sprintf(script, binary, workDir, outputDir, payloadVersion, featureGateYAML)
 }
