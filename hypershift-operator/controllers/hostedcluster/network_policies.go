@@ -500,6 +500,22 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 					},
 				},
 				{
+					// Allow access to the oauth server (from the console pod on the virtual machine)
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"hypershift.openshift.io/control-plane-component": "oauth-openshift",
+						},
+					},
+				},
+				{
+					// Allow access to the ignition server
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "ignition-server-proxy",
+						},
+					},
+				},
+				{
 					// Allow access to the management cluster ingress (for ignition server)
 					PodSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
