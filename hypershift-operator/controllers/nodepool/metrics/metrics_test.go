@@ -36,19 +36,19 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 
 	for _, instanceType := range input.InstanceTypes {
 		if instanceType != nil {
-			var coresCount *int64
+			var vCpusCount *int64
 
 			switch *instanceType {
 			case "m5.xlarge":
-				coresCount = pointer.Int64(2)
+				vCpusCount = pointer.Int64(4)
 			case "m5.2xlarge":
-				coresCount = pointer.Int64(4)
+				vCpusCount = pointer.Int64(8)
 			}
 
 			instanceTypesInfo = append(instanceTypesInfo, &ec2.InstanceTypeInfo{
 				InstanceType: instanceType,
 				VCpuInfo: &ec2.VCpuInfo{
-					DefaultCores: coresCount,
+					DefaultVCpus: vCpusCount,
 				},
 			})
 		}
@@ -58,45 +58,47 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
 }
 
-func TestReportCoresCountByHCluster(t *testing.T) {
+func TestReportVCpusCountByHCluster(t *testing.T) {
 	testCases := []struct {
-		name               string
-		npsParams          []nodePoolParams
-		expectedCoresCount float64
+		name                          string
+		npsParams                     []nodePoolParams
+		expectedVCpusCount            float64
+		expectedVCpusCountErrorReason string
 	}{
 		{
-			name:               "When there is no nodePool, the total number of worker cores is 0",
+			name:               "When there is no nodePool, the total number of worker vCpus is 0",
 			npsParams:          []nodePoolParams{},
-			expectedCoresCount: 0,
+			expectedVCpusCount: 0,
 		},
 		{
-			name: "When there is one nodePool with no m5.xlarge nodes available, the total number of worker cores is 0",
+			name: "When there is one nodePool with no m5.xlarge nodes available, the total number of worker vCpus is 0",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 0, ec2InstanceType: "m5.xlarge"},
 			},
-			expectedCoresCount: 0,
+			expectedVCpusCount: 0,
 		},
 		{
-			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker cores is 4",
+			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker vCpus is 4",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
 			},
-			expectedCoresCount: 4,
+			expectedVCpusCount: 8,
 		},
 		{
-			name: "When there is two nodePools with 2 m5.2xlarge nodes available each, the total number of worker cores is 16",
+			name: "When there is two nodePools with 2 m5.2xlarge nodes available each, the total number of worker vCpus is 16",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 			},
-			expectedCoresCount: 16,
+			expectedVCpusCount: 32,
 		},
 		{
-			name: "When the nodePool EC2 instance type is invalid, the total number of worker cores is -1",
+			name: "When the nodePool EC2 instance type is invalid, the total number of worker vCpus is -1",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "hello_world"},
 			},
-			expectedCoresCount: -1,
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: "unexpected AWS output",
 		},
 	}
 
@@ -140,29 +142,6 @@ func TestReportCoresCountByHCluster(t *testing.T) {
 				clientBuilder = clientBuilder.WithObjects(nodePool)
 			}
 
-			expectedMetricValue := &dto.MetricFamily{
-				Name: pointer.String(CoresCountByHClusterMetricName),
-				Help: pointer.String(CoresCountByHClusterMetricHelp),
-				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
-				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{
-						{
-							Name: pointer.String("_id"), Value: pointer.String("id"),
-						},
-						{
-							Name: pointer.String("name"), Value: pointer.String("hc"),
-						},
-						{
-							Name: pointer.String("namespace"), Value: pointer.String("any"),
-						},
-						{
-							Name: pointer.String("platform"), Value: pointer.String(string(hyperv1.AWSPlatform)),
-						},
-					},
-					Gauge: &dto.Gauge{Value: pointer.Float64(tc.expectedCoresCount)},
-				}},
-			}
-
 			reg := prometheus.NewPedanticRegistry()
 			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), &Ec2ClientMock{}, clock.RealClock{}))
 
@@ -171,15 +150,65 @@ func TestReportCoresCountByHCluster(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			var metricValue *dto.MetricFamily
+			var vCpusCountMetricValue *dto.MetricFamily
+			var vCpusComputationErrorMetricValue *dto.MetricFamily
+			var expectedVCpusComputationErrorMetricValue *dto.MetricFamily
 
-			for _, currentMetricValue := range allMetricsValues {
-				if currentMetricValue != nil && currentMetricValue.Name != nil && *currentMetricValue.Name == CoresCountByHClusterMetricName {
-					metricValue = currentMetricValue
+			for _, metricValue := range allMetricsValues {
+				if metricValue != nil && metricValue.Name != nil {
+					switch *metricValue.Name {
+					case VCpusCountByHClusterMetricName:
+						vCpusCountMetricValue = metricValue
+					case VCpusComputationErrorByHClusterMetricName:
+						vCpusComputationErrorMetricValue = metricValue
+					}
 				}
 			}
 
-			if diff := cmp.Diff(metricValue, expectedMetricValue, ignoreUnexportedDto); diff != "" {
+			expectedBaseLabels := []*dto.LabelPair{
+				{
+					Name: pointer.String("_id"), Value: pointer.String("id"),
+				},
+				{
+					Name: pointer.String("name"), Value: pointer.String("hc"),
+				},
+				{
+					Name: pointer.String("namespace"), Value: pointer.String("any"),
+				},
+				{
+					Name: pointer.String("platform"), Value: pointer.String(string(hyperv1.AWSPlatform)),
+				},
+			}
+
+			expectedVCpusCountMetricValue := &dto.MetricFamily{
+				Name: pointer.String(VCpusCountByHClusterMetricName),
+				Help: pointer.String(VCpusCountByHClusterMetricHelp),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: expectedBaseLabels,
+					Gauge: &dto.Gauge{Value: pointer.Float64(tc.expectedVCpusCount)},
+				}},
+			}
+
+			if tc.expectedVCpusCountErrorReason != "" {
+				expectedVCpusComputationErrorMetricValue = &dto.MetricFamily{
+					Name: pointer.String(VCpusComputationErrorByHClusterMetricName),
+					Help: pointer.String(VCpusComputationErrorByHClusterMetricHelp),
+					Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+					Metric: []*dto.Metric{{
+						Label: append(expectedBaseLabels, &dto.LabelPair{
+							Name: pointer.String("reason"), Value: pointer.String(tc.expectedVCpusCountErrorReason),
+						}),
+						Gauge: &dto.Gauge{Value: pointer.Float64(1.0)},
+					}},
+				}
+			}
+
+			if diff := cmp.Diff(vCpusCountMetricValue, expectedVCpusCountMetricValue, ignoreUnexportedDto); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+
+			if diff := cmp.Diff(vCpusComputationErrorMetricValue, expectedVCpusComputationErrorMetricValue, ignoreUnexportedDto); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
