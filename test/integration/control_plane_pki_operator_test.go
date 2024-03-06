@@ -9,7 +9,7 @@ import (
 )
 
 func TestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T) {
-	framework.Run(testContext, log, globalOpts, t, func(t *testing.T, testCtx *framework.TestContext) {
+	framework.RunHostedClusterTest(testContext, log, globalOpts, t, func(t *testing.T, testCtx *framework.TestContext) {
 		RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, testCtx.HostedCluster, testCtx.MgmtCluster, testCtx.GuestCluster)
 	})
 }

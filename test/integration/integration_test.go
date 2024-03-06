@@ -77,6 +77,14 @@ func run(m *testing.M, ctx context.Context, logger logr.Logger, opts *framework.
 				builder: framework.InstallAssets,
 			},
 			{
+				name:    "crds",
+				builder: framework.InstallHyperShiftCRDs,
+			},
+			{
+				name:    "crd establishment",
+				builder: framework.WaitForHyperShiftCRDs,
+			},
+			{
 				name:    "hypershift operator assets",
 				builder: framework.InstallHyperShiftOperator,
 			},

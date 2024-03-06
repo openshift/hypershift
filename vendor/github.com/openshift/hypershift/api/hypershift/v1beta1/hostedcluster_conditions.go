@@ -164,6 +164,16 @@ const (
 	// succeeded.
 	// A failure here often means a software bug or a non-stable cluster.
 	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
+
+	// ClusterSizeComputed indicates that a t-shirt size was computed for this HostedCluster.
+	// The last transition time for this condition is used to manage how quickly transitions occur.
+	ClusterSizeComputed = "ClusterSizeComputed"
+	// ClusterSizeTransitionPending indicates that a t-shirt size transition is pending, but has
+	// not been applied yet. This may either be due to transition delays on the cluster itself
+	// or from management-cluster-wide limits to transition throughput.
+	ClusterSizeTransitionPending = "ClusterSizeTransitionPending"
+	// ClusterSizeTransitionRequired exposes the next t-shirt size that the cluster will transition to.
+	ClusterSizeTransitionRequired = "ClusterSizeTransitionRequired"
 )
 
 // Reasons.

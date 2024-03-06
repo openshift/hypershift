@@ -209,7 +209,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCVOManagementClusterMetricsAccess, "enable-cvo-management-cluster-metrics-access", opts.EnableCVOManagementClusterMetricsAccess, "If true, the hosted CVO will have access to the management cluster metrics server to evaluate conditional updates (supported for OpenShift management clusters)")
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
-	cmd.Flags().BoolVar(&opts.WaitUntilEstablished, "wait-until-established", opts.WaitUntilEstablished, "If true, pauses installation until all custom resource definitions are established before applying other manifests.")
+	cmd.Flags().BoolVar(&opts.WaitUntilEstablished, "wait-until-crds-established", opts.WaitUntilEstablished, "If true, pauses installation until all custom resource definitions are established before applying other manifests.")
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
@@ -776,6 +776,8 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 			},
 		})
 	}
+
+	objects = append(objects, assets.ClusterSizingConfiguration())
 
 	for idx := range objects {
 		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.Scheme)

@@ -71,19 +71,79 @@ func processAsset(logger logr.Logger, process func(path string, content io.Reade
 	}
 }
 
-// InstallHyperShiftOperator generates and applies assets to the cluster for setup of the HyperShift Operator.
+// InstallHyperShiftCRDs generates and applies CRDs to the cluster for setup of the HyperShift Operator.
+//
+// A closure is returned that knows how to clean up the content on the cluster.
+func InstallHyperShiftCRDs(ctx context.Context, logger logr.Logger, opts *Options) (Cleanup, error) {
+	installLogPath := filepath.Join("install", "hypershift-install-crds.log")
+	renderCmd := exec.CommandContext(ctx, opts.HyperShiftCLIPath,
+		"install", "render",
+		"--format=yaml",
+		"--outputs=crds",
+		"--hypershift-image", opts.HyperShiftOperatorImage,
+		"--enable-ci-debug-output",
+	)
+	yamlPath := filepath.Join("install", "hypershift-install-crds.yaml")
+	yamlFile, err := Artifact(opts, yamlPath)
+	if err != nil {
+		return CleanupSentinel, err
+	}
+	renderCmd.Stdout = yamlFile
+
+	if err := RunCommand(logger, opts, installLogPath, renderCmd); err != nil {
+		return CleanupSentinel, fmt.Errorf("failed to run hypershift install render: %w", err)
+	}
+
+	applyLogPath := filepath.Join("install", "hypershift-install-crds.apply.log")
+	applyCmd := exec.CommandContext(ctx, opts.OCPath,
+		"apply", "--server-side", "-f", filepath.Join(opts.ArtifactDir, yamlPath), "--kubeconfig", opts.Kubeconfig,
+	)
+	if err := RunCommand(logger, opts, applyLogPath, applyCmd); err != nil {
+		return CleanupSentinel, fmt.Errorf("failed to apply rendered install artifacts: %w", err)
+	}
+
+	return func(ctx context.Context) error {
+		if SkippedCleanupSteps().HasAny("all", "hypershift-operator") {
+			return nil
+		}
+		logger.Info("cleaning up hypershift CRDs")
+		deleteLogPath := filepath.Join("install", "hypershift-install-crds.delete.log")
+		deleteCmd := exec.CommandContext(ctx, opts.OCPath,
+			"delete", "--ignore-not-found", "-f", filepath.Join(opts.ArtifactDir, yamlPath), "--kubeconfig", opts.Kubeconfig,
+		)
+		return RunCommand(logger, opts, deleteLogPath, deleteCmd)
+	}, nil
+}
+
+// WaitForHyperShiftCRDs waits for the HyperShift CRDs to be established.
 //
 // A closure is returned that knows how to clean this emulated process up.
+func WaitForHyperShiftCRDs(ctx context.Context, logger logr.Logger, opts *Options) (Cleanup, error) {
+	waitLogPath := filepath.Join("install", "hypershift-crds.wait.log")
+	yamlPath := filepath.Join("install", "hypershift-install-crds.yaml")
+	waitCmd := exec.CommandContext(ctx, opts.OCPath,
+		"wait", "--for", "condition=Established",
+		"--filename", filepath.Join(opts.ArtifactDir, yamlPath),
+		"--timeout", "-1s", "--kubeconfig", opts.Kubeconfig,
+	)
+	return CleanupSentinel, RunCommand(logger, opts, waitLogPath, waitCmd)
+}
+
+// InstallHyperShiftOperator generates and applies assets to the cluster for setup of the HyperShift Operator.
+//
+// A closure is returned that knows how to clean up the content on the cluster.
 func InstallHyperShiftOperator(ctx context.Context, logger logr.Logger, opts *Options) (Cleanup, error) {
 	installLogPath := filepath.Join("install", "hypershift-install.log")
 	renderCmd := exec.CommandContext(ctx, opts.HyperShiftCLIPath,
 		"install", "render",
 		"--format=yaml",
+		"--outputs=resources",
 		"--hypershift-image", opts.HyperShiftOperatorImage,
 		"--enable-ci-debug-output",
-		// Since we're not running the HyperShift operator in the cluster, these webhooks would not resolve.
-		// These are not strictly required, but we should keep in mind that we're drifting from a production
-		// deployment by turning them off.
+		// Since it is hard to get all of the necessary setup done for the webhooks (serving certs, etc), we
+		// choose to omit the webhooks in these tests. The webhooks are not strictly required, and even some
+		// production deployments of HyperShift do not run the, so it is not extremely risky to do this, but
+		// we should keep in mind that we're drifting from an ideal production deployment by turning them off.
 		"--enable-conversion-webhook=false",
 		"--enable-defaulting-webhook=false",
 		"--enable-validating-webhook=false",

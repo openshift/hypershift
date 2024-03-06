@@ -25,6 +25,8 @@ import (
 	fakehypershiftv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1alpha1/fake"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	fakehypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1/fake"
+	schedulingv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/scheduling/v1alpha1"
+	fakeschedulingv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/scheduling/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -95,4 +97,9 @@ func (c *Clientset) HypershiftV1alpha1() hypershiftv1alpha1.HypershiftV1alpha1In
 // HypershiftV1beta1 retrieves the HypershiftV1beta1Client
 func (c *Clientset) HypershiftV1beta1() hypershiftv1beta1.HypershiftV1beta1Interface {
 	return &fakehypershiftv1beta1.FakeHypershiftV1beta1{Fake: &c.Fake}
+}
+
+// SchedulingV1alpha1 retrieves the SchedulingV1alpha1Client
+func (c *Clientset) SchedulingV1alpha1() schedulingv1alpha1.SchedulingV1alpha1Interface {
+	return &fakeschedulingv1alpha1.FakeSchedulingV1alpha1{Fake: &c.Fake}
 }

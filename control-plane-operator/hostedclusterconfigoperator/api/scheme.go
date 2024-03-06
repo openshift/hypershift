@@ -10,7 +10,9 @@ import (
 	osinv1 "github.com/openshift/api/osin/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +48,8 @@ func init() {
 	auditv1.AddToScheme(Scheme)
 	apiregistrationv1.AddToScheme(Scheme)
 	hyperv1.AddToScheme(Scheme)
+	schedulingv1alpha1.AddToScheme(Scheme)
+	certificatesv1alpha1.AddToScheme(Scheme)
 	configv1.AddToScheme(Scheme)
 	securityv1.AddToScheme(Scheme)
 	operatorv1.AddToScheme(Scheme)
