@@ -36,19 +36,19 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 
 	for _, instanceType := range input.InstanceTypes {
 		if instanceType != nil {
-			var coresCount *int64
+			var vCpusCount *int64
 
 			switch *instanceType {
 			case "m5.xlarge":
-				coresCount = pointer.Int64(2)
+				vCpusCount = pointer.Int64(4)
 			case "m5.2xlarge":
-				coresCount = pointer.Int64(4)
+				vCpusCount = pointer.Int64(8)
 			}
 
 			instanceTypesInfo = append(instanceTypesInfo, &ec2.InstanceTypeInfo{
 				InstanceType: instanceType,
 				VCpuInfo: &ec2.VCpuInfo{
-					DefaultCores: coresCount,
+					DefaultVCpus: vCpusCount,
 				},
 			})
 		}
@@ -58,45 +58,45 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
 }
 
-func TestReportCoresCountByHCluster(t *testing.T) {
+func TestReportVCpusCountByHCluster(t *testing.T) {
 	testCases := []struct {
 		name               string
 		npsParams          []nodePoolParams
-		expectedCoresCount float64
+		expectedVCpusCount float64
 	}{
 		{
-			name:               "When there is no nodePool, the total number of worker cores is 0",
+			name:               "When there is no nodePool, the total number of worker vCpus is 0",
 			npsParams:          []nodePoolParams{},
-			expectedCoresCount: 0,
+			expectedVCpusCount: 0,
 		},
 		{
-			name: "When there is one nodePool with no m5.xlarge nodes available, the total number of worker cores is 0",
+			name: "When there is one nodePool with no m5.xlarge nodes available, the total number of worker vCpus is 0",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 0, ec2InstanceType: "m5.xlarge"},
 			},
-			expectedCoresCount: 0,
+			expectedVCpusCount: 0,
 		},
 		{
-			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker cores is 4",
+			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker vCpus is 4",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
 			},
-			expectedCoresCount: 4,
+			expectedVCpusCount: 8,
 		},
 		{
-			name: "When there is two nodePools with 2 m5.2xlarge nodes available each, the total number of worker cores is 16",
+			name: "When there is two nodePools with 2 m5.2xlarge nodes available each, the total number of worker vCpus is 16",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 			},
-			expectedCoresCount: 16,
+			expectedVCpusCount: 32,
 		},
 		{
-			name: "When the nodePool EC2 instance type is invalid, the total number of worker cores is -1",
+			name: "When the nodePool EC2 instance type is invalid, the total number of worker vCpus is -1",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "hello_world"},
 			},
-			expectedCoresCount: -1,
+			expectedVCpusCount: -1,
 		},
 	}
 
@@ -141,8 +141,8 @@ func TestReportCoresCountByHCluster(t *testing.T) {
 			}
 
 			expectedMetricValue := &dto.MetricFamily{
-				Name: pointer.String(CoresCountByHClusterMetricName),
-				Help: pointer.String(CoresCountByHClusterMetricHelp),
+				Name: pointer.String(VCpusCountByHClusterMetricName),
+				Help: pointer.String(VCpusCountByHClusterMetricHelp),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
@@ -159,7 +159,7 @@ func TestReportCoresCountByHCluster(t *testing.T) {
 							Name: pointer.String("platform"), Value: pointer.String(string(hyperv1.AWSPlatform)),
 						},
 					},
-					Gauge: &dto.Gauge{Value: pointer.Float64(tc.expectedCoresCount)},
+					Gauge: &dto.Gauge{Value: pointer.Float64(tc.expectedVCpusCount)},
 				}},
 			}
 
@@ -174,7 +174,7 @@ func TestReportCoresCountByHCluster(t *testing.T) {
 			var metricValue *dto.MetricFamily
 
 			for _, currentMetricValue := range allMetricsValues {
-				if currentMetricValue != nil && currentMetricValue.Name != nil && *currentMetricValue.Name == CoresCountByHClusterMetricName {
+				if currentMetricValue != nil && currentMetricValue.Name != nil && *currentMetricValue.Name == VCpusCountByHClusterMetricName {
 					metricValue = currentMetricValue
 				}
 			}
