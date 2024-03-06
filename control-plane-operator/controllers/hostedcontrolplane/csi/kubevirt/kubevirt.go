@@ -518,9 +518,6 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 		return fmt.Errorf("failed to get csr signer cert secret: %w", err)
 	}
 
-	if err != nil {
-		return err
-	}
 	tenantControllerKubeconfigSecret := manifests.KubevirtCSIDriverTenantKubeConfig(infraNamespace)
 	_, err = createOrUpdate(ctx, client, tenantControllerKubeconfigSecret, func() error {
 		return pki.ReconcileServiceAccountKubeconfig(tenantControllerKubeconfigSecret, csrSigner, rootCA, hcp, manifests.KubevirtCSIDriverTenantNamespaceStr, "kubevirt-csi-controller-sa")

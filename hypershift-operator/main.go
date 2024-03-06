@@ -244,9 +244,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 		return true, nil
 	}); err != nil {
-		if err != nil {
-			return fmt.Errorf("failed to find operator image: %w", err)
-		}
+		return fmt.Errorf("failed to find operator image: %w", err)
 	}
 
 	log.Info("using hosted control plane operator image", "operator-image", operatorImage)

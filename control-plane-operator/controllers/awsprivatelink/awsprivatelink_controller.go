@@ -745,9 +745,6 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	}
 
 	zoneID := awsEndpointService.Status.DNSZoneID
-	if err != nil {
-		return false, err
-	}
 
 	for _, fqdn := range awsEndpointService.Status.DNSNames {
 		if fqdn != "" && zoneID != "" {

@@ -621,9 +621,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if hcpCVOConditions[conditionType] == nil {
 			unknownStatusMessage = "Condition not found in the CVO."
 		}
-		if err != nil {
-			unknownStatusMessage = fmt.Sprintf("failed to get clusterVersion: %v", err)
-		}
 
 		hcCVOCondition = &metav1.Condition{
 			Type:               string(conditionType),
@@ -876,7 +873,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 						return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
 					}
 				}
-				if err == nil && ignitionServerRoute.Spec.Host != "" {
+				if ignitionServerRoute.Spec.Host != "" {
 					hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
 				}
 			}

@@ -172,7 +172,7 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 				log.Error(err, fmt.Sprintf("failed to get pods with label %s in namespace %s, retrying...", labelSelectors, namespace))
 				continue
 			}
-			if pods != nil && len(pods.Items) > 0 {
+			if len(pods.Items) > 0 {
 				var retry bool
 				for _, pod := range pods.Items {
 					if pod.DeletionTimestamp == nil || time.Since(pod.DeletionTimestamp.Time).Minutes() < float64(10) {

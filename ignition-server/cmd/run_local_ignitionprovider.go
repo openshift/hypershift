@@ -72,9 +72,6 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to get kubernetes client: %w", err)
 	}
-	if err != nil {
-		return err
-	}
 	token := &corev1.Secret{}
 	if err := cl.Get(ctx, client.ObjectKey{Namespace: o.Namespace, Name: o.TokenSecret}, token); err != nil {
 		return err
