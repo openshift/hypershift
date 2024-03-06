@@ -1,0 +1,33 @@
+#!/bin/bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+HYPERSHIFT_DIR=${HYPERSHIFT_DIR:-$script_dir/../..}
+
+NAMESPACE="${NAMESPACE:-clusters}"
+NAME="${NAME:-example}"
+cp_namespace="${NAMESPACE}-${NAME}"
+
+
+# Wait for a hostedcontrolplane resource to exist in the control plane namespace
+while ! oc get hostedcontrolplane ${NAME} -n ${cp_namespace} &> /dev/null; do
+	echo "Waiting for hostedcontrolplane resource to exist in ${cp_namespace}"
+	sleep 3
+done
+
+# Wait for the apiserver to become available
+echo "Waiting for Kube APIServer to become available"
+oc wait --for=condition=KubeAPIServerAvailable hostedcontrolplane/${NAME} -n ${cp_namespace} --timeout=-1s
+
+logfile="${script_dir}/portfw.log"
+pidfile="${script_dir}/portfw.pid"
+
+if [[ -f "${pidfile}" ]]; then
+	echo "Found existing portfoward pid, killing that first"
+	${script_dir}/stop-portforward
+fi
+
+oc port-forward service/kube-apiserver -n ${cp_namespace} 6443:6443 &> "${logfile}" &
+pid=$!
+echo "${pid}" > "${pidfile}"
+
+echo "Forwarding kube-apiserver to localhost"

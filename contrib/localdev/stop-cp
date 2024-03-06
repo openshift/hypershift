@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+${script_dir}/stop-portforward
+${script_dir}/stop-hcco
+${script_dir}/stop-cpo

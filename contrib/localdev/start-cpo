@@ -1,0 +1,36 @@
+#!/bin/bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+HYPERSHIFT_DIR=${HYPERSHIFT_DIR:-$script_dir/../..}
+
+NAMESPACE="${NAMESPACE:-clusters}"
+NAME="${NAME:-example}"
+cp_namespace="${NAMESPACE}-${NAME}"
+export METRICS_SET="Telemetry"
+export DEFAULT_INGRESS_DOMAIN="example.hypershift.devcluster.openshift.com"
+
+logfile="${script_dir}/cpo.log"
+pidfile="${script_dir}/cpo.pid"
+
+if [[ -f "${pidfile}" ]]; then
+	echo "Found existing cpo pid, killing that first"
+	${script_dir}/stop-cpo
+fi
+
+# Wait for a hostedcontrolplane resource to exist in the control plane namespace
+while ! oc get hostedcontrolplane ${NAME} -n ${cp_namespace} &> /dev/null; do
+	echo "Waiting for hostedcontrolplane resource to exist in ${cp_namespace}"
+	sleep 3
+done
+
+${HYPERSHIFT_DIR}/bin/control-plane-operator \
+  run \
+  --in-cluster=false \
+  --enable-ci-debug-output \
+  --metrics-addr "0" \
+  --health-probe-addr "0" \
+  --namespace ${cp_namespace} &> "${logfile}" &
+pid=$!
+echo "${pid}" > "${pidfile}"
+
+echo "Control plane operator started"

@@ -1,0 +1,24 @@
+#!/bin/bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+HYPERSHIFT_DIR=${HYPERSHIFT_DIR:-$script_dir/../..}
+
+NAME="${NAME:-example}"
+NAMESPACE="${NAMESPACE-clusters}"
+
+PULLSECRET="${PULL_SECRET:-$HOME/.pull-secret}"
+
+DEFAULT_RELEASE_IMAGE="$(curl -q https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4.15.0-0.nightly-multi/latest 2> /dev/null | jq -r .pullSpec)"
+RELEASE_IMAGE="${RELEASE_IMAGE:-$DEFAULT_RELEASE_IMAGE}"
+
+${HYPERSHIFT_DIR}/bin/hypershift create cluster none \
+  --generate-ssh \
+  --name ${NAME} \
+  --namespace ${NAMESPACE} \
+  --pull-secret ${PULLSECRET} \
+  --olm-catalog-placement Guest \
+  --base-domain hypershift.devcluster.openshift.com \
+  --annotations hypershift.openshift.io/debug-deployments=control-plane-operator,ignition-server,hosted-cluster-config-operator,control-plane-pki-operator \
+  --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
+  --release-image "${RELEASE_IMAGE}"

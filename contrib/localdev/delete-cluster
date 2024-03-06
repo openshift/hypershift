@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+HYPERSHIFT_DIR=${HYPERSHIFT_DIR:-$script_dir/../..}
+
+NAME="${NAME:-example}"
+NAMESPACE="${NAMESPACE-clusters}"
+
+oc delete hostedcluster ${NAME} -n ${NAMESPACE} --wait=false
