@@ -24,7 +24,7 @@ const (
 	ServiceSignerPublicKey  = "service-account.pub"
 )
 
-func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress string, serviceCIDRs []string) error {
+func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress string, serviceCIDRs []string, nodeInternalAPIServerIP string) error {
 	svc := manifests.KubeAPIServerService(secret.Namespace)
 	svcAddresses := make([]string, 0)
 
@@ -51,6 +51,7 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 		"0:0:0:0:0:0:0:1",
 	}
 	apiServerIPs = append(apiServerIPs, svcAddresses...)
+	apiServerIPs = append(apiServerIPs, nodeInternalAPIServerIP)
 
 	if isNumericIP(externalAPIAddress) {
 		apiServerIPs = append(apiServerIPs, externalAPIAddress)
