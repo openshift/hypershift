@@ -470,6 +470,8 @@ objects:
           volumeMounts:
           - mountPath: /etc/provider
             name: credentials
+        imagePullSecrets:
+        - name: pull-secret
         serviceAccountName: external-dns
         volumes:
         - name: credentials

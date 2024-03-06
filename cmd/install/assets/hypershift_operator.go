@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,6 +24,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
+
+	"github.com/google/uuid"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
 )
 
@@ -42,6 +45,9 @@ const (
 	// DefaultPriorityClass is for pods in the Hypershift control plane that are
 	// not API critical but still need elevated priority.
 	DefaultPriorityClass = "hypershift-control-plane"
+
+	// PullSecretName is the name for the Secret containing a user's pull secret
+	PullSecretName = "pull-secret"
 )
 
 var (
@@ -253,6 +259,11 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 									MountPath: "/etc/provider",
 								},
 							},
+						},
+					},
+					ImagePullSecrets: []corev1.LocalObjectReference{
+						{
+							Name: PullSecretName,
 						},
 					},
 					Volumes: []corev1.Volume{
@@ -1751,5 +1762,28 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
 			},
 		},
+	}
+}
+
+type HyperShiftPullSecret struct {
+	Namespace       string
+	PullSecretBytes []byte
+}
+
+func (o HyperShiftPullSecret) Build() *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace,
+			Name:      PullSecretName,
+			Labels:    map[string]string{cmdutil.DeleteWithClusterLabelName: "true"},
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": o.PullSecretBytes,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
 	}
 }
