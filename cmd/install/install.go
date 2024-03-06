@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -65,6 +66,7 @@ type Options struct {
 	EnableConversionWebhook                   bool
 	Template                                  bool
 	Format                                    string
+	OutputTypes                               string
 	ExcludeEtcdManifests                      bool
 	PlatformMonitoring                        metrics.PlatformMonitoring
 	EnableCIDebugOutput                       bool
@@ -89,6 +91,7 @@ type Options struct {
 	EnableCVOManagementClusterMetricsAccess   bool
 	MetricsSet                                metrics.MetricsSet
 	WaitUntilAvailable                        bool
+	WaitUntilEstablished                      bool
 	RHOBSMonitoring                           bool
 	SLOsAlerts                                bool
 	MonitoringDashboards                      bool
@@ -206,6 +209,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCVOManagementClusterMetricsAccess, "enable-cvo-management-cluster-metrics-access", opts.EnableCVOManagementClusterMetricsAccess, "If true, the hosted CVO will have access to the management cluster metrics server to evaluate conditional updates (supported for OpenShift management clusters)")
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
+	cmd.Flags().BoolVar(&opts.WaitUntilEstablished, "wait-until-established", opts.WaitUntilEstablished, "If true, pauses installation until all custom resource definitions are established before applying other manifests.")
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
@@ -220,9 +224,20 @@ func NewCommand() *cobra.Command {
 			return err
 		}
 
-		objects, err := hyperShiftOperatorManifests(opts)
+		crds, objects, err := hyperShiftOperatorManifests(opts)
 		if err != nil {
 			return err
+		}
+
+		err = apply(cmd.Context(), crds)
+		if err != nil {
+			return err
+		}
+
+		if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
+			if err := waitUntilEstablished(cmd.Context(), crds); err != nil {
+				return err
+			}
 		}
 
 		err = apply(cmd.Context(), objects)
@@ -277,6 +292,36 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 	}
 
 	return errors.NewAggregate(errs)
+}
+
+func waitUntilEstablished(ctx context.Context, crds []crclient.Object) error {
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	eg := errgroup.Group{}
+	for i := range crds {
+		crd := crds[i].(*apiextensionsv1.CustomResourceDefinition)
+		eg.Go(func() error {
+			fmt.Printf("Waiting for custom resource definition %q to be established...\n", crd.Name)
+			return wait.PollUntilContextCancel(waitCtx, 100*time.Millisecond, true, func(ctx context.Context) (bool, error) {
+				if err := client.Get(ctx, crclient.ObjectKeyFromObject(crd), crd); err != nil {
+					return false, err
+				}
+				for _, condition := range crd.Status.Conditions {
+					if condition.Type == apiextensionsv1.Established && condition.Status == apiextensionsv1.ConditionTrue {
+						fmt.Printf("Custom resource definition %q is successfully established\n", crd.Name)
+						return true, nil
+					}
+				}
+				return false, nil
+			})
+		})
+	}
+	return eg.Wait()
 }
 
 func waitUntilAvailable(ctx context.Context, opts Options) error {
@@ -386,7 +431,8 @@ func fetchImageRefs(file string) (map[string]string, error) {
 	return result, nil
 }
 
-func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
+func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Object, error) {
+	var crds []crclient.Object
 	var objects []crclient.Object
 
 	var images map[string]string
@@ -394,7 +440,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		var err error
 		images, err = fetchImageRefs(opts.ImageRefsFile)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -453,7 +499,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	if len(opts.PullSecretFile) > 0 {
 		pullSecretBytes, err := os.ReadFile(opts.PullSecretFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+			return nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
 		}
 
 		pullSecret := assets.HyperShiftPullSecret{
@@ -467,7 +513,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		oidcSecret = assets.HyperShiftOperatorOIDCProviderS3Secret{
@@ -491,7 +537,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		if opts.AWSPrivateCreds != "" {
 			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
 			if err != nil {
-				return objects, err
+				return nil, nil, err
 			}
 
 			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
@@ -514,7 +560,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	if opts.AdditionalTrustBundle != "" {
 		userCABundle, err := os.ReadFile(opts.AdditionalTrustBundle)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		userCABundleCM = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -558,7 +604,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		if opts.ExternalDNSCredentials != "" {
 			externalDNSCreds, err := os.ReadFile(opts.ExternalDNSCredentials)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			externalDNSSecret = assets.ExternalDNSCredsSecret{
@@ -659,7 +705,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		objects = append(objects, alertingRule)
 	}
 
-	objects = append(objects, assets.CustomResourceDefinitions(func(path string) bool {
+	crds = append(crds, assets.CustomResourceDefinitions(func(path string) bool {
 		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
 			return false
 		}
@@ -734,7 +780,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	for idx := range objects {
 		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.Scheme)
 		if err != nil {
-			return nil, fmt.Errorf("failed to look up gvk for %T: %w", objects[idx], err)
+			return nil, nil, fmt.Errorf("failed to look up gvk for %T: %w", objects[idx], err)
 		}
 		// Everything that embeds metav1.TypeMeta implements this
 		objects[idx].(interface {
@@ -742,5 +788,16 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}).SetGroupVersionKind(gvk)
 	}
 
-	return objects, nil
+	for idx := range crds {
+		gvk, err := apiutil.GVKForObject(crds[idx], hyperapi.Scheme)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to look up gvk for %T: %w", crds[idx], err)
+		}
+		// Everything that embeds metav1.TypeMeta implements this
+		crds[idx].(interface {
+			SetGroupVersionKind(gvk schema.GroupVersionKind)
+		}).SetGroupVersionKind(gvk)
+	}
+
+	return crds, objects, nil
 }
