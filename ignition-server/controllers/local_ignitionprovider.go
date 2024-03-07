@@ -248,7 +248,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	clusterConfigComponentShort := "cca"
 	clusterConfigFile := "usr/bin/render"
 
-	if payloadVersion.Minor < 15 {
+	if payloadVersion.LT(semver.Version{Major: 4, Minor: 15}) {
 		clusterConfigComponent = "cluster-config-operator"
 		clusterConfigComponentShort = "cco"
 		clusterConfigFile = "usr/bin/cluster-config-operator"
@@ -679,7 +679,7 @@ cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 `
 
 	// Depending on the version, we need different args.
-	if payloadVersion.Minor < 15 {
+	if payloadVersion.LT(semver.Version{Major: 4, Minor: 15}) {
 		script = `#!/bin/bash
 set -e
 mkdir -p %[2]s
@@ -700,7 +700,7 @@ cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 	}
 
 	// Depending on the version, we need different args.
-	if payloadVersion.Minor < 14 {
+	if payloadVersion.LT(semver.Version{Major: 4, Minor: 14}) {
 		script = `#!/bin/bash
 set -e
 mkdir -p %[2]s
