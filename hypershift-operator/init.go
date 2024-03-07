@@ -80,7 +80,7 @@ func runInit(ctx context.Context, log logr.Logger) error {
 		if err != nil {
 			return fmt.Errorf("unable to read ocm CA trust bundle file: %w", err)
 		}
-	} else if err != nil && errors.Is(err, os.ErrNotExist) {
+	} else if errors.Is(err, os.ErrNotExist) {
 		ocmTrustedCABundle, err = os.ReadFile("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
 		if err != nil {
 			return fmt.Errorf("unable to read ocm CA trust bundle file: %w", err)
@@ -120,7 +120,7 @@ func getImageRegistryCABundle(ctx context.Context, client crclient.Client) (*byt
 	if err := client.Get(ctx, types.NamespacedName{Name: "cluster"}, img); err != nil {
 		return nil, err
 	}
-	if img == nil || img.Spec.AdditionalTrustedCA.Name == "" {
+	if img.Spec.AdditionalTrustedCA.Name == "" {
 		return nil, nil
 	}
 	configmap := &corev1.ConfigMap{}

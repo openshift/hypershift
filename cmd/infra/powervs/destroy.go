@@ -466,7 +466,7 @@ func destroyPowerVsCloudConnection(ctx context.Context, options *DestroyInfraOpt
 		for _, cloudConn := range cloudConnL.CloudConnections {
 			if *cloudConn.Name == cloudConnName {
 				// De-linking the VPC in cloud connection
-				var vpc *models.CloudConnectionEndpointVPC
+				var vpc models.CloudConnectionEndpointVPC
 				var vpcL []*models.CloudConnectionVPC
 				if cloudConn.Vpc != nil && cloudConn.Vpc.Enabled {
 					for _, v := range cloudConn.Vpc.Vpcs {
@@ -480,7 +480,7 @@ func destroyPowerVsCloudConnection(ctx context.Context, options *DestroyInfraOpt
 					vpc.Vpcs = vpcL
 				}
 
-				if _, _, err = client.Update(*cloudConn.CloudConnectionID, &models.CloudConnectionUpdate{Name: cloudConn.Name, Vpc: vpc}); err != nil {
+				if _, _, err = client.Update(*cloudConn.CloudConnectionID, &models.CloudConnectionUpdate{Name: cloudConn.Name, Vpc: &vpc}); err != nil {
 					return err
 				}
 

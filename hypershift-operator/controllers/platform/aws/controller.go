@@ -516,7 +516,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	})
 	if err != nil {
 		log.Info("failed to delete endpoint service, attempting to reject connections", "serviceID", serviceID)
-		if rejectErr := r.rejectVpcEndpointConnections(ctx, serviceID); err != nil {
+		if rejectErr := r.rejectVpcEndpointConnections(ctx, serviceID); rejectErr != nil {
 			return false, unwrapError(log, rejectErr)
 		}
 

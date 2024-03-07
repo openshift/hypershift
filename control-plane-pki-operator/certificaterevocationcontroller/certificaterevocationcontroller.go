@@ -871,7 +871,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 			// this is OK, things are just propagating still
 			return true, nil, true, nil // we need to synthetically re-queue since nothing about KAS loading will trigger us
 		}
-		if err != nil && !apierrors.IsUnauthorized(err) {
+		if !apierrors.IsUnauthorized(err) {
 			return true, nil, false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
 		}
 	}
