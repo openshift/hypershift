@@ -126,15 +126,17 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 			},
 			CORSAllowedOrigins: corsAllowedOrigins(p.AdditionalCORSAllowedOrigins),
 		},
-		AuthConfig: kcpv1.MasterAuthConfig{
-			OAuthMetadataFile: cpath(kasVolumeOauthMetadata().Name, OauthMetadataConfigKey),
-		},
 		ConsolePublicURL:             p.ConsolePublicURL,
 		ImagePolicyConfig:            imagePolicyConfig(p.InternalRegistryHostName, p.ExternalRegistryHostNames),
 		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
 		ServiceAccountPublicKeyFiles: []string{cpath(kasVolumeServiceAccountKey().Name, pki.ServiceSignerPublicKey)},
 		ServicesSubnet:               strings.Join(p.ServiceNetwork, ","),
 	}
+
+	if p.Authentication == nil || p.Authentication.Type == configv1.AuthenticationTypeIntegratedOAuth {
+		config.AuthConfig.OAuthMetadataFile = cpath(kasVolumeOauthMetadata().Name, OauthMetadataConfigKey)
+	}
+
 	args := kubeAPIServerArgs{}
 	args.Set("advertise-address", p.AdvertiseAddress)
 	args.Set("allow-privileged", "true")
