@@ -2106,7 +2106,7 @@ k8s.io/utils/trace
 ## explicit; go 1.17
 kubevirt.io/api/core
 kubevirt.io/api/core/v1
-# kubevirt.io/containerized-data-importer-api v1.57.0
+# kubevirt.io/containerized-data-importer-api v1.58.1
 ## explicit; go 1.19
 kubevirt.io/containerized-data-importer-api/pkg/apis/core
 kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1
@@ -2137,7 +2137,7 @@ sigs.k8s.io/cluster-api/util/contract
 sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/patch
 sigs.k8s.io/cluster-api/util/topology
-# sigs.k8s.io/cluster-api-provider-aws/v2 v2.3.4
+# sigs.k8s.io/cluster-api-provider-aws/v2 v2.4.0
 ## explicit; go 1.21
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
