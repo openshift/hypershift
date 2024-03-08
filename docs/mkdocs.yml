@@ -66,6 +66,7 @@ nav:
     - how-to/automated-machine-management/performance-profiling.md
   - 'AWS':
     - how-to/aws/create-aws-hosted-cluster-arm-workers.md
+    - how-to/aws/create-heterogeneous-nodepools.md
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
