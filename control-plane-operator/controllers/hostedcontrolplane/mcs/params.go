@@ -21,6 +21,7 @@ type MCSParams struct {
 	Infrastructure  *configv1.Infrastructure
 	Network         *configv1.Network
 	Proxy           *configv1.Proxy
+	Image           *configv1.Image
 	InstallConfig   *globalconfig.InstallConfig
 }
 
@@ -40,6 +41,9 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatus(proxy, hcp)
 
+	image := globalconfig.ImageConfig()
+	globalconfig.ReconcileImageConfig(image, hcp)
+
 	return &MCSParams{
 		OwnerRef:        config.OwnerRefFrom(hcp),
 		RootCA:          rootCA,
@@ -50,6 +54,7 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 		Infrastructure:  infra,
 		Network:         network,
 		Proxy:           proxy,
+		Image:           image,
 		InstallConfig:   globalconfig.NewInstallConfig(hcp),
 	}, nil
 }

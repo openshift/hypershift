@@ -20,7 +20,6 @@ const (
 )
 
 type ObservedConfig struct {
-	Image   *configv1.Image
 	Build   *configv1.Build
 	Project *configv1.Project
 }
@@ -52,10 +51,6 @@ func ReadObservedConfig(ctx context.Context, c client.Client, observedConfig *Ob
 		observed *corev1.ConfigMap
 		dest     runtime.Object
 	}{
-		"image": {
-			observed: ObservedImageConfig(namespace),
-			dest:     ImageConfig(),
-		},
 		"project": {
 			observed: ObservedProjectConfig(namespace),
 			dest:     ProjectConfig(),
@@ -81,7 +76,6 @@ func ReadObservedConfig(ctx context.Context, c client.Client, observedConfig *Ob
 		}
 	}
 
-	observedConfig.Image = configs["image"].dest.(*configv1.Image)
 	observedConfig.Build = configs["build"].dest.(*configv1.Build)
 	observedConfig.Project = configs["project"].dest.(*configv1.Project)
 

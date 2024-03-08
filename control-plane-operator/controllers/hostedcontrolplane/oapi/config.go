@@ -26,7 +26,7 @@ const (
 	defaultInternalRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 )
 
-func ReconcileConfig(cm *corev1.ConfigMap, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, projectConfig *configv1.Project) error {
+func ReconcileConfig(cm *corev1.ConfigMap, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, projectConfig *configv1.Project) error {
 	ownerRef.ApplyTo(cm)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
@@ -46,7 +46,7 @@ func ReconcileConfig(cm *corev1.ConfigMap, auditWebhookRef *corev1.LocalObjectRe
 	return nil
 }
 
-func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWebhookRef *corev1.LocalObjectReference, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, projectConfig *configv1.Project) {
+func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWebhookRef *corev1.LocalObjectReference, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, projectConfig *configv1.Project) {
 	cfg.TypeMeta = metav1.TypeMeta{
 		Kind:       "OpenShiftAPIServerConfig",
 		APIVersion: openshiftcpv1.GroupVersion.String(),
@@ -83,19 +83,18 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWeb
 	}
 
 	// Image policy config
-	cfg.ImagePolicyConfig.InternalRegistryHostname = imageConfig.Status.InternalRegistryHostname
-	cfg.ImagePolicyConfig.ExternalRegistryHostnames = imageConfig.Status.ExternalRegistryHostnames
-	if cfg.ImagePolicyConfig.InternalRegistryHostname == "" {
-		cfg.ImagePolicyConfig.InternalRegistryHostname = defaultInternalRegistryHostname
+	cfg.ImagePolicyConfig.InternalRegistryHostname = defaultInternalRegistryHostname
+	if imageConfig != nil {
+		cfg.ImagePolicyConfig.ExternalRegistryHostnames = imageConfig.ExternalRegistryHostnames
+		var allowedRegistries openshiftcpv1.AllowedRegistries
+		for _, location := range imageConfig.AllowedRegistriesForImport {
+			allowedRegistries = append(allowedRegistries, openshiftcpv1.RegistryLocation{
+				DomainName: location.DomainName,
+				Insecure:   location.Insecure,
+			})
+		}
+		cfg.ImagePolicyConfig.AllowedRegistriesForImport = allowedRegistries
 	}
-	var allowedRegistries openshiftcpv1.AllowedRegistries
-	for _, location := range imageConfig.Spec.AllowedRegistriesForImport {
-		allowedRegistries = append(allowedRegistries, openshiftcpv1.RegistryLocation{
-			DomainName: location.DomainName,
-			Insecure:   location.Insecure,
-		})
-	}
-	cfg.ImagePolicyConfig.AllowedRegistriesForImport = allowedRegistries
 
 	// Routing config
 	cfg.RoutingConfig.Subdomain = ingressDomain

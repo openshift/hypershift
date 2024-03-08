@@ -22,7 +22,7 @@ const (
 	configKey = "config.yaml"
 )
 
-func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
+func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
 	ownerRef.ApplyTo(cm)
 
 	if cm.Data == nil {
@@ -46,7 +46,7 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(ocmContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -60,10 +60,9 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 	cfg.Deployer.ImageTemplateFormat.Format = deployerImage
 
 	// registry config
-	cfg.DockerPullSecret.InternalRegistryHostname = imageConfig.Status.InternalRegistryHostname
-	cfg.DockerPullSecret.RegistryURLs = imageConfig.Status.ExternalRegistryHostnames
-	if len(cfg.DockerPullSecret.InternalRegistryHostname) == 0 {
-		cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
+	cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
+	if imageConfig != nil {
+		cfg.DockerPullSecret.RegistryURLs = imageConfig.ExternalRegistryHostnames
 	}
 
 	// build config
