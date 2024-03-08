@@ -254,6 +254,23 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
 
+	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
+	// It is included directly by the ignition server.  However, we need to detect the change
+	// here to trigger a nodepool update.
+	image := globalconfig.ImageConfig()
+	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
+
+	// Serialize proxy and image into a single string to use in the token secret hash.
+	globalConfigBytes := bytes.NewBuffer(nil)
+	enc := json.NewEncoder(globalConfigBytes)
+	if err := enc.Encode(proxy); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to encode proxy global config: %w", err)
+	}
+	if err := enc.Encode(image); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to encode image global config: %w", err)
+	}
+	globalConfig := globalConfigBytes.String()
+
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -624,7 +641,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := supportutil.HashStruct(config + targetVersion + pullSecretName)
+	targetPayloadConfigHash := supportutil.HashStruct(config + targetVersion + pullSecretName + globalConfig)
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
