@@ -27,6 +27,7 @@ const (
 	OSDFleetManagerPairedNodesLabel   = "osd-fleet-manager.openshift.io/paired-nodes"
 	HostedClusterNameLabel            = "hypershift.openshift.io/cluster-name"
 	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
+	goMemLimitLabel                   = "hypershift.openshift.io/request-serving-gomemlimit"
 )
 
 type DedicatedServingComponentNodeReaper struct {
@@ -206,8 +207,14 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	if len(nodesToUse) < 2 {
 		return ctrl.Result{}, fmt.Errorf("failed to find enough available nodes for cluster, found %d", len(nodesToUse))
 	}
+
+	nodeGoMemLimit := ""
 	for _, node := range nodesToUse {
 		originalNode := node.DeepCopy()
+
+		if node.Labels[goMemLimitLabel] != "" && nodeGoMemLimit == "" {
+			nodeGoMemLimit = node.Labels[goMemLimitLabel]
+		}
 
 		// Add taint and labels for specific hosted cluster
 		hasTaint := false
@@ -241,6 +248,9 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	log.Info("Setting scheduled annotation on hosted cluster")
 	originalHcluster := hcluster.DeepCopy()
 	hcluster.Annotations[hyperv1.HostedClusterScheduledAnnotation] = "true"
+	if nodeGoMemLimit != "" {
+		hcluster.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = nodeGoMemLimit
+	}
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster annotation: %w", err)
 	}
