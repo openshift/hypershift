@@ -406,20 +406,8 @@ func CatalogOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Relab
 }
 
 func HostedClusterConfigOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
-	switch set {
-	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
-			{
-				Action:       "keep",
-				Regex:        "(cluster_infrastructure_provider|cluster_feature_set)",
-				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
-			},
-		}
-	case MetricsSetSRE:
-		return sreMetricsSetConfig.HostedClusterConfigOperator
-	default:
-		return nil
-	}
+	// For now, no filtering will occur for the HCCO
+	return nil
 }
 
 func ControlPlaneOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
