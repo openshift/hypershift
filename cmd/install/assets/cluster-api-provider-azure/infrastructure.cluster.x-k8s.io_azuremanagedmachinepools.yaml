@@ -19,6 +19,27 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - description: Cluster to which this AzureManagedMachinePool belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+      name: Severity
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].message
+      name: Message
+      priority: 1
+      type: string
+    - description: Time duration since creation of this AzureManagedMachinePool
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     - jsonPath: .spec.mode
       name: Mode
       type: string
@@ -56,6 +77,15 @@ spec:
                   AdditionalTags is an optional set of tags to add to Azure resources managed by the
                   Azure provider, in addition to the ones added by default.
                 type: object
+              asoManagedClustersAgentPoolPatches:
+                description: |-
+                  ASOManagedClustersAgentPoolPatches defines JSON merge patches to be applied to the generated ASO ManagedClustersAgentPool resource.
+                  WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                  otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                  operation is possible.
+                items:
+                  type: string
+                type: array
               availabilityZones:
                 description: |-
                   AvailabilityZones - Availability zones for nodes. Must use VirtualMachineScaleSets AgentPoolType.

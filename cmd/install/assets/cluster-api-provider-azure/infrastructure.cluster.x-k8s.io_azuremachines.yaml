@@ -17,8 +17,16 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - description: Cluster to which this AzureMachine belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      priority: 1
+      type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+      name: Severity
       type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].reason
       name: Reason
@@ -30,11 +38,6 @@ spec:
     - description: Azure VM provisioning state
       jsonPath: .status.vmState
       name: State
-      type: string
-    - description: Cluster to which this AzureMachine belongs
-      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
-      name: Cluster
-      priority: 1
       type: string
     - description: Machine object to which this AzureMachine belongs
       jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name

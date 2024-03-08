@@ -60,6 +60,15 @@ spec:
                           AdditionalTags is an optional set of tags to add to Azure resources managed by the
                           Azure provider, in addition to the ones added by default.
                         type: object
+                      asoManagedClustersAgentPoolPatches:
+                        description: |-
+                          ASOManagedClustersAgentPoolPatches defines JSON merge patches to be applied to the generated ASO ManagedClustersAgentPool resource.
+                          WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                          otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                          operation is possible.
+                        items:
+                          type: string
+                        type: array
                       availabilityZones:
                         description: |-
                           AvailabilityZones - Availability zones for nodes. Must use VirtualMachineScaleSets AgentPoolType.
