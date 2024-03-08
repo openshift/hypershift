@@ -34,7 +34,7 @@ func TestReconcileOpenShiftRouteControllerManagerConfig(t *testing.T) {
 	}
 	imageProvider := imageprovider.NewFromImages(images)
 
-	params := NewOpenShiftRouteControllerManagerParams(hcp, nil, imageProvider, true)
+	params := NewOpenShiftRouteControllerManagerParams(hcp, imageProvider, true)
 	configMap := manifests.OpenShiftRouteControllerManagerConfig(hcp.Namespace)
 
 	networkConfig := &v1.NetworkSpec{

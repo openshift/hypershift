@@ -369,6 +369,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			fmt.Sprintf("--pull-secret=%s/pull-secret.yaml", configDir),
 			fmt.Sprintf("--dest-dir=%s", destDir),
 			fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
+			fmt.Sprintf("--release-image=%s", releaseImage),
 		}
 
 		// Depending on the version, we need different args.
@@ -468,6 +469,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	// for the MCS.
 	err = func() error {
 		start := time.Now()
+
+		// copy the image config out of the configDir and into the mccBaseDir
+		if err := copyFile(filepath.Join(configDir, "image-config.yaml"), filepath.Join(mccBaseDir, "image-config.yaml")); err != nil {
+			return fmt.Errorf("failed to copy image-config.yaml: %w", err)
+		}
 
 		args := []string{
 			"bootstrap",

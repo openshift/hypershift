@@ -29,7 +29,7 @@ type OpenShiftAPIServerParams struct {
 	AvailabilityProberImage                 string `json:"availabilityProberImage"`
 	Availability                            hyperv1.AvailabilityPolicy
 	Ingress                                 *configv1.IngressSpec
-	Image                                   *configv1.Image
+	Image                                   *configv1.ImageSpec
 	Project                                 *configv1.Project
 	AuditWebhookRef                         *corev1.LocalObjectReference
 	InternalOAuthDisable                    bool
@@ -58,7 +58,6 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 		IngressSubDomain:        globalconfig.IngressDomain(hcp),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
-		Image:                   observedConfig.Image,
 		Project:                 observedConfig.Project,
 		InternalOAuthDisable:    !util.HCPOAuthEnabled(hcp),
 	}
@@ -66,6 +65,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 	if hcp.Spec.Configuration != nil {
 		params.Ingress = hcp.Spec.Configuration.Ingress
 		params.APIServer = hcp.Spec.Configuration.APIServer
+		params.Image = hcp.Spec.Configuration.Image
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {

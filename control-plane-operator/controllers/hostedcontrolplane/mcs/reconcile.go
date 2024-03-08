@@ -31,6 +31,10 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 	if err != nil {
 		return err
 	}
+	serializedImage, err := serialize(p.Image)
+	if err != nil {
+		return err
+	}
 	serializedMasterConfigPool, err := serializeConfigPool(masterConfigPool())
 	if err != nil {
 		return err
@@ -54,6 +58,7 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 	cm.Data["cluster-infrastructure-02-config.yaml"] = serializedInfra
 	cm.Data["cluster-network-02-config.yaml"] = serializedNetwork
 	cm.Data["cluster-proxy-01-config.yaml"] = serializedProxy
+	cm.Data["image-config.yaml"] = serializedImage
 	cm.Data["install-config.yaml"] = p.InstallConfig.String()
 	cm.Data["master.machineconfigpool.yaml"] = serializedMasterConfigPool
 	cm.Data["worker.machineconfigpool.yaml"] = serializedWorkerConfigPool
