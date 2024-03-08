@@ -77,20 +77,20 @@ type NetworkTemplateSpec struct {
 	ControlPlaneOutboundLB *LoadBalancerClassSpec `json:"controlPlaneOutboundLB,omitempty"`
 }
 
-// GetControlPlaneSubnetTemplate returns the cluster control plane subnet template.
-func (n *NetworkTemplateSpec) GetControlPlaneSubnetTemplate() (SubnetTemplateSpec, error) {
+// GetSubnetTemplate returns the subnet template based on the subnet role.
+func (n *NetworkTemplateSpec) GetSubnetTemplate(role SubnetRole) (SubnetTemplateSpec, error) {
 	for _, sn := range n.Subnets {
-		if sn.Role == SubnetControlPlane {
+		if sn.Role == role {
 			return sn, nil
 		}
 	}
-	return SubnetTemplateSpec{}, errors.Errorf("no subnet template found with role %s", SubnetControlPlane)
+	return SubnetTemplateSpec{}, errors.Errorf("no subnet template found with role %s", role)
 }
 
-// UpdateControlPlaneSubnetTemplate updates the cluster control plane subnet template.
-func (n *NetworkTemplateSpec) UpdateControlPlaneSubnetTemplate(subnet SubnetTemplateSpec) {
+// UpdateSubnetTemplate updates the subnet template based on subnet role.
+func (n *NetworkTemplateSpec) UpdateSubnetTemplate(subnet SubnetTemplateSpec, role SubnetRole) {
 	for i, sn := range n.Subnets {
-		if sn.Role == SubnetControlPlane {
+		if sn.Role == role {
 			n.Subnets[i] = subnet
 		}
 	}

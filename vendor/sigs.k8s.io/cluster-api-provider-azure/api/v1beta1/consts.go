@@ -132,6 +132,8 @@ const (
 	PrivateEndpointsReadyCondition clusterv1.ConditionType = "PrivateEndpointsReady"
 	// FleetReadyCondition means the Fleet exists and is ready to be used.
 	FleetReadyCondition clusterv1.ConditionType = "FleetReady"
+	// AKSExtensionsReadyCondition means the AKS Extensions exist and are ready to be used.
+	AKSExtensionsReadyCondition clusterv1.ConditionType = "AKSExtensionsReady"
 
 	// CreatingReason means the resource is being created.
 	CreatingReason = "Creating"
@@ -158,6 +160,8 @@ const (
 	// OwnedByClusterLabelKey communicates CAPZ's ownership of an ASO resource
 	// independently of its ownership of the underlying Azure resource. The
 	// value for the label is the CAPI Cluster Name.
+	//
+	// Deprecated: OwnerReferences now determine ownership.
 	OwnedByClusterLabelKey = NameAzureProviderPrefix + string(ResourceLifecycleOwned)
 )
 

@@ -17,7 +17,7 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Type of Azure Identity
+    - description: Type of AzureClusterIdentity
       jsonPath: .spec.type
       name: Type
       type: string

@@ -120,9 +120,14 @@ type AzureManagedControlPlaneClassSpec struct {
 	NetworkPluginMode *NetworkPluginMode `json:"networkPluginMode,omitempty"`
 
 	// NetworkPolicy used for building Kubernetes network.
-	// +kubebuilder:validation:Enum=azure;calico
+	// +kubebuilder:validation:Enum=azure;calico;cilium
 	// +optional
 	NetworkPolicy *string `json:"networkPolicy,omitempty"`
+
+	// NetworkDataplane is the dataplane used for building the Kubernetes network.
+	// +kubebuilder:validation:Enum=azure;cilium
+	// +optional
+	NetworkDataplane *NetworkDataplaneType `json:"networkDataplane,omitempty"`
 
 	// Outbound configuration used by Nodes.
 	// +kubebuilder:validation:Enum=loadBalancer;managedNATGateway;userAssignedNATGateway;userDefinedRouting
@@ -218,6 +223,37 @@ type AzureManagedControlPlaneClassSpec struct {
 	// [AKS doc]: https://learn.microsoft.com/en-us/azure/templates/microsoft.containerservice/2023-03-15-preview/fleets/members
 	// +optional
 	FleetsMember *FleetsMemberClassSpec `json:"fleetsMember,omitempty"`
+
+	// Extensions is a list of AKS extensions to be installed on the cluster.
+	// +optional
+	Extensions []AKSExtension `json:"extensions,omitempty"`
+
+	// AutoUpgradeProfile defines the auto upgrade configuration.
+	// +optional
+	AutoUpgradeProfile *ManagedClusterAutoUpgradeProfile `json:"autoUpgradeProfile,omitempty"`
+
+	// SecurityProfile defines the security profile for cluster.
+	// +optional
+	SecurityProfile *ManagedClusterSecurityProfile `json:"securityProfile,omitempty"`
+
+	// ASOManagedClusterPatches defines JSON merge patches to be applied to the generated ASO ManagedCluster resource.
+	// WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+	// otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+	// operation is possible.
+	// +optional
+	ASOManagedClusterPatches []string `json:"asoManagedClusterPatches,omitempty"`
+
+	// EnablePreviewFeatures enables preview features for the cluster.
+	// +optional
+	EnablePreviewFeatures *bool `json:"enablePreviewFeatures,omitempty"`
+}
+
+// ManagedClusterAutoUpgradeProfile defines the auto upgrade profile for a managed cluster.
+type ManagedClusterAutoUpgradeProfile struct {
+	// UpgradeChannel determines the type of upgrade channel for automatically upgrading the cluster.
+	// +kubebuilder:validation:Enum=node-image;none;patch;rapid;stable
+	// +optional
+	UpgradeChannel *UpgradeChannel `json:"upgradeChannel,omitempty"`
 }
 
 // AzureManagedMachinePoolClassSpec defines the AzureManagedMachinePool properties that may be shared across several Azure managed machinepools.
@@ -368,6 +404,13 @@ type AzureManagedMachinePoolClassSpec struct {
 	// [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
 	// +optional
 	EnableEncryptionAtHost *bool `json:"enableEncryptionAtHost,omitempty"`
+
+	// ASOManagedClustersAgentPoolPatches defines JSON merge patches to be applied to the generated ASO ManagedClustersAgentPool resource.
+	// WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+	// otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+	// operation is possible.
+	// +optional
+	ASOManagedClustersAgentPoolPatches []string `json:"asoManagedClustersAgentPoolPatches,omitempty"`
 }
 
 // ManagedControlPlaneVirtualNetworkClassSpec defines the ManagedControlPlaneVirtualNetwork properties that may be shared across several managed control plane vnets.
@@ -385,7 +428,6 @@ type APIServerAccessProfileClassSpec struct {
 	EnablePrivateCluster *bool `json:"enablePrivateCluster,omitempty"`
 
 	// PrivateDNSZone enables private dns zone mode for private cluster.
-	// +kubebuilder:validation:Enum=System;None
 	// +optional
 	PrivateDNSZone *string `json:"privateDNSZone,omitempty"`
 
@@ -428,7 +470,7 @@ type SubnetClassSpec struct {
 	Name string `json:"name"`
 
 	// Role defines the subnet role (eg. Node, ControlPlane)
-	// +kubebuilder:validation:Enum=node;control-plane;bastion
+	// +kubebuilder:validation:Enum=node;control-plane;bastion;all
 	Role SubnetRole `json:"role"`
 
 	// CIDRBlocks defines the subnet's address space, specified as one or more address prefixes in CIDR notation.
