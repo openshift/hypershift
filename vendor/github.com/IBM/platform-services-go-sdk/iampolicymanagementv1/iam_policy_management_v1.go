@@ -15,7 +15,7 @@
  */
 
 /*
- * IBM OpenAPI SDK Code Generator Version: 3.84.1-55f6d880-20240110-194020
+ * IBM OpenAPI SDK Code Generator Version: 3.85.0-75c38f8f-20240206-210220
  */
 
 // Package iampolicymanagementv1 : Operations and models for the IamPolicyManagementV1 service
@@ -388,87 +388,7 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreatePolicyWithContext(ctx co
 // actions](/docs/account?topic=account-iam-service-roles-actions). Use only the resource attributes supported by the
 // service. To view a service's or the platform's supported attributes, check the [documentation](/docs?tab=all-docs).
 // The policy resource must include either the **`serviceType`**, **`serviceName`**,  or **`resourceGroupId`** attribute
-// and the **`accountId`** attribute.`
-//
-// In the rule field, you can specify a single condition by using **`key`**, **`value`**, and condition **`operator`**,
-// or a set of **`conditions`** with a combination **`operator`**. The possible combination operators are **`and`** and
-// **`or`**.
-//
-// Currently, we support two types of patterns:
-//
-// 1. `time-based`: Used to specify a time-based restriction
-//
-// Combine conditions to specify a time-based restriction (e.g., access only during business hours, during the
-// Monday-Friday work week). For example, a policy can grant access Monday-Friday, 9:00am-5:00pm using the following
-// rule:
-// ```json
-//   "rule": {
-//     "operator": "and",
-//     "conditions": [{
-//       "key": "{{environment.attributes.day_of_week}}",
-//       "operator": "dayOfWeekAnyOf",
-//       "value": ["1+00:00", "2+00:00", "3+00:00", "4+00:00", "5+00:00"]
-//     },
-//       "key": "{{environment.attributes.current_time}}",
-//       "operator": "timeGreaterThanOrEquals",
-//       "value": "09:00:00+00:00"
-//     },
-//       "key": "{{environment.attributes.current_time}}",
-//       "operator": "timeLessThanOrEquals",
-//       "value": "17:00:00+00:00"
-//     }]
-//   }
-// ``` You can use the following operators in the **`key`** and **`value`** pair:
-// ```
-//   'timeLessThan', 'timeLessThanOrEquals', 'timeGreaterThan', 'timeGreaterThanOrEquals',
-//   'dateTimeLessThan', 'dateTimeLessThanOrEquals', 'dateTimeGreaterThan', 'dateTimeGreaterThanOrEquals',
-//   'dayOfWeekEquals', 'dayOfWeekAnyOf',
-// ``` The pattern field that matches the rule is required when rule is provided. For the business hour rule example
-// above, the **`pattern`** is **`"time-based-conditions:weekly"`**. For more information, see [Time-based conditions
-// operators](/docs/account?topic=account-iam-condition-properties&interface=ui#policy-condition-properties) and
-// [Limiting access with time-based conditions](/docs/account?topic=account-iam-time-based&interface=ui). If the subject
-// is a locked service-id, the request will fail.
-//
-// 2. `attribute-based`: Used to specify a combination of OR/AND based conditions applied on resource attributes.
-//
-// Combine conditions to specify an attribute-based condition using AN/OR-based operators.
-//
-// For example, a policy can grant access based on multiple conditions applied on the resource attributes below:
-// ```json
-//   "pattern": "attribute-based-condition:resource:literal-and-wildcard"
-//   "rule": {
-//       "operator": "or",
-//       "conditions": [
-//         {
-//           "operator": "and",
-//           "conditions": [
-//             {
-//               "key": "{{resource.attributes.prefix}}",
-//               "operator": "stringEquals",
-//               "value": "home/test"
-//             },
-//             {
-//               "key": "{{environment.attributes.delimiter}}",
-//               "operator": "stringEquals",
-//               "value": "/"
-//             }
-//           ]
-//         },
-//         {
-//           "key": "{{resource.attributes.path}}",
-//           "operator": "stringMatch",
-//           "value": "home/David/_*"
-//         }
-//       ]
-//   }
-// ```
-//
-// In addition to satisfying the `resources` section, the policy grants permission only if either the `path` begins with
-// `home/David/` **OR**  the `prefix` is `home/test` and the `delimiter` is `/`. This mechanism helps you consolidate
-// multiple policies in to a single policy,  making policies easier to administer and stay within the policy limit for
-// an account. View the list of operators that can be used in the condition
-// [here](/docs/account?topic=account-wildcard#string-comparisons).
-//
+// and the **`accountId`** attribute.` If the subject is a locked service-id, the request will fail.
 //
 // ### Authorization
 //
@@ -1218,9 +1138,15 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListV2PoliciesWithContext(ctx 
 // The policy resource must include either the **`serviceType`**, **`serviceName`**, **`resourceGroupId`** or
 // **`service_group_id`** attribute and the **`accountId`** attribute. In the rule field, you can specify a single
 // condition by using **`key`**, **`value`**, and condition **`operator`**, or a set of **`conditions`** with a
-// combination **`operator`**. The possible combination operators are **`and`** and **`or`**. Combine conditions to
-// specify a time-based restriction (e.g., access only during business hours, during the Monday-Friday work week). For
-// example, a policy can grant access Monday-Friday, 9:00am-5:00pm using the following rule:
+// combination **`operator`**. The possible combination operators are **`and`** and **`or`**.
+//
+// Currently, we support two types of patterns:
+//
+// 1. `time-based`: Used to specify a time-based restriction
+//
+// Combine conditions to specify a time-based restriction (e.g., access only during business hours, during the
+// Monday-Friday work week). For example, a policy can grant access Monday-Friday, 9:00am-5:00pm using the following
+// rule:
 // ```json
 //   "rule": {
 //     "operator": "and",
@@ -1241,17 +1167,54 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListV2PoliciesWithContext(ctx 
 // ``` You can use the following operators in the **`key`** and **`value`** pair:
 // ```
 //   'timeLessThan', 'timeLessThanOrEquals', 'timeGreaterThan', 'timeGreaterThanOrEquals',
+//   'dateLessThan', 'dateLessThanOrEquals', 'dateGreaterThan', 'dateGreaterThanOrEquals',
 //   'dateTimeLessThan', 'dateTimeLessThanOrEquals', 'dateTimeGreaterThan', 'dateTimeGreaterThanOrEquals',
-//   'dayOfWeekEquals', 'dayOfWeekAnyOf',
+//   'dayOfWeekEquals', 'dayOfWeekAnyOf'
+// ``` The pattern field that matches the rule is required when rule is provided. For the business hour rule example
+// above, the **`pattern`** is **`"time-based-conditions:weekly"`**. For more information, see [Time-based conditions
+// operators](/docs/account?topic=account-iam-condition-properties&interface=ui#policy-condition-properties) and
+// [Limiting access with time-based conditions](/docs/account?topic=account-iam-time-based&interface=ui). If the subject
+// is a locked service-id, the request will fail.
+//
+// 2. `attribute-based`: Used to specify a combination of OR/AND based conditions applied on resource attributes.
+//
+// Combine conditions to specify an attribute-based condition using AND/OR-based operators.
+//
+// For example, a policy can grant access based on multiple conditions applied on the resource attributes below:
+// ```json
+//   "pattern": "attribute-based-condition:resource:literal-and-wildcard"
+//   "rule": {
+//       "operator": "or",
+//       "conditions": [
+//         {
+//           "operator": "and",
+//           "conditions": [
+//             {
+//               "key": "{{resource.attributes.prefix}}",
+//               "operator": "stringEquals",
+//               "value": "home/test"
+//             },
+//             {
+//               "key": "{{environment.attributes.delimiter}}",
+//               "operator": "stringEquals",
+//               "value": "/"
+//             }
+//           ]
+//         },
+//         {
+//           "key": "{{resource.attributes.path}}",
+//           "operator": "stringMatch",
+//           "value": "home/David/_*"
+//         }
+//       ]
+//   }
 // ```
 //
-// The pattern field that matches the rule is required when rule is provided. For the business hour rule example above,
-// the **`pattern`** is **`"time-based-conditions:weekly"`**. For more information, see [Time-based conditions
-// operators](https://cloud.ibm.com/docs/account?topic=account-iam-condition-properties&interface=ui#policy-condition-properties)
-// and
-// [Limiting access with time-based
-// conditions](https://cloud.ibm.com/docs/account?topic=account-iam-time-based&interface=ui). If the subject is a locked
-// service-id, the request will fail.
+// In addition to satisfying the `resources` section, the policy grants permission only if either the `path` begins with
+// `home/David/` **OR**  the `prefix` is `home/test` and the `delimiter` is `/`. This mechanism helps you consolidate
+// multiple policies in to a single policy,  making policies easier to administer and stay within the policy limit for
+// an account. View the list of operators that can be used in the condition
+// [here](/docs/account?topic=account-wildcard#string-comparisons).
 //
 // ### Authorization
 //
@@ -1377,9 +1340,15 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreateV2PolicyWithContext(ctx 
 // The policy resource must include either the **`serviceType`**, **`serviceName`**, **`resourceGroupId`** or
 // **`service_group_id`** attribute and the **`accountId`** attribute. In the rule field, you can specify a single
 // condition by using **`key`**, **`value`**, and condition **`operator`**, or a set of **`conditions`** with a
-// combination **`operator`**. The possible combination operators are **`and`** and **`or`**. Combine conditions to
-// specify a time-based restriction (e.g., access only during business hours, during the Monday-Friday work week). For
-// example, a policy can grant access Monday-Friday, 9:00am-5:00pm using the following rule:
+// combination **`operator`**. The possible combination operators are **`and`** and **`or`**.
+//
+// Currently, we support two types of patterns:
+//
+// 1. `time-based`: Used to specify a time-based restriction
+//
+// Combine conditions to specify a time-based restriction (e.g., access only during business hours, during the
+// Monday-Friday work week). For example, a policy can grant access Monday-Friday, 9:00am-5:00pm using the following
+// rule:
 // ```json
 //   "rule": {
 //     "operator": "and",
@@ -1397,17 +1366,57 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreateV2PolicyWithContext(ctx 
 //       "value": "17:00:00+00:00"
 //     }]
 //   }
-// ``` You can use the following operators in the **`key`**, **`value`** pair:
+// ``` You can use the following operators in the **`key`** and **`value`** pair:
 // ```
 //   'timeLessThan', 'timeLessThanOrEquals', 'timeGreaterThan', 'timeGreaterThanOrEquals',
+//   'dateLessThan', 'dateLessThanOrEquals', 'dateGreaterThan', 'dateGreaterThanOrEquals',
 //   'dateTimeLessThan', 'dateTimeLessThanOrEquals', 'dateTimeGreaterThan', 'dateTimeGreaterThanOrEquals',
-//   'dayOfWeekEquals', 'dayOfWeekAnyOf',
+//   'dayOfWeekEquals', 'dayOfWeekAnyOf'
 // ``` The pattern field that matches the rule is required when rule is provided. For the business hour rule example
 // above, the **`pattern`** is **`"time-based-conditions:weekly"`**. For more information, see [Time-based conditions
-// operators](https://cloud.ibm.com/docs/account?topic=account-iam-condition-properties&interface=ui#policy-condition-properties)
-// and
-// [Limiting access with time-based
-// conditions](https://cloud.ibm.com/docs/account?topic=account-iam-time-based&interface=ui).
+// operators](/docs/account?topic=account-iam-condition-properties&interface=ui#policy-condition-properties) and
+// [Limiting access with time-based conditions](/docs/account?topic=account-iam-time-based&interface=ui). If the subject
+// is a locked service-id, the request will fail.
+//
+// 2. `attribute-based`: Used to specify a combination of OR/AND based conditions applied on resource attributes.
+//
+// Combine conditions to specify an attribute-based condition using AND/OR-based operators.
+//
+// For example, a policy can grant access based on multiple conditions applied on the resource attributes below:
+// ```json
+//   "pattern": "attribute-based-condition:resource:literal-and-wildcard"
+//   "rule": {
+//       "operator": "or",
+//       "conditions": [
+//         {
+//           "operator": "and",
+//           "conditions": [
+//             {
+//               "key": "{{resource.attributes.prefix}}",
+//               "operator": "stringEquals",
+//               "value": "home/test"
+//             },
+//             {
+//               "key": "{{environment.attributes.delimiter}}",
+//               "operator": "stringEquals",
+//               "value": "/"
+//             }
+//           ]
+//         },
+//         {
+//           "key": "{{resource.attributes.path}}",
+//           "operator": "stringMatch",
+//           "value": "home/David/_*"
+//         }
+//       ]
+//   }
+// ```
+//
+// In addition to satisfying the `resources` section, the policy grants permission only if either the `path` begins with
+// `home/David/` **OR**  the `prefix` is `home/test` and the `delimiter` is `/`. This mechanism helps you consolidate
+// multiple policies in to a single policy,  making policies easier to administer and stay within the policy limit for
+// an account. View the list of operators that can be used in the condition
+// [here](/docs/account?topic=account-wildcard#string-comparisons).
 //
 // ### Authorization
 //
@@ -4325,8 +4334,8 @@ type NestedCondition struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator,omitempty"`
 
-	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
-	// array of strings (e.g., array of days to permit access) for rule attribute.
+	// The value of a rule, resource, or subject attribute; can be boolean or string for resource and subject attribute.
+	// Can be string or an array of strings (e.g., array of days to permit access) for rule attribute.
 	Value interface{} `json:"value,omitempty"`
 
 	// List of conditions associated with a policy, e.g., time-based conditions that grant access over a certain time
@@ -4337,12 +4346,21 @@ type NestedCondition struct {
 // Constants associated with the NestedCondition.Operator property.
 // The operator of an attribute.
 const (
+	NestedConditionOperatorDategreaterthanConst = "dateGreaterThan"
+	NestedConditionOperatorDategreaterthanorequalsConst = "dateGreaterThanOrEquals"
+	NestedConditionOperatorDatelessthanConst = "dateLessThan"
+	NestedConditionOperatorDatelessthanorequalsConst = "dateLessThanOrEquals"
 	NestedConditionOperatorDatetimegreaterthanConst = "dateTimeGreaterThan"
 	NestedConditionOperatorDatetimegreaterthanorequalsConst = "dateTimeGreaterThanOrEquals"
 	NestedConditionOperatorDatetimelessthanConst = "dateTimeLessThan"
 	NestedConditionOperatorDatetimelessthanorequalsConst = "dateTimeLessThanOrEquals"
 	NestedConditionOperatorDayofweekanyofConst = "dayOfWeekAnyOf"
 	NestedConditionOperatorDayofweekequalsConst = "dayOfWeekEquals"
+	NestedConditionOperatorStringequalsConst = "stringEquals"
+	NestedConditionOperatorStringequalsanyofConst = "stringEqualsAnyOf"
+	NestedConditionOperatorStringexistsConst = "stringExists"
+	NestedConditionOperatorStringmatchConst = "stringMatch"
+	NestedConditionOperatorStringmatchanyofConst = "stringMatchAnyOf"
 	NestedConditionOperatorTimegreaterthanConst = "timeGreaterThan"
 	NestedConditionOperatorTimegreaterthanorequalsConst = "timeGreaterThanOrEquals"
 	NestedConditionOperatorTimelessthanConst = "timeLessThan"
@@ -5788,20 +5806,29 @@ type RuleAttribute struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator" validate:"required"`
 
-	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
-	// array of strings (e.g., array of days to permit access) for rule attribute.
+	// The value of a rule, resource, or subject attribute; can be boolean or string for resource and subject attribute.
+	// Can be string or an array of strings (e.g., array of days to permit access) for rule attribute.
 	Value interface{} `json:"value" validate:"required"`
 }
 
 // Constants associated with the RuleAttribute.Operator property.
 // The operator of an attribute.
 const (
+	RuleAttributeOperatorDategreaterthanConst = "dateGreaterThan"
+	RuleAttributeOperatorDategreaterthanorequalsConst = "dateGreaterThanOrEquals"
+	RuleAttributeOperatorDatelessthanConst = "dateLessThan"
+	RuleAttributeOperatorDatelessthanorequalsConst = "dateLessThanOrEquals"
 	RuleAttributeOperatorDatetimegreaterthanConst = "dateTimeGreaterThan"
 	RuleAttributeOperatorDatetimegreaterthanorequalsConst = "dateTimeGreaterThanOrEquals"
 	RuleAttributeOperatorDatetimelessthanConst = "dateTimeLessThan"
 	RuleAttributeOperatorDatetimelessthanorequalsConst = "dateTimeLessThanOrEquals"
 	RuleAttributeOperatorDayofweekanyofConst = "dayOfWeekAnyOf"
 	RuleAttributeOperatorDayofweekequalsConst = "dayOfWeekEquals"
+	RuleAttributeOperatorStringequalsConst = "stringEquals"
+	RuleAttributeOperatorStringequalsanyofConst = "stringEqualsAnyOf"
+	RuleAttributeOperatorStringexistsConst = "stringExists"
+	RuleAttributeOperatorStringmatchConst = "stringMatch"
+	RuleAttributeOperatorStringmatchanyofConst = "stringMatchAnyOf"
 	RuleAttributeOperatorTimegreaterthanConst = "timeGreaterThan"
 	RuleAttributeOperatorTimegreaterthanorequalsConst = "timeGreaterThanOrEquals"
 	RuleAttributeOperatorTimelessthanConst = "timeLessThan"
@@ -6263,8 +6290,8 @@ type V2PolicyResourceAttribute struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator" validate:"required"`
 
-	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
-	// array of strings (e.g., array of days to permit access) for rule attribute.
+	// The value of a rule, resource, or subject attribute; can be boolean or string for resource and subject attribute.
+	// Can be string or an array of strings (e.g., array of days to permit access) for rule attribute.
 	Value interface{} `json:"value" validate:"required"`
 }
 
@@ -6272,8 +6299,10 @@ type V2PolicyResourceAttribute struct {
 // The operator of an attribute.
 const (
 	V2PolicyResourceAttributeOperatorStringequalsConst = "stringEquals"
+	V2PolicyResourceAttributeOperatorStringequalsanyofConst = "stringEqualsAnyOf"
 	V2PolicyResourceAttributeOperatorStringexistsConst = "stringExists"
 	V2PolicyResourceAttributeOperatorStringmatchConst = "stringMatch"
+	V2PolicyResourceAttributeOperatorStringmatchanyofConst = "stringMatchAnyOf"
 )
 
 // NewV2PolicyResourceAttribute : Instantiate V2PolicyResourceAttribute (Generic Model Constructor)
@@ -6366,8 +6395,8 @@ type V2PolicyRule struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator,omitempty"`
 
-	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
-	// array of strings (e.g., array of days to permit access) for rule attribute.
+	// The value of a rule, resource, or subject attribute; can be boolean or string for resource and subject attribute.
+	// Can be string or an array of strings (e.g., array of days to permit access) for rule attribute.
 	Value interface{} `json:"value,omitempty"`
 
 	// List of conditions associated with a policy, e.g., time-based conditions that grant access over a certain time
@@ -6378,12 +6407,21 @@ type V2PolicyRule struct {
 // Constants associated with the V2PolicyRule.Operator property.
 // The operator of an attribute.
 const (
+	V2PolicyRuleOperatorDategreaterthanConst = "dateGreaterThan"
+	V2PolicyRuleOperatorDategreaterthanorequalsConst = "dateGreaterThanOrEquals"
+	V2PolicyRuleOperatorDatelessthanConst = "dateLessThan"
+	V2PolicyRuleOperatorDatelessthanorequalsConst = "dateLessThanOrEquals"
 	V2PolicyRuleOperatorDatetimegreaterthanConst = "dateTimeGreaterThan"
 	V2PolicyRuleOperatorDatetimegreaterthanorequalsConst = "dateTimeGreaterThanOrEquals"
 	V2PolicyRuleOperatorDatetimelessthanConst = "dateTimeLessThan"
 	V2PolicyRuleOperatorDatetimelessthanorequalsConst = "dateTimeLessThanOrEquals"
 	V2PolicyRuleOperatorDayofweekanyofConst = "dayOfWeekAnyOf"
 	V2PolicyRuleOperatorDayofweekequalsConst = "dayOfWeekEquals"
+	V2PolicyRuleOperatorStringequalsConst = "stringEquals"
+	V2PolicyRuleOperatorStringequalsanyofConst = "stringEqualsAnyOf"
+	V2PolicyRuleOperatorStringexistsConst = "stringExists"
+	V2PolicyRuleOperatorStringmatchConst = "stringMatch"
+	V2PolicyRuleOperatorStringmatchanyofConst = "stringMatchAnyOf"
 	V2PolicyRuleOperatorTimegreaterthanConst = "timeGreaterThan"
 	V2PolicyRuleOperatorTimegreaterthanorequalsConst = "timeGreaterThanOrEquals"
 	V2PolicyRuleOperatorTimelessthanConst = "timeLessThan"
@@ -6454,8 +6492,8 @@ type V2PolicySubjectAttribute struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator" validate:"required"`
 
-	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
-	// array of strings (e.g., array of days to permit access) for rule attribute.
+	// The value of a rule, resource, or subject attribute; can be boolean or string for resource and subject attribute.
+	// Can be string or an array of strings (e.g., array of days to permit access) for rule attribute.
 	Value interface{} `json:"value" validate:"required"`
 }
 
@@ -6463,6 +6501,7 @@ type V2PolicySubjectAttribute struct {
 // The operator of an attribute.
 const (
 	V2PolicySubjectAttributeOperatorStringequalsConst = "stringEquals"
+	V2PolicySubjectAttributeOperatorStringexistsConst = "stringExists"
 )
 
 // NewV2PolicySubjectAttribute : Instantiate V2PolicySubjectAttribute (Generic Model Constructor)
@@ -6693,20 +6732,29 @@ type NestedConditionRuleAttribute struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator" validate:"required"`
 
-	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
-	// array of strings (e.g., array of days to permit access) for rule attribute.
+	// The value of a rule, resource, or subject attribute; can be boolean or string for resource and subject attribute.
+	// Can be string or an array of strings (e.g., array of days to permit access) for rule attribute.
 	Value interface{} `json:"value" validate:"required"`
 }
 
 // Constants associated with the NestedConditionRuleAttribute.Operator property.
 // The operator of an attribute.
 const (
+	NestedConditionRuleAttributeOperatorDategreaterthanConst = "dateGreaterThan"
+	NestedConditionRuleAttributeOperatorDategreaterthanorequalsConst = "dateGreaterThanOrEquals"
+	NestedConditionRuleAttributeOperatorDatelessthanConst = "dateLessThan"
+	NestedConditionRuleAttributeOperatorDatelessthanorequalsConst = "dateLessThanOrEquals"
 	NestedConditionRuleAttributeOperatorDatetimegreaterthanConst = "dateTimeGreaterThan"
 	NestedConditionRuleAttributeOperatorDatetimegreaterthanorequalsConst = "dateTimeGreaterThanOrEquals"
 	NestedConditionRuleAttributeOperatorDatetimelessthanConst = "dateTimeLessThan"
 	NestedConditionRuleAttributeOperatorDatetimelessthanorequalsConst = "dateTimeLessThanOrEquals"
 	NestedConditionRuleAttributeOperatorDayofweekanyofConst = "dayOfWeekAnyOf"
 	NestedConditionRuleAttributeOperatorDayofweekequalsConst = "dayOfWeekEquals"
+	NestedConditionRuleAttributeOperatorStringequalsConst = "stringEquals"
+	NestedConditionRuleAttributeOperatorStringequalsanyofConst = "stringEqualsAnyOf"
+	NestedConditionRuleAttributeOperatorStringexistsConst = "stringExists"
+	NestedConditionRuleAttributeOperatorStringmatchConst = "stringMatch"
+	NestedConditionRuleAttributeOperatorStringmatchanyofConst = "stringMatchAnyOf"
 	NestedConditionRuleAttributeOperatorTimegreaterthanConst = "timeGreaterThan"
 	NestedConditionRuleAttributeOperatorTimegreaterthanorequalsConst = "timeGreaterThanOrEquals"
 	NestedConditionRuleAttributeOperatorTimelessthanConst = "timeLessThan"
@@ -6803,20 +6851,29 @@ type V2PolicyRuleRuleAttribute struct {
 	// The operator of an attribute.
 	Operator *string `json:"operator" validate:"required"`
 
-	// The value of a rule or resource attribute; can be boolean or string for resource attribute. Can be string or an
-	// array of strings (e.g., array of days to permit access) for rule attribute.
+	// The value of a rule, resource, or subject attribute; can be boolean or string for resource and subject attribute.
+	// Can be string or an array of strings (e.g., array of days to permit access) for rule attribute.
 	Value interface{} `json:"value" validate:"required"`
 }
 
 // Constants associated with the V2PolicyRuleRuleAttribute.Operator property.
 // The operator of an attribute.
 const (
+	V2PolicyRuleRuleAttributeOperatorDategreaterthanConst = "dateGreaterThan"
+	V2PolicyRuleRuleAttributeOperatorDategreaterthanorequalsConst = "dateGreaterThanOrEquals"
+	V2PolicyRuleRuleAttributeOperatorDatelessthanConst = "dateLessThan"
+	V2PolicyRuleRuleAttributeOperatorDatelessthanorequalsConst = "dateLessThanOrEquals"
 	V2PolicyRuleRuleAttributeOperatorDatetimegreaterthanConst = "dateTimeGreaterThan"
 	V2PolicyRuleRuleAttributeOperatorDatetimegreaterthanorequalsConst = "dateTimeGreaterThanOrEquals"
 	V2PolicyRuleRuleAttributeOperatorDatetimelessthanConst = "dateTimeLessThan"
 	V2PolicyRuleRuleAttributeOperatorDatetimelessthanorequalsConst = "dateTimeLessThanOrEquals"
 	V2PolicyRuleRuleAttributeOperatorDayofweekanyofConst = "dayOfWeekAnyOf"
 	V2PolicyRuleRuleAttributeOperatorDayofweekequalsConst = "dayOfWeekEquals"
+	V2PolicyRuleRuleAttributeOperatorStringequalsConst = "stringEquals"
+	V2PolicyRuleRuleAttributeOperatorStringequalsanyofConst = "stringEqualsAnyOf"
+	V2PolicyRuleRuleAttributeOperatorStringexistsConst = "stringExists"
+	V2PolicyRuleRuleAttributeOperatorStringmatchConst = "stringMatch"
+	V2PolicyRuleRuleAttributeOperatorStringmatchanyofConst = "stringMatchAnyOf"
 	V2PolicyRuleRuleAttributeOperatorTimegreaterthanConst = "timeGreaterThan"
 	V2PolicyRuleRuleAttributeOperatorTimegreaterthanorequalsConst = "timeGreaterThanOrEquals"
 	V2PolicyRuleRuleAttributeOperatorTimelessthanConst = "timeLessThan"

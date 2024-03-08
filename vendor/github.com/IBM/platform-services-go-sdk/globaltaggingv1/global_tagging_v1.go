@@ -1,5 +1,5 @@
 /**
- * (C) Copyright IBM Corp. 2023.
+ * (C) Copyright IBM Corp. 2024.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 
 /*
- * IBM OpenAPI SDK Code Generator Version: 3.82.1-2082d402-20231115-195014
+ * IBM OpenAPI SDK Code Generator Version: 3.86.0-bc6f14b3-20240221-193958
  */
 
 // Package globaltaggingv1 : Operations and models for the GlobalTaggingV1 service
@@ -544,6 +544,9 @@ func (globalTagging *GlobalTaggingV1) AttachTagWithContext(ctx context.Context, 
 	if attachTagOptions.TagType != nil {
 		builder.AddQuery("tag_type", fmt.Sprint(*attachTagOptions.TagType))
 	}
+	if attachTagOptions.Replace != nil {
+		builder.AddQuery("replace", fmt.Sprint(*attachTagOptions.Replace))
+	}
 
 	body := make(map[string]interface{})
 	if attachTagOptions.Resources != nil {
@@ -708,6 +711,10 @@ type AttachTagOptions struct {
 	// for IMS resources.
 	TagType *string `json:"tag_type,omitempty"`
 
+	// Flag to request replacement of all attached tags. Set 'true' if you want to replace all the list of tags attached to
+	// the resource. Default value is false.
+	Replace *bool `json:"replace,omitempty"`
+
 	// Allows users to set headers on API requests
 	Headers map[string]string
 }
@@ -774,6 +781,12 @@ func (_options *AttachTagOptions) SetAccountID(accountID string) *AttachTagOptio
 // SetTagType : Allow user to set TagType
 func (_options *AttachTagOptions) SetTagType(tagType string) *AttachTagOptions {
 	_options.TagType = core.StringPtr(tagType)
+	return _options
+}
+
+// SetReplace : Allow user to set Replace
+func (_options *AttachTagOptions) SetReplace(replace bool) *AttachTagOptions {
+	_options.Replace = core.BoolPtr(replace)
 	return _options
 }
 
