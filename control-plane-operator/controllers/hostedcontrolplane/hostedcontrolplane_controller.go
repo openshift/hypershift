@@ -2390,21 +2390,61 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
 	}
 
+	// Multus Admission Controller Serving Cert
+	multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
+		return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+	}
+
+	// Network Node Identity Serving Cert
+	networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
+		return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile network node identity serving cert: %w", err)
+	}
+
+	// OVN Control Plane Metrics Serving Cert
+	ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
+		return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile OVN control plane serving cert: %w", err)
+	}
+
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
-		igntionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, igntionServerCert, func() error {
-			return pki.ReconcileIgnitionServerCertSecret(igntionServerCert, rootCASecret, p.OwnerRef)
+		ignitionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ignitionServerCert, func() error {
+			return pki.ReconcileIgnitionServerCertSecret(ignitionServerCert, rootCASecret, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition server cert: %w", err)
 		}
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+	// Platform specific certs
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
 		awsPodIdentityWebhookServingCert := manifests.AWSPodIdentityWebhookServingCert(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, awsPodIdentityWebhookServingCert, func() error {
 			return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
+		}
+	case hyperv1.AzurePlatform:
+		azureDiskCsiDriverControllerMetricsServingCert := manifests.AzureDiskCsiDriverControllerMetricsServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
+			return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
+		}
+
+		azureFileCsiDriverControllerMetricsServingCert := manifests.AzureFileCsiDriverControllerMetricsServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
+			return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure file csi driver controller metrics serving cert: %w", err)
 		}
 	}
 

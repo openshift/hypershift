@@ -264,10 +264,25 @@ func AWSPodIdentityWebhookServingCert(ns string) *corev1.Secret {
 }
 
 func CSISnapshotControllerWebhookCertSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "csi-snapshot-webhook-secret",
-			Namespace: ns,
-		},
-	}
+	return secretFor(ns, "csi-snapshot-webhook-secret")
+}
+
+func AzureDiskCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "azure-disk-csi-driver-controller-metrics-serving-cert")
+}
+
+func AzureFileCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "azure-file-csi-driver-controller-metrics-serving-cert")
+}
+
+func MultusAdmissionControllerServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "multus-admission-controller-secret")
+}
+
+func NetworkNodeIdentityControllerServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "network-node-identity-secret")
+}
+
+func OVNControlPlaneMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "ovn-control-plane-metrics-cert")
 }
