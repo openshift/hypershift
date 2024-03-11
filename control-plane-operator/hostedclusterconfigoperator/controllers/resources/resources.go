@@ -2331,10 +2331,6 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 									corev1.ResourceMemory: resource.MustParse("50Mi"),
 									corev1.ResourceCPU:    resource.MustParse("50m"),
 								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("512Mi"),
-									corev1.ResourceCPU:    resource.MustParse("2000m"),
-								},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
