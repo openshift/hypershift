@@ -49,7 +49,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator hyp
 update: api-deps api api-docs deps clients app-sre-saas-template
 
 .PHONY: verify
-verify: update staticcheck fmt vet promtool
+verify: update staticcheck fmt vet
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
@@ -186,13 +186,15 @@ fmt:
 vet:
 	$(GO) vet -tags integration,e2e ./...
 
-.PHONY: build-promtool
-build-promtool:
-	cd $(TOOLS_DIR); $(GO) build -o $(PROMTOOL) github.com/prometheus/prometheus/cmd/promtool
-
-.PHONY: promtool
-promtool: build-promtool
-	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/slos/*.yaml ../../cmd/install/assets/recordingrules/*.yaml ../../control-plane-operator/controllers/hostedcontrolplane/kas/assets/*.yaml
+# jparrill: The RHTAP tool is breaking the RHTAP builds from Feb 27th, so we're stop using it for now
+# more info here https://redhat-internal.slack.com/archives/C031USXS2FJ/p1710177462151639
+#.PHONY: build-promtool
+#build-promtool:
+#	cd $(TOOLS_DIR); $(GO) build -o $(PROMTOOL) github.com/prometheus/prometheus/cmd/promtool
+#
+#.PHONY: promtool
+#promtool: build-promtool
+#	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/slos/*.yaml ../../cmd/install/assets/recordingrules/*.yaml ../../control-plane-operator/controllers/hostedcontrolplane/kas/assets/*.yaml
 
 # Updates Go modules
 .PHONY: deps
