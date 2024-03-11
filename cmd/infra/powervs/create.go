@@ -1166,14 +1166,14 @@ func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, options *Cr
 		return err
 	}
 
-	gw, _, err := directLinkV1.GetGateway(&directlinkv1.GetGatewayOptions{ID: &infra.CloudConnectionID})
-	if err != nil {
-		return fmt.Errorf("error getting gateway: %w", err)
+	gwIntf, resp, err := directLinkV1.GetGateway(&directlinkv1.GetGatewayOptions{ID: &infra.CloudConnectionID})
+	if err != nil || resp.StatusCode != 200 {
+		return fmt.Errorf("error getting gateway: %w, status code: %d", err, resp.StatusCode)
 	}
-	if gw != nil {
-		if err = attachTag(gtag, options.InfraID, gw.Crn, fmt.Sprintf("%s-%s", infra.ID, cloudConnNameSuffix)); err != nil {
-			return err
-		}
+
+	gwResponse := gwIntf.(*directlinkv1.GetGatewayResponse)
+	if err = attachTag(gtag, options.InfraID, gwResponse.Crn, fmt.Sprintf("%s-%s", infra.ID, cloudConnNameSuffix)); err != nil {
+		return err
 	}
 
 	log(options.InfraID).Info("PowerVS Cloud Connection Ready", "id", infra.CloudConnectionID)
