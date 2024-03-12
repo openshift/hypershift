@@ -217,6 +217,10 @@ const (
 	// components should be scheduled on dedicated nodes in the management cluster.
 	DedicatedRequestServingComponentsTopology = "dedicated-request-serving-components"
 
+	// RequestServingNodeAdditionalSelectorAnnotation is used to specify an additional node selector for
+	// request serving nodes. The value is a comma-separated list of key=value pairs.
+	RequestServingNodeAdditionalSelectorAnnotation = "hypershift.openshift.io/request-serving-node-additional-selector"
+
 	// AllowGuestWebhooksServiceLabel marks a service deployed in the control plane as a valid target
 	// for validating/mutating webhooks running in the guest cluster.
 	AllowGuestWebhooksServiceLabel = "hypershift.openshift.io/allow-guest-webhooks"
