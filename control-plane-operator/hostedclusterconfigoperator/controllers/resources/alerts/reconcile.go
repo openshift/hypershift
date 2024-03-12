@@ -12,12 +12,20 @@ import (
 var (
 	//go:embed assets/apiusage.yaml
 	apiUsageYaml []byte
+	//go:embed assets/podsecurity-violation.yaml
+	podSecurityViolationYaml []byte
 
-	apiUsage = createRule(apiUsageYaml)
+	apiUsage             = createRule(apiUsageYaml)
+	podSecurityViolation = createRule(podSecurityViolationYaml)
 )
 
 func ReconcileApiUsageRule(rule *prometheusoperatorv1.PrometheusRule) error {
 	rule.Spec = apiUsage.Spec
+	return nil
+}
+
+func ReconcilePodSecurityViolationRule(rule *prometheusoperatorv1.PrometheusRule) error {
+	rule.Spec = podSecurityViolation.Spec
 	return nil
 }
 
