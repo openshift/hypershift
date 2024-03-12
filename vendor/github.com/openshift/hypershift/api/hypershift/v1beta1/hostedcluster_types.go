@@ -230,6 +230,10 @@ const (
 	// components should be scheduled on dedicated nodes in the management cluster.
 	DedicatedRequestServingComponentsTopology = "dedicated-request-serving-components"
 
+	// RequestServingNodeAdditionalSelectorAnnotation is used to specify an additional node selector for
+	// request serving nodes. The value is a comma-separated list of key=value pairs.
+	RequestServingNodeAdditionalSelectorAnnotation = "hypershift.openshift.io/request-serving-node-additional-selector"
+
 	// DisableMachineManagement Disable deployments related to machine management that includes cluster-api, cluster-autoscaler, machine-approver.
 	DisableMachineManagement = "hypershift.openshift.io/disable-machine-management"
 

@@ -285,3 +285,23 @@ func FirstUsableIP(cidr string) (string, error) {
 	ip[len(ipNet.IP)-1]++
 	return ip.String(), nil
 }
+
+// ParseNodeSelector parses a comma separated string of key=value pairs into a map
+func ParseNodeSelector(str string) map[string]string {
+	if len(str) == 0 {
+		return nil
+	}
+	parts := strings.Split(str, ",")
+	result := make(map[string]string)
+	for _, part := range parts {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		if len(kv[0]) == 0 || len(kv[1]) == 0 {
+			continue
+		}
+		result[kv[0]] = kv[1]
+	}
+	return result
+}
