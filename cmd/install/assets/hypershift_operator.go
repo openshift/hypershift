@@ -356,6 +356,7 @@ type HyperShiftOperatorDeployment struct {
 	CertRotationScale                       time.Duration
 	EnableCVOManagementClusterMetricsAccess bool
 	EnableDedicatedRequestServingIsolation  bool
+	ManagedService                          string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -448,6 +449,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
 			Value: "1",
+		})
+	}
+
+	if len(o.ManagedService) > 0 {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "MANAGED_SERVICE",
+			Value: o.ManagedService,
 		})
 	}
 
