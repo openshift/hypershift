@@ -183,6 +183,7 @@ type AWSPlatformOptions struct {
 	EtcdKMSKeyARN           string
 	EnableProxy             bool
 	SingleNATGateway        bool
+	MultiArch               bool
 }
 
 type AzurePlatformOptions struct {
