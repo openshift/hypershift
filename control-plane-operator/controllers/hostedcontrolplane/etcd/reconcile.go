@@ -441,8 +441,8 @@ fi
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			TimeoutSeconds:   30,
-			FailureThreshold: 5,
+			TimeoutSeconds:   10,
+			FailureThreshold: 15,
 			PeriodSeconds:    5,
 			SuccessThreshold: 1,
 		}
@@ -454,11 +454,10 @@ fi
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 10,
-			TimeoutSeconds:      10,
-			PeriodSeconds:       10,
-			SuccessThreshold:    1,
-			FailureThreshold:    18,
+			TimeoutSeconds:   10,
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			FailureThreshold: 18,
 		}
 	}
 }

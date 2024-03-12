@@ -662,12 +662,11 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 							SuccessThreshold:    1,
 						},
 						ReadinessProbe: &corev1.Probe{
-							ProbeHandler:        probeHandler,
-							InitialDelaySeconds: 5,
-							TimeoutSeconds:      5,
-							PeriodSeconds:       60,
-							FailureThreshold:    3,
-							SuccessThreshold:    1,
+							ProbeHandler:     probeHandler,
+							TimeoutSeconds:   5,
+							PeriodSeconds:    10,
+							FailureThreshold: 3,
+							SuccessThreshold: 1,
 						},
 						Ports: []corev1.ContainerPort{
 							{

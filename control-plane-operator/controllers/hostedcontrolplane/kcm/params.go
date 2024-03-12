@@ -92,11 +92,10 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 10,
-			TimeoutSeconds:      10,
-			PeriodSeconds:       10,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
+			TimeoutSeconds:   10,
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			FailureThreshold: 3,
 		},
 	}
 	params.Resources = map[string]corev1.ResourceRequirements{
