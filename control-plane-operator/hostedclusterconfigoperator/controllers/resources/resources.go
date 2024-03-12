@@ -647,6 +647,14 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile dns config: %w", err))
 	}
 
+	image := globalconfig.ImageConfig()
+	if _, err := r.CreateOrUpdate(ctx, r.client, image, func() error {
+		globalconfig.ReconcileImageConfig(image, hcp)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile image config: %w", err))
+	}
+
 	ingress := globalconfig.IngressConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingress, func() error {
 		globalconfig.ReconcileIngressConfig(ingress, hcp)
@@ -1511,10 +1519,6 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 		source     client.Object
 		observedCM *corev1.ConfigMap
 	}{
-		{
-			source:     globalconfig.ImageConfig(),
-			observedCM: globalconfig.ObservedImageConfig(hcp.Namespace),
-		},
 		{
 			source:     globalconfig.BuildConfig(),
 			observedCM: globalconfig.ObservedBuildConfig(hcp.Namespace),

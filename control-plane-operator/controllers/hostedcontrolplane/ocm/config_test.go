@@ -38,11 +38,7 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 	}
 	imageProvider := imageprovider.NewFromImages(images)
 
-	imageConfig := &v1.Image{
-		Status: v1.ImageStatus{
-			InternalRegistryHostname: "image-registry.openshift-image-registry.svc:5000",
-		},
-	}
+	imageConfig := &v1.ImageSpec{}
 
 	buildConfig := &v1.Build{
 		Spec: v1.BuildSpec{
@@ -65,7 +61,6 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 
 	observedConfig := &globalconfig.ObservedConfig{
 		Build: buildConfig,
-		Image: imageConfig,
 	}
 
 	params := NewOpenShiftControllerManagerParams(hcp, observedConfig, imageProvider, true)
