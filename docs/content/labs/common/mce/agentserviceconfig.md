@@ -61,7 +61,6 @@ metadata:
   name: assisted-service-config
   namespace: multicluster-engine
 data:
-  PUBLIC_CONTAINER_REGISTRIES: "quay.io,registry.ci.openshift.org,registry.redhat.io"
   ALLOW_CONVERGED_FLOW: "false"
 ```
 
@@ -104,6 +103,8 @@ spec:
     url: http://registry.hypershiftbm.lab:8080/images/rhcos-414.92.202308281054-0-live.x86_64.iso
     version: 414.92.202308281054-0
 ```
+
+If your mirror registry doesn't require authentication in your pull secret, see [this document](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#image-registries-without-authentication) on how to add it to the unauthenticated list in the AgentServiceConfig CR.
 
 In this section, we will emphasize the important aspects:
 
