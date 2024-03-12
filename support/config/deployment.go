@@ -46,6 +46,8 @@ type DeploymentConfig struct {
 	ResourceRequestOverrides  ResourceOverrides
 	IsolateAsRequestServing   bool
 	RevisionHistoryLimit      int
+
+	AdditionalRequestServingNodeSelector map[string]string
 }
 
 func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Container) {
@@ -300,21 +302,29 @@ func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPl
 	}
 
 	if c.IsolateAsRequestServing {
+		nodeSelectorRequirements := []corev1.NodeSelectorRequirement{
+			{
+				Key:      hyperv1.RequestServingComponentLabel,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"true"},
+			},
+			{
+				Key:      hyperv1.HostedClusterLabel,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{clusterKey(hcp)},
+			},
+		}
+		for key, value := range c.AdditionalRequestServingNodeSelector {
+			nodeSelectorRequirements = append(nodeSelectorRequirements, corev1.NodeSelectorRequirement{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{value},
+			})
+		}
 		c.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = &corev1.NodeSelector{
 			NodeSelectorTerms: []corev1.NodeSelectorTerm{
 				{
-					MatchExpressions: []corev1.NodeSelectorRequirement{
-						{
-							Key:      hyperv1.RequestServingComponentLabel,
-							Operator: corev1.NodeSelectorOpIn,
-							Values:   []string{"true"},
-						},
-						{
-							Key:      hyperv1.HostedClusterLabel,
-							Operator: corev1.NodeSelectorOpIn,
-							Values:   []string{clusterKey(hcp)},
-						},
-					},
+					MatchExpressions: nodeSelectorRequirements,
 				},
 			},
 		}
@@ -360,6 +370,9 @@ func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) 
 func (c *DeploymentConfig) SetRequestServingDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
 	if hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
 		c.IsolateAsRequestServing = true
+	}
+	if hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] != "" {
+		c.AdditionalRequestServingNodeSelector = util.ParseNodeSelector(hcp.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
 	}
 	c.SetDefaults(hcp, multiZoneSpreadLabels, replicas)
 	if c.AdditionalLabels == nil {
