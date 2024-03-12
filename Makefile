@@ -280,6 +280,10 @@ ci-install-hypershift-private:
 ci-test-e2e:
 	hack/ci-test-e2e.sh ${CI_TESTS_RUN}
 
+.PHONY: ci-test-e2e-azure
+ci-test-e2e-azure:
+	hack/ci-test-e2e-azure.sh
+
 .PHONY: regenerate-pki
 regenerate-pki:
 	REGENERATE_PKI=1 $(GO) test ./control-plane-pki-operator/...

@@ -493,7 +493,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 	}
 
 	// Arch is only currently valid for aws platform
-	if o.Platform == hyperv1.AWSPlatform {
+	if o.Platform == hyperv1.AWSPlatform || o.Platform == hyperv1.AzurePlatform {
 		createOption.Arch = "amd64"
 	}
 
