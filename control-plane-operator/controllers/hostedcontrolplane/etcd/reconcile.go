@@ -117,6 +117,30 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 		p.DeploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
 
+	p.DeploymentConfig.LivenessProbes = config.LivenessProbes{
+		"etcd": corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Port:   intstr.FromInt(9980),
+					Path:   "healthz",
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+		},
+	}
+
+	p.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		etcdContainer().Name: corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Port:   intstr.FromInt(9980),
+					Path:   "readyz",
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+		},
+	}
+
 	ss.Spec.Template.Spec.InitContainers = []corev1.Container{
 		util.BuildContainer(ensureDNSContainer(), buildEnsureDNSContainer(p, ss.Namespace)),
 		util.BuildContainer(resetMemberContainer(), buildResetMemberContainer(p, ss.Namespace)),
@@ -419,32 +443,6 @@ fi
 				ContainerPort: 2380,
 				Protocol:      corev1.ProtocolTCP,
 			},
-		}
-		c.LivenessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Port:   intstr.FromInt(9980),
-					Path:   "healthz",
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			TimeoutSeconds:   30,
-			FailureThreshold: 5,
-			PeriodSeconds:    5,
-			SuccessThreshold: 1,
-		}
-		c.ReadinessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Port:   intstr.FromInt(9980),
-					Path:   "readyz",
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			TimeoutSeconds:   30,
-			FailureThreshold: 5,
-			PeriodSeconds:    5,
-			SuccessThreshold: 1,
 		}
 		c.StartupProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{

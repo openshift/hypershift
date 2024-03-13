@@ -49,11 +49,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 	}
 
@@ -79,11 +74,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 	}
 

@@ -67,8 +67,6 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 30,
-			TimeoutSeconds:      5,
 		},
 	}
 	params.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
@@ -80,8 +78,6 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			FailureThreshold: 10,
-			TimeoutSeconds:   5,
 		},
 	}
 

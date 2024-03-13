@@ -7,10 +7,11 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas/kms"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 )
 
-func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.SecretEncryptionSpec, images KubeAPIServerImages) error {
+func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.SecretEncryptionSpec, images KubeAPIServerImages, deploymentConfig config.DeploymentConfig) error {
 	if secretEncryptionData.KMS == nil {
 		return fmt.Errorf("kms metadata not specified")
 	}
@@ -18,7 +19,7 @@ func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.Secre
 	if err != nil {
 		return err
 	}
-	return provider.ApplyKMSConfig(podSpec)
+	return provider.ApplyKMSConfig(podSpec, deploymentConfig)
 }
 
 func generateKMSEncryptionConfig(kmsSpec *hyperv1.KMSSpec) ([]byte, error) {

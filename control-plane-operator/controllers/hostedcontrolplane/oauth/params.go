@@ -118,11 +118,6 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      10,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 	}
 	p.ReadinessProbes = config.ReadinessProbes{
@@ -134,11 +129,6 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 10,
-			TimeoutSeconds:      10,
-			PeriodSeconds:       30,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
 		},
 	}
 	p.DeploymentConfig.SetRequestServingDefaults(hcp, oauthServerLabels, nil)

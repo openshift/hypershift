@@ -69,11 +69,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			TimeoutSeconds:      5,
 		},
 	}
 	p.DeploymentConfig.LivenessProbes = config.LivenessProbes{
@@ -85,11 +80,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
-			InitialDelaySeconds: 60,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    5,
-			TimeoutSeconds:      5,
 		},
 	}
 

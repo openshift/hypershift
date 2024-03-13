@@ -251,20 +251,6 @@ func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, c
 			},
 		}
 		c.VolumeMounts = ibmCloudKMSVolumeMounts.ContainerMounts(c.Name)
-		c.LivenessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(ibmCloudKMSHealthPort)),
-					Path:   "healthz/liveness",
-				},
-			},
-			InitialDelaySeconds: 120,
-			PeriodSeconds:       300,
-			TimeoutSeconds:      160,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		}
 		c.Resources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("10Mi"),
@@ -274,7 +260,7 @@ func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, c
 	}
 }
 
-func (p *ibmCloudKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
+func (p *ibmCloudKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec, deploymentConfig config.DeploymentConfig) error {
 	kmsKPInfo, err := buildIBMCloudKMSInfoEnvVar(buildIBMCloudKeyVersionKeyEntryMap(p.ibmCloud.KeyList), p.ibmCloud.Auth.Type)
 	if err != nil {
 		return fmt.Errorf("failed to generate kmsKPInfo env var: %w", err)
@@ -300,6 +286,15 @@ func (p *ibmCloudKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 		return fmt.Errorf("unrecognized ibmcloud kms auth type %s", p.ibmCloud.Auth.Type)
 	}
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerIBMCloudKMS(), buildKASContainerIBMCloudKMS(p.kmsImage, p.ibmCloud.Region, kmsKPInfo, customerAPIKeyReference)))
+	deploymentConfig.LivenessProbes[kasContainerIBMCloudKMS().Name] = corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Scheme: corev1.URISchemeHTTP,
+				Port:   intstr.FromInt(int(ibmCloudKMSHealthPort)),
+				Path:   "healthz/liveness",
+			},
+		},
+	}
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
 		if c.Name == KasMainContainerName {

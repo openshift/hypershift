@@ -58,11 +58,6 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
-			InitialDelaySeconds: 60,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    5,
-			TimeoutSeconds:      5,
 		},
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
@@ -74,11 +69,6 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			TimeoutSeconds:      5,
 		},
 	}
 
