@@ -308,8 +308,8 @@ func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisrup
 
 	p.OwnerRef.ApplyTo(pdb)
 
-	minAvailable := 1
-	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
+	maxUnavailable := 1
+	pdb.Spec.MaxUnavailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(maxUnavailable)}
 
 	return nil
 }

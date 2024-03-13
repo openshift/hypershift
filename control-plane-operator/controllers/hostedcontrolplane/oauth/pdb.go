@@ -15,8 +15,8 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *OAuthSer
 
 	p.OwnerRef.ApplyTo(pdb)
 
-	minAvailable := 1
-	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
+	maxUnavailable := 1
+	pdb.Spec.MaxUnavailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(maxUnavailable)}
 
 	return nil
 }
