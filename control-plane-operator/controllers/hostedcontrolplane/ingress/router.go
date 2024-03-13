@@ -224,16 +224,19 @@ func buildHCPRouterContainerMain(image string) func(*corev1.Container) {
 	}
 }
 
-func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancingEnabled bool) error {
-	if svc.Annotations == nil {
-		svc.Annotations = map[string]string{}
-	}
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
-	if internal {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
-	}
-	if crossZoneLoadBalancingEnabled {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancingEnabled bool, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		if svc.Annotations == nil {
+			svc.Annotations = map[string]string{}
+		}
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+		if internal {
+			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+		}
+		if crossZoneLoadBalancingEnabled {
+			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		}
+		util.ApplyAWSLoadBalancerSubnetsAnnotation(svc, hcp)
 	}
 
 	if svc.Labels == nil {

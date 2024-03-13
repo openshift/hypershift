@@ -1255,7 +1255,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 		apiServerService = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 	}
 	if _, err := createOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, kasSVCPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp), util.IsPrivateHCP(hcp))
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, kasSVCPort, p.AllowedCIDRBlocks, hcp)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
@@ -1347,7 +1347,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	}
 	konnectivityServerService := manifests.KonnectivityServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, konnectivityServerService, func() error {
-		return kas.ReconcileKonnectivityServerService(konnectivityServerService, p.OwnerRef, serviceStrategy)
+		return kas.ReconcileKonnectivityServerService(konnectivityServerService, p.OwnerRef, serviceStrategy, hcp)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity service: %w", err)
 	}
@@ -1489,7 +1489,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, true, true)
+			return ingress.ReconcileRouterService(svc, true, true, hcp)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router service: %w", err)
 		}
@@ -1511,7 +1511,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	// When Public access endpoint we need to create a Service type LB external for the KAS.
 	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
-			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp))
+			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp), hcp)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}

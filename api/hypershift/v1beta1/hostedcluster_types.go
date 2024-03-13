@@ -252,6 +252,10 @@ const (
 	// the frequency of memory collection when memory used rises above a particular threshhold. This can be used to reduce
 	// the memory footprint of the kube-apiserver during upgrades.
 	KubeAPIServerGOMemoryLimitAnnotation = "hypershift.openshift.io/kube-apiserver-gomemlimit"
+
+	// AWSLoadBalancerSubnetsAnnotation allows specifying the subnets to use for control plane load balancers
+	// in the AWS platform.
+	AWSLoadBalancerSubnetsAnnotation = "hypershift.openshift.io/aws-load-balancer-subnets"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
