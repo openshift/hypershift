@@ -4367,7 +4367,7 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 
 	deployment := manifests.CSISnapshotControllerOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return snapshotcontroller.ReconcileOperatorDeployment(deployment, params, hcp.Spec.Platform.Type)
+		return snapshotcontroller.ReconcileOperatorDeployment(deployment, params, hcp.Spec.Platform.Type, r.SetDefaultSecurityContext)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CSI snapshot controller operator deployment: %w", err)
 	}
