@@ -1205,6 +1205,7 @@ func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1
 const awsCredentialsTemplate = `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
 `
 
 func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {

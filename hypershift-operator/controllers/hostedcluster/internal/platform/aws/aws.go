@@ -241,6 +241,7 @@ func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	awsCredentialsTemplate := `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
 `
 	// TODO (alberto): consider moving this reconciliation logic down to the CPO.
 	// this is not trivial as the CPO deployment itself needs the secret with the ControlPlaneOperatorARN
