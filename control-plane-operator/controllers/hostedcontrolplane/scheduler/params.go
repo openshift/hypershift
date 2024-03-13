@@ -75,11 +75,10 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			TimeoutSeconds:      5,
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			FailureThreshold: 3,
+			TimeoutSeconds:   5,
 		},
 	}
 	params.DeploymentConfig.SetDefaults(hcp, labels, nil)
