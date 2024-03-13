@@ -36,7 +36,6 @@ import (
 )
 
 const (
-	SubnetName                        = "default"
 	VirtualNetworkAddressPrefix       = "10.0.0.0/16"
 	VirtualNetworkLinkLocation        = "global"
 	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
@@ -54,6 +53,7 @@ type CreateInfraOptions struct {
 	ResourceGroupName    string
 	NetworkSecurityGroup string
 	ResourceGroupTags    map[string]string
+	SubnetName           string
 }
 
 type CreateInfraOutput struct {
@@ -189,7 +189,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Create virtual network
-	subnetName, vnetID, vnetName, err := createVirtualNetwork(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, securityGroupID, azureCreds)
+	subnetName, vnetID, vnetName, err := createVirtualNetwork(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, o.SubnetName, securityGroupID, azureCreds)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func createSecurityGroup(ctx context.Context, subscriptionID string, resourceGro
 }
 
 // createVirtualNetwork creates the virtual network
-func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGroupName string, name string, infraID string, location string, securityGroupID string, azureCreds azcore.TokenCredential) (string, string, string, error) {
+func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGroupName string, name string, infraID string, location string, subnetName string, securityGroupID string, azureCreds azcore.TokenCredential) (string, string, string, error) {
 	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, nil)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create new virtual networks client: %w", err)
@@ -419,7 +419,7 @@ func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGr
 				},
 			},
 			Subnets: []*armnetwork.Subnet{{
-				Name: ptr.To(SubnetName),
+				Name: ptr.To(subnetName),
 				Properties: &armnetwork.SubnetPropertiesFormat{
 					AddressPrefix:        ptr.To(VirtualNetworkSubnetAddressPrefix),
 					NetworkSecurityGroup: &armnetwork.SecurityGroup{ID: &securityGroupID},
