@@ -449,6 +449,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
 		}
+		placeholderScheduler := scheduler.PlaceholderScheduler{}
+		if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
+			return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
+		}
 	} else {
 		log.Info("Dedicated request serving isolation controllers disabled")
 	}

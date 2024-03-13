@@ -408,6 +408,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationschedulingv1alpha1.ConcurrencyConfigurationApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("Effects"):
 		return &applyconfigurationschedulingv1alpha1.EffectsApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("Management"):
+		return &applyconfigurationschedulingv1alpha1.ManagementApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("NodeCountCriteria"):
 		return &applyconfigurationschedulingv1alpha1.NodeCountCriteriaApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("SizeConfiguration"):

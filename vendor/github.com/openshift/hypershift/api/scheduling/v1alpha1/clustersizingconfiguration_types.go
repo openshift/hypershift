@@ -73,6 +73,11 @@ type SizeConfiguration struct {
 
 	// Effects define the effects on a cluster being considered part of this t-shirt size class.
 	Effects *Effects `json:"effects,omitempty"`
+
+	// +kubebuilder:validation:Optional
+
+	// Management configures the management aspects of this size class on the management plane.
+	Management *Management `json:"management,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(self.to) || self.from <= self.to", message="lower limit must be less than or equal to the upper limit"
@@ -120,6 +125,16 @@ type Effects struct {
 	// APICriticalPriorityClassName is the priority class for pods in the API request serving path.
 	// This includes Kube API Server, OpenShift APIServer, etc.
 	APICriticalPriorityClassName *string `json:"APICriticalPriorityClassName,omitempty"`
+}
+
+// Management configures behaviors of the management plane for a size class.
+type Management struct {
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=0
+
+	// Placeholders configures the number of dummy workloads that will be scheduled irrespective of
+	// HostedClusters in order to keep a set of nodes ready to accept new cluster creation and scheduling.
+	Placeholders int `json:"placeholders,omitempty"`
 }
 
 // ConcurrencyConfiguration defines bounds for the concurrency of clusters transitioning between states.

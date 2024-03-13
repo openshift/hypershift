@@ -30,6 +30,9 @@ const (
 	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
 	goMemLimitLabel                   = "hypershift.openshift.io/request-serving-gomemlimit"
 	lbSubnetsLabel                    = "hypershift.openshift.io/request-serving-subnets"
+
+	// PlaceholderLabel is used as a label on Deployments that are used to keep nodes warm.
+	PlaceholderLabel = "hypershift.openshift.io/placeholder"
 )
 
 type DedicatedServingComponentNodeReaper struct {

@@ -22,6 +22,51 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
+func noop(in *schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration) *schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration {
+	return in
+}
+
+func sizes(smallSize func(*schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration) *schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration) []*schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration {
+	return []*schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration{
+		smallSize(schedulingv1alpha1applyconfigurations.SizeConfiguration().
+			WithName("small").
+			WithCriteria(
+				schedulingv1alpha1applyconfigurations.NodeCountCriteria().
+					WithFrom(0).
+					WithTo(10),
+			)),
+		schedulingv1alpha1applyconfigurations.SizeConfiguration().
+			WithName("medium").
+			WithCriteria(
+				schedulingv1alpha1applyconfigurations.NodeCountCriteria().
+					WithFrom(11).
+					WithTo(100),
+			),
+		schedulingv1alpha1applyconfigurations.SizeConfiguration().
+			WithName("large").
+			WithCriteria(
+				schedulingv1alpha1applyconfigurations.NodeCountCriteria().
+					WithFrom(101),
+			),
+	}
+}
+
+var (
+	shortTransitionDelay = schedulingv1alpha1applyconfigurations.TransitionDelayConfiguration().
+				WithDecrease(metav1.Duration{Duration: time.Second}).
+				WithIncrease(metav1.Duration{Duration: time.Second})
+	longTransitionDelay = schedulingv1alpha1applyconfigurations.TransitionDelayConfiguration().
+				WithDecrease(metav1.Duration{Duration: time.Hour}).
+				WithIncrease(metav1.Duration{Duration: time.Hour})
+
+	highConcurrency = schedulingv1alpha1applyconfigurations.ConcurrencyConfiguration().
+			WithSlidingWindow(metav1.Duration{Duration: time.Second}).
+			WithLimit(1000)
+	lowConcurrency = schedulingv1alpha1applyconfigurations.ConcurrencyConfiguration().
+			WithSlidingWindow(metav1.Duration{Duration: time.Hour}).
+			WithLimit(1)
+)
+
 func TestHostedSizingController(t *testing.T) {
 	framework.RunHyperShiftOperatorTest(testContext, log, globalOpts, framework.HostedClusterOptions{
 		DebugDeployments: []string{
@@ -31,43 +76,13 @@ func TestHostedSizingController(t *testing.T) {
 			"control-plane-pki-operator",
 		}, // turn off all the child components, so we can mess with HCP status
 	}, t, func(t *testing.T, testCtx *framework.ManagementTestContext) {
-		sizes := []*schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration{
-			schedulingv1alpha1applyconfigurations.SizeConfiguration().
-				WithName("small").
-				WithCriteria(
-					schedulingv1alpha1applyconfigurations.NodeCountCriteria().
-						WithFrom(0).
-						WithTo(10),
-				),
-			schedulingv1alpha1applyconfigurations.SizeConfiguration().
-				WithName("medium").
-				WithCriteria(
-					schedulingv1alpha1applyconfigurations.NodeCountCriteria().
-						WithFrom(11).
-						WithTo(100),
-				),
-			schedulingv1alpha1applyconfigurations.SizeConfiguration().
-				WithName("large").
-				WithCriteria(
-					schedulingv1alpha1applyconfigurations.NodeCountCriteria().
-						WithFrom(101),
-				),
-		}
 		t.Log("setting the cluster sizing configuration")
 		if _, err := testCtx.MgmtCluster.HyperShiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Apply(testContext,
 			schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration("cluster").WithSpec(
 				schedulingv1alpha1applyconfigurations.ClusterSizingConfigurationSpec().
-					WithSizes(sizes...).
-					WithTransitionDelay( // set the transition delays super short so we DON'T hit them
-						schedulingv1alpha1applyconfigurations.TransitionDelayConfiguration().
-							WithDecrease(metav1.Duration{Duration: time.Second}).
-							WithIncrease(metav1.Duration{Duration: time.Second}),
-					).
-					WithConcurrency( // set the sliding window and limit so we do NOT hit them
-						schedulingv1alpha1applyconfigurations.ConcurrencyConfiguration().
-							WithSlidingWindow(metav1.Duration{Duration: time.Second}).
-							WithLimit(1000),
-					),
+					WithSizes(sizes(noop)...).
+					WithTransitionDelay(shortTransitionDelay). // set the transition delays super short so we DON'T hit them
+					WithConcurrency(highConcurrency),          // set the sliding window and limit so we do NOT hit them
 			),
 			metav1.ApplyOptions{FieldManager: "e2e-test", Force: true},
 		); err != nil {
@@ -93,17 +108,9 @@ func TestHostedSizingController(t *testing.T) {
 		if _, err := testCtx.MgmtCluster.HyperShiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Apply(testContext,
 			schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration("cluster").WithSpec(
 				schedulingv1alpha1applyconfigurations.ClusterSizingConfigurationSpec().
-					WithSizes(sizes...).
-					WithTransitionDelay( // set the transition delays super long so we hit them
-						schedulingv1alpha1applyconfigurations.TransitionDelayConfiguration().
-							WithDecrease(metav1.Duration{Duration: time.Hour}).
-							WithIncrease(metav1.Duration{Duration: time.Hour}),
-					).
-					WithConcurrency( // set the sliding window and limit so we do NOT hit them
-						schedulingv1alpha1applyconfigurations.ConcurrencyConfiguration().
-							WithSlidingWindow(metav1.Duration{Duration: time.Second}).
-							WithLimit(1000),
-					),
+					WithSizes(sizes(noop)...).
+					WithTransitionDelay(longTransitionDelay). // set the transition delays super long so we hit them
+					WithConcurrency(highConcurrency),         // set the sliding window and limit so we do NOT hit them
 			),
 			metav1.ApplyOptions{FieldManager: "e2e-test", Force: true},
 		); err != nil {
@@ -134,17 +141,9 @@ func TestHostedSizingController(t *testing.T) {
 		if _, err := testCtx.MgmtCluster.HyperShiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Apply(testContext,
 			schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration("cluster").WithSpec(
 				schedulingv1alpha1applyconfigurations.ClusterSizingConfigurationSpec().
-					WithSizes(sizes...).
-					WithTransitionDelay( // set the transition delays super short so we DON'T hit them
-						schedulingv1alpha1applyconfigurations.TransitionDelayConfiguration().
-							WithDecrease(metav1.Duration{Duration: time.Second}).
-							WithIncrease(metav1.Duration{Duration: time.Second}),
-					).
-					WithConcurrency( // set the sliding window and limit so we do NOT hit them
-						schedulingv1alpha1applyconfigurations.ConcurrencyConfiguration().
-							WithSlidingWindow(metav1.Duration{Duration: time.Second}).
-							WithLimit(1000),
-					),
+					WithSizes(sizes(noop)...).
+					WithTransitionDelay(shortTransitionDelay). // set the transition delays super short so we DON'T hit them
+					WithConcurrency(highConcurrency),          // set the sliding window and limit so we do NOT hit them
 			),
 			metav1.ApplyOptions{FieldManager: "e2e-test", Force: true},
 		); err != nil {
@@ -157,17 +156,9 @@ func TestHostedSizingController(t *testing.T) {
 		if _, err := testCtx.MgmtCluster.HyperShiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Apply(testContext,
 			schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration("cluster").WithSpec(
 				schedulingv1alpha1applyconfigurations.ClusterSizingConfigurationSpec().
-					WithSizes(sizes...).
-					WithTransitionDelay( // set the transition delays super short so we DON'T hit them
-						schedulingv1alpha1applyconfigurations.TransitionDelayConfiguration().
-							WithDecrease(metav1.Duration{Duration: time.Second}).
-							WithIncrease(metav1.Duration{Duration: time.Second}),
-					).
-					WithConcurrency( // set the sliding window and limit so we DO hit them
-						schedulingv1alpha1applyconfigurations.ConcurrencyConfiguration().
-							WithSlidingWindow(metav1.Duration{Duration: time.Hour}).
-							WithLimit(1),
-					),
+					WithSizes(sizes(noop)...).
+					WithTransitionDelay(shortTransitionDelay). // set the transition delays super short so we DON'T hit them
+					WithConcurrency(lowConcurrency),           // set the sliding window and limit so we DO hit them
 			),
 			metav1.ApplyOptions{FieldManager: "e2e-test", Force: true},
 		); err != nil {
@@ -222,17 +213,9 @@ func TestHostedSizingController(t *testing.T) {
 		if _, err := testCtx.MgmtCluster.HyperShiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Apply(testContext,
 			schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration("cluster").WithSpec(
 				schedulingv1alpha1applyconfigurations.ClusterSizingConfigurationSpec().
-					WithSizes(sizes...).
-					WithTransitionDelay( // set the transition delays super short so we DON'T hit them
-						schedulingv1alpha1applyconfigurations.TransitionDelayConfiguration().
-							WithDecrease(metav1.Duration{Duration: time.Second}).
-							WithIncrease(metav1.Duration{Duration: time.Second}),
-					).
-					WithConcurrency( // set the sliding window and limit so we DON'T hit them
-						schedulingv1alpha1applyconfigurations.ConcurrencyConfiguration().
-							WithSlidingWindow(metav1.Duration{Duration: time.Second}).
-							WithLimit(1000),
-					),
+					WithSizes(sizes(noop)...).
+					WithTransitionDelay(shortTransitionDelay). // set the transition delays super short so we DON'T hit them
+					WithConcurrency(highConcurrency),          // set the sliding window and limit so we DON'T hit them
 			),
 			metav1.ApplyOptions{FieldManager: "e2e-test", Force: true},
 		); err != nil {
