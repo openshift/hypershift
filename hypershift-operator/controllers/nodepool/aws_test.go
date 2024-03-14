@@ -6,6 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 )
@@ -27,12 +28,13 @@ func TestAWSMachineTemplate(t *testing.T) {
 		},
 	}
 	testCases := []struct {
-		name          string
-		cluster       hyperv1.HostedClusterSpec
-		clusterStatus *hyperv1.HostedClusterStatus
-		nodePool      hyperv1.NodePoolSpec
-		expected      *capiaws.AWSMachineTemplate
-		checkError    func(*testing.T, error)
+		name                string
+		cluster             hyperv1.HostedClusterSpec
+		clusterStatus       *hyperv1.HostedClusterStatus
+		nodePool            hyperv1.NodePoolSpec
+		nodePoolAnnotations map[string]string
+		expected            *capiaws.AWSMachineTemplate
+		checkError          func(*testing.T, error)
 	}{
 		{
 			name: "ebs size",
@@ -125,6 +127,16 @@ func TestAWSMachineTemplate(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:     "NodePool has ec2-http-tokens annotation with 'required' as a value",
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}}},
+			nodePoolAnnotations: map[string]string{
+				ec2InstanceMetadataHTTPTokensAnnotation: "required",
+			},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.InstanceMetadataOptions.HTTPTokens = capiaws.HTTPTokensStateRequired
+			}),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -138,7 +150,15 @@ func TestAWSMachineTemplate(t *testing.T) {
 			if tc.clusterStatus != nil {
 				clusterStatus = *tc.clusterStatus
 			}
-			result, err := awsMachineTemplateSpec(infraName, amiName, &hyperv1.HostedCluster{Spec: tc.cluster, Status: clusterStatus}, &hyperv1.NodePool{Spec: tc.nodePool}, true)
+			result, err := awsMachineTemplateSpec(infraName, amiName,
+				&hyperv1.HostedCluster{Spec: tc.cluster, Status: clusterStatus},
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: tc.nodePoolAnnotations,
+					},
+					Spec: tc.nodePool,
+				},
+				true)
 			if tc.checkError != nil {
 				tc.checkError(t, err)
 			} else {
@@ -186,6 +206,12 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 						SecureSecretsBackend:       "secrets-manager",
 					},
 					RootVolume: &capiaws.Volume{Size: 16},
+					InstanceMetadataOptions: &capiaws.InstanceMetadataOptions{
+						HTTPTokens:              capiaws.HTTPTokensStateOptional,
+						HTTPPutResponseHopLimit: 2,
+						HTTPEndpoint:            capiaws.InstanceMetadataEndpointStateEnabled,
+						InstanceMetadataTags:    capiaws.InstanceMetadataEndpointStateDisabled,
+					},
 				},
 			},
 		},
