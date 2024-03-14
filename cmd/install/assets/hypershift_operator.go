@@ -1217,9 +1217,10 @@ func HyperShiftControlPlanePriorityClass() *schedulingv1.PriorityClass {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: DefaultPriorityClass,
 		},
-		Value:         100000000,
-		GlobalDefault: false,
-		Description:   "This priority class should be used for hypershift control plane pods not critical to serving the API.",
+		Value:            100000000,
+		GlobalDefault:    false,
+		Description:      "This priority class should be used for hypershift control plane pods not critical to serving the API.",
+		PreemptionPolicy: ptr.To(corev1.PreemptNever),
 	}
 }
 
@@ -1232,9 +1233,10 @@ func HyperShiftAPICriticalPriorityClass() *schedulingv1.PriorityClass {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: APICriticalPriorityClass,
 		},
-		Value:         100001000,
-		GlobalDefault: false,
-		Description:   "This priority class should be used for hypershift control plane pods critical to serving the API.",
+		Value:            100001000,
+		GlobalDefault:    false,
+		Description:      "This priority class should be used for hypershift control plane pods critical to serving the API.",
+		PreemptionPolicy: ptr.To(corev1.PreemptNever),
 	}
 }
 
@@ -1247,9 +1249,10 @@ func HyperShiftEtcdPriorityClass() *schedulingv1.PriorityClass {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: EtcdPriorityClass,
 		},
-		Value:         100002000,
-		GlobalDefault: false,
-		Description:   "This priority class should be used for hypershift etcd pods.",
+		Value:            100002000,
+		GlobalDefault:    false,
+		Description:      "This priority class should be used for hypershift etcd pods.",
+		PreemptionPolicy: ptr.To(corev1.PreemptNever),
 	}
 }
 
