@@ -50,7 +50,7 @@ type ibmCloudKMSProvider struct {
 }
 
 func NewIBMCloudKMSProvider(ibmCloud *hyperv1.IBMCloudKMSSpec, kmsImage string) (*ibmCloudKMSProvider, error) {
-	if ibmCloud == nil || len(ibmCloud.KeyList) == 0 || len(ibmCloud.Region) == 0 || len(kmsImage) == 0 {
+	if ibmCloud == nil || len(ibmCloud.KeyList) == 0 || len(ibmCloud.Region) == 0 {
 		return nil, fmt.Errorf("ibmcloud kms metadata not specified")
 	}
 	return &ibmCloudKMSProvider{
@@ -66,7 +66,19 @@ func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfi
 		keys = append(keys, k)
 	}
 	sort.Ints(keys)
-	var providerConfiguration []v1.ProviderConfiguration
+
+	// KMS v2 should be first in the list
+	providerConfiguration := []v1.ProviderConfiguration{
+		{
+			KMS: &v1.KMSConfiguration{
+				APIVersion: "v2",
+				Name:       fmt.Sprintf("%s%s", ibmKeyNamePrefix, "v2"),
+				Endpoint:   ibmCloudKMSUnixSocket,
+				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
+			},
+		},
+	}
+
 	// iterate in reverse because highest version key should be used for new secret encryption
 	for i := len(keys) - 1; i >= 0; i-- {
 		configEntry := v1.ProviderConfiguration{
@@ -312,5 +324,6 @@ func (p *ibmCloudKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
 		ibmCloudKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
+	container.Args = append(container.Args, "--encryption-provider-config-automatic-reload=false")
 	return nil
 }
