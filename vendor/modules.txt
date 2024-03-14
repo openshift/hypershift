@@ -837,6 +837,8 @@ github.com/openshift/hypershift/api/hypershift
 github.com/openshift/hypershift/api/hypershift/v1alpha1
 github.com/openshift/hypershift/api/hypershift/v1beta1
 github.com/openshift/hypershift/api/ibmcapi
+github.com/openshift/hypershift/api/scheduling
+github.com/openshift/hypershift/api/scheduling/v1alpha1
 github.com/openshift/hypershift/api/util/configrefs
 github.com/openshift/hypershift/api/util/ipnet
 # github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7

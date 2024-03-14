@@ -21,9 +21,11 @@ import (
 	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	applyconfigurationhypershiftv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	applyconfigurationschedulingv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -394,6 +396,24 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):
 		return &hypershiftv1beta1.VolumeApplyConfiguration{}
+
+		// Group=scheduling.hypershift.openshift.io, Version=v1alpha1
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ClusterSizingConfiguration"):
+		return &applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ClusterSizingConfigurationSpec"):
+		return &applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationSpecApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ClusterSizingConfigurationStatus"):
+		return &applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationStatusApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ConcurrencyConfiguration"):
+		return &applyconfigurationschedulingv1alpha1.ConcurrencyConfigurationApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("Effects"):
+		return &applyconfigurationschedulingv1alpha1.EffectsApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("NodeCountCriteria"):
+		return &applyconfigurationschedulingv1alpha1.NodeCountCriteriaApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("SizeConfiguration"):
+		return &applyconfigurationschedulingv1alpha1.SizeConfigurationApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("TransitionDelayConfiguration"):
+		return &applyconfigurationschedulingv1alpha1.TransitionDelayConfigurationApplyConfiguration{}
 
 	}
 	return nil

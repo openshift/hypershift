@@ -24,6 +24,7 @@ import (
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
 	hypershiftv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/scheduling/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -34,6 +35,7 @@ type Interface interface {
 	CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1alpha1Interface
 	HypershiftV1alpha1() hypershiftv1alpha1.HypershiftV1alpha1Interface
 	HypershiftV1beta1() hypershiftv1beta1.HypershiftV1beta1Interface
+	SchedulingV1alpha1() schedulingv1alpha1.SchedulingV1alpha1Interface
 }
 
 // Clientset contains the clients for groups.
@@ -42,6 +44,7 @@ type Clientset struct {
 	certificatesV1alpha1 *certificatesv1alpha1.CertificatesV1alpha1Client
 	hypershiftV1alpha1   *hypershiftv1alpha1.HypershiftV1alpha1Client
 	hypershiftV1beta1    *hypershiftv1beta1.HypershiftV1beta1Client
+	schedulingV1alpha1   *schedulingv1alpha1.SchedulingV1alpha1Client
 }
 
 // CertificatesV1alpha1 retrieves the CertificatesV1alpha1Client
@@ -57,6 +60,11 @@ func (c *Clientset) HypershiftV1alpha1() hypershiftv1alpha1.HypershiftV1alpha1In
 // HypershiftV1beta1 retrieves the HypershiftV1beta1Client
 func (c *Clientset) HypershiftV1beta1() hypershiftv1beta1.HypershiftV1beta1Interface {
 	return c.hypershiftV1beta1
+}
+
+// SchedulingV1alpha1 retrieves the SchedulingV1alpha1Client
+func (c *Clientset) SchedulingV1alpha1() schedulingv1alpha1.SchedulingV1alpha1Interface {
+	return c.schedulingV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -115,6 +123,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 	if err != nil {
 		return nil, err
 	}
+	cs.schedulingV1alpha1, err = schedulingv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
@@ -139,6 +151,7 @@ func New(c rest.Interface) *Clientset {
 	cs.certificatesV1alpha1 = certificatesv1alpha1.New(c)
 	cs.hypershiftV1alpha1 = hypershiftv1alpha1.New(c)
 	cs.hypershiftV1beta1 = hypershiftv1beta1.New(c)
+	cs.schedulingV1alpha1 = schedulingv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -396,6 +397,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		if err := proxy.Setup(mgr, opts.Namespace, opts.DeploymentName); err != nil {
 			return fmt.Errorf("failed to set up the proxy controller: %w", err)
 		}
+	}
+
+	if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, releaseProviderWithOpenShiftImageRegistryOverrides, imageMetaDataProvider); err != nil {
+		return fmt.Errorf("failed to set up hosted cluster sizing operator: %w", err)
 	}
 
 	// Start platform-specific controllers

@@ -84,12 +84,19 @@ func HostedClusterFor(t *testing.T) string {
 	return i.Text(36)
 }
 
+type HostedClusterOptions struct {
+	// Note: this is not well tested. If you ask for a CPO debug deployment, for instance,
+	// we won't be able to give a guest cluster kubeconfig. Use with care.
+	// Options: control-plane-operator,ignition-server,hosted-cluster-config-operator,control-plane-pki-operator
+	DebugDeployments []string
+}
+
 const HostedClusterNamespace = "hosted-clusters"
 
 // InstallHostedCluster generates and applies assets to the cluster for setup of a HostedCluster.
 //
 // A closure is returned that knows how to clean this emulated process up.
-func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options, t *testing.T, args ...string) (Cleanup, error) {
+func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options, hostedClusterOpts HostedClusterOptions, t *testing.T, args ...string) (Cleanup, error) {
 	hostedClusterName := HostedClusterFor(t)
 	t.Logf("installing HostedCluster %s", hostedClusterName)
 	logger.Info("rendering hosted cluster assets", "hostedCluster", hostedClusterName)
@@ -124,18 +131,23 @@ func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options
 		pullSpec = info.PullSpec
 	}
 
+	cmdArgs := []string{
+		"create", "cluster", "none",
+		"--name", hostedClusterName,
+		"--namespace", HostedClusterNamespace,
+		"--annotations", "hypershift.openshift.io/control-plane-operator-image=" + opts.ControlPlaneOperatorImage,
+		"--annotations", "hypershift.openshift.io/control-plane-operator-image-labels=" + opts.ControlPlaneOperatorImageLabels,
+		"--annotations", "hypershift.openshift.io/pod-security-admission-label-override=baseline",
+		"--release-image", pullSpec,
+		"--pull-secret", opts.PullSecret,
+		"--render",
+	}
+	if len(hostedClusterOpts.DebugDeployments) > 0 {
+		cmdArgs = append(cmdArgs, "--annotations", "hypershift.openshift.io/debug-deployments="+strings.Join(hostedClusterOpts.DebugDeployments, ","))
+	}
+
 	installLogPath := "render.log"
-	renderCmd := exec.CommandContext(ctx, opts.HyperShiftCLIPath,
-		append(args, "create", "cluster", "none",
-			"--name", hostedClusterName,
-			"--namespace", HostedClusterNamespace,
-			"--annotations", "hypershift.openshift.io/control-plane-operator-image="+opts.ControlPlaneOperatorImage,
-			"--annotations", "hypershift.openshift.io/control-plane-operator-image-labels="+opts.ControlPlaneOperatorImageLabels,
-			"--annotations", "hypershift.openshift.io/pod-security-admission-label-override=baseline",
-			"--release-image", pullSpec,
-			"--pull-secret", opts.PullSecret,
-			"--render")...,
-	)
+	renderCmd := exec.CommandContext(ctx, opts.HyperShiftCLIPath, append(args, cmdArgs...)...)
 	renderCmd.Env = append(renderCmd.Env, "KUBECONFIG="+opts.Kubeconfig)
 	yamlPath := "assets.yaml"
 	yamlFile, err := Artifact(opts, yamlPath)
@@ -177,6 +189,14 @@ func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options
 		return RunCommand(logger, opts, deleteLogPath, deleteCmd)
 	}
 
+	// TODO: logs from the HostedCluster namespace - can we re-use e2e?
+	return cleanup, nil
+}
+
+func WaitForHostedClusterAvailable(ctx context.Context, logger logr.Logger, opts *Options, t *testing.T) (Cleanup, error) {
+	hostedClusterName := HostedClusterFor(t)
+	t.Logf("waiting for HostedCluster %s to be ready", hostedClusterName)
+
 	waitLogPath := filepath.Join("hosted-cluster.wait.log")
 	waitCmd := exec.CommandContext(ctx, opts.OCPath,
 		"wait", "--for", "condition=Available",
@@ -185,5 +205,5 @@ func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options
 	)
 
 	// TODO: logs from the HostedCluster namespace - can we re-use e2e?
-	return cleanup, RunCommand(logger, opts, waitLogPath, waitCmd)
+	return CleanupSentinel, RunCommand(logger, opts, waitLogPath, waitCmd)
 }
