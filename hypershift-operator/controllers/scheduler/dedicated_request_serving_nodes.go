@@ -29,6 +29,7 @@ const (
 	HostedClusterNameLabel            = "hypershift.openshift.io/cluster-name"
 	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
 	goMemLimitLabel                   = "hypershift.openshift.io/request-serving-gomemlimit"
+	lbSubnetsLabel                    = "hypershift.openshift.io/request-serving-subnets"
 )
 
 type DedicatedServingComponentNodeReaper struct {
@@ -223,11 +224,15 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	}
 
 	nodeGoMemLimit := ""
+	lbSubnets := ""
 	for _, node := range nodesToUse {
 		originalNode := node.DeepCopy()
 
 		if node.Labels[goMemLimitLabel] != "" && nodeGoMemLimit == "" {
 			nodeGoMemLimit = node.Labels[goMemLimitLabel]
+		}
+		if node.Labels[lbSubnetsLabel] != "" && lbSubnets == "" {
+			lbSubnets = node.Labels[lbSubnetsLabel]
 		}
 
 		// Add taint and labels for specific hosted cluster
@@ -264,6 +269,9 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	hcluster.Annotations[hyperv1.HostedClusterScheduledAnnotation] = "true"
 	if nodeGoMemLimit != "" {
 		hcluster.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = nodeGoMemLimit
+	}
+	if lbSubnets != "" {
+		hcluster.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
 	}
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster annotation: %w", err)
