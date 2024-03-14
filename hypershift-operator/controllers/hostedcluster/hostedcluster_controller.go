@@ -126,7 +126,8 @@ const (
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 
-	etcdEncKeyPostfix = "-etcd-encryption-key"
+	etcdEncKeyPostfix    = "-etcd-encryption-key"
+	managedServiceEnvVar = "MANAGED_SERVICE"
 )
 
 var (
@@ -2588,6 +2589,16 @@ func reconcileControlPlaneOperatorDeployment(
 			corev1.EnvVar{
 				Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
 				Value: "1",
+			},
+		)
+	}
+
+	managedServiceType, ok := os.LookupEnv(managedServiceEnvVar)
+	if ok {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  managedServiceEnvVar,
+				Value: managedServiceType,
 			},
 		)
 	}
