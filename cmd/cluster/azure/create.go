@@ -29,6 +29,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AzurePlatform.Location = "eastus"
 	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
 	opts.AzurePlatform.DiskSizeGB = 120
+	opts.AzurePlatform.SubnetName = "default"
 
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
@@ -42,6 +43,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	cmd.Flags().StringToStringVarP(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", "t", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
+	cmd.Flags().StringVar(&opts.AzurePlatform.SubnetName, "subnet-name", opts.AzurePlatform.SubnetName, "The subnet name where the VMs will be placed.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -103,6 +105,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			ResourceGroupName:    opts.AzurePlatform.ResourceGroupName,
 			NetworkSecurityGroup: opts.AzurePlatform.NetworkSecurityGroup,
 			ResourceGroupTags:    opts.AzurePlatform.ResourceGroupTags,
+			SubnetName:           opts.AzurePlatform.SubnetName,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
@@ -189,7 +192,7 @@ func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecret
 }
 
 // validateFlags validates the core create option flags passed in by the user
-func validateFlags(cmd *cobra.Command, args []string) error {
+func validateFlags(cmd *cobra.Command, _ []string) error {
 	// Check if the network security group is set and the resource group is not
 	nsg, err := cmd.Flags().GetString("network-security-group")
 	if err != nil {
