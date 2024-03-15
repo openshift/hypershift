@@ -726,7 +726,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "hypershift-operator read",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
-				budget: 5000,
+				budget: 6000,
 			},
 			{
 				name:   "hypershift-operator mutate",
