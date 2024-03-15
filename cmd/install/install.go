@@ -150,6 +150,10 @@ func (o *Options) Validate() error {
 	if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
 		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
 	}
+
+	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP && o.ManagedService != hyperv1.RosaHCP {
+		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
+	}
 	return errors.NewAggregate(errs)
 }
 
@@ -217,7 +221,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().DurationVar(&opts.CertRotationScale, "cert-rotation-scale", opts.CertRotationScale, "The scaling factor for certificate rotation. It is not supported to set this to anything other than 24h.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
-	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO HCP, ROSA HCP")
+	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO-HCP, ROSA-HCP")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
