@@ -17,7 +17,6 @@ package core
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -45,7 +44,9 @@ const (
 // passed in as "my_service", then configuration properties whose names begin with "MY_SERVICE_"
 // will be returned in the map.
 func GetServiceProperties(serviceName string) (serviceProps map[string]string, err error) {
-	return getServiceProperties(serviceName)
+	serviceProps, err = getServiceProperties(serviceName)
+	err = RepurposeSDKProblem(err, "get-props-error")
+	return
 }
 
 // getServiceProperties: This function will retrieve configuration properties for the specified service
@@ -56,7 +57,7 @@ func GetServiceProperties(serviceName string) (serviceProps map[string]string, e
 func getServiceProperties(serviceName string) (serviceProps map[string]string, err error) {
 
 	if serviceName == "" {
-		err = fmt.Errorf("serviceName was not specified")
+		err = SDKErrorf(nil, "serviceName was not specified", "no-service-name", getComponentInfo())
 		return
 	}
 

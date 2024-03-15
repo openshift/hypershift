@@ -32,7 +32,7 @@ func parseJWT(tokenString string) (claims *coreJWTClaims, err error) {
 	// A JWT consists of three .-separated segments
 	segments := strings.Split(tokenString, ".")
 	if len(segments) != 3 {
-		err = fmt.Errorf("token contains an invalid number of segments")
+		err = SDKErrorf(nil, "token contains an invalid number of segments", "need-3-segs", getComponentInfo())
 		return
 	}
 
@@ -40,7 +40,6 @@ func parseJWT(tokenString string) (claims *coreJWTClaims, err error) {
 	var claimBytes []byte
 	claimBytes, err = decodeSegment(segments[1])
 	if err != nil {
-		err = fmt.Errorf("error decoding claims segment: %s", err.Error())
 		return
 	}
 
@@ -48,7 +47,7 @@ func parseJWT(tokenString string) (claims *coreJWTClaims, err error) {
 	claims = &coreJWTClaims{}
 	err = json.Unmarshal(claimBytes, claims)
 	if err != nil {
-		err = fmt.Errorf("error unmarshalling token: %s", err.Error())
+		err = SDKErrorf(nil, fmt.Sprintf("error unmarshalling token: %s", err.Error()), "bad-token", getComponentInfo())
 		return
 	}
 
@@ -62,5 +61,9 @@ func decodeSegment(seg string) ([]byte, error) {
 		seg += strings.Repeat("=", 4-l)
 	}
 
-	return base64.URLEncoding.DecodeString(seg)
+	res, err := base64.URLEncoding.DecodeString(seg)
+	if err != nil {
+		err = SDKErrorf(nil, fmt.Sprintf("error decoding claims segment: %s", err.Error()), "bad-claim-seg", getComponentInfo())
+	}
+	return res, err
 }
