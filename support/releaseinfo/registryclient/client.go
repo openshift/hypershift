@@ -313,8 +313,8 @@ func GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distr
 	return digestsManifest, nil
 }
 
-// isMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
-func isMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte) (bool, error) {
+// IsMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
+func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte) (bool, error) {
 	srcManifest, err := GetManifest(ctx, imageRef, pullSecret)
 	if err != nil {
 		return false, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
@@ -424,7 +424,7 @@ func findMatchingManifest(ctx context.Context, imageRef string, deserializedMani
 func GetCorrectArchImage(ctx context.Context, component string, imageRef string, pullSecret []byte) (manifestImageRef string, err error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	isMultiArchImage, err := isMultiArchManifestList(ctx, imageRef, pullSecret)
+	isMultiArchImage, err := IsMultiArchManifestList(ctx, imageRef, pullSecret)
 	if err != nil {
 		return "", fmt.Errorf("failed to determine if image is manifest listed: %w", err)
 	}

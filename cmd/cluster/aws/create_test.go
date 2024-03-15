@@ -1,13 +1,14 @@
 package aws
 
 import (
-	"github.com/openshift/hypershift/cmd/cluster/core"
+	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
+	"github.com/openshift/hypershift/cmd/cluster/core"
 )
 
-func Test_isRequiredOption(t *testing.T) {
+func TestIsRequiredOption(t *testing.T) {
 	tests := map[string]struct {
 		value         string
 		expectedError bool
@@ -34,7 +35,7 @@ func Test_isRequiredOption(t *testing.T) {
 	}
 }
 
-func Test_ValidateCreateCredentialInfo(t *testing.T) {
+func TestValidateCreateCredentialInfo(t *testing.T) {
 	tests := map[string]struct {
 		inputOptions *core.CreateOptions
 		expectError  bool
@@ -73,6 +74,44 @@ func Test_ValidateCreateCredentialInfo(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			err := ValidateCreateCredentialInfo(test.inputOptions)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestValidateMultiArchRelease(t *testing.T) {
+	tests := map[string]struct {
+		inputOptions *core.CreateOptions
+		expectError  bool
+	}{
+		"non-multi-arch release image used": {
+			inputOptions: &core.CreateOptions{
+				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.0-ec.3-aarch64",
+				AWSPlatform: core.AWSPlatformOptions{
+					MultiArch: true,
+				},
+			},
+			expectError: true,
+		},
+		"non-multi-arch release stream used": {
+			inputOptions: &core.CreateOptions{
+				ReleaseStream: "stable",
+				AWSPlatform: core.AWSPlatformOptions{
+					MultiArch: true,
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := validateMultiArchRelease(context.Background(), test.inputOptions)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
