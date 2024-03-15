@@ -1,9 +1,9 @@
 package kas
 
 import (
+	"github.com/openshift/hypershift/support/util"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *KubeAPIServerParams) error {
@@ -14,9 +14,6 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *KubeAPIS
 	}
 
 	p.OwnerRef.ApplyTo(pdb)
-
-	minAvailable := 1
-	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
-
+	util.ReconcilePodDisruptionBudget(pdb, p.Availability)
 	return nil
 }
