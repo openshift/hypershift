@@ -14,8 +14,10 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -67,6 +69,8 @@ func init() {
 	apiregistrationv1.AddToScheme(Scheme)
 	hyperv1alpha1.AddToScheme(Scheme)
 	hyperv1beta1.AddToScheme(Scheme)
+	schedulingv1alpha1.AddToScheme(Scheme)
+	certificatesv1alpha1.AddToScheme(Scheme)
 	capiv1.AddToScheme(Scheme)
 	configv1.AddToScheme(Scheme)
 	securityv1.AddToScheme(Scheme)

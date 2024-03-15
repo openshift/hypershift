@@ -1,12 +1,15 @@
 package snapshotcontroller
 
 import (
+	"strconv"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -23,7 +26,8 @@ var (
 func ReconcileOperatorDeployment(
 	deployment *appsv1.Deployment,
 	params *Params,
-	platformType hyperv1.PlatformType) error {
+	platformType hyperv1.PlatformType,
+	setDefaultSecurityContext bool) error {
 
 	params.OwnerRef.ApplyTo(deployment)
 	deployment.Spec = operatorDeployment.DeepCopy().Spec
@@ -46,6 +50,11 @@ func ReconcileOperatorDeployment(
 			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = params.SnapshotWebhookImage
 		}
 	}
+
+	// We set this so cluster-csi-storage-controller operator knows whether to run the csi-snapshot-controller and csi-snapshot-webhook pods as NonRoot.
+	// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS, which will require the pods to be run from root.
+	deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "HYPERSHIFT_SUPPORTS_SCC", Value: strconv.FormatBool(!setDefaultSecurityContext)})
+
 	params.DeploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), params.AvailabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "guest-kubeconfig"

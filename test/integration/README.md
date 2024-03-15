@@ -50,6 +50,11 @@ specify what subset of the tests to run.
   test # run tests
 ```
 
+#### Running A Subset Of Tests
+
+When running the `setup` or `test` targets in `run.sh`, provide `$GO_TEST_FLAGS='-run selector'` to only set up and run
+some subset of tests.
+
 ### Refreshing Image Content
 
 When you've made changes to the HyperShift codebase and need to re-deploy the operators, run the following -

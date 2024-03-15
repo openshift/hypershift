@@ -183,6 +183,7 @@ type AWSPlatformOptions struct {
 	EtcdKMSKeyARN           string
 	EnableProxy             bool
 	SingleNATGateway        bool
+	MultiArch               bool
 }
 
 type AzurePlatformOptions struct {
@@ -198,6 +199,7 @@ type AzurePlatformOptions struct {
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
+	SubnetName             string
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {

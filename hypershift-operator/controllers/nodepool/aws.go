@@ -95,6 +95,16 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 		tags[key] = infraLifecycleOwned
 	}
 
+	instanceMetadataOptions := &capiaws.InstanceMetadataOptions{
+		HTTPTokens:              capiaws.HTTPTokensStateOptional,
+		HTTPPutResponseHopLimit: 2, // set to 2 as per AWS recommendation for container envs https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#imds-considerations
+		HTTPEndpoint:            capiaws.InstanceMetadataEndpointStateEnabled,
+		InstanceMetadataTags:    capiaws.InstanceMetadataEndpointStateDisabled,
+	}
+	if value, found := nodePool.Annotations[ec2InstanceMetadataHTTPTokensAnnotation]; found && value == string(capiaws.HTTPTokensStateRequired) {
+		instanceMetadataOptions.HTTPTokens = capiaws.HTTPTokensStateRequired
+	}
+
 	awsMachineTemplateSpec := &capiaws.AWSMachineTemplateSpec{
 		Template: capiaws.AWSMachineTemplateResource{
 			Spec: capiaws.AWSMachineSpec{
@@ -112,6 +122,7 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 				Subnet:                   subnet,
 				RootVolume:               rootVolume,
 				AdditionalTags:           tags,
+				InstanceMetadataOptions:  instanceMetadataOptions,
 			},
 		},
 	}

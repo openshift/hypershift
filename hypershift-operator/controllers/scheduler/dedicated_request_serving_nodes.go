@@ -9,12 +9,13 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 	HostedClusterNameLabel            = "hypershift.openshift.io/cluster-name"
 	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
 	goMemLimitLabel                   = "hypershift.openshift.io/request-serving-gomemlimit"
+	lbSubnetsLabel                    = "hypershift.openshift.io/request-serving-subnets"
 )
 
 type DedicatedServingComponentNodeReaper struct {
@@ -35,12 +37,28 @@ type DedicatedServingComponentNodeReaper struct {
 }
 
 func (r *DedicatedServingComponentNodeReaper) SetupWithManager(mgr ctrl.Manager) error {
-	servingComponentPredicate, err := predicate.LabelSelectorPredicate(metav1.LabelSelector{MatchLabels: map[string]string{hyperv1.RequestServingComponentLabel: "true"}})
-	if err != nil {
-		return err
-	}
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Node{}).WithEventFilter(servingComponentPredicate).Named("DedicatedServingComponentNodeReaper")
+		For(&corev1.Node{}).
+		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+			// when a HostedCluster changes, queue the nodes for it
+			nodes := &corev1.NodeList{}
+			if err := r.List(ctx, nodes,
+				client.HasLabels{hyperv1.RequestServingComponentLabel},
+				client.MatchingLabels{
+					hyperv1.HostedClusterLabel:  fmt.Sprintf("%s-%s", object.GetNamespace(), object.GetName()),
+					HostedClusterNamespaceLabel: object.GetNamespace(),
+					HostedClusterNameLabel:      object.GetName(),
+				}); err != nil {
+				mgr.GetLogger().Error(err, "failed to list nodes when enqueuing for hosted cluster")
+				return nil
+			}
+			var out []reconcile.Request
+			for _, node := range nodes.Items {
+				out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: node.Namespace, Name: node.Name}})
+			}
+			return out
+		})).
+		Named("DedicatedServingComponentNodeReaper")
 	return builder.Complete(r)
 }
 
@@ -79,9 +97,6 @@ func (r *DedicatedServingComponentNodeReaper) Reconcile(ctx context.Context, req
 			return ctrl.Result{}, fmt.Errorf("failed to delete node: %w", err)
 		}
 		log.Info("Node deleted")
-	} else {
-		log.Info("The hosted cluster exists, will check again later.")
-		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 	}
 	return ctrl.Result{}, nil
 }
@@ -209,11 +224,15 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	}
 
 	nodeGoMemLimit := ""
+	lbSubnets := ""
 	for _, node := range nodesToUse {
 		originalNode := node.DeepCopy()
 
 		if node.Labels[goMemLimitLabel] != "" && nodeGoMemLimit == "" {
 			nodeGoMemLimit = node.Labels[goMemLimitLabel]
+		}
+		if node.Labels[lbSubnetsLabel] != "" && lbSubnets == "" {
+			lbSubnets = node.Labels[lbSubnetsLabel]
 		}
 
 		// Add taint and labels for specific hosted cluster
@@ -250,6 +269,9 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	hcluster.Annotations[hyperv1.HostedClusterScheduledAnnotation] = "true"
 	if nodeGoMemLimit != "" {
 		hcluster.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = nodeGoMemLimit
+	}
+	if lbSubnets != "" {
+		hcluster.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
 	}
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster annotation: %w", err)

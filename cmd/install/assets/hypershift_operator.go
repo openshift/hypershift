@@ -6,6 +6,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
@@ -356,6 +357,7 @@ type HyperShiftOperatorDeployment struct {
 	CertRotationScale                       time.Duration
 	EnableCVOManagementClusterMetricsAccess bool
 	EnableDedicatedRequestServingIsolation  bool
+	ManagedService                          string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -448,6 +450,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
 			Value: "1",
+		})
+	}
+
+	if len(o.ManagedService) > 0 {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "MANAGED_SERVICE",
+			Value: o.ManagedService,
 		})
 	}
 
@@ -885,6 +894,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"certificates.hypershift.openshift.io"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
+			{
+				APIGroups: []string{"scheduling.hypershift.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
@@ -1785,5 +1799,37 @@ func (o HyperShiftPullSecret) Build() *corev1.Secret {
 			".dockerconfigjson": o.PullSecretBytes,
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
+	}
+}
+
+func ClusterSizingConfiguration() *schedulingv1alpha1.ClusterSizingConfiguration {
+	return &schedulingv1alpha1.ClusterSizingConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+			Sizes: []schedulingv1alpha1.SizeConfiguration{
+				{
+					Name: "small",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 0,
+						To:   ptr.To(uint32(10)),
+					},
+				},
+				{
+					Name: "medium",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 11,
+						To:   ptr.To(uint32(100)),
+					},
+				},
+				{
+					Name: "large",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 101,
+					},
+				},
+			},
+		},
 	}
 }

@@ -2364,6 +2364,17 @@ bool
 <p>EnableEphemeralOSDisk enables ephemeral OS disk</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>subnetName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>SubnetName is the name of the subnet to place the Nodes into</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1beta1.AzurePlatformSpec }

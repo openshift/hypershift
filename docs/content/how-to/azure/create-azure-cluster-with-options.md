@@ -141,3 +141,98 @@ hypershift create nodepool azure \
 --instance-type Standard_DS2_v2 \
 --disk-storage-account-type Standard_LRS
 ```
+
+## Setting Subnet Name on NodePools
+You can specify which subnet your nodes (i.e., VMs) are placed in when either creating a Hosted Cluster from scratch or when creating a new NodePool.
+
+!!! important
+
+    You must specify which subnet your Load Balancer will be located in, in the HostedCluster CRD as it is needed by Azure Cloud Provider.
+
+### Setting Subnet Name When Creating a Hosted Cluster
+Here is an example of setting the default subnet name through the HyperShift CLI:
+```
+hypershift create cluster azure \
+--name <cluster_name> \
+--pull-secret <pull_secret_file> \
+--azure-creds <path_to_azure_credentials_file> \
+--location <location> \
+--base-domain <base_domain> \
+--release-image <release_image> \
+--node-pool-replicas <number_of_replicas> \
+--subnet-name defaultSubnetName
+```
+
+Here is an example of setting the subnet name, under spec.platform.azure, in the HostedCluster CRD:
+```
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: <cluster_name>
+  namespace: <namespace>
+spec:
+  fips: false
+  release:
+    image: <release_image>
+  dns:
+    baseDomain: <baseDomain>
+    privateZoneID: <privateZoneID>
+    publicZoneID: <publicZoneID>
+  controllerAvailabilityPolicy: SingleReplica
+  infraID: <infra_id>
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+        type: PersistentVolume
+    managementType: Managed
+  infrastructureAvailabilityPolicy: SingleReplica
+  platform:
+    azure:
+      machineIdentityID: <machine_identity_id>
+      vnetID: <vnet_id>
+      subnetName: default
+...
+```
+
+### Setting Subnet Name When Creating a NodePool
+Here is an example of setting the subnet name of the NodePool through the HyperShift CLI:
+```
+hypershift create nodepool azure \
+--cluster-name <cluster_name> \
+--name <nodepool_name> \
+--node-count <number_of_replicas> \
+--release-image <release_image> \
+--subnet-name <subnet_name>
+```
+
+Here is an example of setting the subnet name of the NodePool, under spec.platform.azure, in the NodePool CRD:
+```
+apiVersion: hypershift.openshift.io/v1beta1
+    kind: NodePool
+    metadata:
+      name: test-np
+      namespace: clusters
+    spec:
+      arch: amd64
+      clusterName: <cluster_name>
+      management:
+        autoRepair: false
+        replace:
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+          strategy: RollingUpdate
+        upgradeType: Replace
+      platform:
+        azure:
+          diskSizeGB: 120
+          diskStorageAccountType: Premium_LRS
+          subnetName: <subnet_name>
+          vmsize: Standard_D4s_v4
+        type: Azure
+      release:
+        image: <release_image>
+      replicas: 2
+```

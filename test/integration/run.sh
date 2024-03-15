@@ -108,7 +108,7 @@ function run_setup() {
   rm -rf "${workdir}/artifacts"
   mkdir -p "${workdir}/artifacts"
   echo "Running setup..."
-  go test ./test/integration -tags integration -v \
+  go test ./test/integration -tags integration -v ${GO_TEST_FLAGS:-} \
     --timeout 0 \
     --kubeconfig "${workdir}/kubeconfig" \
     --pull-secret "${PULL_SECRET}" \

@@ -126,7 +126,8 @@ const (
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 
-	etcdEncKeyPostfix = "-etcd-encryption-key"
+	etcdEncKeyPostfix    = "-etcd-encryption-key"
+	managedServiceEnvVar = "MANAGED_SERVICE"
 )
 
 var (
@@ -1783,6 +1784,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.KubeAPIServerGOGCAnnotation,
 		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
+		hyperv1.AWSLoadBalancerSubnetsAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -2533,11 +2535,10 @@ func reconcileControlPlaneOperatorDeployment(
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    3,
-							TimeoutSeconds:      5,
+							PeriodSeconds:    10,
+							SuccessThreshold: 1,
+							FailureThreshold: 3,
+							TimeoutSeconds:   5,
 						},
 						Resources: cpoResources,
 					},
@@ -2589,6 +2590,16 @@ func reconcileControlPlaneOperatorDeployment(
 			corev1.EnvVar{
 				Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
 				Value: "1",
+			},
+		)
+	}
+
+	managedServiceType, ok := os.LookupEnv(managedServiceEnvVar)
+	if ok {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  managedServiceEnvVar,
+				Value: managedServiceType,
 			},
 		)
 	}
@@ -3127,11 +3138,10 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    3,
-							TimeoutSeconds:      5,
+							PeriodSeconds:    10,
+							SuccessThreshold: 1,
+							FailureThreshold: 3,
+							TimeoutSeconds:   5,
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{

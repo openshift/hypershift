@@ -9,7 +9,16 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+type Outputs string
+
+const (
+	OutputAll       Outputs = "all"
+	OutputCRDs      Outputs = "crds"
+	OutputResources Outputs = "resources"
 )
 
 var (
@@ -41,6 +50,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 
 	cmd.Flags().BoolVar(&opts.Template, "template", false, "Render as Openshift template instead of plain manifests")
 	cmd.Flags().StringVar(&opts.Format, "format", RenderFormatYaml, fmt.Sprintf("Output format for the manifests, supports %s and %s", RenderFormatYaml, RenderFormatJson))
+	cmd.Flags().StringVar(&opts.OutputTypes, "outputs", string(OutputAll), fmt.Sprintf("Which manifests to output, one of %s, %s, or %s. Output CRDs separately to allow applying them first and waiting for them to be established.", OutputAll, OutputCRDs, OutputResources))
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -50,6 +60,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 			return err
 		}
 
+		var crds []crclient.Object
 		var objects []crclient.Object
 
 		if opts.Template {
@@ -59,13 +70,22 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 			}
 			objects = []crclient.Object{templateObject}
 		} else {
-			objects, err = hyperShiftOperatorManifests(*opts)
+			crds, objects, err = hyperShiftOperatorManifests(*opts)
 			if err != nil {
 				return err
 			}
 		}
 
-		err = render(objects, opts.Format, cmd.OutOrStdout())
+		var objectsToRender []crclient.Object
+		switch Outputs(opts.OutputTypes) {
+		case OutputAll:
+			objectsToRender = append(crds, objects...)
+		case OutputCRDs:
+			objectsToRender = crds
+		case OutputResources:
+			objectsToRender = objects
+		}
+		err = render(objectsToRender, opts.Format, cmd.OutOrStdout())
 		if err != nil {
 			return err
 		}
@@ -82,6 +102,11 @@ func (o *Options) ValidateRender() error {
 
 	if o.Format != RenderFormatYaml && o.Format != RenderFormatJson {
 		return fmt.Errorf("--format must be %s or %s", RenderFormatYaml, RenderFormatJson)
+	}
+
+	outputs := sets.New(OutputAll, OutputCRDs, OutputResources)
+	if !outputs.Has(Outputs(o.OutputTypes)) {
+		return fmt.Errorf("--outputs must be one of %v", outputs.UnsortedList())
 	}
 
 	return nil
@@ -154,10 +179,12 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	}
 
 	// create manifests
-	objects, err := hyperShiftOperatorManifests(*opts)
+	crds, objects, err := hyperShiftOperatorManifests(*opts)
 	if err != nil {
 		return nil, err
 	}
+
+	objects = append(objects, crds...)
 
 	// patch those manifests, where the template parameter placeholder was not injectable with opts (e.g. type mistmatch)
 	patches := []ObjectPatch{

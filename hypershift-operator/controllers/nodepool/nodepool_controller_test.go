@@ -1840,6 +1840,12 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 						Type: "io1",
 						IOPS: 5000,
 					},
+					InstanceMetadataOptions: &capiaws.InstanceMetadataOptions{
+						HTTPTokens:              capiaws.HTTPTokensStateOptional,
+						HTTPPutResponseHopLimit: 2,
+						HTTPEndpoint:            capiaws.InstanceMetadataEndpointStateEnabled,
+						InstanceMetadataTags:    capiaws.InstanceMetadataEndpointStateDisabled,
+					},
 				},
 			},
 		},

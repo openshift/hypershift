@@ -897,6 +897,11 @@ type AzureNodePoolPlatform struct {
 	// EnableEphemeralOSDisk enables ephemeral OS disk
 	// +optional
 	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
+	// SubnetName is the name of the subnet to place the Nodes into
+	//
+	// +kubebuilder:default:=default
+	// +kubebuilder:validation:Required
+	SubnetName string `json:"subnetName"`
 }
 
 // We define our own condition type since metav1.Condition has validation

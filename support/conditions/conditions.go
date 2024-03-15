@@ -35,6 +35,10 @@ func ExpectedHCConditions() map[hyperv1.ConditionType]metav1.ConditionStatus {
 		hyperv1.ClusterVersionFailing:     metav1.ConditionFalse,
 		hyperv1.ClusterVersionProgressing: metav1.ConditionFalse,
 
+		hyperv1.ClusterSizeComputed:           metav1.ConditionTrue,
+		hyperv1.ClusterSizeTransitionPending:  metav1.ConditionFalse,
+		hyperv1.ClusterSizeTransitionRequired: metav1.ConditionFalse,
+
 		// conditions with no strong guarantees
 		//
 		// UnmanagedEtcdAvailable is only set if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged.

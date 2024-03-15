@@ -21,6 +21,7 @@ import (
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -35,6 +36,7 @@ var localSchemeBuilder = runtime.SchemeBuilder{
 	certificatesv1alpha1.AddToScheme,
 	hypershiftv1alpha1.AddToScheme,
 	hypershiftv1beta1.AddToScheme,
+	schedulingv1alpha1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition

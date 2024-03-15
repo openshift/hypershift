@@ -36,7 +36,7 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 			},
 		},
 		NetworkInterfaces: []capiazure.NetworkInterface{{
-			SubnetName: hcluster.Spec.Platform.Azure.SubnetName,
+			SubnetName: nodePool.Spec.Platform.Azure.SubnetName,
 		}},
 		Identity:               capiazure.VMIdentityUserAssigned,
 		UserAssignedIdentities: []capiazure.UserAssignedIdentity{{ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID}},

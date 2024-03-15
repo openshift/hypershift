@@ -219,11 +219,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Path:   "readyz",
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       30,
-			TimeoutSeconds:      120,
-			FailureThreshold:    6,
-			SuccessThreshold:    1,
+			PeriodSeconds:    10,
+			TimeoutSeconds:   10,
+			FailureThreshold: 18,
+			SuccessThreshold: 1,
 		},
 		konnectivityServerContainer().Name: {
 			ProbeHandler: corev1.ProbeHandler{
@@ -233,11 +232,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			TimeoutSeconds:      5,
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			FailureThreshold: 3,
+			TimeoutSeconds:   5,
 		},
 	}
 	params.Resources = map[string]corev1.ResourceRequirements{

@@ -74,6 +74,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        - name: HYPERSHIFT_SUPPORTS_SCC
+          value: "false"
         image: quay.io/openshift/cluster-csi-snapshot-controller-operator:latest
         imagePullPolicy: IfNotPresent
         name: csi-snapshot-controller-operator
