@@ -163,6 +163,9 @@ func newHostedClusterConfigOperator() *HostedClusterConfigOperator {
 func allControllers() []string {
 	controllers := make([]string, 0, len(controllerFuncs))
 	for name := range controllerFuncs {
+		if name == nodecount.ControllerName && os.Getenv("ENABLE_SIZE_TAGGING") != "1" {
+			continue
+		}
 		controllers = append(controllers, name)
 	}
 	return controllers

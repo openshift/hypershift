@@ -399,8 +399,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, releaseProviderWithOpenShiftImageRegistryOverrides, imageMetaDataProvider); err != nil {
-		return fmt.Errorf("failed to set up hosted cluster sizing operator: %w", err)
+	enableSizeTagging := os.Getenv("ENABLE_SIZE_TAGGING") == "1"
+	if enableSizeTagging {
+		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, releaseProviderWithOpenShiftImageRegistryOverrides, imageMetaDataProvider); err != nil {
+			return fmt.Errorf("failed to set up hosted cluster sizing operator: %w", err)
+		}
 	}
 
 	// Start platform-specific controllers
@@ -449,9 +452,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
 		}
-		placeholderScheduler := scheduler.PlaceholderScheduler{}
-		if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
-			return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
+		if enableSizeTagging {
+			placeholderScheduler := scheduler.PlaceholderScheduler{}
+			if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
+				return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
+			}
 		}
 	} else {
 		log.Info("Dedicated request serving isolation controllers disabled")
