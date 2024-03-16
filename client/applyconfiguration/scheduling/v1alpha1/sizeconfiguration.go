@@ -20,9 +20,10 @@ package v1alpha1
 // SizeConfigurationApplyConfiguration represents an declarative configuration of the SizeConfiguration type for use
 // with apply.
 type SizeConfigurationApplyConfiguration struct {
-	Name     *string                              `json:"name,omitempty"`
-	Criteria *NodeCountCriteriaApplyConfiguration `json:"criteria,omitempty"`
-	Effects  *EffectsApplyConfiguration           `json:"effects,omitempty"`
+	Name       *string                              `json:"name,omitempty"`
+	Criteria   *NodeCountCriteriaApplyConfiguration `json:"criteria,omitempty"`
+	Effects    *EffectsApplyConfiguration           `json:"effects,omitempty"`
+	Management *ManagementApplyConfiguration        `json:"management,omitempty"`
 }
 
 // SizeConfigurationApplyConfiguration constructs an declarative configuration of the SizeConfiguration type for use with
@@ -52,5 +53,13 @@ func (b *SizeConfigurationApplyConfiguration) WithCriteria(value *NodeCountCrite
 // If called multiple times, the Effects field is set to the value of the last call.
 func (b *SizeConfigurationApplyConfiguration) WithEffects(value *EffectsApplyConfiguration) *SizeConfigurationApplyConfiguration {
 	b.Effects = value
+	return b
+}
+
+// WithManagement sets the Management field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Management field is set to the value of the last call.
+func (b *SizeConfigurationApplyConfiguration) WithManagement(value *ManagementApplyConfiguration) *SizeConfigurationApplyConfiguration {
+	b.Management = value
 	return b
 }

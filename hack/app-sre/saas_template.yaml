@@ -57586,6 +57586,17 @@ objects:
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
                         type: object
+                      management:
+                        description: Management configures the management aspects
+                          of this size class on the management plane.
+                        properties:
+                          placeholders:
+                            description: |-
+                              Placeholders configures the number of dummy workloads that will be scheduled irrespective of
+                              HostedClusters in order to keep a set of nodes ready to accept new cluster creation and scheduling.
+                            minimum: 0
+                            type: integer
+                        type: object
                       name:
                         description: Name is the t-shirt size name.
                         type: string
