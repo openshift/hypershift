@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -236,6 +237,8 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		}
 		if node.Labels[lbSubnetsLabel] != "" && lbSubnets == "" {
 			lbSubnets = node.Labels[lbSubnetsLabel]
+			// If subnets are separated by periods, replace them with commas
+			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
 		}
 
 		// Add taint and labels for specific hosted cluster
