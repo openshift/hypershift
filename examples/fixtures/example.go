@@ -164,6 +164,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					Zone: o.AWS.Zones[0].Name,
 				},
 				ResourceTags:   o.AWS.ResourceTags,
+				MultiArch:      o.AWS.MultiArch,
 				EndpointAccess: endpointAccess,
 			},
 		}

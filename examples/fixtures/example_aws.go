@@ -20,6 +20,7 @@ type ExampleAWSOptions struct {
 	ResourceTags            []hyperv1.AWSResourceTag
 	EndpointAccess          string
 	ProxyAddress            string
+	MultiArch               bool
 }
 
 type ExampleAWSOptionsZones struct {

@@ -39,9 +39,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
-	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -81,6 +78,8 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
@@ -88,6 +87,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -100,6 +100,7 @@ import (
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -3967,6 +3968,34 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		}
 		currentVersion = &version
 	}
+
+	// Validate release image is multi-arch
+	if hc.Spec.Platform.Type == hyperv1.AWSPlatform && hc.Spec.Platform.AWS.MultiArch {
+		isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
+		if err != nil {
+			return fmt.Errorf("failed to determine if release image multi-arch: %w", err)
+		}
+
+		if !isMultiArchReleaseImage {
+			return fmt.Errorf("release image is not a multi-arch image")
+		}
+	}
+
+	// Validate each NodePool CPU arch matches the management cluster's CPU arch when the Hosted Cluster is not multi-arch
+	if hc.Spec.Platform.Type == hyperv1.AWSPlatform && !hc.Spec.Platform.AWS.MultiArch {
+		nodePoolList := &hyperv1.NodePoolList{}
+		if err := r.List(ctx, nodePoolList, client.InNamespace(hc.Namespace)); err != nil {
+			return fmt.Errorf("failed to get list of nodepools for cpu arch validation: %w", err)
+		}
+
+		for _, nodePool := range nodePoolList.Items {
+			if err := hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(nodePool.Spec.Arch); err != nil {
+				return err
+			}
+		}
+
+	}
+
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)

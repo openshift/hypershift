@@ -240,6 +240,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		ResourceTags:            tags,
 		EndpointAccess:          opts.AWSPlatform.EndpointAccess,
 		ProxyAddress:            infra.ProxyAddr,
+		MultiArch:               opts.AWSPlatform.MultiArch,
 	}
 	return nil
 }

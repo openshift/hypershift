@@ -32,6 +32,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	hyperutil "github.com/openshift/hypershift/support/util"
 )
 
 // ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixture with additional values
@@ -478,7 +479,7 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 		if err != nil {
 			return err
 		}
-		// Validate HostedCluster with this name doesn't exists in the namespace
+		// Validate HostedCluster with this name doesn't exist in the namespace
 		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
 			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
@@ -492,6 +493,13 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 	errs := validation.IsDNS1123Label(opts.Name)
 	if len(errs) > 0 {
 		return fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
+	}
+
+	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
+	if !opts.AWSPlatform.MultiArch {
+		if err := hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(opts.Arch); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -17,6 +17,11 @@ When this flag is set, it will ensure:
     An individual NodePool only supports one CPU architecture and cannot support multiple CPU archiectures within the same NodePool.
 
 
+!!! note
+
+    If a multi-arch release image or stream is used and the multi-arch flag is not set, if the management cluster and NodePool CPU arches do not match, the CLI will throw a validation error and not create the Hosted Cluster.
+
+
 ```shell linenums="1"
 REGION=us-east-1
 CLUSTER_NAME=example
