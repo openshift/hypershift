@@ -7,10 +7,15 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -276,6 +281,341 @@ func TestHostedClusterScheduler(t *testing.T) {
 				g.Expect(scheduledNodeIndices).To(HaveLen(2))
 				g.Expect(nodeZone(&nodeList.Items[scheduledNodeIndices[0]])).ToNot(Equal(nodeZone(&nodeList.Items[scheduledNodeIndices[1]])))
 				g.Expect(nodeList.Items[scheduledNodeIndices[0]].Labels[OSDFleetManagerPairedNodesLabel]).To(Equal(nodeList.Items[scheduledNodeIndices[1]].Labels[OSDFleetManagerPairedNodesLabel]))
+			}
+		})
+	}
+}
+
+func TestHostedClusterSchedulerAndSizer(t *testing.T) {
+
+	mustQty := func(qty string) *resource.Quantity {
+		result, err := resource.ParseQuantity(qty)
+		if err != nil {
+			panic(err)
+		}
+		return &result
+	}
+
+	sizingConfig := &schedulingv1alpha1.ClusterSizingConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+			Sizes: []schedulingv1alpha1.SizeConfiguration{
+				{
+					Name: "small",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 0,
+						To:   ptr.To(uint32(1)),
+					},
+					Management: &schedulingv1alpha1.Management{
+						Placeholders: 2,
+					},
+					Effects: &schedulingv1alpha1.Effects{
+						KASGoMemLimit: mustQty("1Gi"),
+					},
+				},
+				{
+					Name: "medium",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 2,
+						To:   ptr.To(uint32(2)),
+					},
+					Effects: &schedulingv1alpha1.Effects{
+						KASGoMemLimit: mustQty("2Gi"),
+					},
+				},
+				{
+					Name: "large",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 3,
+						To:   nil,
+					},
+					Effects: &schedulingv1alpha1.Effects{
+						KASGoMemLimit: mustQty("3Gi"),
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   schedulingv1alpha1.ClusterSizingConfigurationValidType,
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+	hostedcluster := func(mods ...func(*hyperv1.HostedCluster)) *hyperv1.HostedCluster {
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "test-namespace",
+				Name:      "test",
+				Labels: map[string]string{
+					hyperv1.HostedClusterSizeLabel: "small",
+				},
+				Annotations: map[string]string{
+					hyperv1.TopologyAnnotation: hyperv1.DedicatedRequestServingComponentsTopology,
+				},
+			},
+		}
+		for _, m := range mods {
+			m(hc)
+		}
+		return hc
+	}
+	withSize := func(size string) func(*hyperv1.HostedCluster) {
+		return func(hc *hyperv1.HostedCluster) {
+			hc.Labels[hyperv1.HostedClusterSizeLabel] = size
+		}
+	}
+	scheduledHC := func(hc *hyperv1.HostedCluster) {
+		hc.Annotations[hyperv1.HostedClusterScheduledAnnotation] = "true"
+		sizeLabel := hc.Labels[hyperv1.HostedClusterSizeLabel]
+		hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, sizeLabel)
+		for _, sizeCfg := range sizingConfig.Spec.Sizes {
+			if sizeCfg.Name == sizeLabel {
+				hc.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = sizeCfg.Effects.KASGoMemLimit.String()
+				break
+			}
+		}
+	}
+	_ = scheduledHC
+	hcName := func(name string) func(*hyperv1.HostedCluster) {
+		return func(hc *hyperv1.HostedCluster) {
+			hc.Name = name
+		}
+	}
+	_ = hcName
+
+	node := func(name, zone, sizeLabel, OSDFleetManagerPairedNodesID string, mods ...func(*corev1.Node)) *corev1.Node {
+		n := &corev1.Node{}
+		n.Name = name
+		n.Labels = map[string]string{
+			OSDFleetManagerPairedNodesLabel:      OSDFleetManagerPairedNodesID,
+			hyperv1.RequestServingComponentLabel: "true",
+			"topology.kubernetes.io/zone":        zone,
+			hyperv1.NodeSizeLabel:                sizeLabel,
+		}
+		for _, m := range mods {
+			m(n)
+		}
+		return n
+	}
+
+	withCluster := func(hc *hyperv1.HostedCluster) func(*corev1.Node) {
+		return func(n *corev1.Node) {
+			n.Labels[HostedClusterNameLabel] = hc.Name
+			n.Labels[HostedClusterNamespaceLabel] = hc.Namespace
+			n.Labels[hyperv1.HostedClusterLabel] = fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)
+			n.Spec.Taints = append(n.Spec.Taints, corev1.Taint{
+				Key:    HostedClusterTaint,
+				Value:  clusterKey(hc),
+				Effect: corev1.TaintEffectNoSchedule,
+			})
+		}
+	}
+
+	nodeZone := func(n *corev1.Node) string {
+		return n.Labels["topology.kubernetes.io/zone"]
+	}
+
+	nodes := func(n ...*corev1.Node) []client.Object {
+		result := make([]client.Object, 0, len(n))
+		for _, node := range n {
+			result = append(result, node)
+		}
+		return result
+	}
+
+	placeHolderDeployment := func(name string) *appsv1.Deployment {
+		labels := map[string]string{
+			PlaceholderLabel: name,
+			hostedclustersizing.HostedClusterSizeLabel: "small",
+		}
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:  placeholderNamespace,
+				Name:       name,
+				Labels:     labels,
+				Generation: 1,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To(int32(2)),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: labels,
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: labels,
+					},
+				},
+			},
+			Status: appsv1.DeploymentStatus{
+				AvailableReplicas:  2,
+				ReadyReplicas:      2,
+				UpdatedReplicas:    2,
+				Replicas:           2,
+				ObservedGeneration: 1,
+			},
+		}
+	}
+
+	placeHolderPod := func(depName, name string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: placeholderNamespace,
+				Name:      name,
+				Labels: map[string]string{
+					PlaceholderLabel: depName,
+					hostedclustersizing.HostedClusterSizeLabel: "small",
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: name,
+			},
+		}
+	}
+
+	placeholderResources := func(count int) []client.Object {
+		result := []client.Object{}
+		for i := 0; i < count; i++ {
+			name := fmt.Sprintf("placeholder-%d", i)
+			result = append(result, placeHolderDeployment(name))
+			result = append(result, placeHolderPod(name, name+"-zone-a"))
+			result = append(result, placeHolderPod(name, name+"-zone-b"))
+			result = append(result, node((name+"-zone-a"), "zone-a", "small", "id1"))
+			result = append(result, node((name+"-zone-b"), "zone-b", "small", "id1"))
+		}
+		return result
+	}
+
+	tests := []struct {
+		name                  string
+		hc                    *hyperv1.HostedCluster
+		nodes                 []client.Object
+		additionalObjects     []client.Object
+		checkScheduledNodes   bool
+		checkScheduledCluster bool
+		expectError           bool
+		expectPlaceholder     bool
+	}{
+		{
+			name: "scheduled hosted cluster with 2 existing Nodes",
+			hc:   hostedcluster(scheduledHC),
+			nodes: nodes(
+				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "small", "id1", withCluster(hostedcluster())),
+			),
+			checkScheduledCluster: true,
+			checkScheduledNodes:   true,
+		},
+		{
+			name: "ensure allocated cluster node is labeled for cluster",
+			hc:   hostedcluster(),
+			nodes: nodes(
+				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "small", "id1"),
+			),
+			checkScheduledNodes: true,
+		},
+		{
+			name: "ensure hosted cluster is annotated properly when nodes are scheduled",
+			hc:   hostedcluster(),
+			nodes: nodes(
+				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "small", "id1", withCluster(hostedcluster())),
+			),
+			checkScheduledCluster: true,
+			checkScheduledNodes:   true,
+		},
+		{
+			name:              "expect placeholder deployment when no nodes are available",
+			hc:                hostedcluster(withSize("medium")),
+			expectPlaceholder: true,
+		},
+		{
+			name: "expect placeholder deployment when only one node is available",
+			hc:   hostedcluster(withSize("medium")),
+			nodes: nodes(
+				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
+			),
+			expectPlaceholder: true,
+		},
+		{
+			name:                "use existing placeholders for small cluster",
+			hc:                  hostedcluster(),
+			additionalObjects:   placeholderResources(3),
+			checkScheduledNodes: true,
+		},
+		{
+			name: "expect placeholder deployment when not the right size",
+			hc:   hostedcluster(scheduledHC, withSize("medium")),
+			nodes: nodes(
+				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "small", "id1", withCluster(hostedcluster())),
+			),
+			expectPlaceholder: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.hc, sizingConfig).WithObjects(test.nodes...).WithObjects(test.additionalObjects...).Build()
+			r := &DedicatedServingComponentSchedulerAndSizer{
+				Client:         c,
+				createOrUpdate: controllerutil.CreateOrUpdate,
+			}
+			req := reconcile.Request{}
+			req.Name = hostedcluster().Name
+			req.Namespace = hostedcluster().Namespace
+			_, err := r.Reconcile(context.Background(), req)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			if test.checkScheduledCluster {
+				actual := hostedcluster()
+				err := c.Get(context.Background(), client.ObjectKeyFromObject(actual), actual)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(actual.Annotations).To(HaveKey(hyperv1.HostedClusterScheduledAnnotation))
+				sizeLabel := actual.Labels[hyperv1.HostedClusterSizeLabel]
+				g.Expect(actual.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]).To(Equal(fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, sizeLabel)))
+				for _, sizeCfg := range sizingConfig.Spec.Sizes {
+					if sizeCfg.Name == sizeLabel {
+						g.Expect(actual.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation]).To(Equal(sizeCfg.Effects.KASGoMemLimit.String()))
+						break
+					}
+				}
+			}
+			if test.checkScheduledNodes {
+				hc := hostedcluster()
+				nodeList := &corev1.NodeList{}
+				err := c.List(context.Background(), nodeList)
+				g.Expect(err).ToNot(HaveOccurred())
+				scheduledNodeIndices := []int{}
+				for i, node := range nodeList.Items {
+					if _, hasLabel := node.Labels[hyperv1.HostedClusterLabel]; hasLabel {
+						scheduledNodeIndices = append(scheduledNodeIndices, i)
+						g.Expect(node.Labels[hyperv1.HostedClusterLabel]).To(Equal(fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)))
+						g.Expect(node.Labels[HostedClusterNameLabel]).To(Equal(hc.Name))
+						g.Expect(node.Labels[HostedClusterNamespaceLabel]).To(Equal(hc.Namespace))
+						g.Expect(node.Spec.Taints).To(ContainElement(corev1.Taint{
+							Key:    HostedClusterTaint,
+							Value:  fmt.Sprintf("%s-%s", hc.Namespace, hc.Name),
+							Effect: corev1.TaintEffectNoSchedule,
+						}))
+					}
+				}
+				g.Expect(scheduledNodeIndices).To(HaveLen(2))
+				g.Expect(nodeZone(&nodeList.Items[scheduledNodeIndices[0]])).ToNot(Equal(nodeZone(&nodeList.Items[scheduledNodeIndices[1]])))
+				g.Expect(nodeList.Items[scheduledNodeIndices[0]].Labels[OSDFleetManagerPairedNodesLabel]).To(Equal(nodeList.Items[scheduledNodeIndices[1]].Labels[OSDFleetManagerPairedNodesLabel]))
+			}
+			if test.expectPlaceholder {
+				deployment := placeholderDeployment(test.hc)
+				err := c.Get(context.Background(), client.ObjectKeyFromObject(deployment), deployment)
+				g.Expect(err).ToNot(HaveOccurred())
 			}
 		})
 	}

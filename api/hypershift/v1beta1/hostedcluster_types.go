@@ -270,6 +270,12 @@ const (
 
 	//RosaHCP represents the ROSA HCP managed service offering
 	RosaHCP = "ROSA-HCP"
+
+	// HostedClusterSizeLabel is a label on HostedClusters indicating a size based on the number of nodes.
+	HostedClusterSizeLabel = "hypershift.openshift.io/hosted-cluster-size"
+
+	// NodeSizeLabel is a label on nodes used to match cluster size to a node size.
+	NodeSizeLabel = "hypershift.openshift.io/cluster-size"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
