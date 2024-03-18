@@ -264,6 +264,12 @@ const (
 	// AWSLoadBalancerSubnetsAnnotation allows specifying the subnets to use for control plane load balancers
 	// in the AWS platform.
 	AWSLoadBalancerSubnetsAnnotation = "hypershift.openshift.io/aws-load-balancer-subnets"
+
+	// AroHCP represents the ARO HCP managed service offering
+	AroHCP = "ARO-HCP"
+
+	//RosaHCP represents the ROSA HCP managed service offering
+	RosaHCP = "ROSA-HCP"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
