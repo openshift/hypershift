@@ -1,4 +1,4 @@
-# Source: https://raw.githubusercontent.com/openshift/cluster-kube-apiserver-operator/release-4.15/bindata/assets/alerts/podsecurity-violation.yaml
+# Source: https://raw.githubusercontent.com/openshift/cluster-kube-apiserver-operator/release-4.15/bindata/assets/alerts/podsecurity-violations.yaml
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:

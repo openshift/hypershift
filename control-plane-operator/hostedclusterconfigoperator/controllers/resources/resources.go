@@ -1585,7 +1585,7 @@ func (r *reconciler) reconcileGuestClusterAlertRules(ctx context.Context) error 
 	if _, err := r.CreateOrUpdate(ctx, r.client, podSecurityViolationRule, func() error {
 		return alerts.ReconcilePodSecurityViolationRule(podSecurityViolationRule)
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("faled to reconcile guest cluster pod security violation rule: %w", err))
+		errs = append(errs, fmt.Errorf("failed to reconcile guest cluster pod security violation rule: %w", err))
 	}
 
 	return errors.NewAggregate(errs)
