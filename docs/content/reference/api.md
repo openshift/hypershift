@@ -1457,6 +1457,19 @@ See <a href="https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoi
 for more details around VPC Endpoint Service allowed principals.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>multiArch</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
+CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
