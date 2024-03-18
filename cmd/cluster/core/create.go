@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -478,7 +479,7 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 		if err != nil {
 			return err
 		}
-		// Validate HostedCluster with this name doesn't exists in the namespace
+		// Validate HostedCluster with this name doesn't exist in the namespace
 		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
 			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
@@ -492,6 +493,11 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 	errs := validation.IsDNS1123Label(opts.Name)
 	if len(errs) > 0 {
 		return fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
+	}
+
+	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
+	if err := validateMgmtClusterAndNodePoolCPUArch(opts); err != nil {
+		return err
 	}
 
 	return nil
@@ -576,4 +582,13 @@ func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions, provide
 		return nil, err
 	}
 	return &semanticVersion, nil
+}
+func validateMgmtClusterAndNodePoolCPUArch(opts *CreateOptions) error {
+	mgmtClusterCPUArch := runtime.GOARCH
+
+	if mgmtClusterCPUArch != opts.Arch && !opts.AWSPlatform.MultiArch {
+		return fmt.Errorf("multi-arch hosted cluster is not enabled and management cluster and nodepool cpu arches do not match - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, opts.Arch)
+	}
+
+	return nil
 }
