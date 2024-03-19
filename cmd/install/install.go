@@ -518,6 +518,15 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		objects = append(objects, pullSecret)
 	}
 
+	// In OpenShift management clusters, this RoleBinding is brought in through openshift/cluster-kube-apiserver-operator.
+	// In ARO HCP, Hosted Clusters are running on AKS management clusters, so we need to provide this through the HO.
+	if opts.ManagedService == hyperv1.AroHCP {
+		roleBinding := assets.KubeSystemRoleBinding{
+			Namespace: "kube-system",
+		}.Build()
+		objects = append(objects, roleBinding)
+	}
+
 	var oidcSecret *corev1.Secret
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
