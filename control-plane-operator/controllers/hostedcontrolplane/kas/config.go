@@ -244,14 +244,6 @@ func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
 	return ""
 }
 
-func oidcCAFile(oidcCAName string) string {
-	if oidcCAName != "" {
-		caDir := oidcCAVolumeMount.Path(kasContainerMain().Name, kasVolumeOIDCCA().Name)
-		return path.Join(caDir, "ca.crt")
-	}
-	return ""
-}
-
 func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime.Object {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
