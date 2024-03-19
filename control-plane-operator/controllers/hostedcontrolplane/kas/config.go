@@ -236,7 +236,7 @@ func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
 func oidcCAFile(oidcCAName string) string {
 	if oidcCAName != "" {
 		caDir := oidcCAVolumeMount.Path(kasContainerMain().Name, kasVolumeOIDCCA().Name)
-		return path.Join(caDir, "ca.crt")
+		return path.Join(caDir, "ca-bundle.crt")
 	}
 	return ""
 }
