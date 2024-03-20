@@ -3538,7 +3538,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 				}
-			} else {
+			} else if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
 				if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
 					return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
 				}
