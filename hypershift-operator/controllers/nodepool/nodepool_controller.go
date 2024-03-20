@@ -2168,12 +2168,25 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *configv1.ImageDigestMirrorSet:
 	case *mcfgv1.KubeletConfig:
-		addWorkerLabel(&obj.ObjectMeta)
+		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"machineconfiguration.openshift.io/mco-built-in": "",
+			},
+		}
 		manifest, err = encode(cr, yamlSerializer)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encode kubelet config after defaulting it: %w", err)
+			return nil, fmt.Errorf("failed to encode kubelet config after setting built-in MCP selector: %w", err)
 		}
 	case *mcfgv1.ContainerRuntimeConfig:
+		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"machineconfiguration.openshift.io/mco-built-in": "",
+			},
+		}
+		manifest, err = encode(cr, yamlSerializer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode container runtime config after setting built-in MCP selector: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported config type: %T", obj)
 	}
@@ -2187,6 +2200,7 @@ func addWorkerLabel(obj *metav1.ObjectMeta) {
 	}
 	obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
 }
+
 func encode(obj runtime.Object, ser *serializer.Serializer) ([]byte, error) {
 	buff := bytes.Buffer{}
 	if err := ser.Encode(obj, &buff); err != nil {
