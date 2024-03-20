@@ -358,6 +358,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableCVOManagementClusterMetricsAccess bool
 	EnableDedicatedRequestServingIsolation  bool
 	ManagedService                          string
+	EnableSizeTagging                       bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -457,6 +458,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  "MANAGED_SERVICE",
 			Value: o.ManagedService,
+		})
+	}
+
+	if o.EnableSizeTagging {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "ENABLE_SIZE_TAGGING",
+			Value: "1",
 		})
 	}
 

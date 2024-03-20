@@ -2,6 +2,7 @@ package configoperator
 
 import (
 	"fmt"
+	"os"
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -427,6 +428,14 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 			},
 		}
 		proxy.SetEnvVars(&c.Env)
+		if os.Getenv("ENABLE_SIZE_TAGGING") == "1" {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  "ENABLE_SIZE_TAGGING",
+					Value: "1",
+				},
+			)
+		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }

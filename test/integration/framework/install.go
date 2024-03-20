@@ -147,6 +147,7 @@ func InstallHyperShiftOperator(ctx context.Context, logger logr.Logger, opts *Op
 		"--enable-conversion-webhook=false",
 		"--enable-defaulting-webhook=false",
 		"--enable-validating-webhook=false",
+		"--enable-size-tagging",
 	)
 	yamlPath := filepath.Join("install", "hypershift-install.yaml")
 	yamlFile, err := Artifact(opts, yamlPath)

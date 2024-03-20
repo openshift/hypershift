@@ -2560,6 +2560,15 @@ func reconcileControlPlaneOperatorDeployment(
 		)
 	}
 
+	if os.Getenv("ENABLE_SIZE_TAGGING") == "1" {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "ENABLE_SIZE_TAGGING",
+				Value: "1",
+			},
+		)
+	}
+
 	if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{

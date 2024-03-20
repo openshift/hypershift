@@ -99,6 +99,7 @@ type Options struct {
 	EnableDedicatedRequestServingIsolation    bool
 	PullSecretFile                            string
 	ManagedService                            string
+	EnableSizeTagging                         bool
 }
 
 func (o *Options) Validate() error {
@@ -181,6 +182,7 @@ func NewCommand() *cobra.Command {
 	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
 	opts.ExternalDNSImage = ExternalDNSImage
 	opts.CertRotationScale = 24 * time.Hour
+	opts.EnableSizeTagging = false
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -222,6 +224,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO-HCP, ROSA-HCP")
+	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -675,6 +678,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
 		EnableDedicatedRequestServingIsolation:  opts.EnableDedicatedRequestServingIsolation,
 		ManagedService:                          opts.ManagedService,
+		EnableSizeTagging:                       opts.EnableSizeTagging,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
