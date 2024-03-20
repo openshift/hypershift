@@ -89,7 +89,8 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
-		Location: "eastus",
+		Location:   "eastus",
+		SubnetName: "default",
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID(required)")
@@ -100,6 +101,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().StringVar(&opts.NetworkSecurityGroup, "network-security-group", opts.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network")
+	cmd.Flags().StringVar(&opts.SubnetName, "subnet-name", opts.SubnetName, "The subnet name where the VMs will be placed.")
 	cmd.Flags().StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 
 	_ = cmd.MarkFlagRequired("infra-id")
