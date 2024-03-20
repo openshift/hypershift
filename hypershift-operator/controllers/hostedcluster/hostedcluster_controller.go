@@ -2790,12 +2790,6 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"watch",
 			},
 		},
-		{
-			APIGroups:     []string{"security.openshift.io"},
-			ResourceNames: []string{"hostnetwork"},
-			Resources:     []string{"securitycontextconstraints"},
-			Verbs:         []string{"use"},
-		},
 		// This is needed for CPO to grant Autoscaler its RBAC policy.
 		{
 			APIGroups: []string{"cluster.x-k8s.io"},
