@@ -72,12 +72,6 @@ var (
 		},
 	}
 
-	oidcCAVolumeMount = util.PodVolumeMounts{
-		kasContainerMain().Name: {
-			kasVolumeOIDCCA().Name: "/etc/kubernetes/certs/oidc-ca",
-		},
-	}
-
 	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
 		kasContainerMain().Name: {
 			kasVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
@@ -275,9 +269,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
 	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec, cloudProviderName)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, cloudProviderName, cloudProviderCreds, images.TokenMinterImage, kasContainerMain().Name)
-	if oidcCA != nil {
-		applyOIDCCAVolumeMount(oidcCA, &deployment.Spec.Template.Spec)
-	}
 
 	if cloudProviderName == aws.Provider {
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
@@ -562,12 +553,6 @@ func buildKASVolumeKonnectivityCA(v *corev1.Volume) {
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
 
-func kasVolumeOIDCCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "oidc-ca",
-	}
-}
-
 func kasVolumeServerCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "server-crt",
@@ -747,31 +732,6 @@ func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec
 		container.VolumeMounts = append(container.VolumeMounts,
 			cloudProviderConfigVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 	}
-}
-
-func buildKASVolumeOIDCCA(configMapName string) func(v *corev1.Volume) {
-	return func(v *corev1.Volume) {
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{
-			LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
-			DefaultMode:          pointer.Int32(0640),
-		}
-	}
-}
-
-func applyOIDCCAVolumeMount(oidcCA *corev1.LocalObjectReference, podSpec *corev1.PodSpec) {
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeOIDCCA(), buildKASVolumeOIDCCA(oidcCA.Name)))
-	var container *corev1.Container
-	for i, c := range podSpec.Containers {
-		if c.Name == kasContainerMain().Name {
-			container = &podSpec.Containers[i]
-			break
-		}
-	}
-	if container == nil {
-		panic("main kube apiserver container not found in spec")
-	}
-	container.VolumeMounts = append(container.VolumeMounts,
-		oidcCAVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 }
 
 func invokeBootstrapRenderScript(workDir, payloadVersion, featureGateYaml string) string {
