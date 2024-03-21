@@ -284,20 +284,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	globalConfig := globalConfigBytes.String()
 
-	// Validate autoscaling input.
-	if err := validateAutoscaling(nodePool); err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
-			Status:             corev1.ConditionFalse,
-			Message:            err.Error(),
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			ObservedGeneration: nodePool.Generation,
-		})
-		// We don't return the error here as reconciling won't solve the input problem.
-		// An update event will trigger reconciliation.
-		log.Error(err, "validating autoscaling parameters failed")
-		return ctrl.Result{}, nil
-	}
 	if isAutoscalingEnabled(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
@@ -2268,27 +2254,6 @@ func isUpdatingMachineTemplate(nodePool *hyperv1.NodePool, targetMachineTemplate
 
 func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 	return nodePool.Spec.AutoScaling != nil
-}
-
-func validateAutoscaling(nodePool *hyperv1.NodePool) error {
-	if nodePool.Spec.Replicas != nil && nodePool.Spec.AutoScaling != nil {
-		return fmt.Errorf("only one of nodePool.Spec.Replicas or nodePool.Spec.AutoScaling can be set")
-	}
-
-	if nodePool.Spec.AutoScaling != nil {
-		max := nodePool.Spec.AutoScaling.Max
-		min := nodePool.Spec.AutoScaling.Min
-
-		if max < min {
-			return fmt.Errorf("max must be equal or greater than min. Max: %v, Min: %v", max, min)
-		}
-
-		if max == 0 || min == 0 {
-			return fmt.Errorf("max and min must be not zero. Max: %v, Min: %v", max, min)
-		}
-	}
-
-	return nil
 }
 
 func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
