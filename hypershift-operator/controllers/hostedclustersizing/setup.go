@@ -11,14 +11,16 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 const (
@@ -38,6 +40,15 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 	hypershiftClient, err := hypershiftclient.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return err
+	}
+
+	if _, err := hypershiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Get(ctx, "cluster", metav1.GetOptions{}); err != nil {
+		if !errors.IsNotFound(err) {
+			return fmt.Errorf("failed to get sizing configuration: %w", err)
+		}
+		if _, err := hypershiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Create(ctx, defaultSizingConfig(), metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("failed to create sizing configuration: %w", err)
+		}
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(ctx, &hypershiftv1beta1.HostedCluster{}, hostedControlPlaneForHostedClusterIndex, func(object client.Object) []string {
@@ -132,4 +143,36 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 	}
 
 	return nil
+}
+
+func defaultSizingConfig() *schedulingv1alpha1.ClusterSizingConfiguration {
+	return &schedulingv1alpha1.ClusterSizingConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+			Sizes: []schedulingv1alpha1.SizeConfiguration{
+				{
+					Name: "small",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 0,
+						To:   ptr.To(uint32(10)),
+					},
+				},
+				{
+					Name: "medium",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 11,
+						To:   ptr.To(uint32(100)),
+					},
+				},
+				{
+					Name: "large",
+					Criteria: schedulingv1alpha1.NodeCountCriteria{
+						From: 101,
+					},
+				},
+			},
+		},
+	}
 }

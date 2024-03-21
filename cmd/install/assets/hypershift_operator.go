@@ -6,7 +6,6 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
@@ -1810,37 +1809,5 @@ func (o HyperShiftPullSecret) Build() *corev1.Secret {
 			".dockerconfigjson": o.PullSecretBytes,
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
-	}
-}
-
-func ClusterSizingConfiguration() *schedulingv1alpha1.ClusterSizingConfiguration {
-	return &schedulingv1alpha1.ClusterSizingConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
-			Sizes: []schedulingv1alpha1.SizeConfiguration{
-				{
-					Name: "small",
-					Criteria: schedulingv1alpha1.NodeCountCriteria{
-						From: 0,
-						To:   ptr.To(uint32(10)),
-					},
-				},
-				{
-					Name: "medium",
-					Criteria: schedulingv1alpha1.NodeCountCriteria{
-						From: 11,
-						To:   ptr.To(uint32(100)),
-					},
-				},
-				{
-					Name: "large",
-					Criteria: schedulingv1alpha1.NodeCountCriteria{
-						From: 101,
-					},
-				},
-			},
-		},
 	}
 }
