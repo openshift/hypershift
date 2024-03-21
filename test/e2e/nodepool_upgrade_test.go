@@ -96,12 +96,6 @@ func NewNodePoolUpgradeTest(ctx context.Context, mgmtClient crclient.Client, hos
 }
 
 func (ru *NodePoolUpgradeTest) Setup(t *testing.T) {
-	// Currently, only ReplaceUpgrade strategy test passes for the kubevirt platform.
-	// TODO: Enable InPlace upgrade test as well once the issue is identified and fixed.
-	if globalOpts.Platform == hyperv1.KubevirtPlatform && t.Name() == "TestNodePool/Main/TestNodePoolInPlaceUpgrade" {
-		t.Skip("InPlace Upgrade test currently can't run for the KubeVirt platform")
-	}
-
 	t.Log("starting test NodePoolUpgradeTest")
 }
 
