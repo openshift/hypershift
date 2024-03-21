@@ -31,6 +31,7 @@ type AWSPlatformSpecApplyConfiguration struct {
 	ResourceTags                []AWSResourceTagApplyConfiguration        `json:"resourceTags,omitempty"`
 	EndpointAccess              *hypershiftv1beta1.AWSEndpointAccessType  `json:"endpointAccess,omitempty"`
 	AdditionalAllowedPrincipals []string                                  `json:"additionalAllowedPrincipals,omitempty"`
+	MultiArch                   *bool                                     `json:"multiArch,omitempty"`
 }
 
 // AWSPlatformSpecApplyConfiguration constructs an declarative configuration of the AWSPlatformSpec type for use with
@@ -104,5 +105,13 @@ func (b *AWSPlatformSpecApplyConfiguration) WithAdditionalAllowedPrincipals(valu
 	for i := range values {
 		b.AdditionalAllowedPrincipals = append(b.AdditionalAllowedPrincipals, values[i])
 	}
+	return b
+}
+
+// WithMultiArch sets the MultiArch field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MultiArch field is set to the value of the last call.
+func (b *AWSPlatformSpecApplyConfiguration) WithMultiArch(value bool) *AWSPlatformSpecApplyConfiguration {
+	b.MultiArch = &value
 	return b
 }

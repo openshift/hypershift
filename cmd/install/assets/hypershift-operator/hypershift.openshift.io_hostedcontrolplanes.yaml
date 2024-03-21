@@ -2799,6 +2799,12 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      multiArch:
+                        default: false
+                        description: |-
+                          MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
+                          CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
+                        type: boolean
                       nodePoolManagementCreds:
                         description: |-
                           Deprecated
@@ -7116,6 +7122,12 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
+                      multiArch:
+                        default: false
+                        description: |-
+                          MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
+                          CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
+                        type: boolean
                       region:
                         description: |-
                           Region is the AWS region in which the cluster resides. This configures the

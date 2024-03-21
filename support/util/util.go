@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -317,4 +318,14 @@ func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.Hos
 	if ok {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
 	}
+}
+
+func DoesMgmtClusterAndNodePoolCPUArchMatch(nodePoolArch string) error {
+	mgmtClusterCPUArch := runtime.GOARCH
+
+	if mgmtClusterCPUArch != nodePoolArch {
+		return fmt.Errorf("multi-arch hosted cluster is not enabled and management cluster and nodepool cpu arches do not match - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, nodePoolArch)
+	}
+
+	return nil
 }
