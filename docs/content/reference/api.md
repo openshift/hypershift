@@ -264,7 +264,7 @@ AvailabilityPolicy
 <td>
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is SingleReplica.</p>
+critical control plane components. The default value is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>
@@ -3569,7 +3569,7 @@ AvailabilityPolicy
 <td>
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is SingleReplica.</p>
+critical control plane components. The default value is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>

@@ -188,10 +188,10 @@ type HostedClusterSpec struct {
 	Platform PlatformSpec `json:"platform"`
 
 	// ControllerAvailabilityPolicy specifies the availability policy applied to
-	// critical control plane components. The default value is SingleReplica.
+	// critical control plane components. The default value is HighlyAvailable.
 	//
 	// +optional
-	// +kubebuilder:default:="SingleReplica"
+	// +kubebuilder:default:="HighlyAvailable"
 	// +immutable
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 

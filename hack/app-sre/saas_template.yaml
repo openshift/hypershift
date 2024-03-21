@@ -39980,10 +39980,10 @@ objects:
                   - image
                   type: object
                 controllerAvailabilityPolicy:
-                  default: SingleReplica
+                  default: HighlyAvailable
                   description: |-
                     ControllerAvailabilityPolicy specifies the availability policy applied to
-                    critical control plane components. The default value is SingleReplica.
+                    critical control plane components. The default value is HighlyAvailable.
                   type: string
                 dns:
                   description: DNS specifies DNS configuration for the cluster.
@@ -44381,10 +44381,10 @@ objects:
                   - image
                   type: object
                 controllerAvailabilityPolicy:
-                  default: SingleReplica
+                  default: HighlyAvailable
                   description: |-
                     ControllerAvailabilityPolicy specifies the availability policy applied to
-                    critical control plane components. The default value is SingleReplica.
+                    critical control plane components. The default value is HighlyAvailable.
                   type: string
                 dns:
                   description: DNS specifies DNS configuration for the cluster.
