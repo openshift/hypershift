@@ -44,6 +44,7 @@ func NewCreateCommands() *cobra.Command {
 		Arch:                           "amd64",
 		OLMCatalogPlacement:            v1beta1.ManagementOLMCatalogPlacement,
 		OLMDisableDefaultSources:       false,
+		NetworkType:                    string(v1beta1.OVNKubernetes),
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",
