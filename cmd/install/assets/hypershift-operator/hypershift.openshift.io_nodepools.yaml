@@ -1202,6 +1202,9 @@ spec:
                 - max
                 - min
                 type: object
+                x-kubernetes-validations:
+                - message: max must be equal or greater than min
+                  rule: self.max >= self.min
               clusterName:
                 description: |-
                   ClusterName is the name of the HostedCluster this NodePool belongs to.
@@ -2072,6 +2075,8 @@ spec:
               rule: '!has(oldSelf.arch) || has(self.arch)'
             - message: Setting Arch to arm64 is only supported for AWS
               rule: self.arch != 'arm64' || has(self.platform.aws)
+            - message: One of replicas or autoScaling should be set but not both
+              rule: 'has(self.replicas) ? !has(self.autoScaling) : has(self.autoScaling)'
           status:
             description: Status is the latest observed status of the NodePool.
             properties:
