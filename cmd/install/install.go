@@ -788,8 +788,6 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		})
 	}
 
-	objects = append(objects, assets.ClusterSizingConfiguration())
-
 	for idx := range objects {
 		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.Scheme)
 		if err != nil {
