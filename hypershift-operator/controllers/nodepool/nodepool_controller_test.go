@@ -407,9 +407,6 @@ kind: KubeletConfig
 metadata:
   name: set-max-pods
 spec:
-  machineConfigPoolSelector:
-    matchLabels:
-      pools.operator.machineconfiguration.openshift.io/worker: ""
   kubeletConfig:
     maxPods: 100
 `
@@ -417,15 +414,13 @@ spec:
 kind: KubeletConfig
 metadata:
   creationTimestamp: null
-  labels:
-    machineconfiguration.openshift.io/role: worker
   name: set-max-pods
 spec:
   kubeletConfig:
     maxPods: 100
   machineConfigPoolSelector:
     matchLabels:
-      pools.operator.machineconfiguration.openshift.io/worker: ""
+      machineconfiguration.openshift.io/mco-built-in: ""
 status:
   conditions: null
 `
@@ -435,9 +430,6 @@ kind: KubeletConfig
 metadata:
   name: set-max-pods-2
 spec:
-  machineConfigPoolSelector:
-    matchLabels:
-      pools.operator.machineconfiguration.openshift.io/worker: ""
   kubeletConfig:
     maxPods: 200
 `
@@ -445,15 +437,13 @@ spec:
 kind: KubeletConfig
 metadata:
   creationTimestamp: null
-  labels:
-    machineconfiguration.openshift.io/role: worker
   name: set-max-pods-2
 spec:
   kubeletConfig:
     maxPods: 200
   machineConfigPoolSelector:
     matchLabels:
-      pools.operator.machineconfiguration.openshift.io/worker: ""
+      machineconfiguration.openshift.io/mco-built-in: ""
 status:
   conditions: null
 `
@@ -521,11 +511,25 @@ kind: ContainerRuntimeConfig
 metadata:
   name: set-pids-limit
 spec:
-  machineConfigPoolSelector:
-    matchLabels:
-      pools.operator.machineconfiguration.openshift.io/worker: ""
   containerRuntimeConfig:
     pidsLimit: 2048
+`
+
+	containerRuntimeConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  creationTimestamp: null
+  name: set-pids-limit
+spec:
+  containerRuntimeConfig:
+    logSizeMax: "0"
+    overlaySize: "0"
+    pidsLimit: 2048
+  machineConfigPoolSelector:
+    matchLabels:
+      machineconfiguration.openshift.io/mco-built-in: ""
+status:
+  conditions: null
 `
 
 	namespace := "test"
@@ -630,7 +634,7 @@ spec:
 			error:  true,
 		},
 		{
-			name: "fails if a non supported config kind",
+			name: "gets a single valid ContainerRuntimeConfig",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -654,7 +658,7 @@ spec:
 					},
 				},
 			},
-			expect: containerRuntimeConfig1,
+			expect: containerRuntimeConfig1Defaulted,
 			error:  false,
 		},
 		{
