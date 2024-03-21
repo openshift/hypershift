@@ -245,7 +245,7 @@ spec:
         - name: name
           value: source-build
         - name: bundle
-          value: quay.io/redhat-appstudio-tekton-catalog/task-source-build:0.1@sha256:de78aa846dd6a73242c7f93c981ee2ff4ceb5cf97e6a2aaaf3a87ef2e3599798
+          value: quay.io/redhat-appstudio-tekton-catalog/task-source-build:0.1@sha256:dce619d12de143d9f2b84b6293027cd053580552219f3c632d91acd901ab294b
         - name: kind
           value: task
         resolver: bundles
