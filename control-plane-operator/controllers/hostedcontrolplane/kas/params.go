@@ -521,6 +521,13 @@ func (p *KubeAPIServerParams) FeatureGates() []string {
 	}
 }
 
+func (p *KubeAPIServerParams) CipherSuites() []string {
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
+}
+
 func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 	if p.Network != nil && len(p.Network.ServiceNodePortRange) > 0 {
 		return p.Network.ServiceNodePortRange

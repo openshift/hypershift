@@ -2543,6 +2543,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			userReleaseImageProvider.Version(),
 			p.FeatureGate,
 			oidcCA,
+			p.CipherSuites(),
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
