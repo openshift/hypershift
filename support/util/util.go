@@ -6,20 +6,23 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"net"
 	"net/http"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/util"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -320,12 +323,51 @@ func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.Hos
 	}
 }
 
-func DoesMgmtClusterAndNodePoolCPUArchMatch(nodePoolArch string) error {
-	mgmtClusterCPUArch := runtime.GOARCH
-
+func DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePoolArch string) error {
 	if mgmtClusterCPUArch != nodePoolArch {
 		return fmt.Errorf("multi-arch hosted cluster is not enabled and management cluster and nodepool cpu arches do not match - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, nodePoolArch)
 	}
 
 	return nil
+}
+
+func GetMgmtClusterCPUArch(ctx context.Context) (string, error) {
+	cfg, err := util.GetConfig()
+	if err != nil {
+		return "", err
+	}
+
+	kc, err := kubeclient.NewForConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	// Get the API version in JSON format
+	versionJSON, err := kc.RESTClient().Get().AbsPath("/version").DoRaw(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Unmarshal the version JSON so we can extract the platform field
+	var data map[string]interface{}
+	if err = json.Unmarshal(versionJSON, &data); err != nil {
+		return "", err
+	}
+
+	//Extract the platform field
+	platform, ok := data["platform"].(string)
+	if !ok {
+		return "", fmt.Errorf("failed to extract the platform info from the version JSON")
+	}
+
+	// Split the platform into separate strings, we just want to check the CPU arch
+	// The normal structure should be something like 'linux/arm64'
+	platformParts := strings.Split(platform, "/")
+
+	// Check we have two parts, so we don't do a nil dereference though this shouldn't happen
+	if len(platformParts) != 2 {
+		return "", fmt.Errorf("failed to extract the cpu arch from the platform field")
+	}
+
+	return platformParts[1], nil
 }

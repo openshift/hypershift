@@ -405,3 +405,36 @@ func TestParseNodeSelector(t *testing.T) {
 		})
 	}
 }
+
+func TestDoesMgmtClusterAndNodePoolCPUArchMatch(t *testing.T) {
+	tests := []struct {
+		name           string
+		mgmtClusterCPU string
+		nodePoolCPU    string
+		wantErr        bool
+	}{
+		{
+			name:           "Mgmt cluster cpu and nodepool cpu don't match",
+			mgmtClusterCPU: "arm64",
+			nodePoolCPU:    "amd64",
+			wantErr:        true,
+		},
+		{
+			name:           "Mgmt cluster cpu and nodepool cpu match",
+			mgmtClusterCPU: "arm64",
+			nodePoolCPU:    "arm64",
+			wantErr:        false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := DoesMgmtClusterAndNodePoolCPUArchMatch(tc.mgmtClusterCPU, tc.nodePoolCPU)
+			if tc.wantErr {
+				g.Expect(err).ToNot(BeNil())
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+		})
+	}
+}

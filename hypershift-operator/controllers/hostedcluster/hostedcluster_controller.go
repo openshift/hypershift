@@ -24,6 +24,7 @@ import (
 	"net/netip"
 	"os"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -3991,8 +3992,10 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 			return fmt.Errorf("failed to get list of nodepools for cpu arch validation: %w", err)
 		}
 
+		mgmtClusterCPUArch := runtime.GOARCH
+
 		for _, nodePool := range nodePoolList.Items {
-			if err := hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(nodePool.Spec.Arch); err != nil {
+			if err := hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePool.Spec.Arch); err != nil {
 				return err
 			}
 		}
