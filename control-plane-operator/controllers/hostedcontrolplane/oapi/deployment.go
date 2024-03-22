@@ -178,7 +178,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, util.BuildVolume(serviceCASignerVolume(), buildServiceCASignerVolume))
 		trustAnchorGeneratorContainer := util.FindContainer(oasTrustAnchorGenerator().Name, deployment.Spec.Template.Spec.InitContainers)
 		trustAnchorGeneratorContainer.VolumeMounts = append(trustAnchorGeneratorContainer.VolumeMounts, serviceSignerCertMount.ContainerMounts(oasTrustAnchorGenerator().Name)...)
-		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = util.HashStruct(serviceServingCA.Data)
+		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = util.HashSimple(serviceServingCA.Data)
 	} else {
 		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = ""
 	}

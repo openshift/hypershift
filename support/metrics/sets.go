@@ -448,7 +448,7 @@ func RegistryOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Rela
 func SREMetricsSetConfigHash(cm *corev1.ConfigMap) string {
 	value, ok := cm.Data[SREConfigurationConfigMapKey]
 	if ok {
-		return util.HashStruct(value)
+		return util.HashSimple(value)
 	}
 	return ""
 }
