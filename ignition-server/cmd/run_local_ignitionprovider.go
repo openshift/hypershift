@@ -106,7 +106,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		FeatureGateManifest: o.FeatureGateManifest,
 	}
 
-	payload, err := p.GetPayload(ctx, o.Image, config.String(), "")
+	payload, err := p.GetPayload(ctx, o.Image, config.String(), "", "")
 	if err != nil {
 		return err
 	}
