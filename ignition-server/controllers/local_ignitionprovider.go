@@ -192,12 +192,23 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	// Extract ImageReferences from release image to config directory
 	err = func() error {
 		start := time.Now()
+
+		// Replace the release image with the mirrored release image in disconnected environment cases
+		mirroredReleaseImage, ok := os.LookupEnv("MIRRORED_RELEASE_IMAGE")
+		if ok {
+			log.Info("replaced release image with mirrored release image to extract image-references", "releaseImage", releaseImage, "mirroredReleaseImage", mirroredReleaseImage)
+			releaseImage = mirroredReleaseImage
+		}
+
 		if err := registryclient.ExtractImageFilesToDir(ctx, releaseImage, pullSecret, "release-manifests/image-references", configDir); err != nil {
 			return fmt.Errorf("failed to extract image-references: %w", err)
 		}
 		log.Info("extracted image-references", "time", time.Since(start).Round(time.Second).String())
 		return nil
 	}()
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract image-references from image: %w", err)
+	}
 
 	// For Azure, extract the cloud provider config file as MCO input
 	if p.CloudProvider == hyperv1.AzurePlatform {

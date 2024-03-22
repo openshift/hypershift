@@ -28,6 +28,7 @@ const (
 	KASSVCLBAzurePort           = 7443
 	KASSVCPort                  = 6443
 	KASPodDefaultPort           = 6443
+	KASSVCIBMCloudPort          = 2040
 	DefaultServiceNodePortRange = "30000-32767"
 	DefaultSecurityContextUser  = 1001
 	RecommendedLeaseDuration    = "137s"

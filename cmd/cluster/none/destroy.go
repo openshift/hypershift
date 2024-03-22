@@ -44,5 +44,5 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	if err := errors.NewAggregate(inputErrors); err != nil {
 		return fmt.Errorf("required inputs are missing: %w", err)
 	}
-	return core.DestroyCluster(ctx, hostedCluster, o, core.DestroyPlatformSpecificsNoop)
+	return core.DestroyCluster(ctx, hostedCluster, o, nil)
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
@@ -62,6 +63,7 @@ type CreateOptions struct {
 	SSHKeyFile                       string
 	ServiceCIDR                      []string
 	ClusterCIDR                      []string
+	DefaultDual                      bool
 	ExternalDNSDomain                string
 	Arch                             string
 	NodeSelector                     map[string]string
@@ -237,6 +239,16 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		}
 	}
 
+	if opts.DefaultDual {
+		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
+		// TODO (jparrill): Refactor this to use generic validations as same as we use the ApplyPlatformSpecificsValues in a follow up PR
+		if len(opts.AgentPlatform.AgentNamespace) <= 0 {
+			return nil, fmt.Errorf("--default-dual is only supported on Agent platform")
+		}
+		opts.ClusterCIDR = []string{globalconfig.DefaultIPv4ClusterCIDR, globalconfig.DefaultIPv6ClusterCIDR}
+		opts.ServiceCIDR = []string{globalconfig.DefaultIPv4ServiceCIDR, globalconfig.DefaultIPv6ServiceCIDR}
+	}
+
 	var userCABundle []byte
 	if len(opts.AdditionalTrustBundle) > 0 {
 		userCABundle, err = os.ReadFile(opts.AdditionalTrustBundle)
@@ -334,7 +346,14 @@ func apply(ctx context.Context, l logr.Logger, exampleOptions *apifixtures.Examp
 	var hostedCluster *hyperv1.HostedCluster
 	for _, object := range exampleObjects {
 		key := crclient.ObjectKeyFromObject(object)
-		object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
+
+		labels := object.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		labels[util.AutoInfraLabelName] = exampleOptions.InfraID
+		object.SetLabels(labels)
+
 		var err error
 		if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
 			hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}

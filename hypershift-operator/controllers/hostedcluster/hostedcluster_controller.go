@@ -20,14 +20,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -39,9 +38,45 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	ini "gopkg.in/ini.v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
+	k8sutilspointer "k8s.io/utils/pointer"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
@@ -66,39 +101,6 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	ini "gopkg.in/ini.v1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/types"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/clock"
-	k8sutilspointer "k8s.io/utils/pointer"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -367,6 +369,34 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
+	{
+		if hcp != nil && hcp.DeletionTimestamp != nil {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if securityGroupDeletionCondition != nil {
+				freshCondition = securityGroupDeletionCondition
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
+				freshCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+				// Persist status updates
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+				}
+			}
+		}
+	}
+
 	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
 	{
@@ -473,6 +503,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Part zero: fix up conversion
 	originalSpec := hcluster.Spec.DeepCopy()
+
+	createOrUpdate := r.createOrUpdate(req)
+	if err = r.reconcileCLISecrets(ctx, createOrUpdate, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile the CLI secrets: %w", err)
+	}
 
 	// Reconcile converted AWS roles.
 	if hcluster.Spec.Platform.AWS != nil {
@@ -1014,8 +1049,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	createOrUpdate := r.createOrUpdate(req)
-
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
@@ -1028,7 +1061,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes, hcluster.Spec.ImageContentSources)
+	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
@@ -1265,13 +1298,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		var src corev1.Secret
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &src)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSHKey secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
 		dest := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["id_rsa.pub"]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", src.Name)
+				return fmt.Errorf("hostedcluster SSHKey secret %q must have a id_rsa.pub key", src.Name)
 			}
 			dest.Type = corev1.SecretTypeOpaque
 			if dest.Data == nil {
@@ -1281,7 +1314,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane SSHKey secret: %w", err)
 		}
 	}
 
@@ -1297,7 +1330,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["ca-bundle.crt"]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster configmap %q must have a ca-bundle.crt key", src.Name)
+				return fmt.Errorf("hostedcluster AdditionalTrustBundle configmap %q must have a ca-bundle.crt key", src.Name)
 			}
 			if dest.Data == nil {
 				dest.Data = map[string]string{}
@@ -1306,7 +1339,38 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
+		}
+	}
+
+	// Reconcile the OIDCCAFile ConfigMap if
+	// * Authentication Type is OIDC
+	// * At least one OIDCProvider is set (only a single OIDCProvider is currently supported)
+	// * A configmap ref is set for the issuer CA
+	if !hyperutil.HCOAuthEnabled(hcluster) &&
+		len(hcluster.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
+		hcluster.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name != "" {
+		caConfigMapName := hcluster.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name
+		var src corev1.ConfigMap
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: caConfigMapName}, &src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster OIDCCAFile configmap %s: %w", caConfigMapName, err)
+		}
+
+		dest := controlplaneoperator.OIDCCAConfigMap(controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["ca.crt"]
+			if !srcHasData {
+				return fmt.Errorf("hostedcluster OIDCCAFile configmap %q must have a ca.crt key", src.Name)
+			}
+			if dest.Data == nil {
+				dest.Data = map[string]string{}
+			}
+			dest.Data["ca.crt"] = srcData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane OIDCCAFile configmap: %w", err)
 		}
 	}
 
@@ -1581,8 +1645,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile SRE metrics config: %w", err)
 	}
 
+	openShiftTrustedCABundleConfigMapExists, err := r.reconcileOpenShiftTrustedCAs(ctx, hcp)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", err)
+	}
+
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -1683,6 +1752,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.RedHatMarketplaceCatalogImageAnnotation,
 		hyperv1.RedHatOperatorsCatalogImageAnnotation,
 		hyperv1.OLMCatalogsISRegistryOverridesAnnotation,
+		hyperv1.KubeAPIServerGOGCAnnotation,
+		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -2000,7 +2071,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2076,6 +2147,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
 		return reconcileControlPlaneOperatorDeployment(
 			controlPlaneOperatorDeployment,
+			openShiftTrustedCABundleConfigMapExists,
 			hcluster,
 			hostedControlPlane,
 			controlPlaneOperatorImage,
@@ -2121,6 +2193,41 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	return nil
 }
 
+// reconcileOpenShiftTrustedCAs checks for the existence of /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem, if it exists,
+// creates a new ConfigMap to be mounted in the CPO deployment utilizing the file
+func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (bool, error) {
+	trustedCABundle := new(bytes.Buffer)
+	var trustCABundleFile []byte
+
+	_, err := os.Stat("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+	if err == nil {
+		trustCABundleFile, err = os.ReadFile("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+		if err != nil {
+			return false, fmt.Errorf("unable to read trust bundle file: %w", err)
+		}
+	}
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	if _, err = trustedCABundle.Write(trustCABundleFile); err != nil {
+		return false, fmt.Errorf("unable to write trust bundle to buffer: %w", err)
+	}
+
+	// Next, save the contents to a new ConfigMap in the hosted control plane's namespace
+	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleForNamespace(hostedControlPlane.Namespace)
+	openShiftTrustedCABundleConfigMapForCPO.Data["ca-bundle.crt"] = trustedCABundle.String()
+	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, openShiftTrustedCABundleConfigMapForCPO, NoopReconcile); err != nil {
+		return false, fmt.Errorf("failed to create openshift-config-managed-trusted-ca-bundle for CPO deployment %T: %w", trustedCABundle.String(), err)
+	}
+
+	return true, nil
+}
+
 func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
 	for _, mapping := range hcp.Spec.Services {
 		if mapping.Service == svcType {
@@ -2144,6 +2251,37 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 	}
 
 	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
+}
+
+// reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
+// hosted cluster, has an owner reference of the hosted cluster.
+func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	log := ctrl.LoggerFrom(ctx)
+	secrets := &corev1.SecretList{}
+	err := r.List(ctx, secrets, client.InNamespace(hcluster.Namespace), client.MatchingLabels{
+		util.DeleteWithClusterLabelName: "true",
+		util.AutoInfraLabelName:         hcluster.Spec.InfraID,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to retrieve cli created secrets")
+	}
+
+	ownerRef := config.OwnerRefFrom(hcluster)
+	for _, secret := range secrets.Items {
+		res, err := createOrUpdate(ctx, r.Client, &secret, func() error {
+			ownerRef.ApplyTo(&secret)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to set secret's owner reference")
+		}
+		if res == controllerutil.OperationResultUpdated {
+			log.Info("added owner reference of the Hosted cluster, to the secret", "secret", secret.Name)
+		}
+	}
+
+	return nil
 }
 
 // GetControlPlaneOperatorImage resolves the appropriate control plane operator
@@ -2184,6 +2322,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 
 func reconcileControlPlaneOperatorDeployment(
 	deployment *appsv1.Deployment,
+	openShiftTrustedCABundleConfigMapExists bool,
 	hc *hyperv1.HostedCluster,
 	hcp *hyperv1.HostedControlPlane,
 	cpoImage,
@@ -2323,6 +2462,10 @@ func reconcileControlPlaneOperatorDeployment(
 		},
 	}
 
+	if openShiftTrustedCABundleConfigMapExists {
+		hyperutil.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
+	}
+
 	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
@@ -2430,9 +2573,9 @@ func reconcileControlPlaneOperatorDeployment(
 		})
 	}
 
-	if hc.Spec.AdditionalTrustBundle != nil {
+	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
-		hyperutil.DeploymentAddTrustBundleVolume(hc.Spec.AdditionalTrustBundle, deployment)
+		hyperutil.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
 	}
 
 	// set security context
@@ -3956,9 +4099,155 @@ func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.Hoste
 }
 
 func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) error {
-	errs := validateSliceNetworkCIDRs(hc)
+	var errs field.ErrorList
+	errs = append(errs, validateNetworkStackAddresses(hc)...)
+	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
+	errs = append(errs, checkAdvertiseAddressOverlapping(hc)...)
 
 	return errs.ToAggregate()
+}
+
+// findAdvertiseAddress function returns a string and an error indicating the AdvertiseAddress for the hostedcluster.
+// if the advertise address is properly set, it will return that value and nil, otherwise will return an error.
+// if the advertise address is not set, it will return the default one based on the network primary stack.
+func findAdvertiseAddress(hc *hyperv1.HostedCluster) (net.IP, *field.Error) {
+	var advertiseAddress net.IP
+	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.AdvertiseAddress != nil {
+		ipaddr := net.ParseIP(*hc.Spec.Networking.APIServer.AdvertiseAddress)
+		if ipaddr == nil {
+			return ipaddr, field.Invalid(field.NewPath("hc.Spec.Networking.APIServer.AdvertiseAddress"),
+				k8sutilspointer.String(ipaddr.String()),
+				fmt.Sprintf("advertise address set in HostedCluster %s is not parseable", *hc.Spec.Networking.APIServer.AdvertiseAddress),
+			)
+		}
+
+		return ipaddr, nil
+	}
+
+	ipaddr := net.ParseIP(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String())
+	if ipaddr == nil {
+		return ipaddr, field.Invalid(field.NewPath("hc.Spec.Networking.ClusterNetwork[0].CIDR.IP"),
+			k8sutilspointer.String(ipaddr.String()),
+			fmt.Sprintf("Cluster Network ip address %s is not parseable", hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String()),
+		)
+	}
+
+	if strings.Contains(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String(), ".") {
+		advertiseAddress = net.ParseIP(config.DefaultAdvertiseIPv4Address)
+	}
+
+	if strings.Contains(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String(), ":") {
+		advertiseAddress = net.ParseIP(config.DefaultAdvertiseIPv6Address)
+	}
+
+	return advertiseAddress, nil
+}
+
+// validateNetworkStackAddresses validates that Networks defined in the HostedCluster are in the same network stack
+// between each other against the primary IP using ClusterNetwork as a base.
+func validateNetworkStackAddresses(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+	ipv4 := make([]string, 0)
+	ipv6 := make([]string, 0)
+
+	networks := make(map[string]string, 0)
+
+	if len(hc.Spec.Networking.ClusterNetwork) > 0 {
+		networks["spec.networking.ClusterNetwork"] = hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String()
+	}
+
+	if len(hc.Spec.Networking.ServiceNetwork) > 0 {
+		networks["spec.networking.ServiceNetwork"] = hc.Spec.Networking.ServiceNetwork[0].CIDR.IP.String()
+	}
+
+	if len(hc.Spec.Networking.MachineNetwork) > 0 {
+		networks["spec.networking.MachineNetwork"] = hc.Spec.Networking.MachineNetwork[0].CIDR.IP.String()
+	}
+
+	advAddr, err := findAdvertiseAddress(hc)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	networks["spec.networking.APIServerNetworking.AdvertiseAddress"] = advAddr.String()
+
+	for fieldpath, ipaddr := range networks {
+		checkIP := net.ParseIP(ipaddr)
+
+		if checkIP != nil && strings.Contains(ipaddr, ".") {
+			ipv4 = append(ipv4, ipaddr)
+		}
+
+		if checkIP != nil && strings.Contains(ipaddr, ":") {
+			ipv6 = append(ipv6, ipaddr)
+		}
+
+		// This check ensures that the IPv6 and IPv4 is a valid ip
+		if checkIP == nil {
+			errs = append(errs, field.Invalid(field.NewPath(fieldpath),
+				k8sutilspointer.String(ipaddr),
+				fmt.Sprintf("error checking network stack of %s with ip %s", fieldpath, ipaddr),
+			))
+		}
+	}
+
+	if len(ipv4) > 0 && len(ipv6) > 0 {
+		// Invalid result, means that there are mixed stacks in the primary position of the stack
+		errs = append(errs, field.Forbidden(field.NewPath("spec.networking"),
+			fmt.Sprintf("declare multiple network stacks as primary network in the cluster definition is not allowed, ipv4: %v, ipv6: %v", ipv4, ipv6),
+		))
+	}
+
+	return errs
+
+}
+
+// checkAdvertiseAddressOverlapping validates that the AdvertiseAddress defined does not overlap with
+// the ClusterNetwork, ServiceNetwork and MachineNetwork
+func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+	var advAddress netip.Addr
+
+	networks := make(map[string]string, 0)
+
+	if len(hc.Spec.Networking.ClusterNetwork) > 0 {
+		networks["spec.networking.ClusterNetwork"] = hc.Spec.Networking.ClusterNetwork[0].CIDR.String()
+	}
+
+	if len(hc.Spec.Networking.ServiceNetwork) > 0 {
+		networks["spec.networking.ServiceNetwork"] = hc.Spec.Networking.ServiceNetwork[0].CIDR.String()
+	}
+
+	if len(hc.Spec.Networking.MachineNetwork) > 0 {
+		networks["spec.networking.MachineNetwork"] = hc.Spec.Networking.MachineNetwork[0].CIDR.String()
+	}
+
+	advAddr, fieldErr := findAdvertiseAddress(hc)
+	if fieldErr != nil {
+		errs = append(errs, fieldErr)
+		return errs
+	}
+
+	advAddress = netip.MustParseAddr(advAddr.String())
+
+	for fieldPath, cidr := range networks {
+		network, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			errs = append(errs, field.Invalid(field.NewPath(fieldPath),
+				k8sutilspointer.String(cidr),
+				fmt.Sprintf("error parsing field %s prefix: %v", fieldPath, err),
+			))
+		}
+
+		if network.Contains(advAddress) {
+			errs = append(errs, field.Invalid(field.NewPath(fieldPath),
+				k8sutilspointer.String(cidr),
+				fmt.Sprintf("the field %s with content %s overlaps with the defined AdvertiseAddress %s prefix: %v", fieldPath, cidr, advAddress.String(), err),
+			))
+		}
+	}
+
+	return errs
 }
 
 func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {

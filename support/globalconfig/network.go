@@ -11,8 +11,12 @@ import (
 )
 
 const (
-	defaultIPv4HostPrefix = 23
-	defaultIPv6HostPrefix = 64
+	defaultIPv4HostPrefix  = 23
+	defaultIPv6HostPrefix  = 64
+	DefaultIPv4ServiceCIDR = "172.31.0.0/16"
+	DefaultIPv6ServiceCIDR = "fd02::/112"
+	DefaultIPv4ClusterCIDR = "10.132.0.0/14"
+	DefaultIPv6ClusterCIDR = "fd01::/48"
 )
 
 func NetworkConfig() *configv1.Network {

@@ -137,6 +137,12 @@ const (
 	// blocked from creating machines.
 	AWSDefaultSecurityGroupCreated ConditionType = "AWSDefaultSecurityGroupCreated"
 
+	// AWSDefaultSecurityGroupDeleted indicates whether the default security group
+	// for AWS workers has been deleted.
+	// A failure here indicates that the Security Group has some dependencies that
+	// there are still pending cloud resources to be deleted that are using that SG.
+	AWSDefaultSecurityGroupDeleted ConditionType = "AWSDefaultSecurityGroupDeleted"
+
 	// PlatformCredentialsFound indicates that credentials required for the
 	// desired platform are valid.
 	// A failure here is unlikely to resolve without the changing user input.

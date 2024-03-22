@@ -94,8 +94,7 @@ func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *cor
 	if err := reconcileSignedCert(secret, csrSigner, config.OwnerRef{}, cn, serviceaccount.MakeGroupNames(serviceAccountNamespace), X509UsageClientAuth); err != nil {
 		return fmt.Errorf("failed to reconcile serviceaccount client cert: %w", err)
 	}
-	svcURL := inClusterKASURL()
-
+	svcURL := inClusterKASURL(hcp.Spec.Platform.Type)
 	return ReconcileKubeConfig(secret, secret, ca, svcURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
 }
 
@@ -132,7 +131,7 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 	}
 	kubeCfg.Clusters = map[string]*clientcmdapi.Cluster{
 		"cluster": {
-			Server:                   addBracketsIfIPv6(url),
+			Server:                   AddBracketsIfIPv6(url),
 			CertificateAuthorityData: caBytes,
 		},
 	}
@@ -153,15 +152,18 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 	return clientcmd.Write(kubeCfg)
 }
 
-func inClusterKASURL() string {
+func inClusterKASURL(platformType hyperv1.PlatformType) string {
+	if platformType == hyperv1.IBMCloudPlatform {
+		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
+	}
 	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
 }
 
-// addBracketsIfIPv6 function is needed to build the serverAPI url for every kubeconfig created.
+// AddBracketsIfIPv6 function is needed to build the serverAPI url for every kubeconfig created.
 // The function returns a string in 3 ways.
 // - Without brackets if it's an URL or an IPv4
 // - With brackets if it's a valid IPv6
-func addBracketsIfIPv6(apiAddress string) string {
+func AddBracketsIfIPv6(apiAddress string) string {
 
 	if utilsnet.IsIPv6String(apiAddress) {
 		return fmt.Sprintf("[%s]", apiAddress)

@@ -39,6 +39,10 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
 
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
+
 	// TODO (alberto): if this port ever need to be configurable it should come from new field in the LB publishing strategy.
 	portSpec.Port = int32(apiServerServicePort)
 	portSpec.Protocol = corev1.ProtocolTCP
@@ -152,6 +156,11 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, owner *metav1.OwnerReference) error {
 	util.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
+
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
+
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
@@ -160,6 +169,9 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	}
 
 	portSpec.Port = int32(config.KASSVCPort)
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		portSpec.Port = int32(config.KASSVCIBMCloudPort)
+	}
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromString("client")
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer

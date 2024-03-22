@@ -136,7 +136,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 
 func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hyperv1.NetworkType) error {
 	ownerRef.ApplyTo(role)
-	if networkType == hyperv1.Calico {
+	// The RBAC below is required when the networkType is not OVNKubernetes https://issues.redhat.com/browse/OCPBUGS-26977
+	if networkType != hyperv1.OVNKubernetes {
 		role.Rules = []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{corev1.SchemeGroupVersion.Group},
@@ -161,6 +162,9 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hype
 					"ovnkube-identity-cm",
 				},
 				Verbs: []string{
+					"list",
+					"get",
+					"watch",
 					"create",
 					"patch",
 					"update",
@@ -290,7 +294,7 @@ func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef
 	return nil
 }
 
-func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
+func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) error {
 	params.OwnerRef.ApplyTo(dep)
 
 	dep.Spec.Replicas = utilpointer.Int32(1)
@@ -555,7 +559,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), params.AvailabilityProberImage, &dep.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), params.AvailabilityProberImage, &dep.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "hosted-etc-kube"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "operator.openshift.io", Version: "v1", Kind: "Network"},

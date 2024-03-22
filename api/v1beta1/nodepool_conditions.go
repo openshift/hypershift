@@ -74,4 +74,5 @@ const (
 	IgnitionNotReached                    = "ignitionNotReached"
 	DefaultAWSSecurityGroupNotReadyReason = "DefaultSGNotReady"
 	NodePoolValidArchPlatform             = "ValidArchPlatform"
+	NodePoolInvalidArchPlatform           = "InvalidArchPlatform"
 )

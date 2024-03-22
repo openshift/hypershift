@@ -44,6 +44,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 	openShiftRegistryOverrides string,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
 	ownerRef config.OwnerRef,
+	openShiftTrustedCABundleConfigMapExists bool,
+	mirroredReleaseImage string,
 ) error {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -234,7 +236,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 			openShiftRegistryOverrides,
 			managementClusterHasCapabilitySecurityContextConstraint,
 			ignitionServerLabels,
-			servingCertSecretName)
+			servingCertSecretName,
+			openShiftTrustedCABundleConfigMapExists,
+			mirroredReleaseImage,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
 	} else {
@@ -467,6 +472,8 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
 	ignitionServerLabels map[string]string,
 	servingCertSecretName string,
+	openShiftTrustedCABundleConfigMapForCPOExists bool,
+	mirroredReleaseImage string,
 ) error {
 	var probeHandler corev1.ProbeHandler
 	if hasHealthzHandler {
@@ -693,9 +700,17 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	}
 	proxy.SetEnvVars(&deployment.Spec.Template.Spec.Containers[0].Env)
 
+	if len(mirroredReleaseImage) > 0 {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "MIRRORED_RELEASE_IMAGE", Value: mirroredReleaseImage})
+	}
+
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
 		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
+	}
+
+	if openShiftTrustedCABundleConfigMapForCPOExists {
+		util.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
 
 	// set security context
@@ -797,6 +812,7 @@ haproxy -f /tmp/haproxy.conf
 						},
 					},
 				},
+				ServiceAccountName: "",
 				Volumes: []corev1.Volume{
 					{
 						Name: "serving-cert",

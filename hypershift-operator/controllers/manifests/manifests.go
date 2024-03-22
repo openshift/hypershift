@@ -96,3 +96,15 @@ func MonitoringDashboard(clusterNamespace, clusterName string) *corev1.ConfigMap
 		},
 	}
 }
+
+func OpenShiftTrustedCABundleForNamespace(namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "openshift-config-managed-trusted-ca-bundle",
+		},
+		Data: map[string]string{
+			"ca-bundle.crt": "",
+		},
+	}
+}

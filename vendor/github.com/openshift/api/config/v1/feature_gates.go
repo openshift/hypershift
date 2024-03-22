@@ -163,16 +163,6 @@ var (
 		OwningProduct:       kubernetes,
 	}
 
-	FeatureGateAdmissionWebhookMatchConditions = FeatureGateName("AdmissionWebhookMatchConditions")
-	admissionWebhookMatchConditions            = FeatureGateDescription{
-		FeatureGateAttributes: FeatureGateAttributes{
-			Name: FeatureGateAdmissionWebhookMatchConditions,
-		},
-		OwningJiraComponent: "kube-apiserver",
-		ResponsiblePerson:   "benluddy",
-		OwningProduct:       kubernetes,
-	}
-
 	FeatureGateAzureWorkloadIdentity = FeatureGateName("AzureWorkloadIdentity")
 	azureWorkloadIdentity            = FeatureGateDescription{
 		FeatureGateAttributes: FeatureGateAttributes{
@@ -299,6 +289,36 @@ var (
 		},
 		OwningJiraComponent: "ecoproject",
 		ResponsiblePerson:   "msluiter",
+		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateDNSNameResolver = FeatureGateName("DNSNameResolver")
+	dnsNameResolver            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateDNSNameResolver,
+		},
+		OwningJiraComponent: "dns",
+		ResponsiblePerson:   "miciah",
+		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateVSphereControlPlaneMachineset = FeatureGateName("VSphereControlPlaneMachineSet")
+	vSphereControlPlaneMachineset            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateVSphereControlPlaneMachineset,
+		},
+		OwningJiraComponent: "splat",
+		ResponsiblePerson:   "rvanderp3",
+		OwningProduct:       ocpSpecific,
+	}
+
+	FeatureGateMachineConfigNodes = FeatureGateName("MachineConfigNodes")
+	machineConfigNodes            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGateMachineConfigNodes,
+		},
+		OwningJiraComponent: "MachineConfigOperator",
+		ResponsiblePerson:   "cdoern",
 		OwningProduct:       ocpSpecific,
 	}
 )

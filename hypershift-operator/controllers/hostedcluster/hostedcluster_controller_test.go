@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -11,22 +12,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/api/util/ipnet"
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	version "github.com/openshift/hypershift/cmd/version"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
-	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/support/capabilities"
-	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap/zapcore"
@@ -49,6 +34,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/api/util/ipnet"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/cmd/util"
+	version "github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/capabilities"
+	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	"github.com/openshift/hypershift/support/config"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 )
 
 var Now = metav1.NewTime(time.Now())
@@ -951,6 +955,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		}
 		cluster.Spec.PullSecret = corev1.LocalObjectReference{Name: "secret"}
 		cluster.Spec.InfraID = "infra-id"
+		cluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}}
+		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+		cluster.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}}
 		objects = append(objects, cluster)
 	}
 
@@ -1015,8 +1022,11 @@ func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Obje
 func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 
 	// For network test below.
+	clusterNet := make([]hyperv1.ClusterNetworkEntry, 2)
+	cidr, _ := ipnet.ParseCIDR("192.168.1.0/24")
+	clusterNet[0].CIDR = *cidr
 	machineNet := make([]hyperv1.MachineNetworkEntry, 2)
-	cidr, _ := ipnet.ParseCIDR("172.16.0.0/24")
+	cidr, _ = ipnet.ParseCIDR("172.16.0.0/24")
 	machineNet[0].CIDR = *cidr
 	cidr, _ = ipnet.ParseCIDR("172.16.1.0/24")
 	machineNet[1].CIDR = *cidr
@@ -1047,6 +1057,9 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 							Type: hyperv1.Route,
 						}},
 					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
 				}},
 			managementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
 			expectedResult:                errors.New(`cluster does not support Routes, but service "" is exposed via a Route`),
@@ -1063,6 +1076,9 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 							Type: hyperv1.Route,
 						}},
 					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
 				}},
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
@@ -1072,12 +1088,17 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.AzurePlatform,
-					Azure: &hyperv1.AzurePlatformSpec{
-						Credentials: corev1.LocalObjectReference{Name: "creds"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Credentials: corev1.LocalObjectReference{Name: "creds"},
+						},
 					},
-				}}},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+				}},
 			other: []crclient.Object{
 				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
 			},
@@ -1089,12 +1110,17 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.AzurePlatform,
-					Azure: &hyperv1.AzurePlatformSpec{
-						Credentials: corev1.LocalObjectReference{Name: "creds"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Credentials: corev1.LocalObjectReference{Name: "creds"},
+						},
 					},
-				}}},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+				}},
 			other: []crclient.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Name: "creds"},
@@ -1115,6 +1141,9 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				},
 				Spec: hyperv1.HostedClusterSpec{
 					ClusterID: "foobar",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
 				}},
 			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
 		},
@@ -1128,6 +1157,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						ServiceNetwork: serviceNet,
 						MachineNetwork: machineNet,
+						ClusterNetwork: clusterNet,
 					},
 				},
 			},
@@ -1156,6 +1186,9 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 							},
 						},
 					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
 				}},
 			expectedResult:                errors.New(`service type OAuthServer can't be published with the same hostname api.example.com as service type APIServer`),
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
@@ -1166,9 +1199,14 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.KubevirtPlatform,
-				}}},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+				}},
 			other: []crclient.Object{
 				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
 			},
@@ -1181,9 +1219,14 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.KubevirtPlatform,
-				}}},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+				}},
 			other: []crclient.Object{
 				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
 			},
@@ -3195,6 +3238,514 @@ func TestReportHostedClusterDeletionDuration(t *testing.T) {
 
 			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReconcileCLISecrets(t *testing.T) {
+	const (
+		infraID = "infraId"
+		ns      = "myns"
+	)
+
+	labels := map[string]string{
+		util.DeleteWithClusterLabelName: "true",
+		util.AutoInfraLabelName:         infraID,
+	}
+	testCase := []struct {
+		name            string
+		secrets         []crclient.Object
+		expectedWithRef int
+	}{
+		{
+			name: "secret with both labels and with no ownerRef",
+			secrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret1",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+			},
+			expectedWithRef: 1,
+		},
+		{
+			name: "multiple secret with both labels and with no ownerRef",
+			secrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret1",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret2",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret3",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+			},
+			expectedWithRef: 3,
+		},
+		{
+			name: "mix cases",
+			secrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "valid-1",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-namespace",
+						Namespace: "other",
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "valid-2",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "no-labels",
+						Namespace: ns,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "only-auto-created-for-infra-label",
+						Namespace: ns,
+						Labels: map[string]string{
+							util.AutoInfraLabelName: infraID,
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "only-safe-to-delete-with-cluster-label",
+						Namespace: ns,
+						Labels: map[string]string{
+							util.DeleteWithClusterLabelName: "true",
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-infra-id",
+						Namespace: ns,
+						Labels: map[string]string{
+							util.AutoInfraLabelName:         "other",
+							util.DeleteWithClusterLabelName: "true",
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "valid-3",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+			},
+			expectedWithRef: 3,
+		},
+	}
+
+	for _, tc := range testCase {
+		hc := &hyperv1.HostedCluster{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: hyperv1.GroupVersion.Version,
+				Kind:       "HostedCluster",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-cluster",
+				Namespace: ns,
+				UID:       types.UID("my-cluster-uid"),
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: hyperv1.GroupVersion.Version,
+						Kind:       "HostedCluster",
+						Name:       "hc1",
+						UID:        types.UID("hclusterUID"),
+					},
+				},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID: infraID,
+			},
+		}
+
+		reference := *(config.OwnerRefFrom(hc).Reference)
+		createOrUpdate := upsert.New(false).CreateOrUpdate
+		t.Run(tc.name, func(tt *testing.T) {
+			cli := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.secrets...).Build()
+			r := &HostedClusterReconciler{Client: cli}
+			ctx := context.Background()
+			err := r.reconcileCLISecrets(ctx, createOrUpdate, hc)
+			if err != nil {
+				tt.Fatalf("should not return error but returned %q", err.Error())
+			}
+
+			count := 0
+			secrets := &corev1.SecretList{}
+			err = cli.List(ctx, secrets) // reading secrets with no filter, because the function under test uses filters. checking manually below
+			if err != nil {
+				tt.Fatalf("failed to read secrets: %s", err.Error())
+			}
+
+			for _, secret := range secrets.Items {
+				found := len(secret.OwnerReferences) == 1 && reflect.DeepEqual(secret.OwnerReferences[0], reference)
+				if found {
+					count++
+				} else {
+					shouldNotBeFound := false
+					if secret.Namespace != ns {
+						shouldNotBeFound = true
+					} else if v, ok := secret.Labels[util.DeleteWithClusterLabelName]; !ok || v != "true" {
+						shouldNotBeFound = true
+					} else if v, ok = secret.Labels[util.AutoInfraLabelName]; !ok || v != infraID {
+						shouldNotBeFound = true
+					}
+
+					if !shouldNotBeFound {
+						tt.Errorf("owner reference wasn't found in secret. secret name: %s", secret.Name)
+					}
+				}
+			}
+
+			if count != tc.expectedWithRef {
+				tt.Errorf("wrong number of affected secrets. Extcted %d but found %d", tc.expectedWithRef, count)
+			}
+		})
+	}
+}
+
+func TestValidateSliceNetworkCIDRs(t *testing.T) {
+	tests := []struct {
+		name    string
+		mn      []hyperv1.MachineNetworkEntry
+		cn      []hyperv1.ClusterNetworkEntry
+		sn      []hyperv1.ServiceNetworkEntry
+		wantErr bool
+	}{
+		{
+			name:    "given a conflicting IPv6 clusterNetwork overlapped with machineNetwork, it should fail",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+		{
+			name:    "given different IPv6 network CIDRs, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: false,
+		},
+		{
+			name:    "given a conflicting IPv4 clusterNetwork overlapped with serviceNetwork, it should fail",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "given different IPv4 network CIDRs, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						MachineNetwork: tt.mn,
+						ClusterNetwork: tt.cn,
+						ServiceNetwork: tt.sn,
+					},
+				},
+			}
+			err := validateSliceNetworkCIDRs(hc)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateSliceNetworkCIDRs() wantErr %v, err %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestCheckAdvertiseAddressOverlapping(t *testing.T) {
+	tests := []struct {
+		name    string
+		mn      []hyperv1.MachineNetworkEntry
+		cn      []hyperv1.ClusterNetworkEntry
+		sn      []hyperv1.ServiceNetworkEntry
+		aa      *hyperv1.APIServerNetworking
+		wantErr bool
+	}{
+		{
+			name:    "given an IPv6 defined AdvertiseAddress overlapped with ClusterNetwork, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+		{
+			name:    "given not overlapped IPv6 networks CIDRs and not defined AdvertiseAddress, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: false,
+		},
+		{
+			name:    "given an IPv4 defined AdvertiseAddress overlapped with MachineNetwork, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "given not overlapped IPv4 networks CIDRs and not defined AdvertiseAddress, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: false,
+		},
+		{
+			name:    "given a not valid AdvertiseAddress, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.2.1.2")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						MachineNetwork: tt.mn,
+						ClusterNetwork: tt.cn,
+						ServiceNetwork: tt.sn,
+						APIServer:      tt.aa,
+					},
+				},
+			}
+			g := NewGomegaWithT(t)
+			err := checkAdvertiseAddressOverlapping(hc)
+			g.Expect((err != nil)).To(Equal(tt.wantErr))
+		})
+	}
+}
+
+func TestFindAdvertiseAddress(t *testing.T) {
+	tests := []struct {
+		name             string
+		aa               *hyperv1.APIServerNetworking
+		cn               []hyperv1.ClusterNetworkEntry
+		resultAdvAddress string
+		wantErr          bool
+	}{
+		{
+			name:             "given a defined AdvertiseAddress, should be the result and IPv4",
+			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			resultAdvAddress: "192.168.1.1",
+		},
+		{
+			name:             "given a hc without AdvertiseAddress, it should return the default IPv4 address",
+			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			resultAdvAddress: config.DefaultAdvertiseIPv4Address,
+		},
+		{
+			name:             "given an IPv6 hc with defined AdvertiseAddress, it should return that address",
+			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			resultAdvAddress: "fd03::1",
+		},
+		{
+			name:             "given an IPv6 hc wihtout AdvertiseAddress, it return IPv6 default address",
+			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			resultAdvAddress: config.DefaultAdvertiseIPv6Address,
+		},
+		{
+			name:    "given an invalid IPv4 AdvertiseAddress, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1222")},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "given an invalid IPv6 AdvertiseAddress, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::4444444")},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: tt.cn,
+						APIServer:      tt.aa,
+					},
+				},
+			}
+			g := NewGomegaWithT(t)
+			avdAddress, err := findAdvertiseAddress(hc)
+			if tt.wantErr {
+				g.Expect(err).To(Not(BeNil()))
+				g.Expect(avdAddress).To(BeEmpty())
+			} else {
+				g.Expect(avdAddress.String()).To(Equal(tt.resultAdvAddress))
+			}
+		})
+	}
+}
+
+func TestValidateNetworkStackAddresses(t *testing.T) {
+	tests := []struct {
+		name    string
+		cn      []hyperv1.ClusterNetworkEntry
+		mn      []hyperv1.MachineNetworkEntry
+		sn      []hyperv1.ServiceNetworkEntry
+		aa      *hyperv1.APIServerNetworking
+		wantErr bool
+	}{
+		{
+			name:    "given an IPv6 clusterNetwork and an IPv4 ServiceNetwork, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv6 and IPv4 Advertise Address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv6 and defining Advertise Address, it should success",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: false,
+		},
+		{
+			name:    "given an IPv4 clusterNetwork and an IPv6 ServiceNetwork, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv4 and defining IPv6 Advertise Address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv4 and defining Advertise Address, it should success",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.0.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: false,
+		},
+		{
+			name:    "on IPv4, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: false,
+		},
+		{
+			name:    "on IPv6, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: false,
+		},
+		{
+			name:    "given an IPv4 invalid advertise address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1.2")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "given an IPv6 invalid advertise address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1::32")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: tt.cn,
+						ServiceNetwork: tt.sn,
+						MachineNetwork: tt.mn,
+						APIServer:      tt.aa,
+					},
+				},
+			}
+			err := validateNetworkStackAddresses(hc)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateNetworkStackAddresses() wantErr %v, err %v", tt.wantErr, err)
 			}
 		})
 	}

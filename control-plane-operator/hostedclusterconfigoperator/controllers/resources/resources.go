@@ -198,6 +198,16 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	if err := c.Watch(source.NewKindWithCache(&hyperv1.HostedControlPlane{}, opts.CPCluster.GetCache()), eventHandler()); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
+
+	if err := c.Watch(source.NewKindWithCache(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      manifests.PullSecret(opts.Namespace).Name,
+			Namespace: opts.Namespace,
+		},
+	}, opts.CPCluster.GetCache()), eventHandler()); err != nil {
+		return fmt.Errorf("failed to watch HCP pullsecret: %w", err)
+	}
+
 	return nil
 }
 
@@ -363,23 +373,30 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
 	}
 
-	log.Info("reconciling openshift oauth apiserver apiservices")
-	if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-	}
+	if util.HCPOAuthEnabled(hcp) {
+		log.Info("reconciling openshift oauth apiserver apiservices")
+		if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
+		}
 
-	log.Info("reconciling openshift oauth apiserver service")
-	openshiftOAuthAPIServerService := manifests.OpenShiftOAuthAPIServerClusterService()
-	if _, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerService, func() error {
-		oapi.ReconcileClusterService(openshiftOAuthAPIServerService)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver service: %w", err))
-	}
+		log.Info("reconciling openshift oauth apiserver service")
+		openshiftOAuthAPIServerService := manifests.OpenShiftOAuthAPIServerClusterService()
+		if _, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerService, func() error {
+			oapi.ReconcileClusterService(openshiftOAuthAPIServerService)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver service: %w", err))
+		}
 
-	log.Info("reconciling openshift oauth apiserver endpoints")
-	if err := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
+		log.Info("reconciling openshift oauth apiserver endpoints")
+		if err := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
+		}
+
+		log.Info("reconciling kubeadmin password hash secret")
+		if err := r.reconcileKubeadminPasswordHashSecret(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile kubeadmin password hash secret: %w", err))
+		}
 	}
 
 	log.Info("reconciling kube apiserver service monitor")
@@ -388,11 +405,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		return monitoring.ReconcileKubeAPIServerServiceMonitor(kasServiceMonitor)
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile the kube apiserver service monitor: %w", err))
-	}
-
-	log.Info("reconciling kubeadmin password hash secret")
-	if err := r.reconcileKubeadminPasswordHashSecret(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile kubeadmin password hash secret: %w", err))
 	}
 
 	log.Info("reconciling network operator")
@@ -423,45 +435,55 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		}
 	}
 
-	log.Info("reconciling oauth serving cert ca bundle")
-	if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
-	}
-
 	log.Info("reconciling user cert CA bundle")
 	if err := r.reconcileUserCertCABundle(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile user cert CA bundle: %w", err))
 	}
 
-	log.Info("reconciling oauth browser client")
-	oauthBrowserClient := manifests.OAuthServerBrowserClient()
-	if _, err := r.CreateOrUpdate(ctx, r.client, oauthBrowserClient, func() error {
-		return oauth.ReconcileBrowserClient(oauthBrowserClient, r.oauthAddress, r.oauthPort)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile oauth browser client: %w", err))
-	}
+	if util.HCPOAuthEnabled(hcp) {
+		log.Info("reconciling oauth serving cert ca bundle")
+		if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
+		}
 
-	log.Info("reconciling oauth challenging client")
-	oauthChallengingClient := manifests.OAuthServerChallengingClient()
-	if _, err := r.CreateOrUpdate(ctx, r.client, oauthChallengingClient, func() error {
-		return oauth.ReconcileChallengingClient(oauthChallengingClient, r.oauthAddress, r.oauthPort)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile oauth challenging client: %w", err))
-	}
+		log.Info("reconciling oauth browser client")
+		oauthBrowserClient := manifests.OAuthServerBrowserClient()
+		if _, err := r.CreateOrUpdate(ctx, r.client, oauthBrowserClient, func() error {
+			return oauth.ReconcileBrowserClient(oauthBrowserClient, r.oauthAddress, r.oauthPort)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile oauth browser client: %w", err))
+		}
 
-	log.Info("reconciling oauth serving cert rbac")
-	oauthServingCertRole := manifests.OAuthServingCertRole()
-	if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRole, func() error {
-		return oauth.ReconcileOauthServingCertRole(oauthServingCertRole)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert role: %w", err))
-	}
+		log.Info("reconciling oauth challenging client")
+		oauthChallengingClient := manifests.OAuthServerChallengingClient()
+		if _, err := r.CreateOrUpdate(ctx, r.client, oauthChallengingClient, func() error {
+			return oauth.ReconcileChallengingClient(oauthChallengingClient, r.oauthAddress, r.oauthPort)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile oauth challenging client: %w", err))
+		}
 
-	oauthServingCertRoleBinding := manifests.OAuthServingCertRoleBinding()
-	if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRoleBinding, func() error {
-		return oauth.ReconcileOauthServingCertRoleBinding(oauthServingCertRoleBinding)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert rolebinding: %w", err))
+		log.Info("reconciling oauth cli client")
+		oauthCLIClient := manifests.OAuthServerCLIClient()
+		if _, err := r.CreateOrUpdate(ctx, r.client, oauthCLIClient, func() error {
+			return oauth.ReconcileCLIClient(oauthCLIClient, r.oauthAddress, r.oauthPort)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile oauth cli client: %w", err))
+		}
+
+		log.Info("reconciling oauth serving cert rbac")
+		oauthServingCertRole := manifests.OAuthServingCertRole()
+		if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRole, func() error {
+			return oauth.ReconcileOauthServingCertRole(oauthServingCertRole)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert role: %w", err))
+		}
+
+		oauthServingCertRoleBinding := manifests.OAuthServingCertRoleBinding()
+		if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRoleBinding, func() error {
+			return oauth.ReconcileOauthServingCertRoleBinding(oauthServingCertRoleBinding)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert rolebinding: %w", err))
+		}
 	}
 
 	log.Info("reconciling cloud credential secrets")
@@ -809,6 +831,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.DeployerClusterRoleBinding, reconcile: rbac.ReconcileDeployerClusterRoleBinding},
 
 		// ClusterRole and ClusterRoleBinding for useroauthaccesstokens referenced from https://github.com/openshift/cluster-authentication-operator/tree/bebf0fd3932be12594227b415fecd5d664611bc0/bindata/oauth-apiserver/RBAC
+		// Let this go by for now
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.UserOAuthClusterRole, reconcile: rbac.ReconcileUserOAuthClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.UserOAuthClusterRoleBinding, reconcile: rbac.ReconcileUserOAuthClusterRoleBinding},
 	}
@@ -1141,6 +1164,7 @@ func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1
 const awsCredentialsTemplate = `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
 `
 
 func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {

@@ -69,6 +69,12 @@ var (
 		},
 	}
 
+	oidcCAVolumeMount = util.PodVolumeMounts{
+		kasContainerMain().Name: {
+			kasVolumeOIDCCA().Name: "/etc/kubernetes/certs/oidc-ca",
+		},
+	}
+
 	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
 		kasContainerMain().Name: {
 			kasVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
@@ -112,6 +118,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	port int32,
 	payloadVersion string,
 	featureGateSpec *configv1.FeatureGateSpec,
+	oidcCA *corev1.LocalObjectReference,
 ) error {
 
 	secretEncryptionData := hcp.Spec.SecretEncryption
@@ -184,7 +191,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
-				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS)),
+				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS, hcp)),
 				util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(images.KonnectivityServer, deploymentConfig.Replicas)),
 				{
 					Name:            "audit-logs",
@@ -249,6 +256,9 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
 	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec, cloudProviderName)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, cloudProviderName, cloudProviderCreds, images.TokenMinterImage, kasContainerMain().Name)
+	if oidcCA != nil {
+		applyOIDCCAVolumeMount(oidcCA, &deployment.Spec.Template.Spec)
+	}
 
 	if cloudProviderName == aws.Provider {
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
@@ -411,7 +421,7 @@ func kasContainerMain() *corev1.Container {
 	}
 }
 
-func buildKASContainerMain(image string, port int32, noProxyCIDRs []string) func(c *corev1.Container) {
+func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp *hyperv1.HostedControlPlane) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
@@ -441,6 +451,20 @@ func buildKASContainerMain(image string, port int32, noProxyCIDRs []string) func
 		// Using a CIDR is not supported by Go's default ProxyFunc, but Kube uses a custom one by default that does support it:
 		// https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/staging/src/k8s.io/apimachinery/pkg/util/net/http.go#L112-L114
 		proxy.SetEnvVars(&c.Env, noProxyCIDRs...)
+
+		if hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation] != "" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "GOGC",
+				Value: hcp.Annotations[hyperv1.KubeAPIServerGOGCAnnotation],
+			})
+		}
+
+		if hcp.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] != "" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "GOMEMLIMIT",
+				Value: hcp.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation],
+			})
+		}
 
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
@@ -519,6 +543,12 @@ func buildKASVolumeKonnectivityCA(v *corev1.Volume) {
 		DefaultMode: pointer.Int32(0640),
 	}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
+}
+
+func kasVolumeOIDCCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oidc-ca",
+	}
 }
 
 func kasVolumeServerCert() *corev1.Volume {
@@ -700,6 +730,31 @@ func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec
 		container.VolumeMounts = append(container.VolumeMounts,
 			cloudProviderConfigVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 	}
+}
+
+func buildKASVolumeOIDCCA(configMapName string) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
+			DefaultMode:          pointer.Int32(0640),
+		}
+	}
+}
+
+func applyOIDCCAVolumeMount(oidcCA *corev1.LocalObjectReference, podSpec *corev1.PodSpec) {
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeOIDCCA(), buildKASVolumeOIDCCA(oidcCA.Name)))
+	var container *corev1.Container
+	for i, c := range podSpec.Containers {
+		if c.Name == kasContainerMain().Name {
+			container = &podSpec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		panic("main kube apiserver container not found in spec")
+	}
+	container.VolumeMounts = append(container.VolumeMounts,
+		oidcCAVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 }
 
 func invokeBootstrapRenderScript(workDir, payloadVersion, featureGateYaml string) string {
@@ -899,6 +954,17 @@ func buildKonnectivityServerContainer(image string, serverCount int) func(c *cor
 			strconv.Itoa(serverCount),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Lifecycle = &corev1.Lifecycle{
+			PreStop: &corev1.LifecycleHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{
+						"/bin/sh",
+						"-c",
+						"sleep 70",
+					},
+				},
+			},
+		}
 	}
 }
 

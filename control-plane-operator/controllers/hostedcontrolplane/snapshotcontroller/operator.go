@@ -1,6 +1,7 @@
 package snapshotcontroller
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller/assets"
@@ -21,7 +22,8 @@ var (
 
 func ReconcileOperatorDeployment(
 	deployment *appsv1.Deployment,
-	params *Params) error {
+	params *Params,
+	platformType hyperv1.PlatformType) error {
 
 	params.OwnerRef.ApplyTo(deployment)
 	deployment.Spec = operatorDeployment.DeepCopy().Spec
@@ -45,7 +47,7 @@ func ReconcileOperatorDeployment(
 		}
 	}
 	params.DeploymentConfig.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(), params.AvailabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), params.AvailabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "guest-kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "operator.openshift.io", Version: "v1", Kind: "CSISnapshotController"},

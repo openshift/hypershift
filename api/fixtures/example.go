@@ -6,18 +6,17 @@ import (
 	"strings"
 	"time"
 
-	rbacv1 "k8s.io/api/rbac/v1"
-
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/cmd/util"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-
-	configv1 "github.com/openshift/api/config/v1"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ExampleResources struct {
@@ -109,6 +108,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
 			Name:      o.Name + "-pull-secret",
+			Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 		},
 		Data: map[string][]byte{
 			".dockerconfigjson": o.PullSecret,
@@ -126,6 +126,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: namespace.Name,
 				Name:      o.Name + "-ssh-key",
+				Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 			},
 			Data: map[string][]byte{
 				"id_rsa.pub": o.SSHPublicKey,
@@ -284,6 +285,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      o.Name + "-infra-credentials",
 					Namespace: o.Namespace,
+					Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 				},
 				Data: map[string][]byte{
 					"kubeconfig": o.Kubevirt.InfraKubeConfig,
@@ -757,6 +759,7 @@ func (o ExampleOptions) EtcdEncryptionKeySecret() *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      o.Name + "-etcd-encryption-key",
 			Namespace: o.Namespace,
+			Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",

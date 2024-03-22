@@ -34,6 +34,14 @@ func ReconcileChallengingClient(client *oauthv1.OAuthClient, externalHost string
 	return reconcileOAuthClient(client, redirectURIs, true, false)
 }
 
+func ReconcileCLIClient(client *oauthv1.OAuthClient, externalHost string, externalPort int32) error {
+	redirectURIs := []string{
+		"http://127.0.0.1/callback",
+		"http://[::1]/callback",
+	}
+	return reconcileOAuthClient(client, redirectURIs, false, false)
+}
+
 func reconcileOAuthClient(client *oauthv1.OAuthClient, redirectURIs []string, respondWithChallenges bool, setSecret bool) error {
 	client.RedirectURIs = redirectURIs
 	client.RespondWithChallenges = respondWithChallenges
