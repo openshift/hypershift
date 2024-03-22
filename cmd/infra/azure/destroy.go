@@ -37,6 +37,7 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to a credentials file (required)")
 	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, "Location where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
 
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -70,8 +71,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
-	destroyFuture, err = resourceGroupClient.BeginDelete(ctx, o.ResourceGroupName, nil)
-
+	destroyFuture, err = resourceGroupClient.BeginDelete(ctx, o.GetResourceGroupName(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to start deletion: %w", err)
 	}
@@ -81,4 +81,11 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (o *DestroyInfraOptions) GetResourceGroupName() string {
+	if len(o.ResourceGroupName) > 0 {
+		return o.ResourceGroupName
+	}
+	return o.Name + "-" + o.InfraID
 }
