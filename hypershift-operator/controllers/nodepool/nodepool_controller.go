@@ -92,6 +92,7 @@ const (
 	TokenSecretReleaseKey                     = "release"
 	TokenSecretTokenKey                       = "token"
 	TokenSecretPullSecretHashKey              = "pull-secret-hash"
+	TokenSecretHCConfigurationHashKey         = "hc-configuration-hash"
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
 	TokenSecretIgnitionReachedAnnotation      = "hypershift.openshift.io/ignition-reached"
@@ -604,7 +605,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Check if config needs to be updated.
-	targetConfigHash := supportutil.HashStruct(config + pullSecretName)
+	targetConfigHash := supportutil.HashSimple(config + pullSecretName)
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -639,7 +640,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := supportutil.HashStruct(config + targetVersion + pullSecretName + globalConfig)
+	targetPayloadConfigHash := supportutil.HashSimple(config + targetVersion + pullSecretName + globalConfig)
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
@@ -794,8 +795,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret bytes: %w", err)
 	}
+	hcConfigurationHash, err := supportutil.HashStruct(hcluster.Spec.Configuration)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
+	}
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes)
+		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes, hcConfigurationHash)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
 	} else {
@@ -1526,7 +1531,7 @@ func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.Co
 	return nil
 }
 
-func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte) error {
+func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte, hcConfigurationHash string) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
 	// Therefore, this secret is mutable.
@@ -1547,7 +1552,8 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
-		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashStruct(pullSecret))
+		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashSimple(pullSecret))
+		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
 	}
 	return nil
 }
@@ -2533,13 +2539,13 @@ func getName(base, suffix string, maxLength int) string {
 	if baseLength < 1 {
 		prefix := base[0:min(len(base), max(0, maxLength-9))]
 		// Calculate hash on initial base-suffix string
-		shortName := fmt.Sprintf("%s-%s", prefix, supportutil.HashStruct(name))
+		shortName := fmt.Sprintf("%s-%s", prefix, supportutil.HashSimple(name))
 		return shortName[:min(maxLength, len(shortName))]
 	}
 
 	prefix := base[0:baseLength]
 	// Calculate hash on initial base-suffix string
-	return fmt.Sprintf("%s-%s-%s", prefix, supportutil.HashStruct(base), suffix)
+	return fmt.Sprintf("%s-%s-%s", prefix, supportutil.HashSimple(base), suffix)
 }
 
 // max returns the greater of its 2 inputs
@@ -2683,7 +2689,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 func generateMachineTemplateName(nodePool *hyperv1.NodePool, machineTemplateSpecJSON []byte) string {
 	// using HashStruct(machineTemplateSpecJSON) ensures a rolling upgrade is triggered
 	// by creating a new template with a differnt name if any field changes.
-	return getName(nodePool.GetName(), supportutil.HashStruct(machineTemplateSpecJSON),
+	return getName(nodePool.GetName(), supportutil.HashSimple(machineTemplateSpecJSON),
 		validation.DNS1123SubdomainMaxLength)
 }
 

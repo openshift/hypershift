@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -191,12 +192,27 @@ func InsecureHTTPClient() *http.Client {
 	}
 }
 
-// HashStruct takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
-func HashStruct(o interface{}) string {
+// HashSimple takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
+func HashSimple(o interface{}) string {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(fmt.Sprintf("%v", o)))
 	intHash := hash.Sum32()
 	return fmt.Sprintf("%08x", intHash)
+}
+
+// HashStruct takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string
+// The struct is first marshalled to JSON before hashing
+func HashStruct(data interface{}) (string, error) {
+	hash := fnv.New32a()
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	_, err = hash.Write(jsonData)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%08x", hash.Sum32()), nil
 }
 
 // ConvertRegistryOverridesToCommandLineFlag converts a map of registry sources and their mirrors into a string

@@ -62,6 +62,7 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 	cm.Data["install-config.yaml"] = p.InstallConfig.String()
 	cm.Data["master.machineconfigpool.yaml"] = serializedMasterConfigPool
 	cm.Data["worker.machineconfigpool.yaml"] = serializedWorkerConfigPool
+	cm.Data["configuration-hash"] = p.ConfigurationHash
 	return nil
 }
 

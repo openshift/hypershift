@@ -78,7 +78,7 @@ var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 
 const pullSecretName = "pull-secret"
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, customConfig string, pullSecretHash string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, customConfig string, pullSecretHash string, hcConfigurationHash string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -101,7 +101,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	}
 
 	// Verify the pullSecret hash matches the passed-in parameter pullSecretHash to ensure the correct pull secret gets loaded into the payload
-	if pullSecretHash != "" && util.HashStruct(pullSecret) != pullSecretHash {
+	if pullSecretHash != "" && util.HashSimple(pullSecret) != pullSecretHash {
 		return nil, fmt.Errorf("pull secret does not match hash")
 	}
 
@@ -125,6 +125,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	mcsConfig := &corev1.ConfigMap{}
 	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: "machine-config-server"}, mcsConfig); err != nil {
 		return nil, fmt.Errorf("failed to get machine-config-server configmap: %w", err)
+	}
+
+	// Verify the MCS configmap is up-to-date
+	if hcConfigurationHash != "" && mcsConfig.Data["configuration-hash"] != hcConfigurationHash {
+		return nil, fmt.Errorf("machine-config-server configmap is out of date, waiting for update %s != %s", mcsConfig.Data["configuration-hash"], hcConfigurationHash)
 	}
 
 	// Look up the release image metadata
@@ -187,6 +192,9 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	}
 	// Extract MCS config files into the config directory
 	for name, contents := range mcsConfig.Data {
+		if name == "configuration-hash" {
+			continue
+		}
 		if err := os.WriteFile(filepath.Join(configDir, name), []byte(contents), 0644); err != nil {
 			return nil, fmt.Errorf("failed to write MCS config file %q: %w", name, err)
 		}
