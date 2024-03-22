@@ -270,9 +270,8 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 	} else {
 
 		resourceGroupTags := map[string]*string{}
-
 		for key, value := range o.ResourceGroupTags {
-			resourceGroupTags[key] = &value
+			resourceGroupTags[key] = ptr.To(value)
 		}
 
 		// Create a resource group since none was provided
