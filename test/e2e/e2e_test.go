@@ -462,6 +462,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
 			Location:        o.configurableClusterOptions.AzureLocation,
 			InstanceType:    "Standard_D4s_v4",
+			SubnetName:      "default",
 			DiskSizeGB:      120,
 		},
 		PowerVSPlatform: core.PowerVSPlatformOptions{
