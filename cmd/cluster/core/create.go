@@ -496,7 +496,7 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 	}
 
 	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
-	if !opts.AWSPlatform.MultiArch {
+	if !opts.AWSPlatform.MultiArch && !opts.Render {
 		if err := hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(opts.Arch); err != nil {
 			return err
 		}
