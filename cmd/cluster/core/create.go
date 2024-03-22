@@ -80,6 +80,7 @@ type CreateOptions struct {
 	CredentialSecretName             string
 	NodeUpgradeType                  hyperv1.UpgradeType
 	PausedUntil                      string
+	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -304,6 +305,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		NodeSelector:                     opts.NodeSelector,
 		UpgradeType:                      opts.NodeUpgradeType,
 		PausedUntil:                      opts.PausedUntil,
+		OLMCatalogPlacement:              opts.OLMCatalogPlacement,
 	}, nil
 }
 

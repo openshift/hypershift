@@ -1,6 +1,9 @@
 package v1beta1
 
 import (
+	"fmt"
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -454,6 +457,26 @@ const (
 	// the guest cluster.
 	GuestOLMCatalogPlacement OLMCatalogPlacement = "guest"
 )
+
+func (olm *OLMCatalogPlacement) String() string {
+	return string(*olm)
+}
+
+func (olm *OLMCatalogPlacement) Set(s string) error {
+	switch strings.ToLower(s) {
+	case "guest":
+		*olm = GuestOLMCatalogPlacement
+	case "management":
+		*olm = ManagementOLMCatalogPlacement
+	default:
+		return fmt.Errorf("unknown OLMCatalogPlacement type used '%s'", s)
+	}
+	return nil
+}
+
+func (olm *OLMCatalogPlacement) Type() string {
+	return "OLMCatalogPlacement"
+}
 
 // ImageContentSource specifies image mirrors that can be used by cluster nodes
 // to pull content. For cluster workloads, if a container image registry host of
