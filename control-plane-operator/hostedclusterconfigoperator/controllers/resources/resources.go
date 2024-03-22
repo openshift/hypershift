@@ -327,7 +327,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling oauth client secrets")
-	if err := r.reconcileOAuthClientSecrets(ctx, hcp); err != nil {
+	if err := r.reconcileAuthOIDC(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
@@ -955,33 +955,64 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileOAuthClientSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 	if !util.HCPOAuthEnabled(hcp) &&
-		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
-		len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
-		for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
-			var src corev1.Secret
-			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
+
+		// Copy issuer CA configmap into openshift-config namespace
+		provider := hcp.Spec.Configuration.Authentication.OIDCProviders[0]
+		if provider.Issuer.CertificateAuthority.Name != "" {
+			name := provider.Issuer.CertificateAuthority.Name
+			var src corev1.ConfigMap
+			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: name}, &src)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
-				continue
-			}
-			dest := corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      oidcClient.ClientSecret.Name,
-					Namespace: "openshift-config",
-				},
-			}
-			_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
-				if dest.Data == nil {
-					dest.Data = map[string][]byte{}
+				errs = append(errs, fmt.Errorf("failed to get issuer CA configmap %s: %w", name, err))
+			} else {
+				dest := corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      name,
+						Namespace: "openshift-config",
+					},
 				}
-				dest.Data["clientSecret"] = src.Data["clientSecret"]
-				return nil
-			})
-			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+					if dest.Data == nil {
+						dest.Data = map[string]string{}
+					}
+					dest.Data["ca-bundle.crt"] = src.Data["ca-bundle.crt"]
+					return nil
+				})
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile issuer CA configmap %s: %w", dest.Name, err))
+				}
+			}
+		}
+
+		// Copy OIDCClient Secrets into openshift-config namespace
+		if len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
+			for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
+				var src corev1.Secret
+				err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+					continue
+				}
+				dest := corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      oidcClient.ClientSecret.Name,
+						Namespace: "openshift-config",
+					},
+				}
+				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+					if dest.Data == nil {
+						dest.Data = map[string][]byte{}
+					}
+					dest.Data["clientSecret"] = src.Data["clientSecret"]
+					return nil
+				})
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+				}
 			}
 		}
 	}
