@@ -13,3 +13,12 @@ func ApiUsageRule() *prometheusoperatorv1.PrometheusRule {
 		},
 	}
 }
+
+func PodSecurityViolationRule() *prometheusoperatorv1.PrometheusRule {
+	return &prometheusoperatorv1.PrometheusRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "podsecurity",
+			Namespace: "openshift-kube-apiserver",
+		},
+	}
+}
