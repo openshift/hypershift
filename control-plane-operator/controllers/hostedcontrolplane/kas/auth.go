@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -10,18 +11,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hcpconfig "github.com/openshift/hypershift/support/config"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	AuthConfigMapKey = "auth.json"
 )
 
-func ReconcileAuthConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
+func ReconcileAuthConfig(ctx context.Context, c crclient.Client, config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
 	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	authConfig := generateAuthConfig(p.Authentication)
+	authConfig, err := generateAuthConfig(p.Authentication, ctx, c, config.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to generate authentication config: %w", err)
+	}
 	serializedConfig, err := json.Marshal(authConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver authentication config: %w", err)
@@ -30,7 +36,7 @@ func ReconcileAuthConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, 
 	return nil
 }
 
-func generateAuthConfig(spec *configv1.AuthenticationSpec) *AuthenticationConfiguration {
+func generateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, c crclient.Client, namespace string) (*AuthenticationConfiguration, error) {
 	config := &AuthenticationConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AuthenticationConfiguration",
@@ -39,13 +45,25 @@ func generateAuthConfig(spec *configv1.AuthenticationSpec) *AuthenticationConfig
 		JWT: []JWTAuthenticator{},
 	}
 	if spec == nil {
-		return config
+		return config, nil
 	}
 	for _, provider := range spec.OIDCProviders {
+		caData := ""
+		if provider.Issuer.CertificateAuthority.Name != "" {
+			ca := &corev1.ConfigMap{}
+			if err := c.Get(ctx, crclient.ObjectKey{Name: provider.Issuer.CertificateAuthority.Name, Namespace: namespace}, ca); err != nil {
+				return nil, fmt.Errorf("failed to get issuer certificate authority configmap: %w", err)
+			}
+			var ok bool
+			caData, ok = ca.Data["ca-bundle.crt"]
+			if !ok {
+				return nil, fmt.Errorf("issuer certificate authority configmap does not contain key ca-bundle.crt")
+			}
+		}
 		jwt := JWTAuthenticator{
 			Issuer: Issuer{
 				URL:                  provider.Issuer.URL,
-				CertificateAuthority: oidcCAFile(provider.Issuer.CertificateAuthority.Name),
+				CertificateAuthority: caData,
 			},
 		}
 		audience := []string{}
@@ -75,5 +93,5 @@ func generateAuthConfig(spec *configv1.AuthenticationSpec) *AuthenticationConfig
 		}
 		config.JWT = append(config.JWT, jwt)
 	}
-	return config
+	return config, nil
 }
