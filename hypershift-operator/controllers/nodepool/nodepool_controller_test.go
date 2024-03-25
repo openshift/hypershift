@@ -411,6 +411,20 @@ spec:
   kubeletConfig:
     maxPods: 100
 `
+	kubeletConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  creationTimestamp: null
+  name: set-max-pods
+spec:
+  kubeletConfig:
+    maxPods: 100
+  machineConfigPoolSelector:
+    matchLabels:
+      machineconfiguration.openshift.io/mco-built-in: ""
+status:
+  conditions: null
+`
 	haproxyIgnititionConfig := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -468,6 +482,31 @@ spec:
   kernelArguments: null
   kernelType: ""
   osImageURL: ""
+`
+	containerRuntimeConfig1 := `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: set-pids-limit
+spec:
+  containerRuntimeConfig:
+    pidsLimit: 2048
+`
+
+	containerRuntimeConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  creationTimestamp: null
+  name: set-pids-limit
+spec:
+  containerRuntimeConfig:
+    logSizeMax: "0"
+    overlaySize: "0"
+    pidsLimit: 2048
+  machineConfigPoolSelector:
+    matchLabels:
+      machineconfiguration.openshift.io/mco-built-in: ""
+status:
+  conditions: null
 `
 
 	namespace := "test"
@@ -572,7 +611,35 @@ spec:
 			error:  true,
 		},
 		{
-			name: "fails if a non supported config kind",
+			name: "gets a single valid ContainerRuntimeConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "containerRuntimeConfig-1",
+						},
+					},
+				},
+			},
+			config: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "containerRuntimeConfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig1,
+					},
+				},
+			},
+			expect: containerRuntimeConfig1Defaulted,
+			error:  false,
+		},
+		{
+			name: "gets a single valid KubeletConfig",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -596,7 +663,7 @@ spec:
 					},
 				},
 			},
-			expect: kubeletConfig1,
+			expect: kubeletConfig1Defaulted,
 			error:  false,
 		},
 		{
