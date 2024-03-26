@@ -446,11 +446,19 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		if err := nodeReaper.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
 		}
-		hcScheduler := scheduler.DedicatedServingComponentScheduler{
-			Client: mgr.GetClient(),
-		}
-		if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
-			return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
+		// Use the new scheduler if we support size tagging on hosted clusters
+		if enableSizeTagging {
+			hcScheduler := scheduler.DedicatedServingComponentSchedulerAndSizer{}
+			if err := hcScheduler.SetupWithManager(ctx, mgr, createOrUpdate); err != nil {
+				return fmt.Errorf("unable to create dedicated serving component scheduler/resizer controller: %w", err)
+			}
+		} else {
+			hcScheduler := scheduler.DedicatedServingComponentScheduler{
+				Client: mgr.GetClient(),
+			}
+			if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
+				return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
+			}
 		}
 		if enableSizeTagging {
 			placeholderScheduler := scheduler.PlaceholderScheduler{}

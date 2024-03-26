@@ -9,14 +9,14 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func IsDeploymentReady(ctx context.Context, deployment *appsv1.Deployment) bool {
-	if *deployment.Spec.Replicas != deployment.Status.AvailableReplicas ||
-		*deployment.Spec.Replicas != deployment.Status.ReadyReplicas ||
-		*deployment.Spec.Replicas != deployment.Status.UpdatedReplicas ||
-		*deployment.Spec.Replicas != deployment.Status.Replicas ||
+	if ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.AvailableReplicas ||
+		ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.ReadyReplicas ||
+		ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.UpdatedReplicas ||
+		ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.Replicas ||
 		deployment.Status.UnavailableReplicas != 0 ||
 		deployment.ObjectMeta.Generation != deployment.Status.ObservedGeneration {
 		return false
@@ -26,10 +26,10 @@ func IsDeploymentReady(ctx context.Context, deployment *appsv1.Deployment) bool 
 }
 
 func IsStatefulSetReady(ctx context.Context, statefulSet *appsv1.StatefulSet) bool {
-	if *statefulSet.Spec.Replicas != statefulSet.Status.AvailableReplicas ||
-		*statefulSet.Spec.Replicas != statefulSet.Status.ReadyReplicas ||
-		*statefulSet.Spec.Replicas != statefulSet.Status.UpdatedReplicas ||
-		*statefulSet.Spec.Replicas != statefulSet.Status.Replicas ||
+	if ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.AvailableReplicas ||
+		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.ReadyReplicas ||
+		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.UpdatedReplicas ||
+		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.Replicas ||
 		statefulSet.ObjectMeta.Generation != statefulSet.Status.ObservedGeneration {
 		return false
 	}
@@ -74,7 +74,7 @@ func DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment *appsv1.Deploymen
 			ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{Name: "openshift-config-managed-trusted-ca-bundle"},
 				Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
-				Optional:             pointer.Bool(true),
+				Optional:             ptr.To(true),
 			},
 		},
 	})

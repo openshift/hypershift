@@ -8,10 +8,13 @@ import (
 	"strings"
 	"time"
 
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
+	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -29,7 +32,7 @@ import (
 
 type PlaceholderScheduler struct{}
 
-const placeholderNamespace = "request-serving-node-placeholders"
+const placeholderNamespace = "hypershift-request-serving-node-placeholders"
 const placeholderControllerName = "PlaceholderScheduler"
 
 func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
@@ -79,7 +82,14 @@ func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
-		}).Named(placeholderControllerName + ".Creator").Complete(&placeholderCreator{
+		}).
+		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, d client.Object) []reconcile.Request {
+			if d.GetNamespace() != placeholderNamespace {
+				return nil
+			}
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "cluster"}}}
+		})).
+		Named(placeholderControllerName + ".Creator").Complete(&placeholderCreator{
 		client:            kubernetesClient,
 		placeholderLister: lister,
 	}); err != nil {
@@ -141,9 +151,6 @@ type placeholderCreator struct {
 }
 
 func (r *placeholderCreator) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
-	logger := ctrl.LoggerFrom(ctx)
-	logger.Info("Reconciling")
-
 	config, err := r.getClusterSizingConfiguration(ctx)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -165,14 +172,8 @@ func (r *placeholderCreator) reconcile(
 	config *schedulingv1alpha1.ClusterSizingConfiguration,
 ) (*appsv1applyconfigurations.DeploymentApplyConfiguration, error) {
 	logger := ctrl.LoggerFrom(ctx)
-	var configValid bool
-	for _, condition := range config.Status.Conditions {
-		if condition.Type == schedulingv1alpha1.ClusterSizingConfigurationValidType && condition.Status == metav1.ConditionTrue {
-			configValid = true
-			break
-		}
-	}
-	if !configValid {
+
+	if condition := meta.FindStatusCondition(config.Status.Conditions, schedulingv1alpha1.ClusterSizingConfigurationValidType); condition == nil || condition.Status != metav1.ConditionTrue {
 		// we can't deliver placeholders unless we have a valid configuration; we'll re-trigger when
 		// the configuration object changes and can process deployments then
 		return nil, nil
@@ -191,7 +192,15 @@ func (r *placeholderCreator) reconcile(
 				return nil, nil
 			}
 
-			// we need more placeholders, add one and requeue
+			// we need more placeholders
+			// if there are any pending deployments, then let's wait until those are rolled out before creating more
+			for _, deployment := range deployments.Items {
+				if !util.IsDeploymentReady(ctx, &deployment) {
+					return nil, nil
+				}
+			}
+
+			// Add a deployment and requeue
 			nodes, err := r.listNodes(ctx, client.HasLabels{HostedClusterNameLabel, OSDFleetManagerPairedNodesLabel})
 			if err != nil {
 				return nil, err
@@ -279,7 +288,6 @@ func (r *placeholderUpdater) reconcile(
 	if !isPlaceholder || !hasSize {
 		return false, nil, nil
 	}
-	logger.Info("Reconciling")
 
 	var configValid bool
 	for _, condition := range config.Status.Conditions {
@@ -389,6 +397,8 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 				PlaceholderLabel: strconv.Itoa(placeholderIndex),
 				hostedclustersizing.HostedClusterSizeLabel: sizeClass,
 			})).
+			WithStrategy(appsv1applyconfigurations.DeploymentStrategy().
+				WithType(appsv1.RecreateDeploymentStrategyType)).
 			WithTemplate(corev1applyconfigurations.PodTemplateSpec().
 				WithLabels(map[string]string{
 					PlaceholderLabel: strconv.Itoa(placeholderIndex),
@@ -397,8 +407,8 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 				WithSpec(corev1applyconfigurations.PodSpec().
 					// placeholder pods must land on request serving nodes for the size class we're keeping warm
 					WithNodeSelector(map[string]string{
-						ControlPlaneServingComponentLabel:          "true",
-						hostedclustersizing.HostedClusterSizeLabel: sizeClass,
+						ControlPlaneServingComponentLabel: "true",
+						hypershiftv1beta1.NodeSizeLabel:   sizeClass,
 					}).
 					WithAffinity(corev1applyconfigurations.Affinity().
 						WithPodAffinity(corev1applyconfigurations.PodAffinity().WithRequiredDuringSchedulingIgnoredDuringExecution(
@@ -430,6 +440,12 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 					// placeholder pods must tolerate landing on a request-serving node
 					WithTolerations(corev1applyconfigurations.Toleration().
 						WithKey(ControlPlaneServingComponentTaint).
+						WithOperator(corev1.TolerationOpEqual).
+						WithValue("true").
+						WithEffect(corev1.TaintEffectNoSchedule),
+					).
+					WithTolerations(corev1applyconfigurations.Toleration().
+						WithKey(ControlPlaneTaint).
 						WithOperator(corev1.TolerationOpEqual).
 						WithValue("true").
 						WithEffect(corev1.TaintEffectNoSchedule),
