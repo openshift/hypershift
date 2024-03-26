@@ -1656,15 +1656,19 @@ type AWSServiceEndpoint struct {
 }
 
 type AzurePlatformSpec struct {
-	Credentials       corev1.LocalObjectReference `json:"credentials"`
-	Location          string                      `json:"location"`
-	ResourceGroupName string                      `json:"resourceGroup"`
-	VnetName          string                      `json:"vnetName"`
-	VnetID            string                      `json:"vnetID"`
-	SubnetName        string                      `json:"subnetName"`
-	SubscriptionID    string                      `json:"subscriptionID"`
-	MachineIdentityID string                      `json:"machineIdentityID"`
-	SecurityGroupName string                      `json:"securityGroupName"`
+	Credentials corev1.LocalObjectReference `json:"credentials"`
+	// The cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
+	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud
+	// +kubebuilder:default="AzurePublicCloud"
+	Cloud             string `json:"cloud,omitempty"`
+	Location          string `json:"location"`
+	ResourceGroupName string `json:"resourceGroup"`
+	VnetName          string `json:"vnetName"`
+	VnetID            string `json:"vnetID"`
+	SubnetName        string `json:"subnetName"`
+	SubscriptionID    string `json:"subscriptionID"`
+	MachineIdentityID string `json:"machineIdentityID"`
+	SecurityGroupName string `json:"securityGroupName"`
 }
 
 // Release represents the metadata for an OCP release payload image.

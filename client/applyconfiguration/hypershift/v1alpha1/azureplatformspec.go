@@ -25,6 +25,7 @@ import (
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
 	Credentials       *v1.LocalObjectReference `json:"credentials,omitempty"`
+	Cloud             *string                  `json:"cloud,omitempty"`
 	Location          *string                  `json:"location,omitempty"`
 	ResourceGroupName *string                  `json:"resourceGroup,omitempty"`
 	VnetName          *string                  `json:"vnetName,omitempty"`
@@ -46,6 +47,14 @@ func AzurePlatformSpec() *AzurePlatformSpecApplyConfiguration {
 // If called multiple times, the Credentials field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithCredentials(value v1.LocalObjectReference) *AzurePlatformSpecApplyConfiguration {
 	b.Credentials = &value
+	return b
+}
+
+// WithCloud sets the Cloud field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Cloud field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithCloud(value string) *AzurePlatformSpecApplyConfiguration {
+	b.Cloud = &value
 	return b
 }
 

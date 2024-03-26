@@ -48,7 +48,7 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 
 func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) AzureConfig {
 	return AzureConfig{
-		Cloud:                        "AzurePublicCloud",
+		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
 		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
 		UseManagedIdentityExtension:  true,
 		SubscriptionID:               hcp.Spec.Platform.Azure.SubscriptionID,

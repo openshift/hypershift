@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
+	azureutil "github.com/Azure/go-autorest/autorest/azure"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cco"
@@ -67,6 +68,7 @@ import (
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -4826,28 +4828,15 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 
 func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            "Azure KMS is not configured",
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.StatusUnknownReason, "Azure KMS is not configured")
 		return
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            fmt.Sprintf("failed to get azure credentials secret: %v", err),
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.StatusUnknownReason,
+			fmt.Sprintf("failed to get azure credentials secret: %v", err))
 		return
 	}
 
@@ -4857,28 +4846,23 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
 	if err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionFalse,
-			Message:            fmt.Sprintf("failed to obtain azure client credential: %v", err),
-			Reason:             hyperv1.InvalidAzureCredentialsReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+			fmt.Sprintf("failed to obtain azure client credential: %v", err))
 		return
 	}
 
-	vaultURL := fmt.Sprintf("https://%s.vault.azure.net", azureKmsSpec.KeyVaultName)
+	azureEnv, err := azureutil.EnvironmentFromName(hcp.Spec.Platform.Azure.Cloud)
+	if err != nil || azureEnv.KeyVaultDNSSuffix == azureutil.NotAvailable {
+		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+			fmt.Sprintf("vault dns suffix not available for cloud: %s", hcp.Spec.Platform.Azure.Cloud))
+		return
+	}
+
+	vaultURL := fmt.Sprintf("https://%s.%s", azureKmsSpec.KeyVaultName, azureEnv.KeyVaultDNSSuffix)
 	keysClient, err := azkeys.NewClient(vaultURL, cred, nil)
 	if err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionFalse,
-			Message:            fmt.Sprintf("failed to create azure keys client: %v", err),
-			Reason:             hyperv1.AzureErrorReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.AzureErrorReason,
+			fmt.Sprintf("failed to create azure keys client: %v", err))
 		return
 	}
 

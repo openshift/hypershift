@@ -2419,6 +2419,17 @@ Kubernetes core/v1.LocalObjectReference
 </tr>
 <tr>
 <td>
+<code>cloud</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>The cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
+</td>
+</tr>
+<tr>
+<td>
 <code>location</code></br>
 <em>
 string
