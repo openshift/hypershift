@@ -3,6 +3,7 @@ package conditions
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -72,4 +73,15 @@ func ExpectedNodePoolConditions() map[string]corev1.ConditionStatus {
 		hyperv1.NodePoolUpdatingConfigConditionType:                  corev1.ConditionFalse,
 		hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType: corev1.ConditionFalse,
 	}
+}
+
+func SetFalseCondition(hcp *hyperv1.HostedControlPlane, conditionType hyperv1.ConditionType, reason, message string) {
+	condition := metav1.Condition{
+		Type:               string(conditionType),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+		Reason:             reason,
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 }
