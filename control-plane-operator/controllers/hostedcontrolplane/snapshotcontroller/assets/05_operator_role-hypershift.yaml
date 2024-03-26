@@ -75,6 +75,27 @@ rules:
   - list
   - watch
 - apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - watch
+  - list
+  - get
+  - create
+  - delete
+  - patch
+  - update
+- apiGroups:
+  - security.openshift.io
+  resourceNames:
+  - nonroot-v2
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use
+- apiGroups:
   - hypershift.openshift.io
   resources:
   - hostedcontrolplanes
