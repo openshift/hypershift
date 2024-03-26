@@ -19,7 +19,7 @@ type OpenShiftControllerManagerParams struct {
 	APIServer                       *configv1.APIServerSpec
 	Network                         *configv1.NetworkSpec
 	Build                           *configv1.Build
-	Image                           *configv1.Image
+	Image                           *configv1.ImageSpec
 
 	DeploymentConfig config.DeploymentConfig
 	config.OwnerRef
@@ -31,11 +31,11 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 		DockerBuilderImage:              releaseImageProvider.GetImage("docker-builder"),
 		DeployerImage:                   releaseImageProvider.GetImage("deployer"),
 		Build:                           observedConfig.Build,
-		Image:                           observedConfig.Image,
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
 		params.Network = hcp.Spec.Configuration.Network
+		params.Image = hcp.Spec.Configuration.Image
 	}
 
 	params.DeploymentConfig = config.DeploymentConfig{
