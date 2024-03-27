@@ -657,9 +657,6 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *EtcdPara
 	}
 
 	p.OwnerRef.ApplyTo(pdb)
-
-	minAvailable := 1
-	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
-
+	util.ReconcilePodDisruptionBudget(pdb, p.Availability)
 	return nil
 }
