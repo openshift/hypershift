@@ -63,10 +63,12 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
+	cmd.Flags().StringVar(&opts.RHCOSImage, "rhcos-image", opts.RHCOSImage, `RHCOS image to be used for the NodePool. Could be obtained using podman run --rm -it --entrypoint cat $RELEASE_IMAGE release-manifests/0000_50_installer_coreos-bootimages.yaml | yq .data.stream -r | yq '.architectures.x86_64["rhel-coreos-extensions"]["azure-disk"].url'`)
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("azure-creds")
-	cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("azure-creds")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("rhcos-image")
 
 	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
