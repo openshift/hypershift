@@ -1238,6 +1238,8 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"kubevirt-csi-driver":              "app",
 			"cluster-image-registry-operator":  "name",
 			"virt-launcher":                    "kubevirt.io",
+			"azure-disk-csi-driver-controller": "app",
+			"azure-file-csi-driver-controller": "app",
 		}
 
 		hcpPods := &corev1.PodList{}
@@ -1276,7 +1278,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			for _, volume := range pod.Spec.Volumes {
 				// Check the pod's volumes, if they are emptyDir or hostPath,
 				// they should include that volume in the annotation
-				if volume.EmptyDir != nil || volume.HostPath != nil {
+				if (volume.EmptyDir != nil && volume.EmptyDir.Medium != corev1.StorageMediumMemory) || volume.HostPath != nil {
 					g.Expect(strings.Contains(annotationValue, volume.Name)).To(BeTrue(), "pod with name %s do not have the right volumes set in the safe-to-evict-local-volume annotation: \nCurrent: %s, Expected to be included in: %s", pod.Name, volume.Name, annotationValue)
 				}
 			}
@@ -1803,6 +1805,16 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			"csi-snapshot-controller",
 			"ovnkube-control-plane", //remove once https://issues.redhat.com/browse/OCPBUGS-26408 is closed,
 		)
+
+		if hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
+				"azure-cloud-controller-manager",
+				"azure-disk-csi-driver-controller",
+				"azure-disk-csi-driver-operator",
+				"azure-file-csi-driver-controller",
+				"azure-file-csi-driver-operator",
+			)
+		}
 
 		if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount, hostedCluster.Name+"-test-",

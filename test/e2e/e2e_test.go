@@ -462,6 +462,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
 			Location:        o.configurableClusterOptions.AzureLocation,
 			InstanceType:    "Standard_D4s_v4",
+			SubnetName:      "default",
 			DiskSizeGB:      120,
 		},
 		PowerVSPlatform: core.PowerVSPlatformOptions{
@@ -493,7 +494,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 	}
 
 	// Arch is only currently valid for aws platform
-	if o.Platform == hyperv1.AWSPlatform {
+	if o.Platform == hyperv1.AWSPlatform || o.Platform == hyperv1.AzurePlatform {
 		createOption.Arch = "amd64"
 	}
 
