@@ -2391,9 +2391,9 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}
 
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
-		igntionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, igntionServerCert, func() error {
-			return pki.ReconcileIgnitionServerCertSecret(igntionServerCert, rootCASecret, p.OwnerRef)
+		ignitionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ignitionServerCert, func() error {
+			return pki.ReconcileIgnitionServerCertSecret(ignitionServerCert, rootCASecret, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition server cert: %w", err)
 		}
