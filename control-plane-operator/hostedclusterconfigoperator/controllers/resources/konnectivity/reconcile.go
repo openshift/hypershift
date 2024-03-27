@@ -49,6 +49,8 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
+				// Default is not the default, it means that the kubelets will re-use the hosts DNS resolver
+				DNSPolicy:                    corev1.DNSDefault,
 				AutomountServiceAccountToken: pointer.Bool(false),
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsUser: pointer.Int64(1000),
@@ -65,8 +67,6 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 	}
 	if platform != hyperv1.IBMCloudPlatform {
 		daemonset.Spec.Template.Spec.HostNetwork = true
-		// Default is not the default, it means that the kubelets will re-use the hosts DNS resolver
-		daemonset.Spec.Template.Spec.DNSPolicy = corev1.DNSDefault
 	}
 	deploymentConfig.ApplyToDaemonSet(daemonset)
 }
