@@ -486,7 +486,10 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 	}
 
 	// Create a deployment to ensure nodes of the right size are created
-	nodesNeeded := max(2-len(nodesByZone), 0)
+	nodesNeeded := 2 - len(nodesByZone)
+	if nodesNeeded < 0 {
+		nodesNeeded = 0
+	}
 	deployment, err := r.ensurePlaceholderDeployment(ctx, hc, desiredSize, pairLabel, nodesNeeded)
 	if err != nil {
 		return ctrl.Result{}, err
