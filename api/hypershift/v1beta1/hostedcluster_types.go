@@ -2123,6 +2123,12 @@ type AWSPlatformStatus struct {
 	// addition to any security groups specified in the NodePool.
 	// +optional
 	DefaultWorkerSecurityGroupID string `json:"defaultWorkerSecurityGroupID,omitempty"`
+
+	// VPCEendpointSecurityGroup is the ID of a security group created by
+	// the control plane operator. It is used to control access to the VPC
+	// endpoint in Private and PublicAndPrivate clusters.
+	// +optional
+	VPCEndpointSecurityGroupID string `json:"vpcEndpointSecurityGroupID,omitempty"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,
