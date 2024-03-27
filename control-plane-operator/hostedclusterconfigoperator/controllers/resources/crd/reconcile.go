@@ -12,12 +12,20 @@ import (
 var (
 	//go:embed assets/apiserver.openshift.io_apirequestcount-crd.yaml
 	requestCountCRDBytes []byte
+	//go:embed assets/apiserver.openshift.io_etcdoperator-crd.yaml
+	etcdOperatorCRDBytes []byte
 
 	requestCountCRD = mustCRD(requestCountCRDBytes)
+	etcdOperatorCRD = mustCRD(etcdOperatorCRDBytes)
 )
 
 func ReconcileRequestCountCRD(crd *apiextensionsv1.CustomResourceDefinition) error {
 	crd.Spec = requestCountCRD.Spec
+	return nil
+}
+
+func ReconcileEtcdOperatorCRD(crd *apiextensionsv1.CustomResourceDefinition) error {
+	crd.Spec = etcdOperatorCRD.Spec
 	return nil
 }
 
