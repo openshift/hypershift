@@ -9,7 +9,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type OpenShiftRouteControllerManagerParams struct {
@@ -21,7 +20,7 @@ type OpenShiftRouteControllerManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftRouteControllerManagerParams {
+func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftRouteControllerManagerParams {
 	params := &OpenShiftRouteControllerManagerParams{
 		OpenShiftControllerManagerImage: releaseImageProvider.GetImage("route-controller-manager"),
 	}

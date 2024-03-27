@@ -1,10 +1,10 @@
 package globalconfig
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 func ImageConfig() *configv1.Image {
@@ -15,11 +15,14 @@ func ImageConfig() *configv1.Image {
 	}
 }
 
-func ObservedImageConfig(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "observed-config-image",
-			Namespace: ns,
-		},
+func ReconcileImageConfig(cfg *configv1.Image, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Image != nil {
+		cfg.Spec = *hcp.Spec.Configuration.Image
+	}
+}
+
+func ReconcileImageConfigFromHostedCluster(cfg *configv1.Image, hc *hyperv1.HostedCluster) {
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Image != nil {
+		cfg.Spec = *hc.Spec.Configuration.Image
 	}
 }

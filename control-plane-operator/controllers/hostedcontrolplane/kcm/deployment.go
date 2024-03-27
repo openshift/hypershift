@@ -99,7 +99,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
-	deployment.Spec.Template.ObjectMeta.Annotations[rootCAHashAnnotation] = util.HashStruct(rootCA.Data)
+	deployment.Spec.Template.ObjectMeta.Annotations[rootCAHashAnnotation] = util.HashSimple(rootCA.Data)
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.Bool(false),
@@ -120,7 +120,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 	}
 	p.DeploymentConfig.ApplyTo(deployment)
 	if serviceServingCA != nil {
-		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = util.HashStruct(serviceServingCA.Data)
+		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = util.HashSimple(serviceServingCA.Data)
 		applyServingCAVolume(&deployment.Spec.Template.Spec, serviceServingCA)
 	} else {
 		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = ""

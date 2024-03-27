@@ -89,6 +89,7 @@ const (
 	TokenSecretReleaseKey                     = "release"
 	TokenSecretTokenKey                       = "token"
 	TokenSecretPullSecretHashKey              = "pull-secret-hash"
+	TokenSecretHCConfigurationHashKey         = "hc-configuration-hash"
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
 	TokenSecretIgnitionReachedAnnotation      = "hypershift.openshift.io/ignition-reached"
@@ -257,6 +258,23 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// 1. - Reconcile conditions according to current state of the world.
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
+
+	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
+	// It is included directly by the ignition server.  However, we need to detect the change
+	// here to trigger a nodepool update.
+	image := globalconfig.ImageConfig()
+	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
+
+	// Serialize proxy and image into a single string to use in the token secret hash.
+	globalConfigBytes := bytes.NewBuffer(nil)
+	enc := json.NewEncoder(globalConfigBytes)
+	if err := enc.Encode(proxy); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to encode proxy global config: %w", err)
+	}
+	if err := enc.Encode(image); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to encode image global config: %w", err)
+	}
+	globalConfig := globalConfigBytes.String()
 
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {
@@ -593,7 +611,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Check if config needs to be updated.
-	targetConfigHash := supportutil.HashStruct(config + pullSecretName)
+	targetConfigHash := supportutil.HashSimple(config + pullSecretName)
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -628,7 +646,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := supportutil.HashStruct(config + targetVersion + pullSecretName)
+	targetPayloadConfigHash := supportutil.HashSimple(config + targetVersion + pullSecretName + globalConfig)
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
@@ -871,8 +889,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret bytes: %w", err)
 	}
+	hcConfigurationHash, err := supportutil.HashStruct(hcluster.Spec.Configuration)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
+	}
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes)
+		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes, hcConfigurationHash)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
 	} else {
@@ -1464,7 +1486,7 @@ func reconcileTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyper
 	return nil
 }
 
-func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte) error {
+func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte, hcConfigurationHash string) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
 	// Therefore, this secret is mutable.
@@ -1485,7 +1507,8 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
-		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashStruct(pullSecret))
+		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashSimple(pullSecret))
+		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
 	}
 	return nil
 }
@@ -2433,13 +2456,13 @@ func getName(base, suffix string, maxLength int) string {
 	if baseLength < 1 {
 		prefix := base[0:min(len(base), max(0, maxLength-9))]
 		// Calculate hash on initial base-suffix string
-		shortName := fmt.Sprintf("%s-%s", prefix, supportutil.HashStruct(name))
+		shortName := fmt.Sprintf("%s-%s", prefix, supportutil.HashSimple(name))
 		return shortName[:min(maxLength, len(shortName))]
 	}
 
 	prefix := base[0:baseLength]
 	// Calculate hash on initial base-suffix string
-	return fmt.Sprintf("%s-%s-%s", prefix, supportutil.HashStruct(base), suffix)
+	return fmt.Sprintf("%s-%s-%s", prefix, supportutil.HashSimple(base), suffix)
 }
 
 // max returns the greater of its 2 inputs
@@ -2572,7 +2595,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 func generateMachineTemplateName(nodePool *hyperv1.NodePool, machineTemplateSpecJSON []byte) string {
 	// using HashStruct(machineTemplateSpecJSON) ensures a rolling upgrade is triggered
 	// by creating a new template with a differnt name if any field changes.
-	return getName(nodePool.GetName(), supportutil.HashStruct(machineTemplateSpecJSON),
+	return getName(nodePool.GetName(), supportutil.HashSimple(machineTemplateSpecJSON),
 		validation.DNS1123SubdomainMaxLength)
 }
 
