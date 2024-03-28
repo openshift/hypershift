@@ -47,6 +47,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: false
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
