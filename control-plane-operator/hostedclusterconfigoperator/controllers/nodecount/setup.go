@@ -1,6 +1,7 @@
 package nodecount
 
 import (
+	"context"
 	"time"
 
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
@@ -14,7 +15,7 @@ import (
 
 const ControllerName = "nodecount"
 
-func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
+func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
 	hypershiftClient, err := hypershiftclient.NewForConfig(opts.CPCluster.GetConfig())
 	if err != nil {
 		return err
