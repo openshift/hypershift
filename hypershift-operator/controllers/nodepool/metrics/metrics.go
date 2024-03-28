@@ -31,8 +31,8 @@ const (
 	CountByHClusterMetricName = "hypershift_hostedcluster_nodepools" // What about renaming it to hypershift_cluster_nodepools ?
 	countByHClusterMetricHelp = "Number of NodePools for a given HostedCluster"
 
-	CoresCountByHClusterMetricName = "hypershift_cluster_cores"
-	CoresCountByHClusterMetricHelp = "Number of cores for a given HostedCluster. " +
+	VCpusCountByHClusterMetricName = "hypershift_cluster_vcpus"
+	VCpusCountByHClusterMetricHelp = "Number of virtual CPUs as reported by the platform for a given HostedCluster. " +
 		"-1 if this number cannot be computed." // Be careful when changing this metric as it is used for billing the customers
 
 	TransitionDurationMetricName = "hypershift_nodepools_transition_seconds" // What about renaming it to hypershift_nodepools_transition_duration_seconds ?
@@ -88,9 +88,9 @@ var (
 		countByHClusterMetricHelp,
 		hclusterLabels, nil)
 
-	coresCountByHClusterMetricDesc = prometheus.NewDesc(
-		CoresCountByHClusterMetricName,
-		CoresCountByHClusterMetricHelp,
+	vCpusCountByHClusterMetricDesc = prometheus.NewDesc(
+		VCpusCountByHClusterMetricName,
+		VCpusCountByHClusterMetricHelp,
 		hclusterLabels, nil)
 
 	// One time series per node pool for below metrics
@@ -122,7 +122,7 @@ type nodePoolsMetricsCollector struct {
 	ec2Client ec2iface.EC2API
 	clock     clock.Clock
 
-	ec2InstanceTypeToCoresCount map[string]int32
+	ec2InstanceTypeToVCpusCount map[string]int32
 
 	transitionDurationMetric *prometheus.HistogramVec
 
@@ -134,7 +134,7 @@ func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC
 		Client:                      client,
 		ec2Client:                   ec2Client,
 		clock:                       clock,
-		ec2InstanceTypeToCoresCount: make(map[string]int32),
+		ec2InstanceTypeToVCpusCount: make(map[string]int32),
 		transitionDurationMetric: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    TransitionDurationMetricName,
 			Help:    transitionDurationMetricHelp,
@@ -162,7 +162,7 @@ type hclusterData struct {
 	name           string
 	platform       hyperv1.PlatformType
 	nodePoolsCount int
-	coresCount     int32
+	vCpusCount     int32
 }
 
 func createFailureConditionToNodePoolsCountMap() *map[string]int {
@@ -181,14 +181,24 @@ func createFailureConditionToNodePoolsCountMap() *map[string]int {
 	return &res
 }
 
-func (c *nodePoolsMetricsCollector) resolveCoresCountPerNode(nodePool *hyperv1.NodePool, unresolvedEc2InstanceTypes *map[string]void) int32 {
-	if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform || c.ec2Client == nil {
+func (c *nodePoolsMetricsCollector) resolveVCpusCountPerNode(nodePool *hyperv1.NodePool, unresolvedEc2InstanceTypes *map[string]void) int32 {
+	if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		ctrllog.Log.Info("cannot retrieve the number of vCPUs for " + nodePool.Name + " node pool as its plaform is not supported (supported platforms: AWS)")
+
+		return -1
+	}
+
+	if c.ec2Client == nil {
+		ctrllog.Log.Error(fmt.Errorf("no EC2 client"), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as it is not possible to query AWS for the EC2 instance type details")
+
 		return -1
 	}
 
 	awsPlatform := nodePool.Spec.Platform.AWS
 
 	if awsPlatform == nil {
+		ctrllog.Log.Error(fmt.Errorf("no 'spec.platform.aws' member"), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as its specification is inconsistent")
+
 		return -1
 	}
 
@@ -198,8 +208,8 @@ func (c *nodePoolsMetricsCollector) resolveCoresCountPerNode(nodePool *hyperv1.N
 		return -1
 	}
 
-	if coreCountPerNode, isCached := c.ec2InstanceTypeToCoresCount[ec2InstanceType]; isCached {
-		return coreCountPerNode
+	if vCpusCountPerNode, isCached := c.ec2InstanceTypeToVCpusCount[ec2InstanceType]; isCached {
+		return vCpusCountPerNode
 	}
 	awsInput := ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{&ec2InstanceType}}
 
@@ -212,14 +222,14 @@ func (c *nodePoolsMetricsCollector) resolveCoresCountPerNode(nodePool *hyperv1.N
 				cpuInfo := ec2InstanceTypeInfo.VCpuInfo
 
 				if instanceTypeInInfo != nil && *instanceTypeInInfo == ec2InstanceType && cpuInfo != nil {
-					coreCountPtr := cpuInfo.DefaultCores
+					vCpusCountPtr := cpuInfo.DefaultVCpus
 
-					if coreCountPtr != nil {
-						coreCount := int32(*coreCountPtr)
+					if vCpusCountPtr != nil {
+						vCpusCount := int32(*vCpusCountPtr)
 
-						c.ec2InstanceTypeToCoresCount[ec2InstanceType] = coreCount
+						c.ec2InstanceTypeToVCpusCount[ec2InstanceType] = vCpusCount
 
-						return coreCount
+						return vCpusCount
 					}
 				}
 			}
@@ -227,7 +237,7 @@ func (c *nodePoolsMetricsCollector) resolveCoresCountPerNode(nodePool *hyperv1.N
 
 		ctrllog.Log.Error(fmt.Errorf("unexpected AWS output"), "unexpected output for EC2 verb 'describe-instance-types' while querying the following EC2 instance type: "+ec2InstanceType)
 	} else {
-		ctrllog.Log.Error(err, "failed to call AWS to resolve the number of cores per node for the following EC2 instance type: "+ec2InstanceType)
+		ctrllog.Log.Error(err, "failed to call AWS to resolve the number of vCpus per node for the following EC2 instance type: "+ec2InstanceType)
 	}
 
 	(*unresolvedEc2InstanceTypes)[ec2InstanceType] = void{}
@@ -361,14 +371,14 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 				// countByHClusterMetric - aggregation
 				hclusterData.nodePoolsCount += 1
 
-				// coresCountByHClusterMetric - aggregation
-				if hclusterData.coresCount >= 0 && nodePool.Status.Replicas > 0 {
-					nodePoolCoresCount := c.resolveCoresCountPerNode(nodePool, &unresolvedEc2InstanceTypes)
+				// vCpusCountByHClusterMetric - aggregation
+				if hclusterData.vCpusCount >= 0 && nodePool.Status.Replicas > 0 {
+					nodePoolVCpusCount := c.resolveVCpusCountPerNode(nodePool, &unresolvedEc2InstanceTypes)
 
-					if nodePoolCoresCount >= 0 {
-						hclusterData.coresCount += nodePoolCoresCount * nodePool.Status.Replicas
+					if nodePoolVCpusCount >= 0 {
+						hclusterData.vCpusCount += nodePoolVCpusCount * nodePool.Status.Replicas
 					} else {
-						hclusterData.coresCount = -1
+						hclusterData.vCpusCount = -1
 					}
 				}
 			}
@@ -488,11 +498,11 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			hclusterLabelValues...,
 		)
 
-		// coresCountByHClusterMetric
+		// vCpusCountByHClusterMetric
 		ch <- prometheus.MustNewConstMetric(
-			coresCountByHClusterMetricDesc,
+			vCpusCountByHClusterMetricDesc,
 			prometheus.GaugeValue,
-			float64(hclusterData.coresCount),
+			float64(hclusterData.vCpusCount),
 			hclusterLabelValues...,
 		)
 	}
