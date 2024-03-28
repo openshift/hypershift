@@ -27,7 +27,7 @@ const (
 	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
 )
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	// Reconcile openshift-ingress Network Policy
@@ -56,7 +56,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
+		return reconcileKASNetworkPolicy(policy, hcluster)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
@@ -90,7 +90,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	// Reconcile openshift-monitoring Network Policy
 	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
+		return reconcileOpenshiftMonitoringNetworkPolicy(policy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
@@ -102,7 +102,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		// only setup ingress rules (and not egress rules) when version is < 4.14
 		ingressOnly := version.Major == 4 && version.Minor < 14
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
+			return reconcilePrivateRouterNetworkPolicy(policy, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
@@ -125,7 +125,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-oauth Network Policy
 				policy = networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
+					return reconcileNodePortOauthNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
 				}
@@ -135,7 +135,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-ignition Network Policy
 				policy = networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
+					return reconcileNodePortIgnitionNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
 				}
@@ -145,7 +145,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-konnectivity Network Policy
 				policy = networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
+					return reconcileNodePortKonnectivityNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
@@ -156,7 +156,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	return nil
 }
 
-func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
+func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
 	port := intstr.FromInt32(config.KASSVCPort)
 	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		port = intstr.FromInt32(config.KASSVCIBMCloudPort)
@@ -174,9 +174,9 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 			},
 		},
 	}
-	// We have to keep this in order to support 4.11 clusters where the KAS listen port == the external port
+	// We have to keep this to support 4.11 clusters where the KAS listen port == the external port
 	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
-		externalPort := intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
+		externalPort := intstr.FromInt32(*hcluster.Spec.Networking.APIServer.Port)
 		if port.IntValue() != externalPort.IntValue() {
 			policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
 				From: []networkingv1.NetworkPolicyPeer{},
@@ -199,9 +199,9 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	return nil
 }
 
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
-	httpPort := intstr.FromInt(8080)
-	httpsPort := intstr.FromInt(8443)
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
+	httpPort := intstr.FromInt32(8080)
+	httpsPort := intstr.FromInt32(8443)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
@@ -236,10 +236,10 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 		}
 	}
 
-	// Allow to any destination not on the management cluster service network
-	// i.e. block all inter-namespace egress not allowed by other rules.
+	// Allow to any destination not on the management cluster service network,
+	// i.e., block all inter-namespace egress not allowed by other rules.
 	// Also do not allow Kubernetes endpoint IPs explicitly
-	// i.e. block access to management cluster KAS.
+	// i.e., block access to management cluster KAS.
 	exceptions := append(kasEndpointsToCIDRs(kubernetesEndpoint), clusterNetworks...)
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
 		{
@@ -272,9 +272,9 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 
 	if isOpenShiftDNS {
 		// Allow traffic to openshift-dns namespace
-		dnsUDPPort := intstr.FromInt(5353)
+		dnsUDPPort := intstr.FromInt32(5353)
 		dnsUDPProtocol := corev1.ProtocolUDP
-		dnsTCPPort := intstr.FromInt(5353)
+		dnsTCPPort := intstr.FromInt32(5353)
 		dnsTCPProtocol := corev1.ProtocolTCP
 		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{
@@ -299,9 +299,9 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 		})
 	} else {
 		// All traffic to any destination on port 53 for both TCP and UDP
-		dnsUDPPort := intstr.FromInt(53)
+		dnsUDPPort := intstr.FromInt32(53)
 		dnsUDPProtocol := corev1.ProtocolUDP
-		dnsTCPPort := intstr.FromInt(53)
+		dnsTCPPort := intstr.FromInt32(53)
 		dnsTCPProtocol := corev1.ProtocolTCP
 		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 			Ports: []networkingv1.NetworkPolicyPort{
@@ -322,8 +322,8 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
-func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	port := intstr.FromInt(6443)
+func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
+	port := intstr.FromInt32(6443)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
@@ -345,8 +345,8 @@ func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
-func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	port := intstr.FromInt(9090)
+func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
+	port := intstr.FromInt32(9090)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
@@ -368,8 +368,8 @@ func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, 
 	return nil
 }
 
-func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	port := intstr.FromInt(8091)
+func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
+	port := intstr.FromInt32(8091)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
@@ -391,7 +391,7 @@ func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPoli
 	return nil
 }
 
-func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{
@@ -424,8 +424,8 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 	protocolUDP := corev1.ProtocolUDP
 	protocolSCTP := corev1.ProtocolSCTP
 
-	blockedIPv4Networks := []string{}
-	blockedIPv6Networks := []string{}
+	var blockedIPv4Networks []string
+	var blockedIPv6Networks []string
 	for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
 		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
 	}
@@ -455,7 +455,7 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 			To: []networkingv1.NetworkPolicyPeer{
 				{
 					// Allow access towards outside the cluster for the virtual machines (guest nodes),
-					// But deny access to other cluster's pods and services with the exceptions below
+					// But deny access to another cluster's pods and services with the exceptions below
 					// IPv4
 					IPBlock: &networkingv1.IPBlock{
 						CIDR:   netip.PrefixFrom(netip.IPv4Unspecified(), 0).String(), // 0.0.0.0/0
@@ -600,7 +600,7 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 // reconcileManagementKASNetworkPolicy selects pods excluding the ones having NeedManagementKASAccessLabel and specific operands.
 // It denies egress traffic to the management cluster clusterNetwork and to the KAS endpoints.
 func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, managementClusterNetwork *configv1.Network, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool) error {
-	// Allow traffic to same namespace
+	// Allow traffic to the same namespace
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
 		{
 			To: []networkingv1.NetworkPolicyPeer{
@@ -619,10 +619,10 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 		}
 	}
 
-	// Allow to any destination not on the management cluster service network
-	// i.e. block all inter-namespace egress not allowed by other rules.
+	// Allow to any destination not on the management cluster service network,
+	// i.e., block all inter-namespace egress not allowed by other rules.
 	// Also do not allow Kubernetes endpoint IPs explicitly
-	// i.e. block access to management cluster KAS.
+	// i.e., block access to management cluster KAS.
 	exceptions := append(kasEndpointsToCIDRs(kubernetesEndpoint), clusterNetworks...)
 	policy.Spec.Egress = append(policy.Spec.Egress,
 		networkingv1.NetworkPolicyEgressRule{
@@ -638,9 +638,9 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 
 	if isOpenShiftDNS {
 		// Allow traffic to openshift-dns namespace
-		dnsUDPPort := intstr.FromInt(5353)
+		dnsUDPPort := intstr.FromInt32(5353)
 		dnsUDPProtocol := corev1.ProtocolUDP
-		dnsTCPPort := intstr.FromInt(5353)
+		dnsTCPPort := intstr.FromInt32(5353)
 		dnsTCPProtocol := corev1.ProtocolTCP
 		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{
@@ -665,9 +665,9 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 		})
 	} else {
 		// All traffic to any destination on port 53 for both TCP and UDP
-		dnsUDPPort := intstr.FromInt(53)
+		dnsUDPPort := intstr.FromInt32(53)
 		dnsUDPProtocol := corev1.ProtocolUDP
-		dnsTCPPort := intstr.FromInt(53)
+		dnsTCPPort := intstr.FromInt32(53)
 		dnsTCPProtocol := corev1.ProtocolTCP
 		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 			Ports: []networkingv1.NetworkPolicyPort{
@@ -726,7 +726,7 @@ func kasEndpointsToCIDRs(kubernetesEndpoint *corev1.Endpoints) []string {
 // HyperShift running on an OpenShift management cluster.
 func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	protocol := corev1.ProtocolTCP
-	port := intstr.FromInt(9092)
+	port := intstr.FromInt32(9092)
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
 		{
 			To: []networkingv1.NetworkPolicyPeer{
