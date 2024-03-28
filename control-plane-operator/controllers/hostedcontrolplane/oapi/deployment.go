@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -128,28 +129,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
 			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
-			{
-				Name:            "audit-logs",
-				Image:           image,
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Command: []string{
-					"/usr/bin/tail",
-					"-c+1",
-					"-F",
-					fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log"),
-				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("5m"),
-						corev1.ResourceMemory: resource.MustParse("10Mi"),
-					},
-				},
-				VolumeMounts: []corev1.VolumeMount{{
-					Name:      oasVolumeWorkLogs().Name,
-					MountPath: volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name),
-				}},
-			},
-			util.BuildContainer(oasSocks5ProxyContainer(), buildOASSocks5ProxyContainer(socks5ProxyImage)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
@@ -172,6 +151,30 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 				}
 			}),
 		},
+	}
+
+	if !strings.Contains(auditConfig.Data[auditPolicyProfileMapKey], string(configv1.NoneAuditProfileType)) {
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "audit-logs",
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"/usr/bin/tail",
+				"-c+1",
+				"-F",
+				fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log"),
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("5m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{{
+				Name:      oasVolumeWorkLogs().Name,
+				MountPath: volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name),
+			}},
+		})
 	}
 
 	if serviceServingCA != nil {
