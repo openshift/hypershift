@@ -35,6 +35,7 @@ const (
 
 	ControlPlaneServingComponentLabel = "hypershift.openshift.io/request-serving-component"
 	OSDFleetManagerPairedNodesLabel   = "osd-fleet-manager.openshift.io/paired-nodes"
+	HostedClusterLabel                = "hypershift.openshift.io/hcp"
 	HostedClusterNameLabel            = "hypershift.openshift.io/cluster-name"
 	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
 	goMemLimitLabel                   = "hypershift.openshift.io/request-serving-gomemlimit"
@@ -265,6 +266,7 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 			})
 		}
 		node.Labels[hyperv1.HostedClusterLabel] = hcNameValue
+		node.Labels[HostedClusterLabel] = "true"
 		node.Labels[HostedClusterNameLabel] = hcluster.Name
 		node.Labels[HostedClusterNamespaceLabel] = hcluster.Namespace
 
