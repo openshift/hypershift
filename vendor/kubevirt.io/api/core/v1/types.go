@@ -109,9 +109,12 @@ type VirtualMachineInstanceSpec struct {
 	// +listMapKey=topologyKey
 	// +listMapKey=whenUnsatisfiable
 	TopologySpreadConstraints []k8sv1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"topologyKey"`
-	// EvictionStrategy can be set to "LiveMigrate" if the VirtualMachineInstance should be
-	// migrated instead of shut-off in case of a node drain.
-	//
+	// EvictionStrategy describes the strategy to follow when a node drain occurs.
+	// The possible options are:
+	// - "None": No action will be taken, according to the specified 'RunStrategy' the VirtualMachine will be restarted or shutdown.
+	// - "LiveMigrate": the VirtualMachineInstance will be migrated instead of being shutdown.
+	// - "LiveMigrateIfPossible": the same as "LiveMigrate" but only if the VirtualMachine is Live-Migratable, otherwise it will behave as "None".
+	// - "External": the VirtualMachineInstance will be protected by a PDB and `vmi.Status.EvacuationNodeName` will be set on eviction. This is mainly useful for cluster-api-provider-kubevirt (capk) which needs a way for VMI's to be blocked from eviction, yet signal capk that eviction has been called on the VMI so the capk controller can handle tearing the VMI down. Details can be found in the commit description https://github.com/kubevirt/kubevirt/commit/c1d77face705c8b126696bac9a3ee3825f27f1fa.
 	// +optional
 	EvictionStrategy *EvictionStrategy `json:"evictionStrategy,omitempty"`
 	// StartStrategy can be set to "Paused" if Virtual Machine should be started in paused state.
@@ -555,6 +558,14 @@ const (
 	VirtualMachineInstanceVCPUChange = "HotVCPUChange"
 	// Indicates that the VMI is hot(un)plugging memory
 	VirtualMachineInstanceMemoryChange = "HotMemoryChange"
+
+	// Summarizes that all the DataVolumes attached to the VMI are Ready or not
+	VirtualMachineInstanceDataVolumesReady = "DataVolumesReady"
+
+	// Reason means that not all of the VMI's DVs are ready
+	VirtualMachineInstanceReasonNotAllDVsReady = "NotAllDVsReady"
+	// Reason means that all of the VMI's DVs are bound and not running
+	VirtualMachineInstanceReasonAllDVsReady = "AllDVsReady"
 )
 
 const (
@@ -1027,6 +1038,9 @@ const (
 	// Must be a float >= 1.
 	AutoMemoryLimitsRatioLabel string = "alpha.kubevirt.io/auto-memory-limits-ratio"
 
+	// MigrationInterfaceName is an arbitrary name used in virt-handler to connect it to a dedicated migration network
+	MigrationInterfaceName string = "migration0"
+
 	// EmulatorThreadCompleteToEvenParity alpha annotation will cause Kubevirt to complete the VMI's CPU count to an even parity when IsolateEmulatorThread options are requested
 	EmulatorThreadCompleteToEvenParity string = "alpha.kubevirt.io/EmulatorThreadCompleteToEvenParity"
 )
@@ -1473,9 +1487,6 @@ type VirtualMachineSpec struct {
 	// dataVolumeTemplates is a list of dataVolumes that the VirtualMachineInstance template can reference.
 	// DataVolumes in this list are dynamically created for the VirtualMachine and are tied to the VirtualMachine's life-cycle.
 	DataVolumeTemplates []DataVolumeTemplateSpec `json:"dataVolumeTemplates,omitempty"`
-
-	// LiveUpdateFeatures references a configuration of hotpluggable resources
-	LiveUpdateFeatures *LiveUpdateFeatures `json:"liveUpdateFeatures,omitempty" optional:"true"`
 }
 
 // StateChangeRequestType represents the existing state change requests that are possible
@@ -1555,6 +1566,7 @@ type VirtualMachineStatus struct {
 	// Ready indicates if the virtual machine is running and ready
 	Ready bool `json:"ready,omitempty"`
 	// PrintableStatus is a human readable, high-level representation of the status of the virtual machine
+	// +kubebuilder:default=Stopped
 	PrintableStatus VirtualMachinePrintableStatus `json:"printableStatus,omitempty"`
 	// Hold the state information of the VirtualMachine and its VirtualMachineInstance
 	Conditions []VirtualMachineCondition `json:"conditions,omitempty" optional:"true"`
@@ -1648,6 +1660,12 @@ const (
 	// VirtualMachinePaused is added in a virtual machine when its vmi
 	// signals with its own condition that it is paused.
 	VirtualMachinePaused VirtualMachineConditionType = "Paused"
+
+	// VirtualMachineInitialized means the virtual machine object has been seen by the VM controller
+	VirtualMachineInitialized VirtualMachineConditionType = "Initialized"
+
+	// VirtualMachineRestartRequired is added when changes made to the VM can't be live-propagated to the VMI
+	VirtualMachineRestartRequired VirtualMachineConditionType = "RestartRequired"
 )
 
 type HostDiskType string
@@ -2209,13 +2227,20 @@ type VirtualMachineInstanceFileSystemList struct {
 	Items           []VirtualMachineInstanceFileSystem `json:"items"`
 }
 
+// VirtualMachineInstanceFileSystemDisk represents the guest os FS disks
+type VirtualMachineInstanceFileSystemDisk struct {
+	Serial  string `json:"serial,omitempty"`
+	BusType string `json:"busType"`
+}
+
 // VirtualMachineInstanceFileSystem represents guest os disk
 type VirtualMachineInstanceFileSystem struct {
-	DiskName       string `json:"diskName"`
-	MountPoint     string `json:"mountPoint"`
-	FileSystemType string `json:"fileSystemType"`
-	UsedBytes      int    `json:"usedBytes"`
-	TotalBytes     int    `json:"totalBytes"`
+	DiskName       string                                 `json:"diskName"`
+	MountPoint     string                                 `json:"mountPoint"`
+	FileSystemType string                                 `json:"fileSystemType"`
+	UsedBytes      int                                    `json:"usedBytes"`
+	TotalBytes     int                                    `json:"totalBytes"`
+	Disk           []VirtualMachineInstanceFileSystemDisk `json:"disk,omitempty"`
 }
 
 // FreezeUnfreezeTimeout represent the time unfreeze will be triggered if guest was not unfrozen by unfreeze command
@@ -2398,7 +2423,21 @@ type KubeVirtConfiguration struct {
 	AutoCPULimitNamespaceLabelSelector *metav1.LabelSelector `json:"autoCPULimitNamespaceLabelSelector,omitempty"`
 	// LiveUpdateConfiguration holds defaults for live update features
 	LiveUpdateConfiguration *LiveUpdateConfiguration `json:"liveUpdateConfiguration,omitempty"`
+
+	// VMRolloutStrategy defines how changes to a VM object propagate to its VMI
+	// +nullable
+	// +kubebuilder:validation:Enum=Stage;LiveUpdate
+	VMRolloutStrategy *VMRolloutStrategy `json:"vmRolloutStrategy,omitempty"`
 }
+
+type VMRolloutStrategy string
+
+const (
+	// VMRolloutStrategyStage is the default strategy. It means changes to VM objects will be staged until the next VM reboot
+	VMRolloutStrategyStage VMRolloutStrategy = "Stage"
+	// VMRolloutStrategyLiveUpdate means changes to VM objects will be propagated to their VMI when possible
+	VMRolloutStrategyLiveUpdate VMRolloutStrategy = "LiveUpdate"
+)
 
 type ArchConfiguration struct {
 	Amd64               *ArchSpecificConfiguration `json:"amd64,omitempty"`
@@ -2723,6 +2762,9 @@ type InterfaceBindingPlugin struct {
 	// The standard domain attachment can be used instead or in addition to the sidecarImage.
 	// version: 1alphav1
 	DomainAttachmentType DomainAttachmentType `json:"domainAttachmentType,omitempty"`
+	// Migration means the VM using the plugin can be safely migrated
+	// version: 1alphav1
+	Migration *InterfaceBindingMigration `json:"migration,omitempty"`
 }
 
 type DomainAttachmentType string
@@ -2731,6 +2773,19 @@ const (
 	// Tap domain attachment type is a generic way to bind ethernet connection into guests using tap device
 	// https://libvirt.org/formatdomain.html#generic-ethernet-connection.
 	Tap DomainAttachmentType = "tap"
+)
+
+type InterfaceBindingMigration struct {
+	// Method defines a pre-defined migration methodology
+	// version: 1alphav1
+	Method MigrationMethod `json:"method,omitempty"`
+}
+
+type MigrationMethod string
+
+const (
+	// LinkRefresh method will invoke link down -> link up interface to give a chance to the guest to request new IP address and routes from DHCP
+	LinkRefresh MigrationMethod = "link-refresh"
 )
 
 // GuestAgentPing configures the guest-agent based ping probe
@@ -2850,19 +2905,6 @@ func (p PreferenceMatcher) GetName() string {
 
 func (p PreferenceMatcher) GetRevisionName() string {
 	return p.RevisionName
-}
-
-type LiveUpdateFeatures struct {
-	// LiveUpdateCPU holds hotplug configuration for the CPU resource.
-	// Empty struct indicates that default will be used for maxSockets.
-	// Default is specified on cluster level.
-	// Absence of the struct means opt-out from CPU hotplug functionality.
-	CPU *LiveUpdateCPU `json:"cpu,omitempty" optional:"true"`
-	// Affinity allows live updating the virtual machines node affinity
-	Affinity *LiveUpdateAffinity `json:"affinity,omitempty" optional:"true"`
-	// MemoryLiveUpdateConfiguration defines the live update memory features for the VirtualMachine
-	// +optional
-	Memory *LiveUpdateMemory `json:"memory,omitempty"`
 }
 
 type LiveUpdateAffinity struct{}
