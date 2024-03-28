@@ -285,6 +285,7 @@ func run(ctx context.Context, opts Options) error {
 				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
 			},
 		},
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
 	go func() {
