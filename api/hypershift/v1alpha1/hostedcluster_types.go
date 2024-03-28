@@ -811,6 +811,13 @@ type KubevirtStorageDriverSpec struct {
 	Manual *KubevirtManualStorageDriverConfig `json:"manual,omitempty"`
 }
 
+type KubeVirtMappingOption string
+
+const (
+	// Storage Grouping is used to associated storage classes and volume snapshot classes as working together. This is usually storage classes and volumesnapshot classes using the same driver/provisioner string.
+	StorageGrouping KubeVirtMappingOption = "Group"
+)
+
 type KubevirtManualStorageDriverConfig struct {
 	// StorageClassMapping maps StorageClasses on the infra cluster hosting
 	// the KubeVirt VMs to StorageClasses that are made available within the
@@ -824,15 +831,34 @@ type KubevirtManualStorageDriverConfig struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
 	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
+
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassMapping is immutable"
+	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMapping `json:"volumeSnapshotClassMapping,omitempty"`
 }
 
 type KubevirtStorageClassMapping struct {
+	// Options contains options that are related to the storage class mapping such as which group it belongs to.
+	Options map[KubeVirtMappingOption]string `json:"options,omitempty"`
 	// InfraStorageClassName is the name of the infra cluster storage class that
-	// will be exposed into the guest.
+	// will be exposed to the guest.
 	InfraStorageClassName string `json:"infraStorageClassName"`
 	// GuestStorageClassName is the name that the corresponding storageclass will
 	// be called within the guest cluster
 	GuestStorageClassName string `json:"guestStorageClassName"`
+}
+
+type KubevirtVolumeSnapshotClassMapping struct {
+	// Options contains options that are related to the volumesnapshot class mapping such as which group it belongs to.
+	Options map[KubeVirtMappingOption]string `json:"options,omitempty"`
+	// InfraStorageClassName is the name of the infra cluster volume snapshot class that
+	// will be exposed to the guest.
+	InfraVolumeSnapshotClassName string `json:"infraVolumeSnapshotClassName"`
+	// GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+	// be called within the guest cluster
+	GuestVolumeSnapshotClassName string `json:"guestVolumeSnapshotClassName"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.

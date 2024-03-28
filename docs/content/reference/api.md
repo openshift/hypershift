@@ -5080,6 +5080,21 @@ AzureKMSSpec
 </tr>
 </tbody>
 </table>
+###KubeVirtMappingOption { #hypershift.openshift.io/v1beta1.KubeVirtMappingOption }
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Group&#34;</p></td>
+<td><p>Storage Grouping is used to associated storage classes and volume snapshot classes as working together. This is usually storage classes and volumesnapshot classes using the same driver/provisioner string.</p>
+</td>
+</tr></tbody>
+</table>
 ###KubeVirtNodePoolStatus { #hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus }
 <p>
 (<em>Appears on:</em>
@@ -5305,6 +5320,19 @@ the KubeVirt VMs to StorageClasses that are made available within the
 Guest Cluster.</p>
 <p>NOTE: It is possible that not all capablities of an infra cluster&rsquo;s
 storageclass will be present for the corresponding guest clusters storageclass.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>volumeSnapshotClassMapping</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtVolumeSnapshotClassMapping">
+[]KubevirtVolumeSnapshotClassMapping
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
 </td>
 </tr>
 </tbody>
@@ -5735,6 +5763,17 @@ KubevirtCachingStrategy
 <tbody>
 <tr>
 <td>
+<code>options</code></br>
+<em>
+map[github.com/openshift/hypershift/api/hypershift/v1beta1.KubeVirtMappingOption]string
+</em>
+</td>
+<td>
+<p>Options contains options that are related to the storage class mapping such as which group it belongs to.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infraStorageClassName</code></br>
 <em>
 string
@@ -5742,7 +5781,7 @@ string
 </td>
 <td>
 <p>InfraStorageClassName is the name of the infra cluster storage class that
-will be exposed into the guest.</p>
+will be exposed to the guest.</p>
 </td>
 </tr>
 <tr>
@@ -5877,6 +5916,58 @@ KubevirtPersistentVolume
 <p>Persistent volume type means the VM&rsquo;s storage is backed by a PVC
 VMs that use persistent volumes can survive disruption events like restart and eviction
 This is the default type used when no storage type is defined.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtVolumeSnapshotClassMapping { #hypershift.openshift.io/v1beta1.KubevirtVolumeSnapshotClassMapping }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig">KubevirtManualStorageDriverConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>options</code></br>
+<em>
+map[github.com/openshift/hypershift/api/hypershift/v1beta1.KubeVirtMappingOption]string
+</em>
+</td>
+<td>
+<p>Options contains options that are related to the volumesnapshot class mapping such as which group it belongs to.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraVolumeSnapshotClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InfraStorageClassName is the name of the infra cluster volume snapshot class that
+will be exposed to the guest.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVolumeSnapshotClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+be called within the guest cluster</p>
 </td>
 </tr>
 </tbody>

@@ -60,7 +60,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraKubeConfigFile, "infra-kubeconfig-file", opts.KubevirtPlatform.InfraKubeConfigFile, "Path to a kubeconfig file of an external infra cluster to be used to create the guest clusters nodes onto")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraNamespace, "infra-namespace", opts.KubevirtPlatform.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.CacheStrategyType, "root-volume-cache-strategy", opts.KubevirtPlatform.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
-	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI napping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb")
+	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI mapping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
+	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings, "infra-volumesnapshot-class-mapping", opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings, "KubeVirt CSI mapping of an infra VolumeSnapshotClass to a guest cluster VolumeSnapshotCluster. Mapping is structured as <infra volume snapshot class>/<guest volume snapshot class>. Example, mapping the infra volume snapshot class ocs-storagecluster-rbd-snap to a guest volume snapshot class called rdb-snap. --infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.NetworkInterfaceMultiQueue, "network-multiqueue", opts.KubevirtPlatform.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.QoSClass, "qos-class", opts.KubevirtPlatform.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
 	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.AdditionalNetworks, "additional-network", opts.KubevirtPlatform.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
@@ -116,6 +117,13 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		split := strings.Split(mapping, "/")
 		if len(split) != 2 {
 			return fmt.Errorf("invalid infra storageclass mapping [%s]", mapping)
+		}
+	}
+
+	for _, mapping := range opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings {
+		split := strings.Split(mapping, "/")
+		if len(split) != 2 {
+			return fmt.Errorf("invalid infra volume snapshot class mapping [%s]", mapping)
 		}
 	}
 
@@ -192,24 +200,25 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
-		ServicePublishingStrategy:  opts.KubevirtPlatform.ServicePublishingStrategy,
-		APIServerAddress:           opts.KubevirtPlatform.APIServerAddress,
-		Memory:                     opts.KubevirtPlatform.Memory,
-		Cores:                      opts.KubevirtPlatform.Cores,
-		Image:                      opts.KubevirtPlatform.ContainerDiskImage,
-		RootVolumeSize:             opts.KubevirtPlatform.RootVolumeSize,
-		RootVolumeStorageClass:     opts.KubevirtPlatform.RootVolumeStorageClass,
-		RootVolumeAccessModes:      opts.KubevirtPlatform.RootVolumeAccessModes,
-		RootVolumeVolumeMode:       opts.KubevirtPlatform.RootVolumeVolumeMode,
-		InfraKubeConfig:            infraKubeConfigContents,
-		InfraNamespace:             opts.KubevirtPlatform.InfraNamespace,
-		CacheStrategyType:          opts.KubevirtPlatform.CacheStrategyType,
-		InfraStorageClassMappings:  opts.KubevirtPlatform.InfraStorageClassMappings,
-		NetworkInterfaceMultiQueue: multiQueue,
-		QoSClass:                   qosClass,
-		AdditionalNetworks:         additionalNetworks,
-		AttachDefaultNetwork:       opts.KubevirtPlatform.AttachDefaultNetwork,
-		VmNodeSelector:             opts.KubevirtPlatform.VmNodeSelector,
+		ServicePublishingStrategy:        opts.KubevirtPlatform.ServicePublishingStrategy,
+		APIServerAddress:                 opts.KubevirtPlatform.APIServerAddress,
+		Memory:                           opts.KubevirtPlatform.Memory,
+		Cores:                            opts.KubevirtPlatform.Cores,
+		Image:                            opts.KubevirtPlatform.ContainerDiskImage,
+		RootVolumeSize:                   opts.KubevirtPlatform.RootVolumeSize,
+		RootVolumeStorageClass:           opts.KubevirtPlatform.RootVolumeStorageClass,
+		RootVolumeAccessModes:            opts.KubevirtPlatform.RootVolumeAccessModes,
+		RootVolumeVolumeMode:             opts.KubevirtPlatform.RootVolumeVolumeMode,
+		InfraKubeConfig:                  infraKubeConfigContents,
+		InfraNamespace:                   opts.KubevirtPlatform.InfraNamespace,
+		CacheStrategyType:                opts.KubevirtPlatform.CacheStrategyType,
+		InfraStorageClassMappings:        opts.KubevirtPlatform.InfraStorageClassMappings,
+		InfraVolumeSnapshotClassMappings: opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings,
+		NetworkInterfaceMultiQueue:       multiQueue,
+		QoSClass:                         qosClass,
+		AdditionalNetworks:               additionalNetworks,
+		AttachDefaultNetwork:             opts.KubevirtPlatform.AttachDefaultNetwork,
+		VmNodeSelector:                   opts.KubevirtPlatform.VmNodeSelector,
 	}
 
 	if opts.BaseDomain != "" {

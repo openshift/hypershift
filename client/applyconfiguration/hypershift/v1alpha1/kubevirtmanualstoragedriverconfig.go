@@ -20,7 +20,8 @@ package v1alpha1
 // KubevirtManualStorageDriverConfigApplyConfiguration represents an declarative configuration of the KubevirtManualStorageDriverConfig type for use
 // with apply.
 type KubevirtManualStorageDriverConfigApplyConfiguration struct {
-	StorageClassMapping []KubevirtStorageClassMappingApplyConfiguration `json:"storageClassMapping,omitempty"`
+	StorageClassMapping        []KubevirtStorageClassMappingApplyConfiguration        `json:"storageClassMapping,omitempty"`
+	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMappingApplyConfiguration `json:"volumeSnapshotClassMapping,omitempty"`
 }
 
 // KubevirtManualStorageDriverConfigApplyConfiguration constructs an declarative configuration of the KubevirtManualStorageDriverConfig type for use with
@@ -38,6 +39,19 @@ func (b *KubevirtManualStorageDriverConfigApplyConfiguration) WithStorageClassMa
 			panic("nil value passed to WithStorageClassMapping")
 		}
 		b.StorageClassMapping = append(b.StorageClassMapping, *values[i])
+	}
+	return b
+}
+
+// WithVolumeSnapshotClassMapping adds the given value to the VolumeSnapshotClassMapping field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the VolumeSnapshotClassMapping field.
+func (b *KubevirtManualStorageDriverConfigApplyConfiguration) WithVolumeSnapshotClassMapping(values ...*KubevirtVolumeSnapshotClassMappingApplyConfiguration) *KubevirtManualStorageDriverConfigApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithVolumeSnapshotClassMapping")
+		}
+		b.VolumeSnapshotClassMapping = append(b.VolumeSnapshotClassMapping, *values[i])
 	}
 	return b
 }
