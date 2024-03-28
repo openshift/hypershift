@@ -608,6 +608,13 @@ func (r *reconciler) reconcileCRDs(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("failed to reconcile request count crd: %w", err))
 	}
 
+	etcdOperator := manifests.EtcdOperatorCRD()
+	if _, err := r.CreateOrUpdate(ctx, r.client, etcdOperator, func() error {
+		return crd.ReconcileEtcdOperatorCRD(etcdOperator)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile etcd operator crd: %w", err))
+	}
+
 	return errors.NewAggregate(errs)
 }
 
