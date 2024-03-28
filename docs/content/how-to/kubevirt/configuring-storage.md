@@ -1,3 +1,57 @@
+# Storage Overview
+
+Configuring storage for KubeVirt Hosted Control Planes falls within three
+categories, each of which have differing requirements.
+
+**ETCD Storage**
+
+ETCD requires usage of high performance persistent storage on the management
+cluster hosting the ETCD pods. Due to the performance requirements, usage of a
+local storage csi driver such as [LVM Storage](https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html) is prefered.
+When a guest cluster is created in HighAvailability mode, ETCD is replicated
+in pods across three separate management cluster nodes. This replication
+ensures data resiliency even when a local storage csi driver is in use.
+
+More information about ETCD storage configuration can be found in the
+[ETCD Storage Configuration](#etcd storage configuration) section.
+
+**Node Root Volume Storage**
+
+In a KubeVirt Hosted Control Plane, the worker nodes are hosted in KubeVirt VMs.
+It is recommended to use a csi driver capable of providing ReadWriteMany
+access mode and Block volume mode for the VM root volume storage. This allows
+the KubeVirt VMs to live migrate and remain available even when the underlying
+infra cluster nodes are disrupted. Ceph is an example of a csi driver that
+would meet these requirements.
+
+More information about configuring root volume storage can be found in the
+[KubeVirt VM Root Volume Configuration](#kubevirt vm root volume configuration) section.
+
+**KubeVirt CSI Storage**
+
+The KubeVirt CSI driver allows storage classes present on the infra cluster (the cluster the KubeVirt VMs run
+on)
+to be mapped directly to storage classes within the KubeVirt guest cluster.
+This lets the guest cluster utilize the same storage that is available on the
+infra cluster.
+
+It is recommended to use an underlying infra storage class capable of
+ReadWriteMany access mode and Block volume mode for KubeVirt CSI. This allows
+KubeVirt CSI to pass storage to the VMs in a way that still allows for the VMs
+to live migrate and be portable across infra nodes.
+
+Below is a chart that outlines the current features of KubeVirt CSI as they map
+to the infra cluster's storage class.
+
+| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           | 
+|-----------------------|------------------------------------|-----------------------------------------------------------------------------|
+| RWX Block             | RWO (Block/Filesystem) RWX (Block) | Supported                 |                                                 |
+| RWO Block             | RWO (Block/Filesystem)             | Not Supported             |                                                 |
+| RWO Filesystem        | RWO (Block/Filesystem)             | Not Supported             | suboptimal guest block volume mode performance. |
+
+More information about configuring KubeVirt CSI can be found in the
+[KubeVirt CSI StorageClass Mapping](#kubevirt csi storageclass mapping) section.
+
 # Configuring Storage
 
 By default, if no advanced configuration is provided, the default storageclass
