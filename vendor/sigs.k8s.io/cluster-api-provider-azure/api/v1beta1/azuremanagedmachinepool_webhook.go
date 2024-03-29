@@ -477,7 +477,7 @@ func validateEnableNodePublicIP(enableNodePublicIP *bool, nodePublicIPPrefixID *
 
 func validateMPSubnetName(subnetName *string, fldPath *field.Path) error {
 	if subnetName != nil {
-		subnetRegex := "^[a-zA-Z0-9][a-zA-Z0-9-]{0,78}[a-zA-Z0-9]$"
+		subnetRegex := "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,78}[a-zA-Z0-9]$"
 		regex := regexp.MustCompile(subnetRegex)
 		if success := regex.MatchString(ptr.Deref(subnetName, "")); !success {
 			return field.Invalid(fldPath, subnetName,
