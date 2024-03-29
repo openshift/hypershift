@@ -43,6 +43,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.Arch, "arch", opts.Arch, "The processor architecture for the NodePool (e.g. arm64, amd64)")
 
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
+	cmd.PersistentFlags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine auto-repair with machine health checks.")
 
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 	cmd.AddCommand(aws.NewCreateCommand(opts))
