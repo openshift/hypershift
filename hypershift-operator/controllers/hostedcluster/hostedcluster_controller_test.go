@@ -1037,6 +1037,16 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				},
 			},
 		},
+		&configv1.Infrastructure{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "cluster",
+			},
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{
+					Type: configv1.AWSPlatformType,
+				},
+			},
+		},
 	}
 	for _, cluster := range hostedClusters {
 		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
@@ -3537,6 +3547,17 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			testCase.objects = append(testCase.objects, testCase.hc)
+			infra := &configv1.Infrastructure{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.KubevirtPlatformType,
+					},
+				},
+			}
+			testCase.objects = append(testCase.objects, infra)
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(testCase.objects...).

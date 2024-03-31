@@ -1807,6 +1807,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
 		hyperv1.KubeAPIServerVerbosityLevelAnnotation,
+		hyperv1.ManagementPlatformAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -4946,6 +4947,24 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 					Name: etcdEncSec.Name,
 				},
 			},
+		}
+	}
+
+	// Reconcile management infrastructure annotation
+	if _, exists := hc.Annotations[hyperv1.ManagementPlatformAnnotation]; !exists {
+		if hc.Annotations == nil {
+			hc.Annotations = map[string]string{}
+		}
+		mgmtInfraKey := client.ObjectKey{Name: "cluster"}
+		mgmtInfra := &configv1.Infrastructure{}
+
+		if err := r.Get(ctx, mgmtInfraKey, mgmtInfra); err != nil {
+			return fmt.Errorf("failed to get infrastructure.config.openshift.io status: %w", err)
+		}
+		mgmtPlatformType := mgmtInfra.Status.PlatformStatus.Type
+		hc.Annotations[hyperv1.ManagementPlatformAnnotation] = string(mgmtPlatformType)
+		if err := r.Client.Update(ctx, hc); err != nil {
+			return fmt.Errorf("failed to update hostedcluster %s annotation: %w", hc.Name, err)
 		}
 	}
 
