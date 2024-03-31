@@ -248,7 +248,7 @@ const (
 	// See https://github.com/openshift/enhancements/blob/master/enhancements/authentication/pod-security-admission.md
 	PodSecurityAdmissionLabelOverrideAnnotation = "hypershift.openshift.io/pod-security-admission-label-override"
 
-	//DisableMonitoringServices introduces an option to disable monitor services IBM Cloud do not use.
+	// DisableMonitoringServices introduces an option to disable monitor services IBM Cloud do not use.
 	DisableMonitoringServices = "hypershift.openshift.io/disable-monitoring-services"
 
 	// JSONPatchAnnotation allow modifying the kubevirt VM template using jsonpatch
@@ -275,7 +275,7 @@ const (
 	// AroHCP represents the ARO HCP managed service offering
 	AroHCP = "ARO-HCP"
 
-	//RosaHCP represents the ROSA HCP managed service offering
+	// RosaHCP represents the ROSA HCP managed service offering
 	RosaHCP = "ROSA-HCP"
 
 	// HostedClusterSizeLabel is a label on HostedClusters indicating a size based on the number of nodes.
@@ -283,6 +283,9 @@ const (
 
 	// NodeSizeLabel is a label on nodes used to match cluster size to a node size.
 	NodeSizeLabel = "hypershift.openshift.io/cluster-size"
+
+	// ManagementPlatformAnnotation specifies the infrastructure platform of the underlying management cluster
+	ManagementPlatformAnnotation = "hypershift.openshift.io/management-platform"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

@@ -59,6 +59,14 @@ func (k KubeVirtNodeSelectorTest) Setup(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		if len(nodes.Items) == 0 {
+			labelSelector := labels.SelectorFromValidatedSet(labels.Set{"cpu-vendor.node.kubevirt.io/AMD": "true"})
+			err = infraClient.GetInfraClient().List(k.ctx, nodes, &crclient.ListOptions{LabelSelector: labelSelector})
+			if err != nil {
+				return err
+			}
+		}
+		g.Expect(len(nodes.Items)).ToNot(Equal(0))
 		node := &nodes.Items[0]
 		nodeLabels := node.Labels
 		for key, value := range k.nodeSelector {

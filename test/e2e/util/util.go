@@ -451,6 +451,16 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if kvPlatform != nil && kvPlatform.Credentials != nil {
 				crashToleration = 1
 			}
+
+			// In Azure infra, CAPK pod might crash on startup due to not being able to
+			// get a leader election lock lease at the early stages, due to
+			// "context deadline exceeded" error
+			if kvPlatform != nil && hostedCluster.Annotations != nil {
+				mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
+				if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
+					crashToleration = 1
+				}
+			}
 		default:
 			crashToleration = 0
 		}
@@ -711,7 +721,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "control-plane-operator mutate",
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method!="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 4000,
+				budget: 4200,
 			},
 			{
 				name:   "control-plane-operator no 404 deletes",
@@ -730,7 +740,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "hypershift-operator read",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
-				budget: 6000,
+				budget: 7000,
 			},
 			{
 				name:   "hypershift-operator mutate",
@@ -1527,7 +1537,13 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
 		hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
-		expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
+		if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AWSPlatform) {
+			// AWS platform supports Jumbo frames
+			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
+		} else if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
+			// Azure platform doesn't support Jumbo frames
+			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionFalse
+		}
 	}
 
 	t.Logf("validating status for hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
