@@ -41581,6 +41581,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - networking
               - platform
@@ -45895,6 +45900,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - networking
               - platform
@@ -50373,6 +50383,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - dns
               - etcd
@@ -54660,6 +54675,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - dns
               - etcd

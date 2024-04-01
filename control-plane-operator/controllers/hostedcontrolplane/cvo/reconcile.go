@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -113,7 +114,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -140,7 +141,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneImage, image, deployment.Namespace, enableCVOManagementClusterMetricsAccess)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneImage, image, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
@@ -328,7 +329,7 @@ oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.y
 	return fmt.Sprintf(scriptTemplate, clusterID, payloadDir)
 }
 
-func buildCVOContainerMain(image, releaseImage, namespace string, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
+func buildCVOContainerMain(image, releaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(cvoContainerMain().Name, vol), file)
 	}
@@ -347,6 +348,9 @@ func buildCVOContainerMain(image, releaseImage, namespace string, enableCVOManag
 			fmt.Sprintf("--serving-key-file=%s", cpath(cvoVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
 			"--hypershift=true",
 			"--v=4",
+		}
+		if updateService != "" {
+			c.Args = append(c.Args, "--update-service", string(updateService))
 		}
 		if enableCVOManagementClusterMetricsAccess {
 			c.Args = append(c.Args, "--use-dns-for-services=true")

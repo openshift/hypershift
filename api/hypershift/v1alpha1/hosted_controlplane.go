@@ -4,6 +4,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 func init() {
@@ -37,6 +39,12 @@ type HostedControlPlaneSpec struct {
 	// control plane components running on the management cluster.
 	// If not defined, ReleaseImage is used
 	ControlPlaneReleaseImage *string `json:"controlPlaneReleaseImage,omitempty"`
+
+	// updateService may be used to specify the preferred upstream update service.
+	// By default it will use the appropriate update service for the cluster and region.
+	//
+	// +optional
+	UpdateService configv1.URL `json:"updateService,omitempty"`
 
 	// channel is an identifier for explicitly requesting that a non-default
 	// set of updates be applied to this cluster. The default channel will be

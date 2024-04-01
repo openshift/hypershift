@@ -1814,6 +1814,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	hcp.Spec.UpdateService = hcluster.Spec.UpdateService
 	hcp.Spec.Channel = hcluster.Spec.Channel
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 	if hcluster.Spec.ControlPlaneRelease != nil {

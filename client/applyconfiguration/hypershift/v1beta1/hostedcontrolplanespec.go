@@ -18,8 +18,9 @@ limitations under the License.
 package v1beta1
 
 import (
+	v1 "github.com/openshift/api/config/v1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // HostedControlPlaneSpecApplyConfiguration represents an declarative configuration of the HostedControlPlaneSpec type for use
@@ -27,26 +28,27 @@ import (
 type HostedControlPlaneSpecApplyConfiguration struct {
 	ReleaseImage                     *string                                              `json:"releaseImage,omitempty"`
 	ControlPlaneReleaseImage         *string                                              `json:"controlPlaneReleaseImage,omitempty"`
+	UpdateService                    *v1.URL                                              `json:"updateService,omitempty"`
 	Channel                          *string                                              `json:"channel,omitempty"`
-	PullSecret                       *v1.LocalObjectReference                             `json:"pullSecret,omitempty"`
+	PullSecret                       *corev1.LocalObjectReference                         `json:"pullSecret,omitempty"`
 	IssuerURL                        *string                                              `json:"issuerURL,omitempty"`
 	Networking                       *ClusterNetworkingApplyConfiguration                 `json:"networking,omitempty"`
-	SSHKey                           *v1.LocalObjectReference                             `json:"sshKey,omitempty"`
+	SSHKey                           *corev1.LocalObjectReference                         `json:"sshKey,omitempty"`
 	ClusterID                        *string                                              `json:"clusterID,omitempty"`
 	InfraID                          *string                                              `json:"infraID,omitempty"`
 	Platform                         *PlatformSpecApplyConfiguration                      `json:"platform,omitempty"`
 	DNS                              *DNSSpecApplyConfiguration                           `json:"dns,omitempty"`
-	ServiceAccountSigningKey         *v1.LocalObjectReference                             `json:"serviceAccountSigningKey,omitempty"`
+	ServiceAccountSigningKey         *corev1.LocalObjectReference                         `json:"serviceAccountSigningKey,omitempty"`
 	ControllerAvailabilityPolicy     *hypershiftv1beta1.AvailabilityPolicy                `json:"controllerAvailabilityPolicy,omitempty"`
 	InfrastructureAvailabilityPolicy *hypershiftv1beta1.AvailabilityPolicy                `json:"infrastructureAvailabilityPolicy,omitempty"`
 	FIPS                             *bool                                                `json:"fips,omitempty"`
 	KubeConfig                       *KubeconfigSecretRefApplyConfiguration               `json:"kubeconfig,omitempty"`
 	Services                         []ServicePublishingStrategyMappingApplyConfiguration `json:"services,omitempty"`
-	AuditWebhook                     *v1.LocalObjectReference                             `json:"auditWebhook,omitempty"`
+	AuditWebhook                     *corev1.LocalObjectReference                         `json:"auditWebhook,omitempty"`
 	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
 	Configuration                    *ClusterConfigurationApplyConfiguration              `json:"configuration,omitempty"`
 	ImageContentSources              []ImageContentSourceApplyConfiguration               `json:"imageContentSources,omitempty"`
-	AdditionalTrustBundle            *v1.LocalObjectReference                             `json:"additionalTrustBundle,omitempty"`
+	AdditionalTrustBundle            *corev1.LocalObjectReference                         `json:"additionalTrustBundle,omitempty"`
 	SecretEncryption                 *SecretEncryptionSpecApplyConfiguration              `json:"secretEncryption,omitempty"`
 	PausedUntil                      *string                                              `json:"pausedUntil,omitempty"`
 	OLMCatalogPlacement              *hypershiftv1beta1.OLMCatalogPlacement               `json:"olmCatalogPlacement,omitempty"`
@@ -76,6 +78,14 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithControlPlaneReleaseImage(
 	return b
 }
 
+// WithUpdateService sets the UpdateService field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the UpdateService field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithUpdateService(value v1.URL) *HostedControlPlaneSpecApplyConfiguration {
+	b.UpdateService = &value
+	return b
+}
+
 // WithChannel sets the Channel field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Channel field is set to the value of the last call.
@@ -87,7 +97,7 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithChannel(value string) *Ho
 // WithPullSecret sets the PullSecret field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the PullSecret field is set to the value of the last call.
-func (b *HostedControlPlaneSpecApplyConfiguration) WithPullSecret(value v1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
+func (b *HostedControlPlaneSpecApplyConfiguration) WithPullSecret(value corev1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
 	b.PullSecret = &value
 	return b
 }
@@ -111,7 +121,7 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithNetworking(value *Cluster
 // WithSSHKey sets the SSHKey field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the SSHKey field is set to the value of the last call.
-func (b *HostedControlPlaneSpecApplyConfiguration) WithSSHKey(value v1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
+func (b *HostedControlPlaneSpecApplyConfiguration) WithSSHKey(value corev1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
 	b.SSHKey = &value
 	return b
 }
@@ -151,7 +161,7 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithDNS(value *DNSSpecApplyCo
 // WithServiceAccountSigningKey sets the ServiceAccountSigningKey field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ServiceAccountSigningKey field is set to the value of the last call.
-func (b *HostedControlPlaneSpecApplyConfiguration) WithServiceAccountSigningKey(value v1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
+func (b *HostedControlPlaneSpecApplyConfiguration) WithServiceAccountSigningKey(value corev1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
 	b.ServiceAccountSigningKey = &value
 	return b
 }
@@ -204,7 +214,7 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithServices(values ...*Servi
 // WithAuditWebhook sets the AuditWebhook field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the AuditWebhook field is set to the value of the last call.
-func (b *HostedControlPlaneSpecApplyConfiguration) WithAuditWebhook(value v1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
+func (b *HostedControlPlaneSpecApplyConfiguration) WithAuditWebhook(value corev1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
 	b.AuditWebhook = &value
 	return b
 }
@@ -241,7 +251,7 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithImageContentSources(value
 // WithAdditionalTrustBundle sets the AdditionalTrustBundle field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the AdditionalTrustBundle field is set to the value of the last call.
-func (b *HostedControlPlaneSpecApplyConfiguration) WithAdditionalTrustBundle(value v1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
+func (b *HostedControlPlaneSpecApplyConfiguration) WithAdditionalTrustBundle(value corev1.LocalObjectReference) *HostedControlPlaneSpecApplyConfiguration {
 	b.AdditionalTrustBundle = &value
 	return b
 }
