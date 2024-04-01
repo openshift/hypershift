@@ -48,9 +48,10 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.Flags().BoolVar(&opts.Template, "template", false, "Render as Openshift template instead of plain manifests")
+	cmd.Flags().BoolVar(&opts.Template, "template", false, "Render resources and crds as an OpenShift template instead of plain manifests")
 	cmd.Flags().StringVar(&opts.Format, "format", RenderFormatYaml, fmt.Sprintf("Output format for the manifests, supports %s and %s", RenderFormatYaml, RenderFormatJson))
 	cmd.Flags().StringVar(&opts.OutputTypes, "outputs", string(OutputAll), fmt.Sprintf("Which manifests to output, one of %s, %s, or %s. Output CRDs separately to allow applying them first and waiting for them to be established.", OutputAll, OutputCRDs, OutputResources))
+	cmd.MarkFlagsMutuallyExclusive("template", "outputs")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
