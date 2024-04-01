@@ -22,7 +22,7 @@ import (
 
 const ControllerName = "hcpstatus"
 
-func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
+func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
 	r := &hcpStatusReconciler{
 		mgtClusterClient:    opts.CPCluster.GetClient(),
 		hostedClusterClient: opts.Manager.GetClient(),
