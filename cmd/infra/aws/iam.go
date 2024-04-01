@@ -125,6 +125,7 @@ const (
         "ec2:DetachVolume",
         "ec2:RevokeSecurityGroupIngress",
         "ec2:DescribeVpcs",
+		"ec2:DescribeDhcpOptions",
         "elasticloadbalancing:AddTags",
         "elasticloadbalancing:AttachLoadBalancerToSubnets",
         "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
