@@ -571,6 +571,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	case hyperv1.AWSPlatform:
 		for _, zone := range o.AWS.Zones {
 			nodePool := defaultNodePool(fmt.Sprintf("%s-%s", cluster.Name, zone.Name))
+			if nodePool.Spec.Management.UpgradeType == "" {
+				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+			}
 			nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 				InstanceType:    o.AWS.InstanceType,
 				InstanceProfile: o.AWS.InstanceProfile,
@@ -593,6 +596,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		}
 	case hyperv1.KubevirtPlatform:
 		nodePool := defaultNodePool(cluster.Name)
+		if nodePool.Spec.Management.UpgradeType == "" {
+			nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+		}
 		nodePool.Spec.Platform.Kubevirt = ExampleKubeVirtTemplate(o.Kubevirt)
 		nodePools = append(nodePools, nodePool)
 		val, exists := o.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
@@ -603,11 +609,18 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation] = val
 		}
 	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
-		nodePools = append(nodePools, defaultNodePool(cluster.Name))
+		nodePool := defaultNodePool(cluster.Name)
+		if nodePool.Spec.Management.UpgradeType == "" {
+			nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+		}
+		nodePools = append(nodePools, nodePool)
 	case hyperv1.AzurePlatform:
 		if len(o.Azure.AvailabilityZones) > 0 {
 			for _, availabilityZone := range o.Azure.AvailabilityZones {
 				nodePool := defaultNodePool(fmt.Sprintf("%s-%s", cluster.Name, availabilityZone))
+				if nodePool.Spec.Management.UpgradeType == "" {
+					nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+				}
 				nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 					VMSize:           o.Azure.InstanceType,
 					ImageID:          o.Azure.BootImageID,
@@ -619,6 +632,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 		} else {
 			nodePool := defaultNodePool(cluster.Name)
+			if nodePool.Spec.Management.UpgradeType == "" {
+				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 				VMSize:     o.Azure.InstanceType,
 				ImageID:    o.Azure.BootImageID,
@@ -628,6 +644,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		}
 	case hyperv1.PowerVSPlatform:
 		nodePool := defaultNodePool(cluster.Name)
+		if nodePool.Spec.Management.UpgradeType == "" {
+			nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+		}
 		nodePool.Spec.Platform.PowerVS = &hyperv1.PowerVSNodePoolPlatform{
 			SystemType:    o.PowerVS.SysType,
 			ProcessorType: o.PowerVS.ProcType,

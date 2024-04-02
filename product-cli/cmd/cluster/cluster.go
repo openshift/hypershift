@@ -27,7 +27,7 @@ func NewCreateCommands() *cobra.Command {
 		Namespace:                      "clusters",
 		NodeDrainTimeout:               0,
 		NodeSelector:                   nil,
-		NodeUpgradeType:                v1beta1.UpgradeTypeReplace,
+		NodeUpgradeType:                "",
 		PullSecretFile:                 "",
 		ReleaseImage:                   "",
 		Render:                         false,
