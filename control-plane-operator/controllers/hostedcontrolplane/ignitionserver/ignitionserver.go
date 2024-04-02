@@ -748,11 +748,11 @@ defaults
   timeout server 30s
 
 frontend ignition-server
-  bind :::8443 v4v6 ssl crt /tmp/tls.pem
+  bind :::8443 v4v6 ssl crt /tmp/tls.pem alpn http/1.1
   default_backend ignition_servers
 
 backend ignition_servers
-  server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt
+  server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt alpn http/1.1
 EOF
 haproxy -f /tmp/haproxy.conf
 `
