@@ -32,3 +32,29 @@ hcp create cluster kubevirt \
 In this example, the KubeVirt VMs will have interfaces attached to the networks
 for the NetworkAttachmentDefinitions network1 and network2 which reside in
 namespace my-namespace.
+
+## Using Secondary Network as Default
+
+Users managing a network (DHCP, routing, etc...) can use that network 
+as the default one for the kubevirt hosted clusters, to do so
+disable pod default network and attach an additional one that connects to it 
+with the hcp command line tool arguments `--attach-default-network=false` and 
+`--additional-network`.
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+
+hcp create cluster kubevirt \
+--name $CLUSTER_NAME \
+--node-pool-replicas $WORKER_COUNT \
+--pull-secret $PULL_SECRET \
+--memory $MEM \
+--cores $CPU \
+--attach-default-network false \
+--additional-network name:my-namespace/network1 \
+```
+
