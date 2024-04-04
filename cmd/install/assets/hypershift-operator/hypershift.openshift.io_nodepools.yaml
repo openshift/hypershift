@@ -2037,7 +2037,7 @@ spec:
               tuningConfig:
                 description: |-
                   TuningConfig is a list of references to ConfigMaps containing serialized
-                  Tuned resources to define the tuning configuration to be applied to
+                  Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
                   nodes in the NodePool. The Tuned API is defined here:
 
 
@@ -2048,7 +2048,7 @@ spec:
                   https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2
 
 
-                  Each ConfigMap must have a single key named "tuned" whose value is the
+                  Each ConfigMap must have a single key named "tuning" whose value is the
                   JSON or YAML of a serialized Tuned or PerformanceProfile.
                 items:
                   description: |-
