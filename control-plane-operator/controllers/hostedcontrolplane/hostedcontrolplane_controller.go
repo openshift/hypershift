@@ -4828,15 +4828,28 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 
 func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
-		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.StatusUnknownReason, "Azure KMS is not configured")
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            "Azure KMS is not configured",
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.StatusUnknownReason,
-			fmt.Sprintf("failed to get azure credentials secret: %v", err))
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            fmt.Sprintf("failed to get azure credentials secret: %v", err),
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return
 	}
 
