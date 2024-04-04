@@ -1678,7 +1678,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists, r.CertRotationScale)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists, r.CertRotationScale, releaseImageVersion)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -2046,7 +2046,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool, certRotationScale time.Duration) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool, certRotationScale time.Duration, releaseVersion semver.Version) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2061,9 +2061,14 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	// Reconcile operator role
+	// hostNetwork is required for CPO <= 4.13
+	needsHostNetwork := false
+	if hcluster.Spec.Platform.Type != hyperv1.IBMCloudPlatform && releaseVersion.Major == 4 && releaseVersion.Minor <= 13 {
+		needsHostNetwork = true
+	}
 	controlPlaneOperatorRole := controlplaneoperator.OperatorRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorRole, func() error {
-		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess)
+		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess, needsHostNetwork)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator role: %w", err)
@@ -2688,7 +2693,7 @@ func reconcileControlPlaneOperatorDeployment(
 	return nil
 }
 
-func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool) error {
+func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool, hostNetwork bool) error {
 	role.Rules = []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"hypershift.openshift.io"},
@@ -2848,6 +2853,16 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				Verbs:     []string{"get"},
 			})
 	}
+	if hostNetwork {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups:     []string{"security.openshift.io"},
+				ResourceNames: []string{"hostnetwork"},
+				Resources:     []string{"securitycontextconstraints"},
+				Verbs:         []string{"use"},
+			})
+	}
+
 	return nil
 }
 
