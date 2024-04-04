@@ -66,6 +66,7 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -203,14 +204,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// ignitionserver manifests packages. Since we're receiving watch events across
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
-	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}).
+	bldr := ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping())).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		builder.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())))
+		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(hyperutil.PredicatesForHostedClusterChildResourcesAnnotationScoping(mgr.GetClient())))
 	}
 
 	// Set based on SCC capability
@@ -218,7 +219,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
-	return builder.Complete(r)
+	return bldr.Complete(r)
 }
 
 // managedResources are all the resources that are managed as childresources for a HostedCluster
