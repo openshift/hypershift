@@ -309,6 +309,5 @@ func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, avail
 		}
 	}
 	ownerRef.ApplyTo(pdb)
-	minAvailable := intstr.FromInt(1)
-	pdb.Spec.MinAvailable = &minAvailable
+	util.ReconcilePodDisruptionBudget(pdb, availability)
 }
