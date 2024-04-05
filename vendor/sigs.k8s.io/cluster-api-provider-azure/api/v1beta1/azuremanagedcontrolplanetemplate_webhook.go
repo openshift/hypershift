@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
+	"sigs.k8s.io/cluster-api-provider-azure/util/versions"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -123,6 +124,13 @@ func (mcpw *azureManagedControlPlaneTemplateWebhook) ValidateUpdate(ctx context.
 	}
 
 	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "Template", "Spec", "NetworkDataplane"),
+		old.Spec.Template.Spec.NetworkDataplane,
+		mcp.Spec.Template.Spec.NetworkDataplane); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
+	if err := webhookutils.ValidateImmutable(
 		field.NewPath("Spec", "Template", "Spec", "LoadBalancerSKU"),
 		old.Spec.Template.Spec.LoadBalancerSKU,
 		mcp.Spec.Template.Spec.LoadBalancerSKU); err != nil {
@@ -172,6 +180,13 @@ func (mcpw *azureManagedControlPlaneTemplateWebhook) ValidateUpdate(ctx context.
 		allErrs = append(allErrs, errs...)
 	}
 
+	if errs := validateAKSExtensionsUpdate(old.Spec.Template.Spec.Extensions, mcp.Spec.Template.Spec.Extensions); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+	if errs := mcp.validateK8sVersionUpdate(old); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
 	if len(allErrs) == 0 {
 		return nil, mcp.validateManagedControlPlaneTemplate(mcpw.Client)
 	}
@@ -203,12 +218,35 @@ func (mcp *AzureManagedControlPlaneTemplate) validateManagedControlPlaneTemplate
 
 	allErrs = append(allErrs, validateAutoScalerProfile(mcp.Spec.Template.Spec.AutoScalerProfile, field.NewPath("spec").Child("template").Child("spec").Child("AutoScalerProfile"))...)
 
+	allErrs = append(allErrs, validateAKSExtensions(mcp.Spec.Template.Spec.Extensions, field.NewPath("spec").Child("Extensions"))...)
+
+	allErrs = append(allErrs, mcp.Spec.Template.Spec.AzureManagedControlPlaneClassSpec.validateSecurityProfile()...)
+
+	allErrs = append(allErrs, validateNetworkPolicy(mcp.Spec.Template.Spec.NetworkPolicy, mcp.Spec.Template.Spec.NetworkDataplane, field.NewPath("spec").Child("template").Child("spec").Child("NetworkPolicy"))...)
+
+	allErrs = append(allErrs, validateNetworkDataplane(mcp.Spec.Template.Spec.NetworkDataplane, mcp.Spec.Template.Spec.NetworkPolicy, mcp.Spec.Template.Spec.NetworkPluginMode, field.NewPath("spec").Child("template").Child("spec").Child("NetworkDataplane"))...)
+
+	allErrs = append(allErrs, validateAPIServerAccessProfile(mcp.Spec.Template.Spec.APIServerAccessProfile, field.NewPath("spec").Child("template").Child("spec").Child("APIServerAccessProfile"))...)
+
+	allErrs = append(allErrs, validateAMCPVirtualNetwork(mcp.Spec.Template.Spec.VirtualNetwork, field.NewPath("spec").Child("template").Child("spec").Child("VirtualNetwork"))...)
+
 	return allErrs.ToAggregate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
 func (mcpw *azureManagedControlPlaneTemplateWebhook) ValidateDelete(ctx context.Context, _ runtime.Object) (admission.Warnings, error) {
 	return nil, nil
+}
+
+// validateK8sVersionUpdate validates K8s version.
+func (mcp *AzureManagedControlPlaneTemplate) validateK8sVersionUpdate(old *AzureManagedControlPlaneTemplate) field.ErrorList {
+	var allErrs field.ErrorList
+	if hv := versions.GetHigherK8sVersion(mcp.Spec.Template.Spec.Version, old.Spec.Template.Spec.Version); hv != mcp.Spec.Template.Spec.Version {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "Template", "Spec", "Version"),
+			mcp.Spec.Template.Spec.Version, "field version cannot be downgraded"),
+		)
+	}
+	return allErrs
 }
 
 // validateVirtualNetworkTemplateUpdate validates update to VirtualNetworkTemplate.
@@ -248,6 +286,10 @@ func (mcp *AzureManagedControlPlaneTemplate) validateVirtualNetworkTemplateUpdat
 				field.NewPath("Spec", "Template", "Spec", "VirtualNetwork.Subnet.CIDRBlock"),
 				mcp.Spec.Template.Spec.VirtualNetwork.Subnet.CIDRBlock,
 				"Subnet CIDRBlock is immutable"))
+	}
+
+	if errs := mcp.Spec.Template.Spec.AzureManagedControlPlaneClassSpec.validateSecurityProfileUpdate(&old.Spec.Template.Spec.AzureManagedControlPlaneClassSpec); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
 	}
 
 	return allErrs
