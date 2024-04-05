@@ -21,8 +21,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	autoscalerName = "cluster-autoscaler"
+)
+
 func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(deployment)
+
+	autoscalerResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("60Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(autoscalerName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			autoscalerResources = mainContainer.Resources
+		}
+	}
+
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -69,13 +88,13 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	}
 
 	labels := map[string]string{
-		"app":                         "cluster-autoscaler",
-		hyperv1.ControlPlaneComponent: "cluster-autoscaler",
+		"app":                         autoscalerName,
+		hyperv1.ControlPlaneComponent: autoscalerName,
 	}
 	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
 	// otherwise changing would prevent an upgrade from happening.
 	selector := map[string]string{
-		"app": "cluster-autoscaler",
+		"app": autoscalerName,
 	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
@@ -116,7 +135,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 				},
 				Containers: []corev1.Container{
 					{
-						Name:            "cluster-autoscaler",
+						Name:            autoscalerName,
 						Image:           clusterAutoscalerImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
@@ -135,14 +154,9 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 								},
 							},
 						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("60Mi"),
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-							},
-						},
-						Command: []string{"/usr/bin/cluster-autoscaler"},
-						Args:    args,
+						Resources: autoscalerResources,
+						Command:   []string{"/usr/bin/cluster-autoscaler"},
+						Args:      args,
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
