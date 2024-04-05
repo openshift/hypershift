@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/hashicorp/go-uuid"
+	uuid "github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/log"
@@ -363,10 +363,12 @@ func setManagedIdentityRole(ctx context.Context, subscriptionID string, resource
 		return fmt.Errorf("failed to create new role assignments client: %w", err)
 	}
 
-	roleAssignmentName, err := uuid.GenerateUUID()
+	roleAssignmentUUID, err := uuid.NewRandom()
 	if err != nil {
 		return fmt.Errorf("failed to generate uuid for role assignment name: %w", err)
 	}
+
+	roleAssignmentName := roleAssignmentUUID.String()
 
 	for try := 0; try < 100; try++ {
 		_, err := roleAssignmentClient.Create(ctx, resourceGroupID, roleAssignmentName,
