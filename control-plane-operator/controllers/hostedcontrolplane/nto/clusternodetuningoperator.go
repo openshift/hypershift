@@ -145,6 +145,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			APIGroups: []string{corev1.SchemeGroupVersion.Group},
 			Resources: []string{
 				"configmaps",
+				"events",
 			},
 			Verbs: []string{"*"},
 		},
