@@ -138,6 +138,22 @@ kind: Config`
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
 		},
 		{
+			name: "private cluster uses .local address and LB kas",
+			hc: hc(func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+				hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.LoadBalancer,
+						},
+					},
+				}
+			}),
+			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
+		},
+		{
 			name: "public and private cluster uses .local address",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
@@ -155,6 +171,22 @@ kind: Config`
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
+		},
+		{
+			name: "public and private cluster uses .local address and LB kas",
+			hc: hc(func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+				hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.LoadBalancer,
+						},
+					},
+				}
+			}),
+			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
 		},
 		{
 			name: "public cluster uses address from kubeconfig",
