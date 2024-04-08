@@ -260,7 +260,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster)
+			err := reconcileHostedControlPlane(updated, &test.Cluster, true)
 			if err != nil {
 				t.Error(err)
 			}
@@ -392,7 +392,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -450,7 +450,7 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 			g := NewGomegaWithT(t)
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
