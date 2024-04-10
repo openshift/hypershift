@@ -17,6 +17,7 @@ func TestGetRegistryOverrides(t *testing.T) {
 		mirror         string
 		expectedImgRef *reference.DockerImageReference
 		expectAnErr    bool
+		overrideFound  bool
 	}{
 		{
 			name: "if failed to parse source image",
@@ -30,6 +31,7 @@ func TestGetRegistryOverrides(t *testing.T) {
 			mirror:         "",
 			expectedImgRef: nil,
 			expectAnErr:    true,
+			overrideFound:  false,
 		},
 		{
 			name: "if registry override coincidence not found",
@@ -39,15 +41,16 @@ func TestGetRegistryOverrides(t *testing.T) {
 				Namespace: "openshift-release-dev",
 				Tag:       "4.14.0-rc.0-multi",
 			},
-			source: "quay.io/openshift-release-dev/ocp-release:4.14.0-rc.0-multi",
-			mirror: "my_registry/openshift-release-dev/ocp-release:4.14.0-rc.0-multi",
+			source: "quay.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
+			mirror: "myregistry.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
 			expectedImgRef: &reference.DockerImageReference{
 				Registry:  "quay.io",
 				Name:      "ocp",
 				Namespace: "openshift-release-dev",
 				Tag:       "4.14.0-rc.0-multi",
 			},
-			expectAnErr: false,
+			expectAnErr:   false,
+			overrideFound: false,
 		},
 		{
 			name: "if registry override coincidence is found",
@@ -57,23 +60,25 @@ func TestGetRegistryOverrides(t *testing.T) {
 				Namespace: "openshift-release-dev",
 				Tag:       "4.14.0-rc.0-multi",
 			},
-			source: "quay.io/openshift-release-dev/ocp-release:4.14.0-rc.0-multi",
-			mirror: "my_registry/openshift-release-dev/ocp-release:4.14.0-rc.0-multi",
+			source: "quay.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
+			mirror: "myregistry.io/openshift-release-dev/ocp-release:4.15.0-rc.0-multi",
 			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "",
-				Name:      "openshift-release-dev/ocp-release",
-				Namespace: "my_registry",
-				Tag:       "4.14.0-rc.0-multi",
+				Registry:  "myregistry.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
 			},
-			expectAnErr: false,
+			expectAnErr:   false,
+			overrideFound: true,
 		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			imgRef, err := GetRegistryOverrides(ctx, tc.ref, tc.source, tc.mirror)
+			imgRef, overrideFound, err := GetRegistryOverrides(ctx, tc.ref, tc.source, tc.mirror)
 			g.Expect(imgRef).To(Equal(tc.expectedImgRef))
 			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
 		})
 	}
 }
