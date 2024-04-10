@@ -1501,10 +1501,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name, controlPlaneNamespace.Name); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	// Reconcile CAPI Provider Deployment.
 	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
 	if err != nil {
@@ -4637,25 +4633,6 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 		return fmt.Errorf("failed to update AWS resource tags: %w", err)
 	}
 
-	return nil
-}
-
-func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
-	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
-
-	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
-	if err != nil {
-		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", clusterName, err)
-	}
-	subnetIDs := []string{}
-	for _, nodePool := range nodePools {
-		if nodePool.Spec.Platform.AWS != nil &&
-			nodePool.Spec.Platform.AWS.Subnet.ID != nil {
-			subnetIDs = append(subnetIDs, *nodePool.Spec.Platform.AWS.Subnet.ID)
-		}
-	}
-	// Sort for stable update detection (is this needed?)
-	sort.Strings(subnetIDs)
 	return nil
 }
 
