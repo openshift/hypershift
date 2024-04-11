@@ -52,17 +52,27 @@ func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config
 }
 
 func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string, platformType hyperv1.PlatformType) error {
-	// preserve existing resource requirements
-	mainContainer := util.FindContainer(catalogOperatorName, deployment.Spec.Template.Spec.Containers)
-	if mainContainer != nil {
-		dc.SetContainerResourcesIfPresent(mainContainer)
-	}
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements
+	catalogOperatorResources := corev1.ResourceRequirements{}
+	mainContainer := util.FindContainer(catalogOperatorName, catalogOperatorDeployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		catalogOperatorResources = mainContainer.Resources
+	}
+	mainContainer = util.FindContainer(catalogOperatorName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			catalogOperatorResources = mainContainer.Resources
+		}
+	}
+
 	deployment.Spec = catalogOperatorDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
 		switch container.Name {
 		case catalogOperatorName:
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
+			deployment.Spec.Template.Spec.Containers[i].Resources = catalogOperatorResources
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
@@ -113,9 +123,16 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements
-	mainContainer := util.FindContainer(olmOperatorName, deployment.Spec.Template.Spec.Containers)
+	olmOperatorResources := corev1.ResourceRequirements{}
+	mainContainer := util.FindContainer(olmOperatorName, olmOperatorDeployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
-		dc.SetContainerResourcesIfPresent(mainContainer)
+		olmOperatorResources = mainContainer.Resources
+	}
+	mainContainer = util.FindContainer(olmOperatorName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			olmOperatorResources = mainContainer.Resources
+		}
 	}
 
 	deployment.Spec = olmOperatorDeployment.DeepCopy().Spec
@@ -123,6 +140,7 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 		switch container.Name {
 		case olmOperatorName:
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
+			deployment.Spec.Template.Spec.Containers[i].Resources = olmOperatorResources
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
