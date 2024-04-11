@@ -37,6 +37,7 @@ following steps will reference elements of the steps you already performed.
                 "ec2:ModifyVpcEndpointServicePermissions",
                 "ec2:RejectVpcEndpointConnections",
                 "ec2:DescribeVpcEndpointConnections",
+                "ec2:DescribeInstanceTypes",
                 "ec2:CreateTags",
                 "elasticloadbalancing:DescribeLoadBalancers"
               ],
@@ -62,6 +63,8 @@ following steps will reference elements of the steps you already performed.
                 "ec2:DescribeVpcEndpointServicePermissions",
                 "ec2:ModifyVpcEndpointServicePermissions",
                 "ec2:RejectVpcEndpointConnections",
+                "ec2:DescribeVpcEndpointConnections",
+                "ec2:DescribeInstanceTypes",
                 "ec2:CreateTags",
                 "elasticloadbalancing:DescribeLoadBalancers"
               ],
