@@ -265,6 +265,11 @@ const (
 	// in the AWS platform.
 	AWSLoadBalancerSubnetsAnnotation = "hypershift.openshift.io/aws-load-balancer-subnets"
 
+	// DisableClusterAutoscalerAnnotation allows disabling the cluster autoscaler for a hosted cluster.
+	// This annotation is only set by the hypershift-operator on HosterControlPlanes.
+	// It is not set by the end-user.
+	DisableClusterAutoscalerAnnotation = "hypershift.openshift.io/disable-cluster-autoscaler"
+
 	// AroHCP represents the ARO HCP managed service offering
 	AroHCP = "ARO-HCP"
 
