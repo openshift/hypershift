@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	auditPolicyConfigMapKey = "policy.yaml"
+	auditPolicyConfigMapKey  = "policy.yaml"
+	auditPolicyProfileMapKey = "profile"
 )
 
 func ReconcileAuditConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, auditConfig configv1.Audit) error {
@@ -28,5 +29,6 @@ func ReconcileAuditConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, auditC
 		return err
 	}
 	cm.Data[auditPolicyConfigMapKey] = string(policyBytes)
+	cm.Data[auditPolicyProfileMapKey] = string(auditConfig.Profile)
 	return nil
 }
