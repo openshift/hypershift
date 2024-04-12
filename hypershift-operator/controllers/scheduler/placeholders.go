@@ -255,6 +255,10 @@ func (r *placeholderUpdater) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return reconcile.Result{}, err
 	}
 
+	if deployment.Namespace != placeholderNamespace {
+		return reconcile.Result{}, err
+	}
+
 	config, err := r.getClusterSizingConfiguration(ctx)
 	if err != nil {
 		return reconcile.Result{}, err
