@@ -287,7 +287,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
 	var imageRegistryOverrides map[string][]string
 	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
-		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS))
+		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS), mgmtClusterCaps.Has(capabilities.CapabilityICSP))
 		if err != nil {
 			return fmt.Errorf("failed to populate image registry overrides: %w", err)
 		}
