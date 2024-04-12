@@ -2412,6 +2412,11 @@ string
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
+<p>AzurePlatformSpec specifies configuration for clusters running on Azure. Generally, the HyperShift API assumes bring
+your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
+would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
+fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID and
+within the same ResourceGroupName.</p>
 </p>
 <table>
 <thead>
@@ -2431,6 +2436,8 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
+<p>Credentials is the object containing existing Azure credentials needed for creating and managing cloud
+infrastructure resources.</p>
 </td>
 </tr>
 <tr>
@@ -2441,7 +2448,7 @@ string
 </em>
 </td>
 <td>
-<p>The cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
+<p>Cloud is the cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
 </td>
 </tr>
 <tr>
@@ -2452,6 +2459,8 @@ string
 </em>
 </td>
 <td>
+<p>Location is the Azure region in where all the cloud infrastructure resources will be created.</p>
+<p>Example: eastus</p>
 </td>
 </tr>
 <tr>
@@ -2462,6 +2471,11 @@ string
 </em>
 </td>
 <td>
+<p>ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+Cluster are to be placed.
+In ARO HCP, this will be the managed resource group where customer cloud resources will be created.</p>
+<p>Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+ResourceGroupName is <resourceGroupName>.</p>
 </td>
 </tr>
 <tr>
@@ -2472,6 +2486,11 @@ string
 </em>
 </td>
 <td>
+<p>VnetName is the resource name of an existing VNET to use in creating VMs. If this field is included, it should
+be the resource name matching the VnetID.
+In ARO HCP, this will be the name of the customer provided VNET.</p>
+<p>Example: if your VNET ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>,
+your VnetName is <vnetName></p>
 </td>
 </tr>
 <tr>
@@ -2482,6 +2501,10 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>VnetID is the ID of an existing VNET to use in creating VMs.
+In ARO HCP, this will be the ID of the customer provided VNET.</p>
+<p>Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName></p>
 </td>
 </tr>
 <tr>
@@ -2492,6 +2515,10 @@ string
 </em>
 </td>
 <td>
+<p>SubnetName is the name of an existing subnet in VnetName / VnetID where Azure CCM will find an existing load
+balancer to be used for node egress.</p>
+<p>Example: if your SubnetID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>,
+your SubnetName is <subnetName></p>
 </td>
 </tr>
 <tr>
@@ -2502,6 +2529,7 @@ string
 </em>
 </td>
 <td>
+<p>SubscriptionID is a unique identifier for an Azure subscription used to manage resources.</p>
 </td>
 </tr>
 <tr>
@@ -2512,6 +2540,8 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>MachineIdentityID is used as the user-assigned identity to be assigned to the VMs</p>
 </td>
 </tr>
 <tr>
@@ -2522,6 +2552,11 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>SecurityGroupName is the name of an existing security group on SubnetName. This field is provided as part of the
+configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM).</p>
+<p>Example: if your Network Security Group ID is /subscriptions/<subscriptionID>/resourcegroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<securityGroupName>,
+your SecurityGroupName is <securityGroupName></p>
 </td>
 </tr>
 </tbody>
