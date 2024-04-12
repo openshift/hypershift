@@ -2089,6 +2089,12 @@ type ClusterConfiguration struct {
 	// +optional
 	OAuth *configv1.OAuthSpec `json:"oauth,omitempty"`
 
+	// OperatorHub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.
+	// The OperatorHub configuration will be constantly reconciled if catalog placement is management, but only on cluster creation otherwise.
+	//
+	// +optional
+	OperatorHub *configv1.OperatorHubSpec `json:"operatorhub,omitempty"`
+
 	// Scheduler holds cluster-wide config information to run the Kubernetes Scheduler
 	// and influence its placement decisions. The canonical name for this config is `cluster`.
 	// +optional

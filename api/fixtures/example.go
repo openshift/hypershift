@@ -77,6 +77,7 @@ type ExampleOptions struct {
 	Arch                             string
 	PausedUntil                      string
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
+	OperatorHub                      *configv1.OperatorHubSpec
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
@@ -466,6 +467,14 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	if len(o.PausedUntil) > 0 {
 		cluster.Spec.PausedUntil = &o.PausedUntil
+	}
+
+	if cluster.Spec.Configuration == nil {
+		cluster.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+	}
+
+	if o.OperatorHub != nil {
+		cluster.Spec.Configuration.OperatorHub = o.OperatorHub
 	}
 
 	if len(o.OLMCatalogPlacement) > 0 {
