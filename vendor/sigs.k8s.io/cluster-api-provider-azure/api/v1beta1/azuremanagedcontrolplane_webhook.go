@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
+	"sigs.k8s.io/cluster-api-provider-azure/util/versions"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capifeature "sigs.k8s.io/cluster-api/feature"
@@ -80,6 +81,7 @@ func (mw *azureManagedControlPlaneWebhook) Default(ctx context.Context, obj runt
 	setDefault[*Identity](&m.Spec.Identity, &Identity{
 		Type: ManagedControlPlaneIdentityTypeSystemAssigned,
 	})
+	setDefault[*bool](&m.Spec.EnablePreviewFeatures, ptr.To(false))
 	m.Spec.Version = setDefaultVersion(m.Spec.Version)
 	m.Spec.SKU = setDefaultSku(m.Spec.SKU)
 	m.Spec.AutoScalerProfile = setDefaultAutoScalerProfile(m.Spec.AutoScalerProfile)
@@ -95,6 +97,7 @@ func (mw *azureManagedControlPlaneWebhook) Default(ctx context.Context, obj runt
 	m.setDefaultSubnet()
 	m.setDefaultOIDCIssuerProfile()
 	m.setDefaultDNSPrefix()
+	m.setDefaultAKSExtensions()
 
 	return nil
 }
@@ -131,81 +134,29 @@ func (mw *azureManagedControlPlaneWebhook) ValidateUpdate(ctx context.Context, o
 		return nil, apierrors.NewBadRequest("expected an AzureManagedControlPlane")
 	}
 
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "SubscriptionID"),
-		old.Spec.SubscriptionID,
-		m.Spec.SubscriptionID); err != nil {
-		allErrs = append(allErrs, err)
+	immutableFields := []struct {
+		path *field.Path
+		old  interface{}
+		new  interface{}
+	}{
+		{field.NewPath("Spec", "SubscriptionID"), old.Spec.SubscriptionID, m.Spec.SubscriptionID},
+		{field.NewPath("Spec", "ResourceGroupName"), old.Spec.ResourceGroupName, m.Spec.ResourceGroupName},
+		{field.NewPath("Spec", "NodeResourceGroupName"), old.Spec.NodeResourceGroupName, m.Spec.NodeResourceGroupName},
+		{field.NewPath("Spec", "Location"), old.Spec.Location, m.Spec.Location},
+		{field.NewPath("Spec", "SSHPublicKey"), old.Spec.SSHPublicKey, m.Spec.SSHPublicKey},
+		{field.NewPath("Spec", "DNSServiceIP"), old.Spec.DNSServiceIP, m.Spec.DNSServiceIP},
+		{field.NewPath("Spec", "NetworkPlugin"), old.Spec.NetworkPlugin, m.Spec.NetworkPlugin},
+		{field.NewPath("Spec", "NetworkPolicy"), old.Spec.NetworkPolicy, m.Spec.NetworkPolicy},
+		{field.NewPath("Spec", "NetworkDataplane"), old.Spec.NetworkDataplane, m.Spec.NetworkDataplane},
+		{field.NewPath("Spec", "LoadBalancerSKU"), old.Spec.LoadBalancerSKU, m.Spec.LoadBalancerSKU},
+		{field.NewPath("Spec", "HTTPProxyConfig"), old.Spec.HTTPProxyConfig, m.Spec.HTTPProxyConfig},
+		{field.NewPath("Spec", "AzureEnvironment"), old.Spec.AzureEnvironment, m.Spec.AzureEnvironment},
 	}
 
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "ResourceGroupName"),
-		old.Spec.ResourceGroupName,
-		m.Spec.ResourceGroupName); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "NodeResourceGroupName"),
-		old.Spec.NodeResourceGroupName,
-		m.Spec.NodeResourceGroupName); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "Location"),
-		old.Spec.Location,
-		m.Spec.Location); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "SSHPublicKey"),
-		old.Spec.SSHPublicKey,
-		m.Spec.SSHPublicKey); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "DNSServiceIP"),
-		old.Spec.DNSServiceIP,
-		m.Spec.DNSServiceIP); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "NetworkPlugin"),
-		old.Spec.NetworkPlugin,
-		m.Spec.NetworkPlugin); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "NetworkPolicy"),
-		old.Spec.NetworkPolicy,
-		m.Spec.NetworkPolicy); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "LoadBalancerSKU"),
-		old.Spec.LoadBalancerSKU,
-		m.Spec.LoadBalancerSKU); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "HTTPProxyConfig"),
-		old.Spec.HTTPProxyConfig,
-		m.Spec.HTTPProxyConfig); err != nil {
-		allErrs = append(allErrs, err)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "AzureEnvironment"),
-		old.Spec.AzureEnvironment,
-		m.Spec.AzureEnvironment); err != nil {
-		allErrs = append(allErrs, err)
+	for _, f := range immutableFields {
+		if err := webhookutils.ValidateImmutable(f.path, f.old, f.new); err != nil {
+			allErrs = append(allErrs, err)
+		}
 	}
 
 	// This nil check is only to streamline tests from having to define this correctly in every test case.
@@ -257,11 +208,27 @@ func (mw *azureManagedControlPlaneWebhook) ValidateUpdate(ctx context.Context, o
 		allErrs = append(allErrs, errs...)
 	}
 
+	if errs := m.validateAutoUpgradeProfile(old); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := m.validateK8sVersionUpdate(old); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
 	if errs := m.validateOIDCIssuerProfileUpdate(old); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
 	}
 
 	if errs := m.validateFleetsMember(old); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := validateAKSExtensionsUpdate(old.Spec.Extensions, m.Spec.Extensions); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := m.Spec.AzureManagedControlPlaneClassSpec.validateSecurityProfileUpdate(&old.Spec.AzureManagedControlPlaneClassSpec); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
 	}
 
@@ -282,7 +249,6 @@ func (m *AzureManagedControlPlane) Validate(cli client.Client) error {
 	var allErrs field.ErrorList
 	validators := []func(client client.Client) field.ErrorList{
 		m.validateSSHKey,
-		m.validateAPIServerAccessProfile,
 		m.validateIdentity,
 		m.validateNetworkPluginMode,
 		m.validateDNSPrefix,
@@ -314,6 +280,18 @@ func (m *AzureManagedControlPlane) Validate(cli client.Client) error {
 
 	allErrs = append(allErrs, validateAutoScalerProfile(m.Spec.AutoScalerProfile, field.NewPath("spec").Child("AutoScalerProfile"))...)
 
+	allErrs = append(allErrs, validateAKSExtensions(m.Spec.Extensions, field.NewPath("spec").Child("AKSExtensions"))...)
+
+	allErrs = append(allErrs, m.Spec.AzureManagedControlPlaneClassSpec.validateSecurityProfile()...)
+
+	allErrs = append(allErrs, validateNetworkPolicy(m.Spec.NetworkPolicy, m.Spec.NetworkDataplane, field.NewPath("spec").Child("NetworkPolicy"))...)
+
+	allErrs = append(allErrs, validateNetworkDataplane(m.Spec.NetworkDataplane, m.Spec.NetworkPolicy, m.Spec.NetworkPluginMode, field.NewPath("spec").Child("NetworkDataplane"))...)
+
+	allErrs = append(allErrs, validateAPIServerAccessProfile(m.Spec.APIServerAccessProfile, field.NewPath("spec").Child("APIServerAccessProfile"))...)
+
+	allErrs = append(allErrs, validateAMCPVirtualNetwork(m.Spec.VirtualNetwork, field.NewPath("spec").Child("VirtualNetwork"))...)
+
 	return allErrs.ToAggregate()
 }
 
@@ -337,7 +315,63 @@ func (m *AzureManagedControlPlane) validateDNSPrefix(_ client.Client) field.Erro
 	return allErrs
 }
 
-// validateVersion disabling local accounts for AAD based clusters.
+// validateSecurityProfile validates SecurityProfile.
+func (m *AzureManagedControlPlaneClassSpec) validateSecurityProfile() field.ErrorList {
+	allErrs := field.ErrorList{}
+	if err := m.validateAzureKeyVaultKms(); err != nil {
+		allErrs = append(allErrs, err...)
+	}
+	if err := m.validateWorkloadIdentity(); err != nil {
+		allErrs = append(allErrs, err...)
+	}
+	return allErrs
+}
+
+// validateAzureKeyVaultKms validates AzureKeyVaultKms.
+func (m *AzureManagedControlPlaneClassSpec) validateAzureKeyVaultKms() field.ErrorList {
+	if m.SecurityProfile != nil && m.SecurityProfile.AzureKeyVaultKms != nil {
+		if !m.isUserManagedIdentityEnabled() {
+			allErrs := field.ErrorList{
+				field.Invalid(field.NewPath("Spec", "SecurityProfile", "AzureKeyVaultKms", "KeyVaultResourceID"),
+					m.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID,
+					"Spec.SecurityProfile.AzureKeyVaultKms can be set only when Spec.Identity.Type is UserAssigned"),
+			}
+			return allErrs
+		}
+		keyVaultNetworkAccess := ptr.Deref(m.SecurityProfile.AzureKeyVaultKms.KeyVaultNetworkAccess, KeyVaultNetworkAccessTypesPublic)
+		keyVaultResourceID := ptr.Deref(m.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID, "")
+		if keyVaultNetworkAccess == KeyVaultNetworkAccessTypesPrivate && keyVaultResourceID == "" {
+			allErrs := field.ErrorList{
+				field.Invalid(field.NewPath("Spec", "SecurityProfile", "AzureKeyVaultKms", "KeyVaultResourceID"),
+					m.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID,
+					"Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID cannot be empty when Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultNetworkAccess is Private"),
+			}
+			return allErrs
+		}
+		if keyVaultNetworkAccess == KeyVaultNetworkAccessTypesPublic && keyVaultResourceID != "" {
+			allErrs := field.ErrorList{
+				field.Invalid(field.NewPath("Spec", "SecurityProfile", "AzureKeyVaultKms", "KeyVaultResourceID"), m.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID,
+					"Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID should be empty when Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultNetworkAccess is Public"),
+			}
+			return allErrs
+		}
+	}
+	return nil
+}
+
+// validateWorkloadIdentity validates WorkloadIdentity.
+func (m *AzureManagedControlPlaneClassSpec) validateWorkloadIdentity() field.ErrorList {
+	if m.SecurityProfile != nil && m.SecurityProfile.WorkloadIdentity != nil && !m.isOIDCEnabled() {
+		allErrs := field.ErrorList{
+			field.Invalid(field.NewPath("Spec", "SecurityProfile", "WorkloadIdentity"), m.SecurityProfile.WorkloadIdentity,
+				"Spec.SecurityProfile.WorkloadIdentity cannot be enabled when Spec.OIDCIssuerProfile is disabled"),
+		}
+		return allErrs
+	}
+	return nil
+}
+
+// validateDisableLocalAccounts disabling local accounts for AAD based clusters.
 func (m *AzureManagedControlPlane) validateDisableLocalAccounts(_ client.Client) field.ErrorList {
 	if m.Spec.DisableLocalAccounts != nil && m.Spec.AADProfile == nil {
 		return field.ErrorList{
@@ -409,20 +443,73 @@ func validateLoadBalancerProfile(loadBalancerProfile *LoadBalancerProfile, fldPa
 	return allErrs
 }
 
-// validateAPIServerAccessProfile validates an APIServerAccessProfile.
-func (m *AzureManagedControlPlane) validateAPIServerAccessProfile(_ client.Client) field.ErrorList {
-	if m.Spec.APIServerAccessProfile != nil {
-		var allErrs field.ErrorList
-		for _, ipRange := range m.Spec.APIServerAccessProfile.AuthorizedIPRanges {
-			if _, _, err := net.ParseCIDR(ipRange); err != nil {
-				allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "APIServerAccessProfile", "AuthorizedIPRanges"), ipRange, "invalid CIDR format"))
-			}
+func validateAMCPVirtualNetwork(virtualNetwork ManagedControlPlaneVirtualNetwork, fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+
+	// VirtualNetwork and the CIDR blocks get defaulted in the defaulting webhook, so we can assume they are always set.
+	if !reflect.DeepEqual(virtualNetwork, ManagedControlPlaneVirtualNetwork{}) {
+		_, parentNet, vnetErr := net.ParseCIDR(virtualNetwork.CIDRBlock)
+		if vnetErr != nil {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("CIDRBlock"), virtualNetwork.CIDRBlock, "pre-existing virtual networks CIDR block is invalid"))
 		}
-		if len(allErrs) > 0 {
-			return allErrs
+		subnetIP, _, subnetErr := net.ParseCIDR(virtualNetwork.Subnet.CIDRBlock)
+		if subnetErr != nil {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("Subnet", "CIDRBlock"), virtualNetwork.CIDRBlock, "pre-existing subnets CIDR block is invalid"))
+		}
+		if vnetErr == nil && subnetErr == nil && !parentNet.Contains(subnetIP) {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("CIDRBlock"), virtualNetwork.CIDRBlock, "pre-existing virtual networks CIDR block should contain the subnet CIDR block"))
 		}
 	}
-	return nil
+	return allErrs
+}
+
+// validateAPIServerAccessProfile validates an APIServerAccessProfile.
+func validateAPIServerAccessProfile(apiServerAccessProfile *APIServerAccessProfile, fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	if apiServerAccessProfile != nil {
+		for _, ipRange := range apiServerAccessProfile.AuthorizedIPRanges {
+			if _, _, err := net.ParseCIDR(ipRange); err != nil {
+				allErrs = append(allErrs, field.Invalid(fldPath, ipRange, "invalid CIDR format"))
+			}
+		}
+
+		// privateDNSZone should either be "System" or "None" or the private dns zone name should be in either of these
+		// formats: 'private.<location>.azmk8s.io,privatelink.<location>.azmk8s.io,[a-zA-Z0-9-]{1,32}.private.<location>.azmk8s.io,
+		// [a-zA-Z0-9-]{1,32}.privatelink.<location>.azmk8s.io'. The validation below follows the guidelines mentioned at
+		// https://learn.microsoft.com/azure/aks/private-clusters?tabs=azure-portal#configure-a-private-dns-zone.
+		// Performing a lower case comparison to avoid case sensitivity.
+		if apiServerAccessProfile.PrivateDNSZone != nil {
+			privateDNSZone := strings.ToLower(ptr.Deref(apiServerAccessProfile.PrivateDNSZone, ""))
+			if !strings.EqualFold(strings.ToLower(privateDNSZone), "system") &&
+				!strings.EqualFold(strings.ToLower(privateDNSZone), "none") {
+				// Extract substring starting from "privatednszones/"
+				startIndex := strings.Index(strings.ToLower(privateDNSZone), "privatednszones/")
+				if startIndex == -1 {
+					allErrs = append(allErrs, field.Invalid(fldPath, privateDNSZone, "invalid private DNS zone"))
+					return allErrs
+				}
+
+				// Private DNS Zones can only be used by private clusters.
+				if !ptr.Deref(apiServerAccessProfile.EnablePrivateCluster, false) {
+					allErrs = append(allErrs, field.Invalid(fldPath, apiServerAccessProfile.EnablePrivateCluster, "Private Cluster should be enabled to use PrivateDNSZone"))
+					return allErrs
+				}
+
+				extractedPrivateDNSZone := privateDNSZone[startIndex+len("privatednszones/"):]
+
+				patternWithLocation := `^(privatelink|private)\.[a-zA-Z0-9]+\.(azmk8s\.io)$`
+				locationRegex := regexp.MustCompile(patternWithLocation)
+				patternWithSubzone := `^[a-zA-Z0-9-]{1,32}\.(privatelink|private)\.[a-zA-Z0-9]+\.(azmk8s\.io)$`
+				subzoneRegex := regexp.MustCompile(patternWithSubzone)
+
+				// check if privateDNSZone is a valid resource ID
+				if !locationRegex.MatchString(extractedPrivateDNSZone) && !subzoneRegex.MatchString(extractedPrivateDNSZone) {
+					allErrs = append(allErrs, field.Invalid(fldPath, privateDNSZone, "invalid privateDnsZone resource ID. Each label the private dns zone name should be in either of these formats: 'private.<location>.azmk8s.io,privatelink.<location>.azmk8s.io,[a-zA-Z0-9-]{1,32}.private.<location>.azmk8s.io,[a-zA-Z0-9-]{1,32}.privatelink.<location>.azmk8s.io'"))
+				}
+			}
+		}
+	}
+	return allErrs
 }
 
 // validateManagedClusterNetwork validates the Cluster network values.
@@ -501,6 +588,42 @@ func validateManagedClusterNetwork(cli client.Client, labels map[string]string, 
 		allErrs = append(allErrs, errs...)
 	}
 
+	return allErrs
+}
+
+// validateAutoUpgradeProfile validates auto upgrade profile.
+func (m *AzureManagedControlPlane) validateAutoUpgradeProfile(old *AzureManagedControlPlane) field.ErrorList {
+	var allErrs field.ErrorList
+	if old.Spec.AutoUpgradeProfile != nil {
+		if old.Spec.AutoUpgradeProfile.UpgradeChannel != nil && (m.Spec.AutoUpgradeProfile == nil || m.Spec.AutoUpgradeProfile.UpgradeChannel == nil) {
+			// Prevent AutoUpgradeProfile.UpgradeChannel to be set to nil.
+			// Unsetting the field is not allowed.
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "AutoUpgradeProfile", "UpgradeChannel"),
+					old.Spec.AutoUpgradeProfile.UpgradeChannel,
+					"field cannot be set to nil, to disable auto upgrades set the channel to none."))
+		}
+	}
+	return allErrs
+}
+
+// validateK8sVersionUpdate validates K8s version.
+func (m *AzureManagedControlPlane) validateK8sVersionUpdate(old *AzureManagedControlPlane) field.ErrorList {
+	var allErrs field.ErrorList
+	if hv := versions.GetHigherK8sVersion(m.Spec.Version, old.Spec.Version); hv != m.Spec.Version {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "Version"),
+			m.Spec.Version, "field version cannot be downgraded"),
+		)
+	}
+
+	if old.Status.AutoUpgradeVersion != "" && m.Spec.Version != old.Spec.Version {
+		if hv := versions.GetHigherK8sVersion(m.Spec.Version, old.Status.AutoUpgradeVersion); hv != m.Spec.Version {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "Version"),
+				m.Spec.Version, "version is auto-upgraded to "+old.Status.AutoUpgradeVersion+", cannot be downgraded"),
+			)
+		}
+	}
 	return allErrs
 }
 
@@ -673,10 +796,78 @@ func (m *AzureManagedControlPlane) validateAADProfileUpdateAndLocalAccounts(old 
 	return allErrs
 }
 
+// validateSecurityProfileUpdate validates a SecurityProfile update.
+func (m *AzureManagedControlPlaneClassSpec) validateSecurityProfileUpdate(old *AzureManagedControlPlaneClassSpec) field.ErrorList {
+	var allErrs field.ErrorList
+	if old.SecurityProfile != nil {
+		if errAzureKeyVaultKms := m.validateAzureKeyVaultKmsUpdate(old); errAzureKeyVaultKms != nil {
+			allErrs = append(allErrs, errAzureKeyVaultKms...)
+		}
+		if errWorkloadIdentity := m.validateWorkloadIdentityUpdate(old); errWorkloadIdentity != nil {
+			allErrs = append(allErrs, errWorkloadIdentity...)
+		}
+		if errWorkloadIdentity := m.validateImageCleanerUpdate(old); errWorkloadIdentity != nil {
+			allErrs = append(allErrs, errWorkloadIdentity...)
+		}
+		if errWorkloadIdentity := m.validateDefender(old); errWorkloadIdentity != nil {
+			allErrs = append(allErrs, errWorkloadIdentity...)
+		}
+	}
+	return allErrs
+}
+
+// validateAzureKeyVaultKmsUpdate validates AzureKeyVaultKmsUpdate profile.
+func (m *AzureManagedControlPlaneClassSpec) validateAzureKeyVaultKmsUpdate(old *AzureManagedControlPlaneClassSpec) field.ErrorList {
+	var allErrs field.ErrorList
+	if old.SecurityProfile.AzureKeyVaultKms != nil {
+		if m.SecurityProfile == nil || m.SecurityProfile.AzureKeyVaultKms == nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SecurityProfile", "AzureKeyVaultKms"),
+				nil, "cannot unset Spec.SecurityProfile.AzureKeyVaultKms profile to disable the profile please set Spec.SecurityProfile.AzureKeyVaultKms.Enabled to false"))
+			return allErrs
+		}
+	}
+	return allErrs
+}
+
+// validateWorkloadIdentityUpdate validates WorkloadIdentityUpdate profile.
+func (m *AzureManagedControlPlaneClassSpec) validateWorkloadIdentityUpdate(old *AzureManagedControlPlaneClassSpec) field.ErrorList {
+	var allErrs field.ErrorList
+	if old.SecurityProfile.WorkloadIdentity != nil {
+		if m.SecurityProfile == nil || m.SecurityProfile.WorkloadIdentity == nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SecurityProfile", "WorkloadIdentity"),
+				nil, "cannot unset Spec.SecurityProfile.WorkloadIdentity, to disable workloadIdentity please set Spec.SecurityProfile.WorkloadIdentity.Enabled to false"))
+		}
+	}
+	return allErrs
+}
+
+// validateImageCleanerUpdate validates ImageCleanerUpdate profile.
+func (m *AzureManagedControlPlaneClassSpec) validateImageCleanerUpdate(old *AzureManagedControlPlaneClassSpec) field.ErrorList {
+	var allErrs field.ErrorList
+	if old.SecurityProfile.ImageCleaner != nil {
+		if m.SecurityProfile == nil || m.SecurityProfile.ImageCleaner == nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SecurityProfile", "ImageCleaner"),
+				nil, "cannot unset Spec.SecurityProfile.ImageCleaner, to disable imageCleaner please set Spec.SecurityProfile.ImageCleaner.Enabled to false"))
+		}
+	}
+	return allErrs
+}
+
+// validateDefender validates defender profile.
+func (m *AzureManagedControlPlaneClassSpec) validateDefender(old *AzureManagedControlPlaneClassSpec) field.ErrorList {
+	var allErrs field.ErrorList
+	if old.SecurityProfile.Defender != nil {
+		if m.SecurityProfile == nil || m.SecurityProfile.Defender == nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SecurityProfile", "Defender"),
+				nil, "cannot unset Spec.SecurityProfile.Defender, to disable defender please set Spec.SecurityProfile.Defender.SecurityMonitoring.Enabled to false"))
+		}
+	}
+	return allErrs
+}
+
 // validateOIDCIssuerProfile validates an OIDCIssuerProfile.
 func (m *AzureManagedControlPlane) validateOIDCIssuerProfileUpdate(old *AzureManagedControlPlane) field.ErrorList {
 	var allErrs field.ErrorList
-
 	if m.Spec.OIDCIssuerProfile != nil && old.Spec.OIDCIssuerProfile != nil {
 		if m.Spec.OIDCIssuerProfile.Enabled != nil && old.Spec.OIDCIssuerProfile.Enabled != nil &&
 			!*m.Spec.OIDCIssuerProfile.Enabled && *old.Spec.OIDCIssuerProfile.Enabled {
@@ -688,7 +879,6 @@ func (m *AzureManagedControlPlane) validateOIDCIssuerProfileUpdate(old *AzureMan
 			)
 		}
 	}
-
 	return allErrs
 }
 
@@ -711,12 +901,160 @@ func (m *AzureManagedControlPlane) validateFleetsMember(old *AzureManagedControl
 	return allErrs
 }
 
+// validateAKSExtensionsUpdate validates update to AKS extensions.
+func validateAKSExtensionsUpdate(old []AKSExtension, current []AKSExtension) field.ErrorList {
+	var allErrs field.ErrorList
+
+	oldAKSExtensionsMap := make(map[string]AKSExtension, len(old))
+	oldAKSExtensionsIndex := make(map[string]int, len(old))
+	for i, extension := range old {
+		oldAKSExtensionsMap[extension.Name] = extension
+		oldAKSExtensionsIndex[extension.Name] = i
+	}
+	for i, extension := range current {
+		oldExtension, ok := oldAKSExtensionsMap[extension.Name]
+		if !ok {
+			continue
+		}
+		if extension.Name != oldExtension.Name {
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "Extensions", fmt.Sprintf("[%d]", i), "Name"),
+					extension.Name,
+					"field is immutable",
+				),
+			)
+		}
+		if (oldExtension.ExtensionType != nil && extension.ExtensionType != nil) && *extension.ExtensionType != *oldExtension.ExtensionType {
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "Extensions", fmt.Sprintf("[%d]", i), "ExtensionType"),
+					extension.ExtensionType,
+					"field is immutable",
+				),
+			)
+		}
+		if (extension.Plan != nil && oldExtension.Plan != nil) && *extension.Plan != *oldExtension.Plan {
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "Extensions", fmt.Sprintf("[%d]", i), "Plan"),
+					extension.Plan,
+					"field is immutable",
+				),
+			)
+		}
+		if extension.Scope != oldExtension.Scope {
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "Extensions", fmt.Sprintf("[%d]", i), "Scope"),
+					extension.Scope,
+					"field is immutable",
+				),
+			)
+		}
+		if (extension.ReleaseTrain != nil && oldExtension.ReleaseTrain != nil) && *extension.ReleaseTrain != *oldExtension.ReleaseTrain {
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "Extensions", fmt.Sprintf("[%d]", i), "ReleaseTrain"),
+					extension.ReleaseTrain,
+					"field is immutable",
+				),
+			)
+		}
+		if (extension.Version != nil && oldExtension.Version != nil) && *extension.Version != *oldExtension.Version {
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "Extensions", fmt.Sprintf("[%d]", i), "Version"),
+					extension.Version,
+					"field is immutable",
+				),
+			)
+		}
+		if extension.Identity != oldExtension.Identity {
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("Spec", "Extensions", fmt.Sprintf("[%d]", i), "Identity"),
+					extension.Identity,
+					"field is immutable",
+				),
+			)
+		}
+	}
+
+	return allErrs
+}
+
 func validateName(name string, fldPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 	if lName := strings.ToLower(name); strings.Contains(lName, "microsoft") ||
 		strings.Contains(lName, "windows") {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("Name"), name,
 			"cluster name is invalid because 'MICROSOFT' and 'WINDOWS' can't be used as either a whole word or a substring in the name"))
+	}
+
+	return allErrs
+}
+
+// validateAKSExtensions validates the AKS extensions.
+func validateAKSExtensions(extensions []AKSExtension, fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	for _, extension := range extensions {
+		if extension.Version != nil && (extension.AutoUpgradeMinorVersion == nil || (extension.AutoUpgradeMinorVersion != nil && *extension.AutoUpgradeMinorVersion)) {
+			allErrs = append(allErrs, field.Forbidden(fldPath.Child("Version"), "Version must not be given if AutoUpgradeMinorVersion is true (or not provided, as it is true by default)"))
+		}
+		if extension.AutoUpgradeMinorVersion == ptr.To(false) && extension.ReleaseTrain != nil {
+			allErrs = append(allErrs, field.Forbidden(fldPath.Child("ReleaseTrain"), "ReleaseTrain must not be given if AutoUpgradeMinorVersion is false"))
+		}
+		if extension.Scope != nil {
+			if extension.Scope.ScopeType == ExtensionScopeCluster {
+				if extension.Scope.ReleaseNamespace == "" {
+					allErrs = append(allErrs, field.Required(fldPath.Child("Scope", "ReleaseNamespace"), "ReleaseNamespace must be provided if Scope is Cluster"))
+				}
+				if extension.Scope.TargetNamespace != "" {
+					allErrs = append(allErrs, field.Forbidden(fldPath.Child("Scope", "TargetNamespace"), "TargetNamespace can only be given if Scope is Namespace"))
+				}
+			} else if extension.Scope.ScopeType == ExtensionScopeNamespace {
+				if extension.Scope.TargetNamespace == "" {
+					allErrs = append(allErrs, field.Required(fldPath.Child("Scope", "TargetNamespace"), "TargetNamespace must be provided if Scope is Namespace"))
+				}
+				if extension.Scope.ReleaseNamespace != "" {
+					allErrs = append(allErrs, field.Forbidden(fldPath.Child("Scope", "ReleaseNamespace"), "ReleaseNamespace can only be given if Scope is Cluster"))
+				}
+			}
+		}
+	}
+
+	return allErrs
+}
+
+// validateNetworkPolicy validates the networkPolicy.
+func validateNetworkPolicy(networkPolicy *string, networkDataplane *NetworkDataplaneType, fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if networkPolicy == nil {
+		return nil
+	}
+
+	if *networkPolicy == "cilium" && networkDataplane != nil && *networkDataplane != NetworkDataplaneTypeCilium {
+		allErrs = append(allErrs, field.Invalid(fldPath, networkPolicy, "cilium network policy can only be used with cilium network dataplane"))
+	}
+
+	return allErrs
+}
+
+// validateNetworkDataplane validates the NetworkDataplane.
+func validateNetworkDataplane(networkDataplane *NetworkDataplaneType, networkPolicy *string, networkPluginMode *NetworkPluginMode, fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if networkDataplane == nil {
+		return nil
+	}
+
+	if *networkDataplane == NetworkDataplaneTypeCilium && (networkPluginMode == nil || *networkPluginMode != NetworkPluginModeOverlay) {
+		allErrs = append(allErrs, field.Invalid(fldPath, networkDataplane, "cilium network dataplane can only be used with overlay network plugin mode"))
+	}
+	if *networkDataplane == NetworkDataplaneTypeCilium && (networkPolicy == nil || *networkPolicy != "cilium") {
+		allErrs = append(allErrs, field.Invalid(fldPath, networkDataplane, "cilium dataplane requires network policy cilium."))
 	}
 
 	return allErrs
@@ -899,4 +1237,26 @@ func (m *AzureManagedControlPlane) validateNetworkPluginMode(_ client.Client) fi
 	}
 
 	return nil
+}
+
+// isOIDCEnabled return true if OIDC issuer is enabled.
+func (m *AzureManagedControlPlaneClassSpec) isOIDCEnabled() bool {
+	if m.OIDCIssuerProfile == nil {
+		return false
+	}
+	if m.OIDCIssuerProfile.Enabled == nil {
+		return false
+	}
+	return *m.OIDCIssuerProfile.Enabled
+}
+
+// isUserManagedIdentityEnabled checks if user assigned identity is set.
+func (m *AzureManagedControlPlaneClassSpec) isUserManagedIdentityEnabled() bool {
+	if m.Identity == nil {
+		return false
+	}
+	if m.Identity.Type != ManagedControlPlaneIdentityTypeUserAssigned {
+		return false
+	}
+	return true
 }
