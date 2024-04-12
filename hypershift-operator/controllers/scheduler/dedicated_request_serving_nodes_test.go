@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -430,8 +429,8 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 
 	placeHolderDeployment := func(name string) *appsv1.Deployment {
 		labels := map[string]string{
-			PlaceholderLabel: name,
-			hostedclustersizing.HostedClusterSizeLabel: "small",
+			PlaceholderLabel:               name,
+			hyperv1.HostedClusterSizeLabel: "small",
 		}
 		return &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
@@ -467,8 +466,8 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 				Namespace: placeholderNamespace,
 				Name:      name,
 				Labels: map[string]string{
-					PlaceholderLabel: depName,
-					hostedclustersizing.HostedClusterSizeLabel: "small",
+					PlaceholderLabel:               depName,
+					hyperv1.HostedClusterSizeLabel: "small",
 				},
 			},
 			Spec: corev1.PodSpec{
