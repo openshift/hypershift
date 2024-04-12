@@ -1,8 +1,6 @@
 package snapshotcontroller
 
 import (
-	"strconv"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -51,9 +49,11 @@ func ReconcileOperatorDeployment(
 		}
 	}
 
-	// We set this so cluster-csi-storage-controller operator knows whether to run the csi-snapshot-controller and csi-snapshot-webhook pods as NonRoot.
-	// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS, which will require the pods to be run from root.
-	deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "HYPERSHIFT_SUPPORTS_SCC", Value: strconv.FormatBool(!setDefaultSecurityContext)})
+	// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller and csi-snapshot-webhook pods as.
+	// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS.
+	if setDefaultSecurityContext {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: "1001"})
+	}
 
 	params.DeploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), params.AvailabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
