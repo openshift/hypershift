@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	"go.uber.org/zap/zapcore"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -196,7 +196,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 			},
@@ -216,8 +216,8 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						PlaceholderLabel: "true",
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						PlaceholderLabel:                         "true",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 			},
@@ -233,8 +233,8 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "whatever",
 					Labels: map[string]string{
-						PlaceholderLabel: "true",
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						PlaceholderLabel:                         "true",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 			},
@@ -250,8 +250,8 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-123",
 					Labels: map[string]string{
-						PlaceholderLabel: "true",
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						PlaceholderLabel:                         "true",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 			},
@@ -271,8 +271,8 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-2",
 					Labels: map[string]string{
-						PlaceholderLabel: "true",
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						PlaceholderLabel:                         "true",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 			},
@@ -292,8 +292,8 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-1",
 					Labels: map[string]string{
-						PlaceholderLabel: "true",
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						PlaceholderLabel:                         "true",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 				Spec: appsv1.DeploymentSpec{
@@ -340,8 +340,8 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-1",
 					Labels: map[string]string{
-						PlaceholderLabel: "true",
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						PlaceholderLabel:                         "true",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 				Spec: appsv1.DeploymentSpec{
@@ -388,8 +388,8 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-1",
 					Labels: map[string]string{
-						PlaceholderLabel: "true",
-						hostedclustersizing.HostedClusterSizeLabel: "small",
+						PlaceholderLabel:                         "true",
+						hypershiftv1beta1.HostedClusterSizeLabel: "small",
 					},
 				},
 				Spec: appsv1.DeploymentSpec{

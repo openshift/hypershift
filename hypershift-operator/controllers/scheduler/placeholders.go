@@ -10,7 +10,6 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -181,7 +180,7 @@ func (r *placeholderCreator) reconcile(
 
 	for _, sizeClass := range config.Spec.Sizes {
 		if sizeClass.Management != nil && sizeClass.Management.Placeholders != 0 {
-			deployments, err := r.listDeployments(ctx, client.InNamespace(placeholderNamespace), client.HasLabels{PlaceholderLabel}, client.MatchingLabels{hostedclustersizing.HostedClusterSizeLabel: sizeClass.Name})
+			deployments, err := r.listDeployments(ctx, client.InNamespace(placeholderNamespace), client.HasLabels{PlaceholderLabel}, client.MatchingLabels{hypershiftv1beta1.HostedClusterSizeLabel: sizeClass.Name})
 			if err != nil {
 				return nil, err
 			}
@@ -214,7 +213,7 @@ func (r *placeholderCreator) reconcile(
 			// which placeholder are we missing?
 			presentIndices := sets.Set[int]{}
 			for _, deployment := range deployments.Items {
-				index, err := parseIndex(deployment.ObjectMeta.Labels[hostedclustersizing.HostedClusterSizeLabel], deployment.ObjectMeta.Name)
+				index, err := parseIndex(deployment.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel], deployment.ObjectMeta.Name)
 				if err != nil {
 					// this should never happen, but we can't progress if it does
 					logger.Error(err, "deployment has invalid placeholder index value", "value", deployment.ObjectMeta.Name)
@@ -283,7 +282,7 @@ func (r *placeholderUpdater) reconcile(
 	logger := ctrl.LoggerFrom(ctx)
 
 	_, isPlaceholder := deployment.ObjectMeta.Labels[PlaceholderLabel]
-	placeholderSize, hasSize := deployment.ObjectMeta.Labels[hostedclustersizing.HostedClusterSizeLabel]
+	placeholderSize, hasSize := deployment.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
 
 	if !isPlaceholder || !hasSize {
 		return false, nil, nil
@@ -388,21 +387,21 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 		)
 	}
 	return appsv1applyconfigurations.Deployment(deploymentName(sizeClass, placeholderIndex), namespace).WithLabels(map[string]string{
-		PlaceholderLabel: strconv.Itoa(placeholderIndex),
-		hostedclustersizing.HostedClusterSizeLabel: sizeClass,
+		PlaceholderLabel:                         strconv.Itoa(placeholderIndex),
+		hypershiftv1beta1.HostedClusterSizeLabel: sizeClass,
 	}).WithSpec(
 		appsv1applyconfigurations.DeploymentSpec().
 			WithReplicas(2).
 			WithSelector(metav1applyconfigurations.LabelSelector().WithMatchLabels(map[string]string{
-				PlaceholderLabel: strconv.Itoa(placeholderIndex),
-				hostedclustersizing.HostedClusterSizeLabel: sizeClass,
+				PlaceholderLabel:                         strconv.Itoa(placeholderIndex),
+				hypershiftv1beta1.HostedClusterSizeLabel: sizeClass,
 			})).
 			WithStrategy(appsv1applyconfigurations.DeploymentStrategy().
 				WithType(appsv1.RecreateDeploymentStrategyType)).
 			WithTemplate(corev1applyconfigurations.PodTemplateSpec().
 				WithLabels(map[string]string{
-					PlaceholderLabel: strconv.Itoa(placeholderIndex),
-					hostedclustersizing.HostedClusterSizeLabel: sizeClass,
+					PlaceholderLabel:                         strconv.Itoa(placeholderIndex),
+					hypershiftv1beta1.HostedClusterSizeLabel: sizeClass,
 				}).
 				WithSpec(corev1applyconfigurations.PodSpec().
 					// placeholder pods must land on request serving nodes for the size class we're keeping warm

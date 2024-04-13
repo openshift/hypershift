@@ -251,7 +251,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{
 					Namespace: ptr.To("ns"),
 					Name:      ptr.To("hc"),
-					Labels:    map[string]string{HostedClusterSizeLabel: "large"},
+					Labels:    map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 			}},
 		},
@@ -283,7 +283,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{
 					Namespace: ptr.To("ns"),
 					Name:      ptr.To("hc"),
-					Labels:    map[string]string{HostedClusterSizeLabel: "large"},
+					Labels:    map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 			}},
 		},
@@ -293,7 +293,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "small"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "small"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -355,7 +355,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "large"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -417,7 +417,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "large"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -479,7 +479,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "large"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -541,7 +541,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "large"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -581,7 +581,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "large"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -649,7 +649,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "large"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -695,7 +695,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "large"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -763,7 +763,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "small"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "small"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -830,7 +830,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{HostedClusterSizeLabel: "small"},
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "small"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -891,7 +891,7 @@ func hostedClusterWithTransition(name string, transition time.Time) hypershiftv1
 	return hypershiftv1beta1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "ns", Name: name,
-			Labels: map[string]string{HostedClusterSizeLabel: "large"},
+			Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
 		},
 		Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 			Type:               hypershiftv1beta1.ClusterSizeComputed,

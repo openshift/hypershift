@@ -26,8 +26,6 @@ import (
 )
 
 const (
-	HostedClusterSizeLabel = "hypershift.openshift.io/hosted-cluster-size"
-
 	hccoReportsNodeCountLabel = "io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count"
 )
 
@@ -192,13 +190,13 @@ func (r *reconciler) reconcile(
 	}
 
 	lastTransitionTime, lastSizeClass := previousTransitionFor(hostedCluster)
-	currentSizeClass, sizeClassLabelPresent := hostedCluster.ObjectMeta.Labels[HostedClusterSizeLabel]
+	currentSizeClass, sizeClassLabelPresent := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
 	if lastTransitionTime != nil && !sizeClassLabelPresent || currentSizeClass != lastSizeClass {
 		// we can't update both the status and the labels in one call, so when we have updated status but
 		// have not yet updated the labels, we just need to do that first
 		return &action{
 			applyCfg: hypershiftv1beta1applyconfigurations.HostedCluster(hostedCluster.Name, hostedCluster.Namespace).
-				WithLabels(map[string]string{HostedClusterSizeLabel: lastSizeClass}),
+				WithLabels(map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: lastSizeClass}),
 		}, nil
 	}
 
