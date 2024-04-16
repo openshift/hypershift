@@ -483,6 +483,10 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
+			// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
+			if strings.HasPrefix(pod.Name, "kubevirt-csi") {
+				continue
+			}
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > crashToleration {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
