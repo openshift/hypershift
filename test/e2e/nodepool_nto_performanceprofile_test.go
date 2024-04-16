@@ -39,6 +39,7 @@ spec:
 )
 
 type NTOPerformanceProfileTest struct {
+	DummyInfraSetup
 	ctx                 context.Context
 	managementClient    crclient.Client
 	hostedClusterClient crclient.Client

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/conditions"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
@@ -26,108 +27,145 @@ var (
 	twoReplicas  int32 = 2
 )
 
+type HostedClusterNodePoolTestCases struct {
+	build HostedClusterNodePoolTestCasesBuilderFn
+	setup func(t *testing.T)
+}
+
+type HostedClusterNodePoolTestCasesBuilderFn func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) []NodePoolTestCase
+
 type NodePoolTestCase struct {
 	name            string
 	test            NodePoolTest
 	manifestBuilder NodePoolManifestBuilder
+	infraSetup      func(t *testing.T) error
 }
 
 func TestNodePool(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
+	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
+		{
+			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) []NodePoolTestCase {
+				return []NodePoolTestCase{
+					{
+						name: "TestKMSRootVolumeEncryption",
+						test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
+					},
+					{
+						name: "TestNodePoolAutoRepair",
+						test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
+					},
+					{
+						name: "TestNodepoolMachineconfigGetsRolledout",
+						test: NewNodePoolMachineconfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts),
+					},
+					{
+						name: "TestNTOMachineConfigGetsRolledOut",
+						test: NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, false),
+					},
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+					{
+						name:            "TestNTOMachineConfigAppliedInPlace",
+						test:            NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, true),
+						manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+					},
 
-	// We set replicas to 0 in order to allow the inner tests to
-	// create their own NodePools with the proper replicas
-	clusterOpts.NodePoolReplicas = 0
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+					{
+						name: "TestNodePoolReplaceUpgrade",
+						test: NewNodePoolUpgradeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+					},
 
-		// Get the newly created default NodePool
-		nodepools := &hyperv1.NodePoolList{}
-		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
-			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
-		}
-		g.Expect(nodepools.Items).ToNot(BeEmpty())
-		defaultNodepool := &nodepools.Items[0]
+					{
+						name:            "TestNodePoolInPlaceUpgrade",
+						test:            NewNodePoolUpgradeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+						manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+					},
 
-		// Set of tests
-		// Each test should have their own NodePool
-		nodePoolTests := []NodePoolTestCase{
+					{
+						name: "KubeVirtCacheTest",
+						test: NewKubeVirtCacheTest(ctx, mgtClient, hostedCluster),
+					},
+					{
+						name: "TestRollingUpgrade",
+						test: NewRollingUpgradeTest(ctx, mgtClient, hostedCluster),
+					},
+					{
+						name: "KubeVirtQoSClassGuaranteedTest",
+						test: NewKubeVirtQoSClassGuaranteedTest(ctx, mgtClient, hostedCluster),
+					},
+					{
+						name: "KubeKubeVirtJsonPatchTest",
+						test: NewKubeKubeVirtJsonPatchTest(ctx, mgtClient, hostedCluster),
+					},
+					{
+						name: "KubeVirtNodeSelectorTest",
+						test: NewKubeKubeVirtNodeSelectorTest(ctx, mgtClient, hostedCluster),
+					},
+					{
+						name: "KubeVirtNodeMultinetTest",
+						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
+					},
+					{
+						name: "TestNTOPerformanceProfile",
+						test: NewNTOPerformanceProfileTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+					},
+				}
+			},
+		},
+		// This kubevirt test need to run at different hosted cluster
+		{
+			setup: func(t *testing.T) {
+				if globalOpts.Platform != hyperv1.KubevirtPlatform {
+					t.Skip("tests only supported on platform KubeVirt")
+				}
+			},
+			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) []NodePoolTestCase {
+				return []NodePoolTestCase{{
+					name: "KubeVirtNodeAdvancedMultinetTest",
+					test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster),
+				}}
+			},
+		},
+	}
 
-			{
-				name: "TestKMSRootVolumeEncryption",
-				test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
-			},
-			{
-				name: "TestNodePoolAutoRepair",
-				test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
-			},
-			{
-				name: "TestNodepoolMachineconfigGetsRolledout",
-				test: NewNodePoolMachineconfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts),
-			},
-			{
-				name: "TestNTOMachineConfigGetsRolledOut",
-				test: NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, false),
-			},
+	executeNodePoolTests(t, nodePoolTestCasesPerHostedCluster)
+}
 
-			{
-				name:            "TestNTOMachineConfigAppliedInPlace",
-				test:            NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, true),
-				manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
-			},
+func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []HostedClusterNodePoolTestCases) {
+	for i, _ := range nodePoolTestCasesPerHostedCluster {
+		t.Run(fmt.Sprintf("HostedCluster%d", i), func(t *testing.T) {
+			nodePoolTestCases := nodePoolTestCasesPerHostedCluster[i]
+			if nodePoolTestCases.setup != nil {
+				nodePoolTestCases.setup(t)
+			}
+			t.Parallel()
+			clusterOpts := globalOpts.DefaultClusterOptions(t)
+			// We set replicas to 0 in order to allow the inner tests to
+			// create their own NodePools with the proper replicas
+			clusterOpts.NodePoolReplicas = 0
 
-			{
-				name: "TestNodePoolReplaceUpgrade",
-				test: NewNodePoolUpgradeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-			},
+			ctx, cancel := context.WithCancel(testContext)
+			defer cancel()
+			e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+				hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-			{
-				name:            "TestNodePoolInPlaceUpgrade",
-				test:            NewNodePoolUpgradeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-				manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-			},
-
-			{
-				name: "KubeVirtCacheTest",
-				test: NewKubeVirtCacheTest(ctx, mgtClient, hostedCluster),
-			},
-			{
-				name: "TestRollingUpgrade",
-				test: NewRollingUpgradeTest(ctx, mgtClient, hostedCluster),
-			},
-			{
-				name: "KubeVirtQoSClassGuaranteedTest",
-				test: NewKubeVirtQoSClassGuaranteedTest(ctx, mgtClient, hostedCluster),
-			},
-			{
-				name: "KubeKubeVirtJsonPatchTest",
-				test: NewKubeKubeVirtJsonPatchTest(ctx, mgtClient, hostedCluster),
-			},
-			{
-				name: "KubeVirtNodeSelectorTest",
-				test: NewKubeKubeVirtNodeSelectorTest(ctx, mgtClient, hostedCluster),
-			},
-			{
-				name: "KubeVirtNodeMultinetTest",
-				test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
-			},
-			{
-				name: "TestNTOPerformanceProfile",
-				test: NewNTOPerformanceProfileTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
-			},
-		}
-
-		for _, testCase := range nodePoolTests {
-			t.Run(testCase.name, func(t *testing.T) {
-				executeNodePoolTest(t, ctx, mgtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
-			})
-		}
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+				// Get the newly created default NodePool
+				nodepools := &hyperv1.NodePoolList{}
+				if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+					t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
+				}
+				g.Expect(nodepools.Items).ToNot(BeEmpty())
+				defaultNodepool := &nodepools.Items[0]
+				testCases := nodePoolTestCases.build(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts)
+				for _, testCase := range testCases {
+					t.Run(testCase.name, func(t *testing.T) {
+						executeNodePoolTest(t, ctx, mgtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
+					})
+				}
+			}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+		})
+	}
 }
 
 // nodePoolScaleDownToZero function will scaleDown the nodePool created for the current tests
@@ -176,10 +214,25 @@ type NodePoolTest interface {
 	Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node)
 
 	NodePoolManifestBuilder
+	InfraSetup
 }
 
 type NodePoolManifestBuilder interface {
 	BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error)
+}
+
+type InfraSetup interface {
+	SetupInfra(t *testing.T) error
+	TeardownInfra(t *testing.T) error
+}
+
+type DummyInfraSetup struct{}
+
+func (i *DummyInfraSetup) SetupInfra(*testing.T) error {
+	return nil
+}
+func (i *DummyInfraSetup) TeardownInfra(*testing.T) error {
+	return nil
 }
 
 func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hcClient crclient.Client,
@@ -191,10 +244,11 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 
 	// create nodePool manifest for the test
 	if manifestBuilder == nil {
+		g.Expect(nodePoolTest).ToNot(BeNil())
 		manifestBuilder = nodePoolTest
 	}
 	nodePool, err := manifestBuilder.BuildNodePoolManifest(defaultNodepool)
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(err).ToNot(HaveOccurred(), "should success preparing nodepool")
 
 	// Using default security group is main use case for OCM.
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -210,6 +264,12 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 		err = nodePoolRecreate(t, ctx, nodePool, mgmtClient)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to Create the NodePool")
 	}
+
+	// Extra setup at some test after nodepool creation
+	g.Expect(nodePoolTest.SetupInfra(t)).To(Succeed(), "should succeed seting up the infra after creating the nodepool")
+	defer func() {
+		g.Expect(nodePoolTest.TeardownInfra(t)).To(Succeed(), "should succeed cleaning up infra customizations")
+	}()
 
 	numNodes := *nodePool.Spec.Replicas
 	t.Logf("Waiting for Nodes %d\n", numNodes)

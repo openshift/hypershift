@@ -19,6 +19,7 @@ import (
 )
 
 type KMSRootVolumeTest struct {
+	DummyInfraSetup
 	hostedCluster *hyperv1.HostedCluster
 	clusterOpts   core.CreateOptions
 

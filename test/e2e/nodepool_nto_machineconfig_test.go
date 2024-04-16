@@ -49,6 +49,7 @@ spec:
 )
 
 type NTOMachineConfigRolloutTest struct {
+	DummyInfraSetup
 	ctx        context.Context
 	mgmtClient crclient.Client
 
