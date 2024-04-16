@@ -111,6 +111,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ManagementParentKubeconfig, "e2e.management-parent-kubeconfig", "", "Kubeconfig of the management cluster's parent cluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementClusterNamespace, "e2e.management-cluster-namespace", "", "Namespace of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementClusterName, "e2e.management-cluster-name", "", "Name of the management cluster's HostedCluster (required to test request serving isolation)")
+	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
 
 	flag.Parse()
 
@@ -415,6 +416,7 @@ type configurableClusterOptions struct {
 	PowerVSCloudConnection       string
 	PowerVSVPC                   string
 	EtcdStorageClass             string
+	Annotations                  stringMapVar
 }
 
 var nextAWSZoneIndex = 0
@@ -509,6 +511,12 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		createOption.SSHKeyFile = o.configurableClusterOptions.SSHKeyFile
 	}
 
+	if o.configurableClusterOptions.Annotations != nil {
+		for k, v := range o.configurableClusterOptions.Annotations {
+			createOption.Annotations = append(createOption.Annotations, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
 	return createOption
 }
 
@@ -594,3 +602,24 @@ type stringSliceVar []string
 
 func (s *stringSliceVar) String() string     { return strings.Join(*s, ",") }
 func (s *stringSliceVar) Set(v string) error { *s = append(*s, strings.Split(v, ",")...); return nil }
+
+type stringMapVar map[string]string
+
+func (s *stringMapVar) String() string {
+	if *s == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", *s)
+}
+
+func (s *stringMapVar) Set(value string) error {
+	split := strings.Split(value, "=")
+	if len(split) != 2 {
+		return fmt.Errorf("invalid argument: %s", value)
+	}
+	if *s == nil {
+		*s = map[string]string{}
+	}
+	map[string]string(*s)[split[0]] = split[1]
+	return nil
+}
