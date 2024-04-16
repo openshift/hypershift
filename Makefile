@@ -288,3 +288,90 @@ ci-test-e2e-azure:
 regenerate-pki:
 	REGENERATE_PKI=1 $(GO) test ./control-plane-pki-operator/...
 	REGENERATE_PKI=1 $(GO) test ./test/e2e/... -run TestRegeneratePKI
+
+
+DEV_NAMESPACE = skuznets
+#PULL_SECRET = /home/stevekuznetsov/secrets/ocm-pull-secret
+PULL_SECRET = /home/stevekuznetsov/.docker/config.json
+AWS_CREDS = /home/stevekuznetsov/.aws/credentials_hypershift
+RELEASE_IMAGE = registry.ci.openshift.org/ocp/release:4.16.0-0.ci-2024-04-15-154741 # $(curl -s https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/4.16.0-0.ci/latest | jq -r '.pullSpec')
+
+./devenv:
+	mkdir ./devenv
+
+# TODO: actually use new-app?
+
+./devenv/root-ci.kubeconfig: ./devenv
+	@ if [[ $$(oc adm policy who-can get configmaps --namespace kube-public -o json | jq '.users | index("system:serviceaccount:$(DEV_NAMESPACE):$(DEV_NAMESPACE)-dev")') == 'null' ]]; then \
+    	oc --context hypershift-ci --namespace kube-public patch rolebinding/configmap-reader --patch '[{"op":"add","path":"/subjects/-","value":{"kind": "ServiceAccount", "namespace": "$(DEV_NAMESPACE)", "name": "$(DEV_NAMESPACE)-dev"}}]' --type json; \
+    fi;
+	cp ~/.kube/config ./devenv/root-ci.kubeconfig.raw
+	$(eval TOKEN := $(shell oc --context hypershift-ci --namespace $(DEV_NAMESPACE) create token $(DEV_NAMESPACE)-dev))
+	oc --kubeconfig ./devenv/root-ci.kubeconfig.raw config set-credentials serviceaccount --token $(TOKEN)
+	oc --kubeconfig ./devenv/root-ci.kubeconfig.raw config set-context hypershift-ci --user serviceaccount
+	oc --kubeconfig ./devenv/root-ci.kubeconfig.raw config use-context hypershift-ci
+	mv ./devenv/root-ci.kubeconfig.raw ./devenv/root-ci.kubeconfig
+
+./devenv/mgmt.hostedcluster.yaml: hypershift ./devenv/root-ci.kubeconfig
+	KUBECONFIG=./devenv/root-ci.kubeconfig $(OUT_DIR)/hypershift create cluster aws \
+		--render \
+		--release-image=$(RELEASE_IMAGE) \
+		--pull-secret=$(PULL_SECRET) \
+		--aws-creds=$(AWS_CREDS) \
+		--namespace=$(DEV_NAMESPACE) \
+		--name=$(DEV_NAMESPACE)-mgmt \
+		--infra-id=$(DEV_NAMESPACE)-mgmt \
+		--base-domain=ci.hypershift.devcluster.openshift.com \
+		--region=us-east-1 \
+		--zones=us-east-1a \
+		--instance-type=m6a.xlarge \
+		--auto-repair \
+		--generate-ssh \
+		--node-pool-replicas 1 \
+		--single-nat-gateway \
+		--cluster-cidr 10.136.0.0/14 \
+		--service-cidr 172.32.0.0/16 \
+		--node-selector=hypershift.openshift.io/control-plane=true > ./devenv/mgmt.hostedcluster.yaml
+
+./devenv/mgmt.kubeconfig: ./devenv/mgmt.hostedcluster.yaml
+	oc --kubeconfig ./devenv/root-ci.kubeconfig apply --server-side -f ./devenv/mgmt.hostedcluster.yaml
+	oc --kubeconfig ./devenv/root-ci.kubeconfig wait --for condition=Available hostedcluster/$(DEV_NAMESPACE)-mgmt --namespace $(DEV_NAMESPACE) --timeout -1s
+	oc --kubeconfig ./devenv/root-ci.kubeconfig --namespace $(DEV_NAMESPACE) get secret $(DEV_NAMESPACE)-mgmt-admin-kubeconfig -o jsonpath={.data.kubeconfig} | base64 --decode > ./devenv/mgmt.kubeconfig
+
+./devenv/mgmt.hypershift-operator.yaml: ./devenv/mgmt.kubeconfig
+	KUBECONFIG=./devenv/mgmt.kubeconfig $(OUT_DIR)/hypershift install render \
+		--format yaml \
+		--oidc-storage-provider-s3-bucket-name skuznets \
+		--oidc-storage-provider-s3-credentials $(AWS_CREDS) \
+		--oidc-storage-provider-s3-region us-east-1 \
+		--enable-defaulting-webhook true > ./devenv/mgmt.hypershift-operator.yaml
+
+.PHONY: ./devenv/mgmt.hypershift-operator
+./devenv/mgmt.hypershift-operator: ./devenv/mgmt.kubeconfig ./devenv/mgmt.hypershift-operator.yaml
+	oc --kubeconfig ./devenv/mgmt.kubeconfig apply --server-side -f ./devenv/mgmt.hypershift-operator.yaml
+	oc --kubeconfig ./devenv/mgmt.kubeconfig wait --for condition=Available deployment/operator --namespace hypershift --timeout -1s
+
+./devenv/guest.hostedcluster.yaml: ./devenv/mgmt.hypershift-operator
+	KUBECONFIG=./devenv/mgmt.kubeconfig $(OUT_DIR)/hypershift create cluster aws \
+		--render \
+		--release-image=$(RELEASE_IMAGE) \
+		--pull-secret=$(PULL_SECRET) \
+		--aws-creds=$(AWS_CREDS) \
+		--name=$(DEV_NAMESPACE)-guest \
+		--infra-id=$(DEV_NAMESPACE)-guest \
+		--endpoint-access=Public \
+		--base-domain=ci.hypershift.devcluster.openshift.com \
+		--region=us-east-1 \
+		--zones=us-east-1a \
+		--instance-type=m6a.xlarge \
+		--auto-repair \
+		--generate-ssh \
+		--node-pool-replicas 1 \
+		--single-nat-gateway \
+		--cluster-cidr 10.136.0.0/14 \
+		--service-cidr 172.32.0.0/16 > ./devenv/guest.hostedcluster.yaml
+
+./devenv/guest.kubeconfig: ./devenv/guest.hostedcluster.yaml
+	oc --kubeconfig ./devenv/mgmt.kubeconfig apply --server-side -f ./devenv/guest.hostedcluster.yaml
+	oc --kubeconfig ./devenv/mgmt.kubeconfig wait --for condition=Available hostedcluster/$(DEV_NAMESPACE)-guest --namespace clusters --timeout -1s
+	oc --kubeconfig ./devenv/mgmt.kubeconfig --namespace clusters get secret $(DEV_NAMESPACE)-guest-admin-kubeconfig -o jsonpath={.data.kubeconfig} | base64 --decode > ./devenv/guest.kubeconfig
