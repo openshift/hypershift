@@ -787,6 +787,12 @@ objects:
         record: platform:hypershift_hostedclusters:max
       - expr: max by(platform) (hypershift_nodepools)
         record: platform:hypershift_nodepools:max
+      - expr: sum by(cluster_name, exported_namespace) (max by(name, exported_namespace,
+          platform, cluster_name) (hypershift_nodepools_size))
+        record: cluster_name:hypershift_nodepools_size:sum
+      - expr: sum by(cluster_name, exported_namespace) (max by(name, exported_namespace,
+          platform, cluster_name) (hypershift_nodepools_available_replicas))
+        record: cluster_name:hypershift_nodepools_available_replicas:sum
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
