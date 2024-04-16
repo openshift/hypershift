@@ -119,6 +119,33 @@ func OpenShiftOAuthMasterCABundle(ns string) *corev1.ConfigMap {
 	}
 }
 
+func MultusAdmissionControllerService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "multus-admission-controller",
+			Namespace: ns,
+		},
+	}
+}
+
+func NetworkNodeIdentityService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "network-node-identity",
+			Namespace: ns,
+		},
+	}
+}
+
+func OVNKubernetesControlPlaneService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ovn-kubernetes-control-plane",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-signer")
 }

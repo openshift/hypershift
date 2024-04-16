@@ -2390,28 +2390,84 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
 	}
 
+	// For the Multus Admission Controller, Network Node Identity, and OVN Control Plane Metrics Serving Certs:
+	//   We want to remove the secret if there was an existing one created by service-ca; otherwise, it will cause
+	//   issues in cases where you are upgrading an older CPO prior to us adding the feature to reconcile the serving
+	//   cert secret ourselves.
+
 	// Multus Admission Controller Serving Cert
-	multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
-		return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+	multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
+		}
+	}
+
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
+		multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
+
+		err = removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret)
+		if err != nil {
+			return err
+		}
+
+		if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
+			return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+		}
 	}
 
 	// Network Node Identity Serving Cert
-	networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
-		return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile network node identity serving cert: %w", err)
+	networkNodeIdentityService := manifests.NetworkNodeIdentityService(hcp.Namespace)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(networkNodeIdentityService), networkNodeIdentityService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve network-node-identity service: %w", err)
+		}
+	}
+
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(networkNodeIdentityService); !hasServiceCAAnnotation {
+		networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
+
+		err = removeServiceCASecret(ctx, r.Client, networkNodeIdentityServingCertSecret)
+		if err != nil {
+			return err
+		}
+
+		if _, err = createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
+			return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile network node identity serving cert: %w", err)
+		}
 	}
 
 	// OVN Control Plane Metrics Serving Cert
-	ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
-		return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile OVN control plane serving cert: %w", err)
+	ovnControlPlaneService := manifests.OVNKubernetesControlPlaneService(hcp.Namespace)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(ovnControlPlaneService), ovnControlPlaneService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve ovn-kubernetes-control-plane service: %w", err)
+		}
+	}
+
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(ovnControlPlaneService); !hasServiceCAAnnotation {
+		ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
+
+		err = removeServiceCASecret(ctx, r.Client, ovnControlPlaneMetricsServingCertSecret)
+		if err != nil {
+			return err
+		}
+
+		if _, err = createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
+			return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OVN control plane serving cert: %w", err)
+		}
 	}
 
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
@@ -3951,7 +4007,16 @@ func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, se
 			return fmt.Errorf("failed to get service: %w", err)
 		}
 	} else {
-		_, ok := service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
+		_, ok := service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"]
+		if ok {
+			delete(service.Annotations, "service.alpha.openshift.io/serving-cert-secret-name")
+			err := c.Update(ctx, service)
+			if err != nil {
+				return fmt.Errorf("failed to update service: %w", err)
+			}
+		}
+
+		_, ok = service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
 		if ok {
 			delete(service.Annotations, "service.beta.openshift.io/serving-cert-secret-name")
 			err := c.Update(ctx, service)
@@ -3961,12 +4026,39 @@ func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, se
 		}
 	}
 
+	err := removeServiceCASecret(ctx, c, secret)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func doesServiceHaveServiceCAAnnotation(service *corev1.Service) bool {
+	_, ok := service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"]
+	if ok {
+		return true
+	}
+
+	_, ok = service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
+	return ok
+}
+
+func removeServiceCASecret(ctx context.Context, c client.Client, secret *corev1.Secret) error {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(secret), secret); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get secret: %w", err)
 		}
 	} else {
-		_, ok := secret.Annotations["service.beta.openshift.io/originating-service-name"]
+		_, ok := secret.Annotations["service.alpha.openshift.io/originating-service-name"]
+		if ok {
+			_, err := util.DeleteIfNeeded(ctx, c, secret)
+			if err != nil {
+				return fmt.Errorf("failed to delete secret generated by service-ca: %w", err)
+			}
+		}
+
+		_, ok = secret.Annotations["service.beta.openshift.io/originating-service-name"]
 		if ok {
 			_, err := util.DeleteIfNeeded(ctx, c, secret)
 			if err != nil {
