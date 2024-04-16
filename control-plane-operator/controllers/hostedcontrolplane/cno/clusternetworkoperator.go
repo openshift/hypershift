@@ -62,8 +62,6 @@ type Params struct {
 	ReleaseVersion          string
 	AvailabilityProberImage string
 	HostedClusterName       string
-	CAConfigMap             string
-	CAConfigMapKey          string
 	APIServerAddress        string
 	APIServerPort           int32
 	TokenAudience           string
@@ -112,8 +110,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		TokenAudience:           hcp.Spec.IssuerURL,
 		SbDbPubStrategy:         util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb),
 		DefaultIngressDomain:    defaultIngressDomain,
-		CAConfigMap:             "root-ca",
-		CAConfigMapKey:          "ca.crt",
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
@@ -488,8 +484,6 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		Env: append(cnoEnv, []corev1.EnvVar{
 			{Name: "HYPERSHIFT", Value: "true"},
 			{Name: "HOSTED_CLUSTER_NAME", Value: params.HostedClusterName},
-			{Name: "CA_CONFIG_MAP", Value: params.CAConfigMap},
-			{Name: "CA_CONFIG_MAP_KEY", Value: params.CAConfigMapKey},
 			{Name: "TOKEN_AUDIENCE", Value: params.TokenAudience},
 
 			{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
