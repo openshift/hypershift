@@ -18,6 +18,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
+	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
@@ -2139,6 +2140,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	_ = mcfgv1.Install(scheme)
 	_ = v1alpha1.Install(scheme)
 	_ = configv1.Install(scheme)
+	_ = configv1alpha1.Install(scheme)
 
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
@@ -2159,6 +2161,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		}
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *configv1.ImageDigestMirrorSet:
+	case *configv1alpha1.ClusterImagePolicy:
 	case *mcfgv1.KubeletConfig:
 		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{

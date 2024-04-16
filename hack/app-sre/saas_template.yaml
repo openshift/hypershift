@@ -56532,6 +56532,7 @@ objects:
                     KubeletConfig
                     ContainerRuntimeConfig
                     MachineConfig
+                    ClusterImagePolicy
                     ImageContentSourcePolicy
                     or
                     ImageDigestMirrorSet

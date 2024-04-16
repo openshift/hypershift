@@ -126,6 +126,7 @@ type NodePoolSpec struct {
 	// KubeletConfig
 	// ContainerRuntimeConfig
 	// MachineConfig
+	// ClusterImagePolicy
 	// ImageContentSourcePolicy
 	// or
 	// ImageDigestMirrorSet

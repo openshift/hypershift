@@ -749,6 +749,7 @@ JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
 KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
+ClusterImagePolicy
 ImageContentSourcePolicy
 or
 ImageDigestMirrorSet</p>
@@ -6657,6 +6658,7 @@ JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
 KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
+ClusterImagePolicy
 ImageContentSourcePolicy
 or
 ImageDigestMirrorSet</p>
