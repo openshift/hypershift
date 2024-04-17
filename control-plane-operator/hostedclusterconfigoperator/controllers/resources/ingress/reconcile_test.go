@@ -23,6 +23,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputIsIBMCloudUPI        bool
 		inputIsPrivate            bool
 		inputIsNLB                bool
+		inputLoadBalancerScope    operatorv1.LoadBalancerScope
 		expectedIngressController *operatorv1.IngressController
 	}{
 		{
@@ -56,13 +57,14 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:                   "IBM Cloud Non-UPI uses LoadBalancer publishing strategy",
+			name:                   "IBM Cloud Non-UPI uses LoadBalancer publishing strategy (External)",
 			inputIngressController: manifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.IBMCloudPlatform,
 			inputReplicas:          fakeInputReplicas,
 			inputIsIBMCloudUPI:     false,
 			inputIsPrivate:         false,
+			inputLoadBalancerScope: operatorv1.ExternalLoadBalancer,
 			expectedIngressController: &operatorv1.IngressController{
 				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
@@ -72,6 +74,37 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 						Type: operatorv1.LoadBalancerServiceStrategyType,
 						LoadBalancer: &operatorv1.LoadBalancerStrategy{
 							Scope: operatorv1.ExternalLoadBalancer,
+						},
+					},
+					NodePlacement: &operatorv1.NodePlacement{
+						Tolerations: []corev1.Toleration{
+							{
+								Key:   "dedicated",
+								Value: "edge",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                   "IBM Cloud Non-UPI uses LoadBalancer publishing strategy (Internal)",
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputPlatformType:      hyperv1.IBMCloudPlatform,
+			inputReplicas:          fakeInputReplicas,
+			inputIsIBMCloudUPI:     false,
+			inputIsPrivate:         false,
+			inputLoadBalancerScope: operatorv1.InternalLoadBalancer,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type: operatorv1.LoadBalancerServiceStrategyType,
+						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							Scope: operatorv1.InternalLoadBalancer,
 						},
 					},
 					NodePlacement: &operatorv1.NodePlacement{
@@ -228,6 +261,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputIngressDomain:     fakeIngressDomain,
 			inputReplicas:          fakeInputReplicas,
 			inputIsNLB:             true,
+			inputLoadBalancerScope: operatorv1.ExternalLoadBalancer,
 			expectedIngressController: &operatorv1.IngressController{
 				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
@@ -256,7 +290,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate, tc.inputIsNLB)
+			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate, tc.inputIsNLB, tc.inputLoadBalancerScope)
 			g.Expect(err).To(BeNil())
 			g.Expect(tc.inputIngressController).To(BeEquivalentTo(tc.expectedIngressController))
 		})

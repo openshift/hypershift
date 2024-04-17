@@ -2,17 +2,19 @@ package ingress
 
 import (
 	configv1 "github.com/openshift/api/config/v1"
+	v1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type IngressParams struct {
-	IngressSubdomain string
-	Replicas         int32
-	PlatformType     hyperv1.PlatformType
-	IsPrivate        bool
-	IBMCloudUPI      bool
-	AWSNLB           bool
+	IngressSubdomain  string
+	Replicas          int32
+	PlatformType      hyperv1.PlatformType
+	IsPrivate         bool
+	IBMCloudUPI       bool
+	AWSNLB            bool
+	LoadBalancerScope v1.LoadBalancerScope
 }
 
 func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
@@ -20,11 +22,15 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	isPrivate := false
 	ibmCloudUPI := false
 	nlb := false
+	loadBalancerScope := v1.ExternalLoadBalancer
 	if hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
 		ibmCloudUPI = true
 	}
 	if hcp.Annotations[hyperv1.PrivateIngressControllerAnnotation] == "true" {
 		isPrivate = true
+	}
+	if hcp.Annotations[hyperv1.IngressControllerLoadBalancerScope] == string(v1.InternalLoadBalancer) {
+		loadBalancerScope = v1.InternalLoadBalancer
 	}
 	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.HighlyAvailable {
 		replicas = 2
@@ -34,12 +40,12 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	}
 
 	return &IngressParams{
-		IngressSubdomain: globalconfig.IngressDomain(hcp),
-		Replicas:         replicas,
-		PlatformType:     hcp.Spec.Platform.Type,
-		IsPrivate:        isPrivate,
-		IBMCloudUPI:      ibmCloudUPI,
-		AWSNLB:           nlb,
+		IngressSubdomain:  globalconfig.IngressDomain(hcp),
+		Replicas:          replicas,
+		PlatformType:      hcp.Spec.Platform.Type,
+		IsPrivate:         isPrivate,
+		IBMCloudUPI:       ibmCloudUPI,
+		AWSNLB:            nlb,
+		LoadBalancerScope: loadBalancerScope,
 	}
-
 }
