@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,6 +38,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -45,6 +47,7 @@ import (
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
@@ -203,7 +206,6 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
 		&operatorv1.IngressController{},
-		&imageregistryv1.Config{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(source.Kind(opts.Manager.GetCache(), r), eventHandler()); err != nil {
@@ -319,6 +321,33 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+	}
+	if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
+		log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
+		ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
+		if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
+			if ocmConfigMap.Data == nil {
+				// CPO has not created the configmap yet, wait for create
+				// This should not happen as we are started by the CPO after the configmap should be created
+				return nil
+			}
+			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+			if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+				err := util.DeserializeResource(configStr, config, api.Scheme)
+				if err != nil {
+					return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+				}
+			}
+			config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+			configStr, err := util.SerializeResource(config, api.Scheme)
+			if err != nil {
+				return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
+			}
+			ocmConfigMap.Data[ocm.ConfigKey] = configStr
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
+		}
 	}
 
 	log.Info("reconciling ingress controller")
