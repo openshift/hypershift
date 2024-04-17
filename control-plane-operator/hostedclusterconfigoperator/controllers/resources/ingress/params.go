@@ -8,13 +8,13 @@ import (
 )
 
 type IngressParams struct {
-	IngressSubdomain string
-	Replicas         int32
-	PlatformType     hyperv1.PlatformType
-	IsPrivate        bool
-	IBMCloudUPI      bool
-	AWSNLB           bool
-	AWSNLBScope      v1.LoadBalancerScope
+	IngressSubdomain  string
+	Replicas          int32
+	PlatformType      hyperv1.PlatformType
+	IsPrivate         bool
+	IBMCloudUPI       bool
+	AWSNLB            bool
+	LoadBalancerScope v1.LoadBalancerScope
 }
 
 func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
@@ -22,12 +22,15 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	isPrivate := false
 	ibmCloudUPI := false
 	nlb := false
-	awsNlbScope := v1.ExternalLoadBalancer
+	loadBalancerScope := v1.ExternalLoadBalancer
 	if hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
 		ibmCloudUPI = true
 	}
 	if hcp.Annotations[hyperv1.PrivateIngressControllerAnnotation] == "true" {
 		isPrivate = true
+	}
+	if hcp.Annotations[hyperv1.IngressControllerLoadBalancerScope] == string(v1.InternalLoadBalancer) {
+		loadBalancerScope = v1.InternalLoadBalancer
 	}
 	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.HighlyAvailable {
 		replicas = 2
@@ -35,18 +38,17 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Ingress != nil && hcp.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS != nil {
 		nlb = hcp.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type == configv1.NLB
 		if hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
-			awsNlbScope = v1.InternalLoadBalancer
+			loadBalancerScope = v1.InternalLoadBalancer
 		}
 	}
 
 	return &IngressParams{
-		IngressSubdomain: globalconfig.IngressDomain(hcp),
-		Replicas:         replicas,
-		PlatformType:     hcp.Spec.Platform.Type,
-		IsPrivate:        isPrivate,
-		IBMCloudUPI:      ibmCloudUPI,
-		AWSNLB:           nlb,
-		AWSNLBScope:      awsNlbScope,
+		IngressSubdomain:  globalconfig.IngressDomain(hcp),
+		Replicas:          replicas,
+		PlatformType:      hcp.Spec.Platform.Type,
+		IsPrivate:         isPrivate,
+		IBMCloudUPI:       ibmCloudUPI,
+		AWSNLB:            nlb,
+		LoadBalancerScope: loadBalancerScope,
 	}
-
 }

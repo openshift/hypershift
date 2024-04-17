@@ -78,11 +78,13 @@ const (
 	// PortierisImageAnnotation is an annotation that allows the specification of the portieries component
 	// (performs container image verification).
 	PortierisImageAnnotation = "hypershift.openshift.io/portieris-image"
-	// Configure ingress controller with endpoint publishing strategy as Private.
+	// PrivateIngressControllerAnnotation is an annotation that configures ingress controller with endpoint publishing strategy as Private.
 	// This overrides any opinionated strategy set by platform in ReconcileDefaultIngressController.
 	// It's used by IBM cloud to support ingress endpoint publishing strategy scope
 	// NOTE: We'll expose this in the API if the use case gets generalised.
 	PrivateIngressControllerAnnotation = "hypershift.openshift.io/private-ingress-controller"
+	// IngressControllerLoadBalancerScope is an annotation that allows the specification of the LoadBalancer scope for ingress controller.
+	IngressControllerLoadBalancerScope = "hypershift.openshift.io/ingress-controller-load-balancer-scope"
 
 	// CertifiedOperatorsCatalogImageAnnotation, CommunityOperatorsCatalogImageAnnotation, RedHatMarketplaceCatalogImageAnnotation and RedHatOperatorsCatalogImageAnnotation
 	// are annotations that can be used to override the address of the images used for the OLM catalogs if in the `management` OLMCatalogPlacement mode.
