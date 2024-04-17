@@ -530,12 +530,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Part zero: fix up conversion
 	originalSpec := hcluster.Spec.DeepCopy()
 
-	createOrUpdate := r.createOrUpdate(req)
-
-	if err = r.reconcileCLISecrets(ctx, createOrUpdate, hcluster); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile the CLI secrets: %w", err)
-	}
-
 	// Reconcile converted AWS roles.
 	if hcluster.Spec.Platform.AWS != nil {
 		if err := r.dereferenceAWSRoles(ctx, &hcluster.Spec.Platform.AWS.RolesRef, hcluster.Namespace); err != nil {
@@ -552,6 +546,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = arn
 		}
 	}
+
+	createOrUpdate := r.createOrUpdate(req)
 
 	// Reconcile platform defaults
 	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
@@ -1064,6 +1060,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if err = r.reconcileCLISecrets(ctx, createOrUpdate, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile the CLI secrets: %w", err)
 	}
 
 	// Set the infraID as Tag on all created AWS
@@ -2313,7 +2313,7 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to retrieve cli created secrets")
+		return fmt.Errorf("failed to retrieve cli created secrets: %v", err)
 	}
 
 	ownerRef := config.OwnerRefFrom(hcluster)
@@ -2323,7 +2323,7 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("failed to set secret's owner reference")
+			return fmt.Errorf("failed to set '%s' secret's owner reference: %v", secret.Name, err)
 		}
 		if res == controllerutil.OperationResultUpdated {
 			log.Info("added owner reference of the Hosted cluster, to the secret", "secret", secret.Name)
