@@ -105,6 +105,7 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
 	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
+	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
 
 	flag.Parse()
 
@@ -398,6 +399,7 @@ type configurableClusterOptions struct {
 	PowerVSCloudConnection       string
 	PowerVSVPC                   string
 	EtcdStorageClass             string
+	Annotations                  stringMapVar
 }
 
 var nextAWSZoneIndex = 0
@@ -492,6 +494,12 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		createOption.SSHKeyFile = o.configurableClusterOptions.SSHKeyFile
 	}
 
+	if o.configurableClusterOptions.Annotations != nil {
+		for k, v := range o.configurableClusterOptions.Annotations {
+			createOption.Annotations = append(createOption.Annotations, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
 	return createOption
 }
 
@@ -571,3 +579,24 @@ type stringSliceVar []string
 
 func (s *stringSliceVar) String() string     { return strings.Join(*s, ",") }
 func (s *stringSliceVar) Set(v string) error { *s = append(*s, strings.Split(v, ",")...); return nil }
+
+type stringMapVar map[string]string
+
+func (s *stringMapVar) String() string {
+	if *s == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", *s)
+}
+
+func (s *stringMapVar) Set(value string) error {
+	split := strings.Split(value, "=")
+	if len(split) != 2 {
+		return fmt.Errorf("invalid argument: %s", value)
+	}
+	if *s == nil {
+		*s = map[string]string{}
+	}
+	map[string]string(*s)[split[0]] = split[1]
+	return nil
+}
