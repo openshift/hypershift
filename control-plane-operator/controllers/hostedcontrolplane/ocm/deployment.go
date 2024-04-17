@@ -42,7 +42,7 @@ func openShiftControllerManagerLabels() map[string]string {
 }
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig) error {
-	configBytes, ok := config.Data[configKey]
+	configBytes, ok := config.Data[ConfigKey]
 	if !ok {
 		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")
 	}
@@ -97,7 +97,7 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 		c.Args = []string{
 			"start",
 			"--config",
-			path.Join(volumeMounts.Path(c.Name, ocmVolumeConfig().Name), configKey),
+			path.Join(volumeMounts.Path(c.Name, ocmVolumeConfig().Name), ConfigKey),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.Ports = []corev1.ContainerPort{
