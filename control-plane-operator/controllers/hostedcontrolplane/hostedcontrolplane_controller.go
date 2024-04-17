@@ -2570,7 +2570,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 
 	recyclerConfig := manifests.RecyclerConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, recyclerConfig, func() error {
-		return kcm.ReconcileRecyclerConfig(recyclerConfig, p.OwnerRef)
+		return kcm.ReconcileRecyclerConfig(recyclerConfig, p.OwnerRef, releaseImageProvider)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm recycler config: %w", err)
 	}
