@@ -1807,7 +1807,6 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			"packageserver",
 			"csi-snapshot-webhook",
 			"csi-snapshot-controller",
-			"ovnkube-control-plane", //remove once https://issues.redhat.com/browse/OCPBUGS-26408 is closed,
 		)
 
 		if hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
