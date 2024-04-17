@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
-	"github.com/openshift/hypershift/support/infraid"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/pointer"
 )
@@ -117,13 +116,6 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		if len(split) != 2 {
 			return fmt.Errorf("invalid infra storageclass mapping [%s]", mapping)
 		}
-	}
-
-	infraID := opts.InfraID
-	if len(infraID) == 0 {
-		exampleOptions.InfraID = infraid.New(opts.Name)
-	} else {
-		exampleOptions.InfraID = infraID
 	}
 
 	var infraKubeConfigContents []byte

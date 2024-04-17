@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
-	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/spf13/cobra"
@@ -90,15 +89,10 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
 
-		infraID := opts.InfraID
-		if len(infraID) == 0 {
-			infraID = infraid.New(opts.Name)
-		}
-
 		infra, err = (&azureinfra.CreateInfraOptions{
 			Name:                 opts.Name,
 			Location:             opts.AzurePlatform.Location,
-			InfraID:              infraID,
+			InfraID:              opts.InfraID,
 			CredentialsFile:      opts.AzurePlatform.CredentialsFile,
 			BaseDomain:           opts.BaseDomain,
 			RHCOSImage:           rhcosImage,
