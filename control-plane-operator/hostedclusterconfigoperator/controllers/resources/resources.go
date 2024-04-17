@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -1680,7 +1680,7 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 			Name:                    "pod-identity-webhook.amazonaws.com",
 			ClientConfig: admissionregistrationv1.WebhookClientConfig{
 				CABundle: []byte(r.rootCA),
-				URL:      pointer.String("https://127.0.0.1:4443/mutate"),
+				URL:      ptr.To("https://127.0.0.1:4443/mutate"),
 			},
 			FailurePolicy: &ignoreFailurePolicy,
 			Rules: []admissionregistrationv1.RuleWithOperations{{
@@ -1886,8 +1886,8 @@ func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebho
 				Service: &admissionregistrationv1.ServiceReference{
 					Namespace: "default",
 					Name:      "xxx-invalid-service-xxx",
-					Path:      pointer.String("/validate"),
-					Port:      pointer.Int32(443),
+					Path:      ptr.To("/validate"),
+					Port:      ptr.To[int32](443),
 				},
 			},
 			FailurePolicy: &failurePolicy,
@@ -1924,7 +1924,7 @@ func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebho
 			},
 			MatchPolicy:       &equivalentMatch,
 			SideEffects:       &sideEffectClass,
-			TimeoutSeconds:    pointer.Int32(30),
+			TimeoutSeconds:    ptr.To[int32](30),
 			NamespaceSelector: &metav1.LabelSelector{},
 			ObjectSelector:    &metav1.LabelSelector{},
 		},
@@ -1965,7 +1965,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	for i := range routerPods.Items {
 		rp := &routerPods.Items[i]
 		log.Info("Force deleting", "pod", client.ObjectKeyFromObject(rp).String())
-		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)}); err != nil {
+		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to force delete %s", client.ObjectKeyFromObject(rp).String()))
 		}
 	}
@@ -2147,7 +2147,7 @@ func cleanupResources(ctx context.Context, c client.Client, list client.ObjectLi
 				log.Info("Deleting resource", "type", fmt.Sprintf("%T", obj), "name", client.ObjectKeyFromObject(obj).String())
 				var deleteErr error
 				if force {
-					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})
+					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)})
 				} else {
 					deleteErr = c.Delete(ctx, obj)
 				}
@@ -2389,6 +2389,7 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: "/etc/kubernetes",
+									Type: ptr.To(corev1.HostPathUnset),
 								},
 							},
 						},
