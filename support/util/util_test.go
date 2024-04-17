@@ -345,3 +345,63 @@ func TestFirstUsableIP(t *testing.T) {
 		})
 	}
 }
+
+func TestParseNodeSelector(t *testing.T) {
+	tests := []struct {
+		name string
+		str  string
+		want map[string]string
+	}{
+		{
+			name: "Given a valid node selector string, it should return a map of key value pairs",
+			str:  "key1=value1,key2=value2,key3=value3",
+			want: map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+				"key3": "value3",
+			},
+		},
+		{
+			name: "Given a valid node selector string with empty values, it should return a map of key value pairs",
+			str:  "key1=,key2=value2,key3=",
+			want: map[string]string{
+				"key2": "value2",
+			},
+		},
+		{
+			name: "Given a valid node selector string with empty keys, it should return a map of key value pairs",
+			str:  "=value1,key2=value2,=value3",
+			want: map[string]string{
+				"key2": "value2",
+			},
+		},
+		{
+			name: "Given a valid node selector string with empty string, it should return an empty map",
+			str:  "",
+			want: nil,
+		},
+		{
+			name: "Given a valid node selector string with invalid key value pairs, it should return a map of key value pairs",
+			str:  "key1=value1,key2,key3=value3",
+			want: map[string]string{
+				"key1": "value1",
+				"key3": "value3",
+			},
+		},
+		{
+			name: "Given a valid node selector string with values that include =, it should return a map of key value pairs",
+			str:  "key1=value1=one,key2,key3=value3=three",
+			want: map[string]string{
+				"key1": "value1=one",
+				"key3": "value3=three",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			got := ParseNodeSelector(tt.str)
+			g.Expect(got).To(Equal(tt.want))
+		})
+	}
+}
