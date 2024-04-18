@@ -145,7 +145,7 @@ func Test_ApplyPlatformSpecificValues(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			obtainedPlatformOpts := apifixtures.ExampleOptions{}
+			obtainedPlatformOpts := apifixtures.ExampleOptions{InfraID: "infra1"}
 			err := ApplyPlatformSpecificsValues(context.TODO(), &obtainedPlatformOpts, &test.argsOpts)
 			if test.expectedError != "" {
 				g.Expect(err).To(MatchError(test.expectedError))

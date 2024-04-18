@@ -31,6 +31,7 @@ import (
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 )
@@ -325,6 +326,10 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		operatorHub = &configv1.OperatorHubSpec{
 			DisableAllDefaultSources: true,
 		}
+	}
+
+	if len(opts.InfraID) == 0 {
+		opts.InfraID = infraid.New(opts.Name)
 	}
 
 	return &apifixtures.ExampleOptions{

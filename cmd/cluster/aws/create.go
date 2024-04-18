@@ -12,7 +12,6 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/util"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
-	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
 	"github.com/spf13/cobra"
@@ -89,7 +88,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	if err != nil {
 		return err
 	}
-	infraID := opts.InfraID
 
 	// Load or create infrastructure for the cluster
 	var infra *awsinfra.CreateInfraOutput
@@ -129,12 +127,9 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 	if infra == nil {
-		if len(infraID) == 0 {
-			infraID = infraid.New(opts.Name)
-		}
 		opt := awsinfra.CreateInfraOptions{
 			Region:             opts.AWSPlatform.Region,
-			InfraID:            infraID,
+			InfraID:            opts.InfraID,
 			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
 			AWSSecretKey:       AWSSecretKey,
 			AWSKey:             AWSKey,
@@ -211,7 +206,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.IssuerURL = iamInfo.IssuerURL
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.PublicZoneID = infra.PublicZoneID
-	exampleOptions.InfraID = infraID
+	exampleOptions.InfraID = infra.InfraID
 	exampleOptions.ExternalDNSDomain = opts.ExternalDNSDomain
 	if exampleOptions.EtcdStorageClass == "" {
 		exampleOptions.EtcdStorageClass = "gp3-csi"
