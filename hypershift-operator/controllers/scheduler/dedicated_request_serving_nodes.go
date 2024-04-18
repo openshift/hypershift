@@ -625,6 +625,8 @@ func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx con
 		}
 	}
 	if lbSubnets != "" {
+		// If subnets are separated by periods, replace them with commas
+		lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
 		hc.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
 	}
 
