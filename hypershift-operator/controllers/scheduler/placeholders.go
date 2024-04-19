@@ -10,9 +10,9 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -191,14 +191,6 @@ func (r *placeholderCreator) reconcile(
 				return nil, nil
 			}
 
-			// we need more placeholders
-			// if there are any pending deployments, then let's wait until those are rolled out before creating more
-			for _, deployment := range deployments.Items {
-				if !util.IsDeploymentReady(ctx, &deployment) {
-					return nil, nil
-				}
-			}
-
 			// Add a deployment and requeue
 			nodes, err := r.listNodes(ctx, client.HasLabels{HostedClusterNameLabel, OSDFleetManagerPairedNodesLabel})
 			if err != nil {
@@ -251,6 +243,9 @@ type placeholderUpdater struct {
 func (r *placeholderUpdater) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	deployment, err := r.getDeployment(ctx, req.NamespacedName)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, err
 	}
 
@@ -437,6 +432,12 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 									WithKey(PlaceholderLabel).
 									WithOperator(metav1.LabelSelectorOpExists),
 							)).WithTopologyKey("kubernetes.io/hostname"),
+							corev1applyconfigurations.PodAffinityTerm().WithLabelSelector(metav1applyconfigurations.LabelSelector().WithMatchExpressions(
+								metav1applyconfigurations.LabelSelectorRequirement().
+									WithKey(PlaceholderLabel).
+									WithOperator(metav1.LabelSelectorOpNotIn).
+									WithValues(strconv.Itoa(placeholderIndex)),
+							)).WithTopologyKey(OSDFleetManagerPairedNodesLabel),
 						)).
 						WithNodeAffinity(nodeAffinity),
 					).

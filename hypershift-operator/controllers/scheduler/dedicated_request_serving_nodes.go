@@ -44,7 +44,7 @@ const (
 	// PlaceholderLabel is used as a label on Deployments that are used to keep nodes warm.
 	PlaceholderLabel = "hypershift.openshift.io/placeholder"
 
-	autoSizerNamespace = "hypershift-request-serving-autosizing-placeholder"
+	autoSizerNamespace = placeholderNamespace
 )
 
 type DedicatedServingComponentNodeReaper struct {
@@ -730,6 +730,18 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 					},
 				},
 				TopologyKey: "kubernetes.io/hostname",
+			},
+			{
+				LabelSelector: &metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{
+						{
+							Key:      PlaceholderLabel,
+							Operator: metav1.LabelSelectorOpNotIn,
+							Values:   []string{deployment.Name},
+						},
+					},
+				},
+				TopologyKey: OSDFleetManagerPairedNodesLabel,
 			},
 		},
 	}
