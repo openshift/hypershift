@@ -328,12 +328,38 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					// not be encountered here. This check is left here as a safety measure.
 					panic(fmt.Sprintf("invalid KubeVirt infra storage class mapping [%s]", mapping))
 				}
+				guestName, groupName := parseTenantClassString(split[1])
 				newMap := hyperv1.KubevirtStorageClassMapping{
 					InfraStorageClassName: split[0],
-					GuestStorageClassName: split[1],
+					GuestStorageClassName: guestName,
+					Group:                 groupName,
 				}
 				platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping =
 					append(platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping, newMap)
+			}
+		}
+		if len(o.Kubevirt.InfraVolumeSnapshotClassMappings) > 0 {
+			if platformSpec.Kubevirt.StorageDriver == nil {
+				platformSpec.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{
+					Type:   hyperv1.ManualKubevirtStorageDriverConfigType,
+					Manual: &hyperv1.KubevirtManualStorageDriverConfig{},
+				}
+			}
+			for _, mapping := range o.Kubevirt.InfraVolumeSnapshotClassMappings {
+				split := strings.Split(mapping, "/")
+				if len(split) != 2 {
+					// This is sanity checked by the hypershift cli as well, so this error should
+					// not be encountered here. This check is left here as a safety measure.
+					panic(fmt.Sprintf("invalid KubeVirt infra volume snapshot class mapping [%s]", mapping))
+				}
+				guestName, groupName := parseTenantClassString(split[1])
+				newMap := hyperv1.KubevirtVolumeSnapshotClassMapping{
+					InfraVolumeSnapshotClassName: split[0],
+					GuestVolumeSnapshotClassName: guestName,
+					Group:                        groupName,
+				}
+				platformSpec.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping =
+					append(platformSpec.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping, newMap)
 			}
 		}
 	case o.Azure != nil:

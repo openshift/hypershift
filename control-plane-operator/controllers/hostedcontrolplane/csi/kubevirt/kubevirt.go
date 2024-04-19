@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -24,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	utilpointer "k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	sigyaml "sigs.k8s.io/yaml"
 )
 
 //go:embed files/*
@@ -138,6 +140,11 @@ func getStorageDriverType(hcp *hyperv1.HostedControlPlane) hyperv1.KubevirtStora
 	return storageDriverType
 }
 
+type StorageSnapshotMapping struct {
+	VolumeSnapshotClasses []string `yaml:"volumeSnapshotClasses,omitempty"`
+	StorageClasses        []string `yaml:"storageClasses"`
+}
+
 func reconcileInfraConfigMap(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
 	var storageClassEnforcement string
 
@@ -146,14 +153,40 @@ func reconcileInfraConfigMap(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPla
 	switch storageDriverType {
 	case hyperv1.ManualKubevirtStorageDriverConfigType:
 		allowedSC := []string{}
+		storageMap := make(map[string][]string)
+		snapshotMap := make(map[string][]string)
 
 		if hcp.Spec.Platform.Kubevirt.StorageDriver.Manual != nil {
 			for _, mapping := range hcp.Spec.Platform.Kubevirt.StorageDriver.Manual.StorageClassMapping {
 				allowedSC = append(allowedSC, mapping.InfraStorageClassName)
+				storageMap[mapping.Group] = append(storageMap[mapping.Group], mapping.InfraStorageClassName)
+			}
+			for _, mapping := range hcp.Spec.Platform.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping {
+				snapshotMap[mapping.Group] = append(snapshotMap[mapping.Group], mapping.InfraVolumeSnapshotClassName)
 			}
 		}
 
-		storageClassEnforcement = fmt.Sprintf("allowAll: false\nallowList: [%s]\n", strings.Join(allowedSC, ", "))
+		storageSnapshotMapping := []StorageSnapshotMapping{}
+		for group, storageClasses := range storageMap {
+			mapping := StorageSnapshotMapping{}
+			mapping.StorageClasses = storageClasses
+			mapping.VolumeSnapshotClasses = snapshotMap[group]
+			delete(snapshotMap, group)
+			storageSnapshotMapping = append(storageSnapshotMapping, mapping)
+		}
+		for _, snapshotClasses := range snapshotMap {
+			mapping := StorageSnapshotMapping{}
+			mapping.VolumeSnapshotClasses = snapshotClasses
+			storageSnapshotMapping = append(storageSnapshotMapping, mapping)
+		}
+		mappingBytes, err := sigyaml.Marshal(storageSnapshotMapping)
+		if err != nil {
+			return err
+		}
+		// For some reason yaml.Marhsal is generating upper case keys, so we need to convert them to lower case
+		mappingBytes = bytes.ReplaceAll(mappingBytes, []byte("VolumeSnapshotClasses"), []byte("volumeSnapshotClasses"))
+		mappingBytes = bytes.ReplaceAll(mappingBytes, []byte("StorageClasses"), []byte("storageClasses"))
+		storageClassEnforcement = fmt.Sprintf("allowAll: false\nallowList: [%s]\nstorageSnapshotMapping: \n%s", strings.Join(allowedSC, ", "), string(mappingBytes))
 	case hyperv1.NoneKubevirtStorageDriverConfigType:
 		storageClassEnforcement = "allowDefault: false\nallowAll: false\n"
 	case hyperv1.DefaultKubevirtStorageDriverConfigType:
@@ -193,6 +226,11 @@ func reconcileController(controller *appsv1.Deployment, componentImages map[stri
 		return fmt.Errorf("unable to detect csi-livenessprobe image from release payload")
 	}
 
+	csiExternalSnapshotterImage, exists := componentImages["csi-external-snapshotter"]
+	if !exists {
+		return fmt.Errorf("unable to detect csi-external-snapshotter image from release payload")
+	}
+
 	for i, container := range controller.Spec.Template.Spec.Containers {
 		if len(container.Resources.Requests) == 0 && len(container.Resources.Limits) == 0 {
 			controller.Spec.Template.Spec.Containers[i].Resources = defaultResourceRequirements
@@ -207,6 +245,8 @@ func reconcileController(controller *appsv1.Deployment, componentImages map[stri
 			controller.Spec.Template.Spec.Containers[i].Image = csiAttacherImage
 		case "csi-liveness-probe":
 			controller.Spec.Template.Spec.Containers[i].Image = csiLivenessProbeImage
+		case "csi-snapshotter":
+			controller.Spec.Template.Spec.Containers[i].Image = csiExternalSnapshotterImage
 		}
 	}
 
@@ -286,6 +326,17 @@ func reconcileDefaultTenantCSIDriverResource(csiDriver *storagev1.CSIDriver) err
 	csiDriver.Spec.PodInfoOnMount = utilpointer.Bool(true)
 	fsPolicy := storagev1.ReadWriteOnceWithFSTypeFSGroupPolicy
 	csiDriver.Spec.FSGroupPolicy = &fsPolicy
+	return nil
+}
+
+func reconcileTenantVolumeSnapshotClass(volumeSnapshotClass *snapshotv1.VolumeSnapshotClass, infraVSCName string) error {
+	volumeSnapshotClass.Driver = "csi.kubevirt.io"
+	volumeSnapshotClass.DeletionPolicy = snapshotv1.VolumeSnapshotContentDelete
+	if infraVSCName != "" {
+		volumeSnapshotClass.Parameters = map[string]string{
+			"infraSnapshotClassName": infraVSCName,
+		}
+	}
 	return nil
 }
 
@@ -382,6 +433,35 @@ func reconcileTenantStorageClasses(client crclient.Client, hcp *hyperv1.HostedCo
 	return nil
 }
 
+func reconcileTenantVolumeSnapshotClasses(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN) error {
+	switch getStorageDriverType(hcp) {
+	case hyperv1.ManualKubevirtStorageDriverConfigType:
+		if hcp.Spec.Platform.Kubevirt.StorageDriver.Manual != nil {
+			for _, mapping := range hcp.Spec.Platform.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping {
+				customVSC := manifests.KubevirtCSIDriverVolumeSnapshotClass()
+				customVSC.Name = mapping.GuestVolumeSnapshotClassName
+				_, err := createOrUpdate(ctx, client, customVSC, func() error {
+					return reconcileTenantVolumeSnapshotClass(customVSC, mapping.InfraVolumeSnapshotClassName)
+				})
+				if err != nil {
+					return err
+				}
+			}
+		}
+	case hyperv1.NoneKubevirtStorageDriverConfigType:
+		// do nothing.
+	default:
+		volumeSnapshotClass := manifests.KubevirtCSIDriverVolumeSnapshotClass()
+		_, err := createOrUpdate(ctx, client, volumeSnapshotClass, func() error {
+			return reconcileTenantVolumeSnapshotClass(volumeSnapshotClass, "")
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, componentImages map[string]string) error {
 
 	if getStorageDriverType(hcp) == hyperv1.NoneKubevirtStorageDriverConfigType {
@@ -453,6 +533,11 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 	}
 
 	err = reconcileTenantStorageClasses(client, hcp, ctx, createOrUpdate)
+	if err != nil {
+		return err
+	}
+
+	err = reconcileTenantVolumeSnapshotClasses(client, hcp, ctx, createOrUpdate)
 	if err != nil {
 		return err
 	}

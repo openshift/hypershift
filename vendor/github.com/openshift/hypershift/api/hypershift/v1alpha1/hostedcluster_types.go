@@ -830,15 +830,34 @@ type KubevirtManualStorageDriverConfig struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
 	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
+
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassMapping is immutable"
+	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMapping `json:"volumeSnapshotClassMapping,omitempty"`
 }
 
 type KubevirtStorageClassMapping struct {
+	// Group contains which group this mapping belongs to.
+	Group string `json:"group,omitempty"`
 	// InfraStorageClassName is the name of the infra cluster storage class that
-	// will be exposed into the guest.
+	// will be exposed to the guest.
 	InfraStorageClassName string `json:"infraStorageClassName"`
 	// GuestStorageClassName is the name that the corresponding storageclass will
 	// be called within the guest cluster
 	GuestStorageClassName string `json:"guestStorageClassName"`
+}
+
+type KubevirtVolumeSnapshotClassMapping struct {
+	// Group contains which group this mapping belongs to.
+	Group string `json:"group,omitempty"`
+	// InfraStorageClassName is the name of the infra cluster volume snapshot class that
+	// will be exposed to the guest.
+	InfraVolumeSnapshotClassName string `json:"infraVolumeSnapshotClassName"`
+	// GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+	// be called within the guest cluster
+	GuestVolumeSnapshotClassName string `json:"guestVolumeSnapshotClassName"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
