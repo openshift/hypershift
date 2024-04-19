@@ -8,6 +8,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/cmd/util"
+
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,6 +78,7 @@ type ExampleOptions struct {
 	Arch                             string
 	PausedUntil                      string
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
+	OperatorHub                      *configv1.OperatorHubSpec
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
@@ -466,6 +468,14 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	if len(o.PausedUntil) > 0 {
 		cluster.Spec.PausedUntil = &o.PausedUntil
+	}
+
+	if cluster.Spec.Configuration == nil {
+		cluster.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+	}
+
+	if o.OperatorHub != nil {
+		cluster.Spec.Configuration.OperatorHub = o.OperatorHub
 	}
 
 	if len(o.OLMCatalogPlacement) > 0 {
