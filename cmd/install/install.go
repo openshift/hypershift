@@ -87,6 +87,7 @@ type Options struct {
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
 	EnableAdminRBACGeneration                 bool
+	EnableReaderRBACGeneration                bool
 	EnableUWMTelemetryRemoteWrite             bool
 	EnableCVOManagementClusterMetricsAccess   bool
 	MetricsSet                                metrics.MetricsSet
@@ -210,6 +211,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
+	cmd.PersistentFlags().BoolVar(&opts.EnableReaderRBACGeneration, "enable-reader-rbac-generation", false, "Generate RBAC manifests for hypershift readers")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
@@ -773,6 +775,12 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 			GroupName:   "hypershift-readers",
 		}.Build()
 		objects = append(objects, readerRoleBinding)
+	}
+
+	if opts.EnableReaderRBACGeneration {
+		// add a ClusterRole that contains read-only resources for HyperShift resources
+		readerClusterRole := assets.HyperShiftReaderClusterRole{}.Build()
+		objects = append(objects, readerClusterRole)
 	}
 
 	if opts.OIDCStorageProviderS3BucketName != "" {

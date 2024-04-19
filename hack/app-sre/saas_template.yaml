@@ -826,10 +826,21 @@ objects:
   kind: ClusterRole
   metadata:
     creationTimestamp: null
+    labels:
+      managed.openshift.io/aggregate-to-backplane-srep: "true"
+      managed.openshift.io/aggregate-to-dedicated-readers: "true"
     name: hypershift-readers
   rules:
   - apiGroups:
     - hypershift.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - certificates.hypershift.openshift.io
     resources:
     - '*'
     verbs:
