@@ -25,6 +25,7 @@ import (
 func (mcp *AzureManagedControlPlaneTemplate) setDefaults() {
 	setDefault[*string](&mcp.Spec.Template.Spec.NetworkPlugin, ptr.To(AzureNetworkPluginName))
 	setDefault[*string](&mcp.Spec.Template.Spec.LoadBalancerSKU, ptr.To("Standard"))
+	setDefault[*bool](&mcp.Spec.Template.Spec.EnablePreviewFeatures, ptr.To(false))
 
 	if mcp.Spec.Template.Spec.Version != "" && !strings.HasPrefix(mcp.Spec.Template.Spec.Version, "v") {
 		mcp.Spec.Template.Spec.Version = setDefaultVersion(mcp.Spec.Template.Spec.Version)

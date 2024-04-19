@@ -1938,6 +1938,8 @@ func Convert_v1beta1_Ignition_To_v1beta2_Ignition(in *Ignition, out *v1beta2.Ign
 func autoConvert_v1beta2_Ignition_To_v1beta1_Ignition(in *v1beta2.Ignition, out *Ignition, s conversion.Scope) error {
 	out.Version = in.Version
 	// WARNING: in.StorageType requires manual conversion: does not exist in peer-type
+	// WARNING: in.Proxy requires manual conversion: does not exist in peer-type
+	// WARNING: in.TLS requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -2026,6 +2028,7 @@ func autoConvert_v1beta2_Instance_To_v1beta1_Instance(in *v1beta2.Instance, out 
 	out.VolumeIDs = *(*[]string)(unsafe.Pointer(&in.VolumeIDs))
 	// WARNING: in.InstanceMetadataOptions requires manual conversion: does not exist in peer-type
 	// WARNING: in.PrivateDNSName requires manual conversion: does not exist in peer-type
+	// WARNING: in.PublicIPOnLaunch requires manual conversion: does not exist in peer-type
 	return nil
 }
 
