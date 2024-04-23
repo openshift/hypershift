@@ -1816,3 +1816,32 @@ func (o HyperShiftPullSecret) Build() *corev1.Secret {
 		Type: corev1.SecretTypeDockerConfigJson,
 	}
 }
+
+type KubeSystemRoleBinding struct {
+	Namespace string
+}
+
+func (o KubeSystemRoleBinding) Build() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "RoleBinding",
+			APIVersion: "rbac.authorization.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "authentication-reader-for-authenticated-users",
+			Namespace: o.Namespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "extension-apiserver-authentication-reader",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:     "Group",
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     "system:authenticated",
+			},
+		},
+	}
+}

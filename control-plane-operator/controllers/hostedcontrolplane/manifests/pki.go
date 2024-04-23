@@ -119,6 +119,33 @@ func OpenShiftOAuthMasterCABundle(ns string) *corev1.ConfigMap {
 	}
 }
 
+func MultusAdmissionControllerService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "multus-admission-controller",
+			Namespace: ns,
+		},
+	}
+}
+
+func NetworkNodeIdentityService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "network-node-identity",
+			Namespace: ns,
+		},
+	}
+}
+
+func OVNKubernetesControlPlaneService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ovn-kubernetes-control-plane",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-signer")
 }
@@ -264,10 +291,25 @@ func AWSPodIdentityWebhookServingCert(ns string) *corev1.Secret {
 }
 
 func CSISnapshotControllerWebhookCertSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "csi-snapshot-webhook-secret",
-			Namespace: ns,
-		},
-	}
+	return secretFor(ns, "csi-snapshot-webhook-secret")
+}
+
+func AzureDiskCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "azure-disk-csi-driver-controller-metrics-serving-cert")
+}
+
+func AzureFileCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "azure-file-csi-driver-controller-metrics-serving-cert")
+}
+
+func MultusAdmissionControllerServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "multus-admission-controller-secret")
+}
+
+func NetworkNodeIdentityControllerServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "network-node-identity-secret")
+}
+
+func OVNControlPlaneMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "ovn-control-plane-metrics-cert")
 }
