@@ -176,6 +176,10 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	// first, find any existing nodes already labeled for this hostedcluster
 	for i := range nodeList.Items {
 		node := &nodeList.Items[i]
+		if !node.DeletionTimestamp.IsZero() {
+			// Skip nodes that are being deleted
+			continue
+		}
 		zone, hasZoneLabel := node.Labels["topology.kubernetes.io/zone"]
 		if !hasZoneLabel {
 			continue
@@ -410,6 +414,9 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 	var goalNodes, availableNodes []corev1.Node
 	var pairLabel string
 	for _, node := range dedicatedNodes.Items {
+		if !node.DeletionTimestamp.IsZero() {
+			continue
+		}
 		if node.Labels[hyperv1.HostedClusterLabel] == clusterKey(hc) {
 			if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
 				pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
