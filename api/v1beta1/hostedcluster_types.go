@@ -221,6 +221,9 @@ const (
 	// request serving nodes. The value is a comma-separated list of key=value pairs.
 	RequestServingNodeAdditionalSelectorAnnotation = "hypershift.openshift.io/request-serving-node-additional-selector"
 
+	// DisableMachineManagement Disable deployments related to machine management that includes cluster-api, cluster-autoscaler, machine-approver.
+	DisableMachineManagement = "hypershift.openshift.io/disable-machine-management"
+
 	// AllowGuestWebhooksServiceLabel marks a service deployed in the control plane as a valid target
 	// for validating/mutating webhooks running in the guest cluster.
 	AllowGuestWebhooksServiceLabel = "hypershift.openshift.io/allow-guest-webhooks"
