@@ -452,18 +452,20 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			if err := hcScheduler.SetupWithManager(ctx, mgr, createOrUpdate); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component scheduler/resizer controller: %w", err)
 			}
+			placeholderScheduler := scheduler.PlaceholderScheduler{}
+			if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
+				return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
+			}
+			autoScaler := scheduler.RequestServingNodeAutoscaler{}
+			if err := autoScaler.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create autoscaler controller: %w", err)
+			}
 		} else {
 			hcScheduler := scheduler.DedicatedServingComponentScheduler{
 				Client: mgr.GetClient(),
 			}
 			if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
-			}
-		}
-		if enableSizeTagging {
-			placeholderScheduler := scheduler.PlaceholderScheduler{}
-			if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
-				return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
 			}
 		}
 	} else {
