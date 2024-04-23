@@ -61,6 +61,7 @@ import (
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -139,18 +140,18 @@ var (
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.NodePool{}).
+		For(&hyperv1.NodePool{}, builder.WithPredicates(supportutil.PredicatesForNodepoolAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
-		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
-		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&capiaws.AWSMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&agentv1.AgentMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&capiazure.AzureMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping())).
+		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForNodepoolChildResourcesAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForNodepoolChildResourcesAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiaws.AWSMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForNodepoolChildResourcesAnnotationScoping(mgr.GetClient()))).
+		Watches(&agentv1.AgentMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForNodepoolChildResourcesAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiazure.AzureMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForNodepoolChildResourcesAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForNodepoolChildResourcesAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
-		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig), builder.WithPredicates(supportutil.PredicatesForNodepoolChildResourcesAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
