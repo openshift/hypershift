@@ -93,8 +93,14 @@ func AllowedCIDRBlocks(hcp *hyperv1.HostedControlPlane) []hyperv1.CIDRBlock {
 
 func GetAdvertiseAddress(hcp *hyperv1.HostedControlPlane, ipv4DefaultAddress, ipv6DefaultAddress string) string {
 	var advertiseAddress string
+	var ipv4 bool
+	var err error
 
-	ipv4, err := IsIPv4(hcp.Spec.Networking.ServiceNetwork[0].CIDR.String())
+	if len(hcp.Spec.Networking.ServiceNetwork) > 0 {
+		ipv4, err = IsIPv4(hcp.Spec.Networking.ServiceNetwork[0].CIDR.String())
+	} else {
+		ipv4 = true
+	}
 	if err != nil || ipv4 {
 		if address := AdvertiseAddressWithDefault(hcp, ipv4DefaultAddress); len(address) > 0 {
 			advertiseAddress = address

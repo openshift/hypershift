@@ -62,6 +62,17 @@ func TestGetAdvertiseAddress(t *testing.T) {
 			},
 			want: DefaultAdvertiseIPv6Address,
 		},
+		{
+			name: "given no ServiceNetwork CIDR in the HCP, it should return IPv4 based default address",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{},
+					},
+				},
+			},
+			want: DefaultAdvertiseIPv4Address,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
