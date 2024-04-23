@@ -366,7 +366,11 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 	if !hc.DeletionTimestamp.IsZero() {
-		log.Info("hostedcluster is deleted, nothing to do")
+		log.Info("hostedcluster is deleted")
+		// Ensure that any placeholder deployment is deleted
+		if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 	if hcTopology := hc.Annotations[hyperv1.TopologyAnnotation]; hcTopology != hyperv1.DedicatedRequestServingComponentsTopology {
