@@ -513,6 +513,15 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 		}
 	}
 
+	// Validate arch is only amd64 or arm64
+	arch := strings.ToLower(opts.Arch)
+	switch arch {
+	case "amd64":
+	case "arm64":
+	default:
+		return fmt.Errorf("specified arch is not supported: %s", opts.Arch)
+	}
+
 	return nil
 }
 
