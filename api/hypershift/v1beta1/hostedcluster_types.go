@@ -1758,15 +1758,14 @@ type AzurePlatformSpec struct {
 	// +immutable
 	VnetID string `json:"vnetID,omitempty"`
 
-	// SubnetName is the name of an existing subnet in VnetName / VnetID where Azure CCM will find an existing load
-	// balancer to be used for node egress.
+	// SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
+	// subnet ID is expected to be a subnet within the VnetID / VnetName.
+	// In ARO HCP, managed services will create the aforementioned load balancer.
 	//
-	// Example: if your SubnetID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>,
-	//          your SubnetName is <subnetName>
-	//
-	// +kubebuilder:default:=default
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
-	SubnetName string `json:"subnetName"`
+	// +required
+	SubnetID string `json:"subnetID"`
 
 	// SubscriptionID is a unique identifier for an Azure subscription used to manage resources.
 	//

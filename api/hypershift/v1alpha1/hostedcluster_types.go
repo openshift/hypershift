@@ -1567,7 +1567,7 @@ type AzurePlatformSpec struct {
 	ResourceGroupName string `json:"resourceGroup"`
 	VnetName          string `json:"vnetName"`
 	VnetID            string `json:"vnetID"`
-	SubnetName        string `json:"subnetName"`
+	SubnetID          string `json:"subnetID"`
 	SubscriptionID    string `json:"subscriptionID"`
 	MachineIdentityID string `json:"machineIdentityID"`
 	SecurityGroupName string `json:"securityGroupName"`

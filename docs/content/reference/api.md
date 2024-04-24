@@ -2542,16 +2542,15 @@ In ARO HCP, this will be the ID of the customer provided VNET.</p>
 </tr>
 <tr>
 <td>
-<code>subnetName</code></br>
+<code>subnetID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>SubnetName is the name of an existing subnet in VnetName / VnetID where Azure CCM will find an existing load
-balancer to be used for node egress.</p>
-<p>Example: if your SubnetID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>,
-your SubnetName is <subnetName></p>
+<p>SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
+subnet ID is expected to be a subnet within the VnetID / VnetName.
+In ARO HCP, managed services will create the aforementioned load balancer.</p>
 </td>
 </tr>
 <tr>

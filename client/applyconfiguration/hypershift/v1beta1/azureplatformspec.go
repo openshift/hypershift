@@ -30,7 +30,7 @@ type AzurePlatformSpecApplyConfiguration struct {
 	ResourceGroupName *string                  `json:"resourceGroup,omitempty"`
 	VnetName          *string                  `json:"vnetName,omitempty"`
 	VnetID            *string                  `json:"vnetID,omitempty"`
-	SubnetName        *string                  `json:"subnetName,omitempty"`
+	SubnetID          *string                  `json:"subnetID,omitempty"`
 	SubscriptionID    *string                  `json:"subscriptionID,omitempty"`
 	MachineIdentityID *string                  `json:"machineIdentityID,omitempty"`
 	SecurityGroupName *string                  `json:"securityGroupName,omitempty"`
@@ -90,11 +90,11 @@ func (b *AzurePlatformSpecApplyConfiguration) WithVnetID(value string) *AzurePla
 	return b
 }
 
-// WithSubnetName sets the SubnetName field in the declarative configuration to the given value
+// WithSubnetID sets the SubnetID field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the SubnetName field is set to the value of the last call.
-func (b *AzurePlatformSpecApplyConfiguration) WithSubnetName(value string) *AzurePlatformSpecApplyConfiguration {
-	b.SubnetName = &value
+// If called multiple times, the SubnetID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithSubnetID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.SubnetID = &value
 	return b
 }
 
