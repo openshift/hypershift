@@ -73,7 +73,7 @@ func TestAutoscaling(t *testing.T) {
 		// 60% - enough that the existing and new nodes will
 		// be used, not enough to have more than 1 pod per
 		// node.
-		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.6*float32(bytes)))
+		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.5*float32(bytes)))
 		workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage)
 		err = guestClient.Create(ctx, workload)
 		g.Expect(err).NotTo(HaveOccurred())
