@@ -18,11 +18,14 @@ import (
 )
 
 const (
-	azureKMSUnixSocketFileName    = "azurekms.socket"
+	activeAzureKMSUnixSocketFileName = "azurekmsactive.socket"
+	activeAzureKMSHealthPort         = 8787
+
+	backupAzureKMSUnixSocketFileName = "azurekmsbackup.socket"
+	backupAzureKMSHealthPort         = 8788
+
 	azureKMSCredsFileKey          = "azure.json"
 	azureProviderConfigNamePrefix = "azure"
-
-	azureKMSHealthPort = 8787
 
 	// https://github.com/Azure/kubernetes-kms
 	// TODO: get image from payload
@@ -34,12 +37,18 @@ var (
 		KasMainContainerName: {
 			kasVolumeKMSSocket().Name: "/opt",
 		},
-		kasContainerAzureKMS().Name: {
+		kasContainerAzureKMSActive().Name: {
+			kasVolumeKMSSocket().Name:           "/opt",
+			kasVolumeAzureKMSCredentials().Name: "/etc/kubernetes",
+		},
+		kasContainerAzureKMSBackup().Name: {
 			kasVolumeKMSSocket().Name:           "/opt",
 			kasVolumeAzureKMSCredentials().Name: "/etc/kubernetes",
 		},
 	}
-	azureKMSUnixSocket = fmt.Sprintf("unix://%s/%s", azureKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), azureKMSUnixSocketFileName)
+
+	activeAzureKMSUnixSocket = fmt.Sprintf("unix://%s/%s", azureKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), activeAzureKMSUnixSocketFileName)
+	backupAzureKMSUnixSocket = fmt.Sprintf("unix://%s/%s", azureKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), backupAzureKMSUnixSocketFileName)
 )
 
 var _ IKMSProvider = &azureKMSProvider{}
@@ -63,14 +72,32 @@ func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec) (*azureKMSProvider, erro
 func (p *azureKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 
+	activeKeyHash, err := util.HashStruct(p.kmsSpec.ActiveKey)
+	if err != nil {
+		return nil, err
+	}
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		KMS: &v1.KMSConfiguration{
-			Name:      fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, p.kmsSpec.KeyVaultName),
-			Endpoint:  azureKMSUnixSocket,
+			Name:      fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
+			Endpoint:  activeAzureKMSUnixSocket,
 			CacheSize: ptr.To[int32](100),
 			Timeout:   &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
+	if p.kmsSpec.BackupKey != nil {
+		backupKeyHash, err := util.HashStruct(p.kmsSpec.BackupKey)
+		if err != nil {
+			return nil, err
+		}
+		providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
+			KMS: &v1.KMSConfiguration{
+				Name:      fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
+				Endpoint:  backupAzureKMSUnixSocket,
+				CacheSize: ptr.To[int32](100),
+				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
+			},
+		})
+	}
 
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		Identity: &v1.IdentityConfiguration{},
@@ -96,7 +123,18 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
 	)
 
-	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAzureKMS(), p.buildKASContainerAzureKMS))
+	podSpec.Containers = append(podSpec.Containers,
+		util.BuildContainer(
+			kasContainerAzureKMSActive(),
+			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, activeAWSKMSUnixSocket, activeAzureKMSHealthPort)),
+	)
+	if p.kmsSpec.BackupKey != nil {
+		podSpec.Containers = append(podSpec.Containers,
+			util.BuildContainer(
+				kasContainerAzureKMSBackup(),
+				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, backupAWSKMSUnixSocket, backupAzureKMSHealthPort)),
+		)
+	}
 
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
@@ -114,53 +152,61 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	return nil
 }
 
-func (p *azureKMSProvider) buildKASContainerAzureKMS(c *corev1.Container) {
-	c.Image = p.kmsImage
-	c.ImagePullPolicy = corev1.PullIfNotPresent
-	c.Ports = []corev1.ContainerPort{
-		{
-			Name:          "http",
-			ContainerPort: int32(azureKMSHealthPort),
-			Protocol:      corev1.ProtocolTCP,
-		},
-	}
-
-	c.Args = []string{
-		fmt.Sprintf("--keyvault-name=%s", p.kmsSpec.KeyVaultName),
-		fmt.Sprintf("--key-name=%s", p.kmsSpec.KeyName),
-		fmt.Sprintf("--key-version=%s", p.kmsSpec.KeyVersion),
-		fmt.Sprintf("--listen-addr=%s", azureKMSUnixSocket),
-		fmt.Sprintf("--healthz-port=%d", azureKMSHealthPort),
-		"--healthz-path=/healthz",
-		fmt.Sprintf("--config-file-path=%s/%s", azureKMSVolumeMounts.Path(c.Name, kasVolumeAzureKMSCredentials().Name), azureKMSCredsFileKey),
-		"-v=1",
-	}
-	c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
-	c.LivenessProbe = &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Scheme: corev1.URISchemeHTTP,
-				Port:   intstr.FromInt(azureKMSHealthPort),
-				Path:   "/healthz",
+func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey, unixSocketPath string, healthPort int) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = p.kmsImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "http",
+				ContainerPort: int32(healthPort),
+				Protocol:      corev1.ProtocolTCP,
 			},
-		},
-		InitialDelaySeconds: 120,
-		PeriodSeconds:       300,
-		TimeoutSeconds:      160,
-		FailureThreshold:    3,
-		SuccessThreshold:    1,
-	}
-	c.Resources = corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("10Mi"),
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-		},
+		}
+
+		c.Args = []string{
+			fmt.Sprintf("--keyvault-name=%s", kmsKey.KeyVaultName),
+			fmt.Sprintf("--key-name=%s", kmsKey.KeyName),
+			fmt.Sprintf("--key-version=%s", kmsKey.KeyVersion),
+			fmt.Sprintf("--listen-addr=%s", unixSocketPath),
+			fmt.Sprintf("--healthz-port=%d", healthPort),
+			"--healthz-path=/healthz",
+			fmt.Sprintf("--config-file-path=%s/%s", azureKMSVolumeMounts.Path(c.Name, kasVolumeAzureKMSCredentials().Name), azureKMSCredsFileKey),
+			"-v=1",
+		}
+		c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
+		c.LivenessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(healthPort),
+					Path:   "/healthz",
+				},
+			},
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
+			TimeoutSeconds:      160,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		}
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		}
 	}
 }
 
-func kasContainerAzureKMS() *corev1.Container {
+func kasContainerAzureKMSActive() *corev1.Container {
 	return &corev1.Container{
-		Name: "azure-kms-provider",
+		Name: "azure-kms-provider-active",
+	}
+}
+
+func kasContainerAzureKMSBackup() *corev1.Container {
+	return &corev1.Container{
+		Name: "azure-kms-provider-backup",
 	}
 }
 

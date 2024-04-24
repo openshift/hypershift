@@ -20,10 +20,8 @@ package v1beta1
 // AzureKMSSpecApplyConfiguration represents an declarative configuration of the AzureKMSSpec type for use
 // with apply.
 type AzureKMSSpecApplyConfiguration struct {
-	Location     *string `json:"location,omitempty"`
-	KeyVaultName *string `json:"keyVaultName,omitempty"`
-	KeyName      *string `json:"keyName,omitempty"`
-	KeyVersion   *string `json:"keyVersion,omitempty"`
+	ActiveKey *AzureKMSKeyApplyConfiguration `json:"activeKey,omitempty"`
+	BackupKey *AzureKMSKeyApplyConfiguration `json:"backupKey,omitempty"`
 }
 
 // AzureKMSSpecApplyConfiguration constructs an declarative configuration of the AzureKMSSpec type for use with
@@ -32,34 +30,18 @@ func AzureKMSSpec() *AzureKMSSpecApplyConfiguration {
 	return &AzureKMSSpecApplyConfiguration{}
 }
 
-// WithLocation sets the Location field in the declarative configuration to the given value
+// WithActiveKey sets the ActiveKey field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Location field is set to the value of the last call.
-func (b *AzureKMSSpecApplyConfiguration) WithLocation(value string) *AzureKMSSpecApplyConfiguration {
-	b.Location = &value
+// If called multiple times, the ActiveKey field is set to the value of the last call.
+func (b *AzureKMSSpecApplyConfiguration) WithActiveKey(value *AzureKMSKeyApplyConfiguration) *AzureKMSSpecApplyConfiguration {
+	b.ActiveKey = value
 	return b
 }
 
-// WithKeyVaultName sets the KeyVaultName field in the declarative configuration to the given value
+// WithBackupKey sets the BackupKey field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the KeyVaultName field is set to the value of the last call.
-func (b *AzureKMSSpecApplyConfiguration) WithKeyVaultName(value string) *AzureKMSSpecApplyConfiguration {
-	b.KeyVaultName = &value
-	return b
-}
-
-// WithKeyName sets the KeyName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the KeyName field is set to the value of the last call.
-func (b *AzureKMSSpecApplyConfiguration) WithKeyName(value string) *AzureKMSSpecApplyConfiguration {
-	b.KeyName = &value
-	return b
-}
-
-// WithKeyVersion sets the KeyVersion field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the KeyVersion field is set to the value of the last call.
-func (b *AzureKMSSpecApplyConfiguration) WithKeyVersion(value string) *AzureKMSSpecApplyConfiguration {
-	b.KeyVersion = &value
+// If called multiple times, the BackupKey field is set to the value of the last call.
+func (b *AzureKMSSpecApplyConfiguration) WithBackupKey(value *AzureKMSKeyApplyConfiguration) *AzureKMSSpecApplyConfiguration {
+	b.BackupKey = value
 	return b
 }

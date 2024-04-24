@@ -78,6 +78,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.AWSRolesRefApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSServiceEndpoint"):
 		return &applyconfigurationhypershiftv1alpha1.AWSServiceEndpointApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureKMSKey"):
+		return &applyconfigurationhypershiftv1alpha1.AzureKMSKeyApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &applyconfigurationhypershiftv1alpha1.AzureKMSSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):
@@ -252,6 +254,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSServiceEndpoint"):
 		return &hypershiftv1beta1.AWSServiceEndpointApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
+		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &hypershiftv1beta1.AzureKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):

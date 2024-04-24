@@ -5003,7 +5003,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		return
 	}
 
-	vaultURL := fmt.Sprintf("https://%s.%s", azureKmsSpec.KeyVaultName, azureEnv.KeyVaultDNSSuffix)
+	vaultURL := fmt.Sprintf("https://%s.%s", azureKmsSpec.ActiveKey.KeyVaultName, azureEnv.KeyVaultDNSSuffix)
 	keysClient, err := azkeys.NewClient(vaultURL, cred, nil)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.AzureErrorReason,
@@ -5023,12 +5023,12 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
 		Value:     []byte("text"),
 	}
-	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.KeyName, azureKmsSpec.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
+	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
 		condition = metav1.Condition{
 			Type:               string(hyperv1.ValidAzureKMSConfig),
 			ObservedGeneration: hcp.Generation,
 			Status:             metav1.ConditionFalse,
-			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s/%s): %v", azureKmsSpec.KeyName, azureKmsSpec.KeyVersion, err),
+			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s/%s): %v", azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, err),
 			Reason:             hyperv1.AzureErrorReason,
 		}
 	}

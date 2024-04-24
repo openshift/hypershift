@@ -2222,13 +2222,12 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
-###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
+###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.KMSSpec">KMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
 </p>
 <p>
-<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
 </p>
 <table>
 <thead>
@@ -2238,18 +2237,6 @@ toleration of full disruption of the component.</p>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td>
-<code>location</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Location contains the Azure region</p>
-</td>
-</tr>
 <tr>
 <td>
 <code>keyVaultName</code></br>
@@ -2283,6 +2270,52 @@ string
 </td>
 <td>
 <p>KeyVersion contains the version of the key to use</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KMSSpec">KMSSpec</a>)
+</p>
+<p>
+<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>activeKey</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKey">
+AzureKMSKey
+</a>
+</em>
+</td>
+<td>
+<p>ActiveKey defines the active key used to encrypt new secrets</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>backupKey</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKey">
+AzureKMSKey
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>BackupKey defines the old key during the rotation process so previously created
+secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
 </td>
 </tr>
 </tbody>
