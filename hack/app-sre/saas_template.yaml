@@ -57767,14 +57767,40 @@ objects:
                               $GOMEMLIMIT of the Kube APIServer container
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
-                          kasMemoryRequest:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            description: KASMemoryRequest is the amount of memory
-                              to request for the Kube APIServer pod
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
+                          resourceRequests:
+                            description: ResourceRequests allows specifying resource
+                              requests for control plane pods.
+                            items:
+                              properties:
+                                containerName:
+                                  description: ContainerName is the name of the container
+                                    to which the resource request applies.
+                                  type: string
+                                cpu:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: CPU is the amount of CPU to request
+                                    for the container.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                deploymentName:
+                                  description: DeploymentName is the name of the deployment
+                                    to which the resource request applies.
+                                  type: string
+                                memory:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: Memory is the amount of memory to request
+                                    for the container.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                              required:
+                              - containerName
+                              - deploymentName
+                              type: object
+                            type: array
                         type: object
                       management:
                         description: Management configures the management aspects
