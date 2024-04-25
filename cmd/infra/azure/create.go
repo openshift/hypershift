@@ -54,7 +54,6 @@ type CreateInfraOptions struct {
 	NetworkSecurityGroup string
 	ResourceGroupTags    map[string]string
 	SubnetID             string
-	SubnetName           string
 }
 
 type CreateInfraOutput struct {

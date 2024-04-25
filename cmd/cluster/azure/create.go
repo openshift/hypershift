@@ -99,7 +99,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			NetworkSecurityGroup: opts.AzurePlatform.NetworkSecurityGroup,
 			ResourceGroupTags:    opts.AzurePlatform.ResourceGroupTags,
 			SubnetID:             opts.AzurePlatform.SubnetID,
-			SubnetName:           opts.AzurePlatform.SubnetName,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)

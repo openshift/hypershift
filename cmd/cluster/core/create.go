@@ -203,7 +203,6 @@ type AzurePlatformOptions struct {
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
 	SubnetID               string
-	SubnetName             string
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
