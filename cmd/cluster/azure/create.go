@@ -28,7 +28,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AzurePlatform.Location = "eastus"
 	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
 	opts.AzurePlatform.DiskSizeGB = 120
-	opts.AzurePlatform.SubnetName = "default"
 
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
@@ -42,7 +41,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	cmd.Flags().StringToStringVarP(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", "t", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
-	cmd.Flags().StringVar(&opts.AzurePlatform.SubnetName, "subnet-name", opts.AzurePlatform.SubnetName, "The subnet name where the VMs will be placed.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.SubnetID, "subnet-id", opts.AzurePlatform.SubnetID, "The subnet ID where the VMs will be placed.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -99,6 +98,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			ResourceGroupName:    opts.AzurePlatform.ResourceGroupName,
 			NetworkSecurityGroup: opts.AzurePlatform.NetworkSecurityGroup,
 			ResourceGroupTags:    opts.AzurePlatform.ResourceGroupTags,
+			SubnetID:             opts.AzurePlatform.SubnetID,
 			SubnetName:           opts.AzurePlatform.SubnetName,
 		}).Run(ctx, opts.Log)
 		if err != nil {
@@ -116,6 +116,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		ResourceGroupName:      infra.ResourceGroupName,
 		VnetName:               infra.VnetName,
 		VnetID:                 infra.VNetID,
+		SubnetID:               infra.SubnetID,
 		SubnetName:             infra.SubnetName,
 		BootImageID:            infra.BootImageID,
 		MachineIdentityID:      infra.MachineIdentityID,

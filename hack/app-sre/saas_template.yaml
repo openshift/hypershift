@@ -45258,15 +45258,6 @@ objects:
                           x-kubernetes-validations:
                           - message: SecurityGroupName is immutable
                             rule: self == oldSelf
-                        subnetName:
-                          default: default
-                          description: |-
-                            SubnetName is the name of an existing subnet in VnetName / VnetID where Azure CCM will find an existing load
-                            balancer to be used for node egress.
-
-
-                            Example: if your SubnetID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>,
-                                     your SubnetName is <subnetName>
                         subnetID:
                           description: |-
                             SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
@@ -45311,7 +45302,6 @@ objects:
                       - credentials
                       - location
                       - resourceGroup
-                      - securityGroupName
                       - subnetID
                       - subscriptionID
                       - vnetName
@@ -54236,6 +54226,9 @@ objects:
                             Example: if your Network Security Group ID is /subscriptions/<subscriptionID>/resourcegroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<securityGroupName>,
                                      your SecurityGroupName is <securityGroupName>
                           type: string
+                          x-kubernetes-validations:
+                          - message: SecurityGroupName is immutable
+                            rule: self == oldSelf
                         subnetID:
                           description: |-
                             SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
@@ -54280,7 +54273,6 @@ objects:
                       - credentials
                       - location
                       - resourceGroup
-                      - securityGroupName
                       - subnetID
                       - subscriptionID
                       - vnetName

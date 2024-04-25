@@ -389,7 +389,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				ResourceGroupName: o.Azure.ResourceGroupName,
 				VnetName:          o.Azure.VnetName,
 				VnetID:            o.Azure.VnetID,
-				SubnetName:        o.Azure.SubnetName,
+				SubnetID:          o.Azure.SubnetID,
 				SubscriptionID:    o.Azure.Creds.SubscriptionID,
 				MachineIdentityID: o.Azure.MachineIdentityID,
 				SecurityGroupName: o.Azure.SecurityGroupName,

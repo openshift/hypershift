@@ -202,6 +202,7 @@ type AzurePlatformOptions struct {
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
+	SubnetID               string
 	SubnetName             string
 }
 
