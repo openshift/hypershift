@@ -92,7 +92,8 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 	deployment.Spec.Template.Annotations[oapiAuditConfigHashAnnotation] = auditConfigHash
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.Bool(false),
+		AutomountServiceAccountToken:  pointer.Bool(false),
+		TerminationGracePeriodSeconds: pointer.Int64(120),
 		Containers: []corev1.Container{
 			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(p)),
 		},
@@ -113,11 +114,10 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 			Name:            "audit-logs",
 			Image:           p.Image,
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command: []string{
-				"/usr/bin/tail",
-				"-c+1",
-				"-F",
-				fmt.Sprintf("%s/%s", oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name), "audit.log"),
+			Command:         []string{"/bin/bash"},
+			Args: []string{
+				"-c",
+				kas.RenderAuditLogScript(fmt.Sprintf("%s/%s", oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name), "audit.log")),
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
