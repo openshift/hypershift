@@ -55,7 +55,7 @@ spec:
             - $(OPERATOR_NAMESPACE)
             - --writeStatusName
             - operator-lifecycle-manager
-            - --writePackageServerStatusName=""
+            - --writePackageServerStatusName=
             - --tls-cert
             - /srv-cert/tls.crt
             - --tls-key
