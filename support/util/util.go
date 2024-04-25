@@ -332,16 +332,19 @@ func ParseNodeSelector(str string) map[string]string {
 }
 
 func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
-	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
-		return
-	}
-	if svc.Annotations == nil {
-		svc.Annotations = make(map[string]string)
-	}
-	subnets, ok := hcp.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation]
-	if ok {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
-	}
+	// TODO: cewong - reenable when we fix loadbalancer subnet annotation
+	/*
+		if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+			return
+		}
+		if svc.Annotations == nil {
+			svc.Annotations = make(map[string]string)
+		}
+		subnets, ok := hcp.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation]
+		if ok {
+			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
+		}
+	*/
 }
 
 func DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePoolArch string) error {
