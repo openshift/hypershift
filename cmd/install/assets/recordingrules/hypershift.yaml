@@ -84,3 +84,9 @@ groups:
     
   - record: platform:hypershift_nodepools:max
     expr: max by(platform) (hypershift_nodepools)
+
+  - record: cluster_name:hypershift_nodepools_size:sum
+    expr: sum by(cluster_name, exported_namespace) (max by(name, exported_namespace, platform, cluster_name) (hypershift_nodepools_size))
+
+  - record: cluster_name:hypershift_nodepools_available_replicas:sum
+    expr: sum by(cluster_name, exported_namespace) (max by(name, exported_namespace, platform, cluster_name) (hypershift_nodepools_available_replicas))
