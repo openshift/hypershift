@@ -693,20 +693,22 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 				},
 			},
 		}
-		nodeAffinity = &corev1.NodeAffinity{
-			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-				NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					{
-						MatchExpressions: []corev1.NodeSelectorRequirement{
-							{
-								Key:      OSDFleetManagerPairedNodesLabel,
-								Operator: corev1.NodeSelectorOpNotIn,
-								Values:   unavailableNodePairs,
+		if len(unavailableNodePairs) > 0 {
+			nodeAffinity = &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      OSDFleetManagerPairedNodesLabel,
+									Operator: corev1.NodeSelectorOpNotIn,
+									Values:   unavailableNodePairs,
+								},
 							},
 						},
 					},
 				},
-			},
+			}
 		}
 	}
 
