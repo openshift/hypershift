@@ -229,6 +229,11 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB.Name = hcluster.Spec.InfraID
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB.BackendPool.Name = hcluster.Spec.InfraID
 
+	// In ARO HCP, the VNET, subnet, and NSG will be provided by and exist in the vnet resource group.
+	if hcluster.Spec.Platform.Azure.VnetResourceGroupName != "" {
+		azureCluster.Spec.NetworkSpec.Vnet.ResourceGroup = hcluster.Spec.Platform.Azure.VnetResourceGroupName
+	}
+
 	azureCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,

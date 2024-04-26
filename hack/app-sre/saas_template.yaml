@@ -40828,11 +40828,13 @@ objects:
                           type: string
                         machineIdentityID:
                           type: string
+                        networkResourceGroupName:
+                          type: string
                         resourceGroup:
                           type: string
                         securityGroupName:
                           type: string
-                        subnetName:
+                        subnetID:
                           type: string
                         subscriptionID:
                           type: string
@@ -40846,7 +40848,7 @@ objects:
                       - machineIdentityID
                       - resourceGroup
                       - securityGroupName
-                      - subnetName
+                      - subnetID
                       - subscriptionID
                       - vnetID
                       - vnetName
@@ -45232,6 +45234,14 @@ objects:
                           description: MachineIdentityID is used as the user-assigned
                             identity to be assigned to the VMs
                           type: string
+                        networkResourceGroupName:
+                          description: |-
+                            NetworkResourceGroupName is the name of an existing resource group provided by a client; it is expected to contain
+                            an existing, pre-setup VNET, Subnet and NSG. This field is only used by ARO HCP.
+                          type: string
+                          x-kubernetes-validations:
+                          - message: NetworkResourceGroupName is immutable
+                            rule: self == oldSelf
                         resourceGroup:
                           default: default
                           description: |-
@@ -49816,11 +49826,13 @@ objects:
                           type: string
                         machineIdentityID:
                           type: string
+                        networkResourceGroupName:
+                          type: string
                         resourceGroup:
                           type: string
                         securityGroupName:
                           type: string
-                        subnetName:
+                        subnetID:
                           type: string
                         subscriptionID:
                           type: string
@@ -49834,7 +49846,7 @@ objects:
                       - machineIdentityID
                       - resourceGroup
                       - securityGroupName
-                      - subnetName
+                      - subnetID
                       - subscriptionID
                       - vnetID
                       - vnetName
@@ -54203,6 +54215,14 @@ objects:
                           description: MachineIdentityID is used as the user-assigned
                             identity to be assigned to the VMs
                           type: string
+                        networkResourceGroupName:
+                          description: |-
+                            NetworkResourceGroupName is the name of an existing resource group provided by a client; it is expected to contain
+                            an existing, pre-setup VNET, Subnet and NSG. This field is only used by ARO HCP.
+                          type: string
+                          x-kubernetes-validations:
+                          - message: NetworkResourceGroupName is immutable
+                            rule: self == oldSelf
                         resourceGroup:
                           default: default
                           description: |-

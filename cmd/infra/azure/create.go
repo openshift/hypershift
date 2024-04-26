@@ -14,6 +14,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/azureutil"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
@@ -166,42 +167,48 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 	l.Info("Successfully assigned contributor role to managed identity", "name", identityID)
 
-	securityGroupID := ""
+	// Retrieve a client's existing virtual network if a vnet resource group was provided; otherwise, create a new VNET with a network security group
+	if len(o.VnetResourceGroupName) > 0 {
+		vnet, err := getClientsVirtualNetwork(ctx, subscriptionID, o.VnetResourceGroupName, o.ClientVnetName, azureCreds)
+		if err != nil {
+			return nil, err
+		}
 
-	if o.NetworkSecurityGroup != "" {
-		//check that the provided network security group exists
-		securityGroupClient, err := armnetwork.NewSecurityGroupsClient(subscriptionID, azureCreds, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create security group client: %w", err)
+		result.SubnetID = *vnet.Properties.Subnets[0].ID
+		result.SubnetName = *vnet.Properties.Subnets[0].Name
+		result.VNetID = *vnet.ID
+		result.VnetName = *vnet.Name
+		l.Info("Successfully retrieved existing vnet", "name", result.VnetName)
+
+		// Extract network security group name if one exists
+		if vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup != nil && vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID != nil {
+			result.SecurityGroupName, err = azureutil.GetNetworkSecurityGroupNameFromNetworkSecurityGroupID(*vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID)
+			if err != nil {
+				return nil, err
+			}
+
+			l.Info("Successfully retrieved existing network security group", "name", result.SecurityGroupName)
 		}
-		nsg, err := securityGroupClient.Get(ctx, resourceGroupName, o.NetworkSecurityGroup, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get network security group: %w", err)
-		}
-		securityGroupID = *nsg.ID
-		result.SecurityGroupName = o.NetworkSecurityGroup
-		l.Info("Successfully found existing network security group", "name", o.NetworkSecurityGroup)
 	} else {
-		// Create network security group
+		// Create a network security group
 		securityGroupName, nsgID, err := createSecurityGroup(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
 		if err != nil {
 			return nil, err
 		}
-		securityGroupID = nsgID
 		result.SecurityGroupName = securityGroupName
 		l.Info("Successfully created network security group", "name", securityGroupName)
-	}
 
-	// Create a virtual network
-	subnetID, subnetName, vnetID, vnetName, err := createVirtualNetwork(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, o.SubnetID, securityGroupID, azureCreds)
-	if err != nil {
-		return nil, err
+		// Create a VNET with the network security group
+		vnet, err := createVirtualNetwork(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, nsgID, azureCreds)
+		if err != nil {
+			return nil, err
+		}
+		result.SubnetID = *vnet.Properties.Subnets[0].ID
+		result.SubnetName = *vnet.Properties.Subnets[0].Name
+		result.VNetID = *vnet.ID
+		result.VnetName = *vnet.Name
+		l.Info("Successfully created vnet", "name", result.VnetName)
 	}
-	result.SubnetID = subnetID
-	result.SubnetName = subnetName
-	result.VNetID = vnetID
-	result.VnetName = vnetName
-	l.Info("Successfully created vnet", "name", vnetName)
 
 	// Create private DNS zone
 	privateDNSZoneID, privateDNSZoneName, err := createPrivateDNSZone(ctx, subscriptionID, resourceGroupName, o.Name, o.BaseDomain, azureCreds)
@@ -212,7 +219,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	l.Info("Successfully created private DNS zone", "name", privateDNSZoneName)
 
 	// Create private DNS zone link
-	err = createPrivateDNSZoneLink(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, vnetID, privateDNSZoneName, azureCreds)
+	err = createPrivateDNSZoneLink(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, result.VNetID, privateDNSZoneName, azureCreds)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +271,7 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 		return "", "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
-	// Use provided resource group if it was provided
+	// Use a provided resource group if it was provided
 	if o.ResourceGroupName != "" {
 		response, err := resourceGroupClient.Get(ctx, o.ResourceGroupName, nil)
 		if err != nil {
@@ -408,10 +415,12 @@ func createSecurityGroup(ctx context.Context, subscriptionID string, resourceGro
 }
 
 // createVirtualNetwork creates the virtual network
-func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGroupName string, name string, infraID string, location string, subnetID string, securityGroupID string, azureCreds azcore.TokenCredential) (string, string, string, string, error) {
+func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGroupName string, name string, infraID string, location string, securityGroupID string, azureCreds azcore.TokenCredential) (armnetwork.VirtualNetworksClientCreateOrUpdateResponse, error) {
+	subnetName := "default"
+
 	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, nil)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to create new virtual networks client: %w", err)
+		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("failed to create new virtual networks client: %w", err)
 	}
 
 	vnetFuture, err := networksClient.BeginCreateOrUpdate(ctx, resourceGroupName, name+"-"+infraID, armnetwork.VirtualNetwork{
@@ -423,7 +432,7 @@ func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGr
 				},
 			},
 			Subnets: []*armnetwork.Subnet{{
-				ID: ptr.To(subnetID),
+				Name: ptr.To(subnetName),
 				Properties: &armnetwork.SubnetPropertiesFormat{
 					AddressPrefix:        ptr.To(VirtualNetworkSubnetAddressPrefix),
 					NetworkSecurityGroup: &armnetwork.SecurityGroup{ID: &securityGroupID},
@@ -432,17 +441,60 @@ func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGr
 		},
 	}, nil)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to create vnet: %w", err)
+		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("failed to create vnet: %w", err)
 	}
 	vnet, err := vnetFuture.PollUntilDone(ctx, nil)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to wait for vnet creation: %w", err)
-	}
-	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) < 1 {
-		return "", "", "", "", fmt.Errorf("created vnet has no subnets: %+v", vnet)
+		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("failed to wait for vnet creation: %w", err)
 	}
 
-	return *(vnet.Properties.Subnets)[0].ID, *(vnet.Properties.Subnets)[0].Name, *vnet.ID, *vnet.Name, nil
+	if vnet.ID == nil || vnet.Name == nil {
+		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no ID or name")
+	}
+
+	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) < 1 {
+		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no subnets: %+v", vnet)
+	}
+
+	if vnet.Properties.Subnets[0].ID == nil || vnet.Properties.Subnets[0].Name == nil {
+		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no subnet ID or name")
+	}
+
+	return vnet, nil
+}
+
+func getClientsVirtualNetwork(ctx context.Context, subscriptionID string, vnetResourceGroupName string, clientVnetName string, azureCreds azcore.TokenCredential) (armnetwork.VirtualNetworksClientGetResponse, error) {
+	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, nil)
+	if err != nil {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to create new virtual networks client: %w", err)
+	}
+
+	vnet, err := networksClient.Get(ctx, vnetResourceGroupName, clientVnetName, nil)
+	if err != nil {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to get virtual network: %w", err)
+	}
+
+	if vnet.ID == nil {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("virtual network has no ID")
+	}
+
+	if vnet.Name == nil {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("virtual network has no name")
+	}
+
+	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) == 0 {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnets found for resource group '%s'", vnetResourceGroupName)
+	}
+
+	if vnet.Properties.Subnets[0].ID == nil {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnet ID found for resource group '%s'", vnetResourceGroupName)
+	}
+
+	if vnet.Properties.Subnets[0].Name == nil {
+		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnet name found for resource group '%s'", vnetResourceGroupName)
+	}
+
+	return vnet, nil
 }
 
 // createPrivateDNSZone creates the private DNS zone

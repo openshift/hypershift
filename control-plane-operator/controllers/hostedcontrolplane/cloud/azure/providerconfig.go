@@ -75,12 +75,20 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		VnetResourceGroup:            hcp.Spec.Platform.Azure.ResourceGroupName,
 		SubnetName:                   subnetName,
 		SecurityGroupName:            hcp.Spec.Platform.Azure.SecurityGroupName,
+		SecurityGroupResourceGroup:   hcp.Spec.Platform.Azure.ResourceGroupName,
 		LoadBalancerName:             hcp.Spec.InfraID,
 		CloudProviderBackoff:         true,
 		CloudProviderBackoffDuration: 6,
 		UseInstanceMetadata:          true,
 		LoadBalancerSku:              "standard",
 		DisableOutboundSNAT:          true,
+	}
+
+	// In ARO HCP, the VNET and NSG will be in the network resource group; it will not be in the resource group
+	// containing all other cloud infrastructure resources.
+	if hcp.Spec.Platform.Azure.VnetResourceGroupName != "" {
+		azureConfig.VnetResourceGroup = hcp.Spec.Platform.Azure.VnetResourceGroupName
+		azureConfig.SecurityGroupResourceGroup = hcp.Spec.Platform.Azure.VnetResourceGroupName
 	}
 
 	return azureConfig, nil
@@ -104,6 +112,7 @@ type AzureConfig struct {
 	VnetResourceGroup            string `json:"vnetResourceGroup"`
 	SubnetName                   string `json:"subnetName"`
 	SecurityGroupName            string `json:"securityGroupName"`
+	SecurityGroupResourceGroup   string `json:"securityGroupResourceGroup"`
 	RouteTableName               string `json:"routeTableName"`
 	CloudProviderBackoff         bool   `json:"cloudProviderBackoff"`
 	CloudProviderBackoffDuration int    `json:"cloudProviderBackoffDuration"`
