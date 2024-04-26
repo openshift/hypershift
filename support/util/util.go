@@ -347,6 +347,19 @@ func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.Hos
 	*/
 }
 
+func ApplyAWSLoadBalancerTargetNodesAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	selectors, ok := hcp.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation]
+	if ok {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"] = selectors
+	}
+}
+
 func DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePoolArch string) error {
 	if mgmtClusterCPUArch != nodePoolArch {
 		return fmt.Errorf("multi-arch hosted cluster is not enabled and management cluster and nodepool cpu arches do not match - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, nodePoolArch)

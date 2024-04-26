@@ -285,6 +285,7 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	if lbSubnets != "" {
 		hcluster.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
 	}
+	hcluster.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation] = fmt.Sprintf("%s=%s,%s=%s", hyperv1.HostedClusterLabel, clusterKey(hcluster), hyperv1.RequestServingComponentLabel, "true")
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster annotation: %w", err)
 	}
@@ -629,6 +630,8 @@ func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx con
 		lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
 		hc.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
 	}
+
+	hc.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation] = fmt.Sprintf("%s=%s,%s=%s", hyperv1.HostedClusterLabel, clusterKey(hc), hyperv1.RequestServingComponentLabel, "true")
 
 	hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, size)
 
