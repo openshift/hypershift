@@ -143,7 +143,8 @@ func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef con
 					Type: imagev1.LocalTagReferencePolicy,
 				},
 				ImportPolicy: imagev1.TagImportPolicy{
-					Scheduled: true,
+					Scheduled:  true,
+					ImportMode: imagev1.ImportModePreserveOriginal,
 				},
 			})
 		} else {
