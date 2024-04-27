@@ -45168,18 +45168,19 @@ objects:
                       properties:
                         cloud:
                           default: AzurePublicCloud
-                          description: 'The cloud environment identifier, valid values
-                            could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
+                          description: 'Cloud is the cloud environment identifier,
+                            valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
                           enum:
                           - AzurePublicCloud
                           - AzureUSGovernmentCloud
                           - AzureChinaCloud
                           - AzureGermanCloud
+                          - AzureStackCloud
                           type: string
                         credentials:
                           description: |-
-                            LocalObjectReference contains enough information to let you locate the
-                            referenced object inside the same namespace.
+                            Credentials is the object containing existing Azure credentials needed for creating and managing cloud
+                            infrastructure resources.
                           properties:
                             name:
                               description: |-
@@ -45190,30 +45191,92 @@ objects:
                           type: object
                           x-kubernetes-map-type: atomic
                         location:
+                          description: |-
+                            Location is the Azure region in where all the cloud infrastructure resources will be created.
+
+
+                            Example: eastus
                           type: string
+                          x-kubernetes-validations:
+                          - message: Location is immutable
+                            rule: self == oldSelf
                         machineIdentityID:
+                          description: MachineIdentityID is used as the user-assigned
+                            identity to be assigned to the VMs
                           type: string
                         resourceGroup:
+                          default: default
+                          description: |-
+                            ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+                            Cluster are to be placed.
+                            In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
+
+
+                            Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+                                     ResourceGroupName is <resourceGroupName>.
                           type: string
+                          x-kubernetes-validations:
+                          - message: ResourceGroupName is immutable
+                            rule: self == oldSelf
                         securityGroupName:
+                          description: |-
+                            SecurityGroupName is the name of an existing security group on SubnetName. This field is provided as part of the
+                            configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM).
+
+
+                            Example: if your Network Security Group ID is /subscriptions/<subscriptionID>/resourcegroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<securityGroupName>,
+                                     your SecurityGroupName is <securityGroupName>
                           type: string
+                          x-kubernetes-validations:
+                          - message: SecurityGroupName is immutable
+                            rule: self == oldSelf
                         subnetName:
+                          default: default
+                          description: |-
+                            SubnetName is the name of an existing subnet in VnetName / VnetID where Azure CCM will find an existing load
+                            balancer to be used for node egress.
+
+
+                            Example: if your SubnetID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>,
+                                     your SubnetName is <subnetName>
                           type: string
                         subscriptionID:
+                          description: SubscriptionID is a unique identifier for an
+                            Azure subscription used to manage resources.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubscriptionID is immutable
+                            rule: self == oldSelf
                         vnetID:
+                          description: |-
+                            VnetID is the ID of an existing VNET to use in creating VMs.
+                            In ARO HCP, this will be the ID of the customer provided VNET.
+
+
+                            Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
                           type: string
+                          x-kubernetes-validations:
+                          - message: VnetID is immutable
+                            rule: self == oldSelf
                         vnetName:
+                          description: |-
+                            VnetName is the resource name of an existing VNET to use in creating VMs. If this field is included, it should
+                            be the resource name matching the VnetID.
+                            In ARO HCP, this will be the name of the customer provided VNET.
+
+
+                            Example: if your VNET ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>,
+                                     your VnetName is <vnetName>
                           type: string
+                          x-kubernetes-validations:
+                          - message: VnetName is immutable
+                            rule: self == oldSelf
                       required:
                       - credentials
                       - location
-                      - machineIdentityID
                       - resourceGroup
-                      - securityGroupName
                       - subnetName
                       - subscriptionID
-                      - vnetID
                       - vnetName
                       type: object
                     ibmcloud:
@@ -54021,18 +54084,19 @@ objects:
                       properties:
                         cloud:
                           default: AzurePublicCloud
-                          description: 'The cloud environment identifier, valid values
-                            could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
+                          description: 'Cloud is the cloud environment identifier,
+                            valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
                           enum:
                           - AzurePublicCloud
                           - AzureUSGovernmentCloud
                           - AzureChinaCloud
                           - AzureGermanCloud
+                          - AzureStackCloud
                           type: string
                         credentials:
                           description: |-
-                            LocalObjectReference contains enough information to let you locate the
-                            referenced object inside the same namespace.
+                            Credentials is the object containing existing Azure credentials needed for creating and managing cloud
+                            infrastructure resources.
                           properties:
                             name:
                               description: |-
@@ -54043,30 +54107,92 @@ objects:
                           type: object
                           x-kubernetes-map-type: atomic
                         location:
+                          description: |-
+                            Location is the Azure region in where all the cloud infrastructure resources will be created.
+
+
+                            Example: eastus
                           type: string
+                          x-kubernetes-validations:
+                          - message: Location is immutable
+                            rule: self == oldSelf
                         machineIdentityID:
+                          description: MachineIdentityID is used as the user-assigned
+                            identity to be assigned to the VMs
                           type: string
                         resourceGroup:
+                          default: default
+                          description: |-
+                            ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+                            Cluster are to be placed.
+                            In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
+
+
+                            Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+                                     ResourceGroupName is <resourceGroupName>.
                           type: string
+                          x-kubernetes-validations:
+                          - message: ResourceGroupName is immutable
+                            rule: self == oldSelf
                         securityGroupName:
+                          description: |-
+                            SecurityGroupName is the name of an existing security group on SubnetName. This field is provided as part of the
+                            configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM).
+
+
+                            Example: if your Network Security Group ID is /subscriptions/<subscriptionID>/resourcegroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<securityGroupName>,
+                                     your SecurityGroupName is <securityGroupName>
                           type: string
+                          x-kubernetes-validations:
+                          - message: SecurityGroupName is immutable
+                            rule: self == oldSelf
                         subnetName:
+                          default: default
+                          description: |-
+                            SubnetName is the name of an existing subnet in VnetName / VnetID where Azure CCM will find an existing load
+                            balancer to be used for node egress.
+
+
+                            Example: if your SubnetID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>,
+                                     your SubnetName is <subnetName>
                           type: string
                         subscriptionID:
+                          description: SubscriptionID is a unique identifier for an
+                            Azure subscription used to manage resources.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubscriptionID is immutable
+                            rule: self == oldSelf
                         vnetID:
+                          description: |-
+                            VnetID is the ID of an existing VNET to use in creating VMs.
+                            In ARO HCP, this will be the ID of the customer provided VNET.
+
+
+                            Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
                           type: string
+                          x-kubernetes-validations:
+                          - message: VnetID is immutable
+                            rule: self == oldSelf
                         vnetName:
+                          description: |-
+                            VnetName is the resource name of an existing VNET to use in creating VMs. If this field is included, it should
+                            be the resource name matching the VnetID.
+                            In ARO HCP, this will be the name of the customer provided VNET.
+
+
+                            Example: if your VNET ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>,
+                                     your VnetName is <vnetName>
                           type: string
+                          x-kubernetes-validations:
+                          - message: VnetName is immutable
+                            rule: self == oldSelf
                       required:
                       - credentials
                       - location
-                      - machineIdentityID
                       - resourceGroup
-                      - securityGroupName
                       - subnetName
                       - subscriptionID
-                      - vnetID
                       - vnetName
                       type: object
                     ibmcloud:
