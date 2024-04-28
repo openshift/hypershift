@@ -2491,10 +2491,11 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 	g.Expect(capiv1.AddToScheme(s)).To(Succeed())
 
 	for _, tc := range []struct {
-		name               string
-		machinesGenerator  func() []client.Object
-		expectedAllMachine *testCondition
-		expectedAllNodes   *testCondition
+		name                  string
+		machinesGenerator     func() []client.Object
+		expectedAllMachine    *testCondition
+		expectedAllNodes      *testCondition
+		expectedCIDRCollision *testCondition
 	}{
 		{
 			name:              "no cluster-api machines",
@@ -2951,6 +2952,77 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				Messages: []string{"13 of 15 machines are not ready", endOfMessage},
 			},
 		},
+		{
+			name: "machine cidr collision",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+							Addresses: capiv1.MachineAddresses{
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "10.10.10.5",
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node2",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+							Addresses: capiv1.MachineAddresses{
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "10.10.10.6",
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedCIDRCollision: &testCondition{
+				Status: corev1.ConditionTrue,
+				Reason: hyperv1.InvalidConfigurationReason,
+				Messages: []string{
+					"machine [node1] with ip [10.10.10.5] collides with cluster-network cidr [10.10.10.0/14]",
+					"machine [node2] with ip [10.10.10.6] collides with cluster-network cidr [10.10.10.0/14]",
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(tt *testing.T) {
 			gg := NewWithT(tt)
@@ -2965,7 +3037,20 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				},
 			}
 
-			gg.Expect(r.setMachineAndNodeConditions(context.Background(), np)).To(Succeed())
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{
+								CIDR: *ipnet.MustParseCIDR("10.10.10.0/14"),
+							},
+						},
+					},
+				},
+			}
+
+			gg.Expect(r.setMachineAndNodeConditions(context.Background(), np, hc)).To(Succeed())
 
 			cond := FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolAllMachinesReadyConditionType)
 			gg.Expect(cond).ToNot(BeNil())
@@ -2974,6 +3059,15 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			cond = FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
 			gg.Expect(cond).ToNot(BeNil())
 			tc.expectedAllNodes.Compare(gg, cond)
+
+			cond = FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolClusterNetworkCIDRConflictType)
+			if tc.expectedCIDRCollision == nil {
+				gg.Expect(cond).To(BeNil())
+			} else {
+				gg.Expect(cond).ToNot(BeNil())
+				tc.expectedCIDRCollision.Compare(gg, cond)
+			}
+
 		})
 	}
 }

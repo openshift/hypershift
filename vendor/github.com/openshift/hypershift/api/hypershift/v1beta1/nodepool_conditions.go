@@ -64,6 +64,10 @@ const (
 
 	// NodePoolValidMachineTemplateConditionType signal that the machine template created by the node pool is valid
 	NodePoolValidMachineTemplateConditionType = "ValidMachineTemplate"
+
+	// NodePoolClusterNetworkCIDRConflictType signals if a NodePool's machine objects are colliding with the
+	// cluster network's CIDR range. This can indicate why some network functionality might be degraded.
+	NodePoolClusterNetworkCIDRConflictType = "ClusterNetworkCIDRConflict"
 )
 
 // Reasons
@@ -79,4 +83,5 @@ const (
 	NodePoolValidArchPlatform             = "ValidArchPlatform"
 	NodePoolInvalidArchPlatform           = "InvalidArchPlatform"
 	InvalidKubevirtMachineTemplate        = "InvalidKubevirtMachineTemplate"
+	CIDRConflictReason                    = "CIDRConflict"
 )

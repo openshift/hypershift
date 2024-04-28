@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	coreerrors "errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"sort"
 	"strconv"
@@ -735,7 +736,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	// Set AllMachinesReadyCondition.
 	// Get all Machines for NodePool.
-	err = r.setMachineAndNodeConditions(ctx, nodePool)
+	err = r.setMachineAndNodeConditions(ctx, nodePool, hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -970,7 +971,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 }
 
 // setMachineAndNodeConditions sets the nodePool's AllMachinesReady and AllNodesHealthy conditions.
-func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool) error {
+func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) error {
 	// Get all Machines for NodePool.
 	machines, err := r.getMachinesForNodePool(ctx, nodePool)
 	if err != nil {
@@ -987,6 +988,8 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 	r.setAllMachinesReadyCondition(nodePool, machines)
 
 	r.setAllNodesHealthyCondition(nodePool, machines)
+
+	r.setCIDRConflictCondition(nodePool, machines, hc)
 
 	return nil
 }
@@ -1095,6 +1098,62 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+}
+
+func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hc *hyperv1.HostedCluster) error {
+	maxMessageLength := 256
+
+	if len(machines) < 1 || len(hc.Spec.Networking.ClusterNetwork) < 1 {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolClusterNetworkCIDRConflictType)
+		return nil
+	}
+
+	clusterNetworkStr := hc.Spec.Networking.ClusterNetwork[0].CIDR.String()
+	clusterNetwork, err := netip.ParsePrefix(clusterNetworkStr)
+	if err != nil {
+		return err
+	}
+
+	messages := []string{}
+	for _, machine := range machines {
+		for _, addr := range machine.Status.Addresses {
+			if addr.Type != capiv1.MachineExternalIP && addr.Type != capiv1.MachineInternalIP {
+				continue
+			}
+			ipaddr, err := netip.ParseAddr(addr.Address)
+			if err != nil {
+				return err
+			}
+			if clusterNetwork.Contains(ipaddr) {
+				messages = append(messages, fmt.Sprintf("machine [%s] with ip [%s] collides with cluster-network cidr [%s]", machine.Name, addr.Address, clusterNetworkStr))
+			}
+		}
+	}
+
+	if len(messages) > 0 {
+		message := ""
+		for _, entry := range messages {
+
+			if len(message) == 0 {
+				message = entry
+			} else if len(entry)+len(message) < maxMessageLength {
+				message = message + ", " + entry
+			} else {
+				message = message + ", too many similar errors..."
+			}
+		}
+
+		cidrConflictCondition := &hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolClusterNetworkCIDRConflictType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.InvalidConfigurationReason,
+			Message:            message,
+			ObservedGeneration: nodePool.Generation,
+		}
+		SetStatusCondition(&nodePool.Status.Conditions, *cidrConflictCondition)
+	}
+
+	return nil
 }
 
 func (r *NodePoolReconciler) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
