@@ -416,6 +416,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationschedulingv1alpha1.ManagementApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("NodeCountCriteria"):
 		return &applyconfigurationschedulingv1alpha1.NodeCountCriteriaApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ResourceRequest"):
+		return &applyconfigurationschedulingv1alpha1.ResourceRequestApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("SizeConfiguration"):
 		return &applyconfigurationschedulingv1alpha1.SizeConfigurationApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("TransitionDelayConfiguration"):

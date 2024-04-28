@@ -100,10 +100,6 @@ type NodeCountCriteria struct {
 
 // Effects configures the effects on a cluster considered part of a t-shirt size class.
 type Effects struct {
-	// +kubebuilder:validation:Optional
-
-	// KASMemoryRequest is the amount of memory to request for the Kube APIServer pod
-	KASMemoryRequest *resource.Quantity `json:"kasMemoryRequest,omitempty"`
 
 	// +kubebuilder:validation:Optional
 
@@ -125,6 +121,10 @@ type Effects struct {
 	// APICriticalPriorityClassName is the priority class for pods in the API request serving path.
 	// This includes Kube API Server, OpenShift APIServer, etc.
 	APICriticalPriorityClassName *string `json:"APICriticalPriorityClassName,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// ResourceRequests allows specifying resource requests for control plane pods.
+	ResourceRequests []ResourceRequest `json:"resourceRequests,omitempty"`
 }
 
 // Management configures behaviors of the management plane for a size class.
@@ -175,6 +175,24 @@ type TransitionDelayConfiguration struct {
 	// Decrease defines the minimum period of time to wait between a cluster's size decreasing and
 	// the t-shirt size assigned to it being updated to reflect the new size.
 	Decrease metav1.Duration `json:"decrease,omitempty"`
+}
+
+type ResourceRequest struct {
+	// +kubebuilder:validation:Required
+	// DeploymentName is the name of the deployment to which the resource request applies.
+	DeploymentName string `json:"deploymentName"`
+
+	// +kubebuilder:validation:Required
+	// ContainerName is the name of the container to which the resource request applies.
+	ContainerName string `json:"containerName"`
+
+	// +kubebuilder:validation:Optional
+	// Memory is the amount of memory to request for the container.
+	Memory *resource.Quantity `json:"memory,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// CPU is the amount of CPU to request for the container.
+	CPU *resource.Quantity `json:"cpu,omitempty"`
 }
 
 // ClusterSizingConfigurationStatus defines the observed state of ClusterSizingConfiguration

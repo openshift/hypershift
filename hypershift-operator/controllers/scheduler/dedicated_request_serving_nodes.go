@@ -615,9 +615,6 @@ func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx con
 		hc.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = goMemLimit
 	}
 
-	if sizeConfig.Effects != nil && sizeConfig.Effects.KASMemoryRequest != nil {
-		hc.Annotations[fmt.Sprintf("%s/kube-apiserver.kube-apiserver", hyperv1.ResourceRequestOverrideAnnotationPrefix)] = fmt.Sprintf("memory=%s", sizeConfig.Effects.KASMemoryRequest.String())
-	}
 	if sizeConfig.Effects != nil && sizeConfig.Effects.ControlPlanePriorityClassName != nil {
 		hc.Annotations[hyperv1.ControlPlanePriorityClass] = *sizeConfig.Effects.ControlPlanePriorityClassName
 	}
@@ -626,6 +623,11 @@ func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx con
 	}
 	if sizeConfig.Effects != nil && sizeConfig.Effects.APICriticalPriorityClassName != nil {
 		hc.Annotations[hyperv1.APICriticalPriorityClass] = *sizeConfig.Effects.APICriticalPriorityClassName
+	}
+
+	resourceRequestAnnotations := resourceRequestsToOverrideAnnotations(sizeConfig.Effects.ResourceRequests)
+	for k, v := range resourceRequestAnnotations {
+		hc.Annotations[k] = v
 	}
 
 	lbSubnets := ""
@@ -833,4 +835,23 @@ func sizeConfiguration(config *schedulingv1alpha1.ClusterSizingConfiguration, si
 		}
 	}
 	return nil
+}
+
+func resourceRequestsToOverrideAnnotations(requests []schedulingv1alpha1.ResourceRequest) map[string]string {
+	annotations := map[string]string{}
+	for _, request := range requests {
+		key := fmt.Sprintf("%s/%s.%s", hyperv1.ResourceRequestOverrideAnnotationPrefix, request.DeploymentName, request.ContainerName)
+		var value string
+		if request.Memory != nil {
+			value = fmt.Sprintf("memory=%s", request.Memory.String())
+		}
+		if request.CPU != nil {
+			if value != "" {
+				value += ","
+			}
+			value += fmt.Sprintf("cpu=%s", request.CPU.String())
+		}
+		annotations[key] = value
+	}
+	return annotations
 }
