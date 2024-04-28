@@ -1802,9 +1802,17 @@ type KMSSpec struct {
 
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
 type AzureKMSSpec struct {
-	// Location contains the Azure region
+	// ActiveKey defines the active key used to encrypt new secrets
+	//
+	// +kubebuilder:validation:Required
+	ActiveKey AzureKMSKey `json:"activeKey"`
+	// BackupKey defines the old key during the rotation process so previously created
+	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
 	// +optional
-	Location string `json:"location"`
+	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
+}
+
+type AzureKMSKey struct {
 	// KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
 	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`

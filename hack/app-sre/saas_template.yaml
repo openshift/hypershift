@@ -41383,27 +41383,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
@@ -45794,27 +45822,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
@@ -50307,27 +50363,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
@@ -54696,27 +54780,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
