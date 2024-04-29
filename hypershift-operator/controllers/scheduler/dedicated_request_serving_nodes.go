@@ -625,7 +625,10 @@ func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx con
 		hc.Annotations[hyperv1.APICriticalPriorityClass] = *sizeConfig.Effects.APICriticalPriorityClassName
 	}
 
-	resourceRequestAnnotations := resourceRequestsToOverrideAnnotations(sizeConfig.Effects.ResourceRequests)
+	var resourceRequestAnnotations map[string]string
+	if sizeConfig.Effects != nil {
+		resourceRequestAnnotations = resourceRequestsToOverrideAnnotations(sizeConfig.Effects.ResourceRequests)
+	}
 	for k, v := range resourceRequestAnnotations {
 		hc.Annotations[k] = v
 	}
