@@ -102,23 +102,28 @@ func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyper
 //
 //		https://issues.redhat.com/browse/OCPNODE-1258
 //	    https://github.com/openshift/hypershift/pull/1776
-func GetAllImageRegistryMirrors(ctx context.Context, client client.Client, mgmtClusterHasIDMSCapability bool) (map[string][]string, error) {
+func GetAllImageRegistryMirrors(ctx context.Context, client client.Client, mgmtClusterHasIDMSCapability, mgmtClusterHasICSPCapability bool) (map[string][]string, error) {
 	var mgmtClusterRegistryOverrides = make(map[string][]string)
-	var err, err2 error
 
-	// First, try to find any IDMS CRs in the management cluster
 	if mgmtClusterHasIDMSCapability {
-		mgmtClusterRegistryOverrides, err = getImageDigestMirrorSets(ctx, client)
+		idms, err := getImageDigestMirrorSets(ctx, client)
 		if err != nil {
 			return nil, err
 		}
+
+		for key, values := range idms {
+			mgmtClusterRegistryOverrides[key] = append(mgmtClusterRegistryOverrides[key], values...)
+		}
 	}
 
-	// Next, if no IDMS CRs were found, look for ICSP CRs
-	if len(mgmtClusterRegistryOverrides) == 0 {
-		mgmtClusterRegistryOverrides, err2 = getImageContentSourcePolicies(ctx, client)
-		if err2 != nil {
-			return nil, err2
+	if mgmtClusterHasICSPCapability {
+		icsp, err := getImageContentSourcePolicies(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+
+		for key, values := range icsp {
+			mgmtClusterRegistryOverrides[key] = append(mgmtClusterRegistryOverrides[key], values...)
 		}
 	}
 
