@@ -2124,7 +2124,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) && releaseVersion.Major == 4 && releaseVersion.Minor <= 14 {
 		// Reconcile operator role - for ingress
 		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRole, func() error {
