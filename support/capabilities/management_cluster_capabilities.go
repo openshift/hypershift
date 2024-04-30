@@ -18,6 +18,14 @@ type CapabiltyChecker interface {
 	Has(capabilities ...CapabilityType) bool
 }
 
+type MockCapabilityChecker struct {
+	MockHas func(capabilities ...CapabilityType) bool
+}
+
+func (m *MockCapabilityChecker) Has(capabilities ...CapabilityType) bool {
+	return m.MockHas(capabilities...)
+}
+
 type CapabilityType int
 
 const (
