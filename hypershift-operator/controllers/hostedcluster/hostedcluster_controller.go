@@ -2123,6 +2123,45 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
+	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		// Reconcile operator role - for ingress
+		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRole, func() error {
+			return reconcileControlPlaneOperatorIngressRole(controlPlaneOperatorIngressRole)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress role: %w", err)
+		}
+
+		// Reconcile operator role binding - for ingress
+		controlPlaneOperatorIngressRoleBinding := controlplaneoperator.OperatorIngressRoleBinding("openshift-ingress", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRoleBinding, func() error {
+			return reconcileControlPlaneOperatorIngressRoleBinding(controlPlaneOperatorIngressRoleBinding, controlPlaneOperatorIngressRole, controlPlaneOperatorServiceAccount)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress rolebinding: %w", err)
+		}
+
+		// Reconcile operator role - for ingress operator
+		controlPlaneOperatorIngressOperatorRole := controlplaneoperator.OperatorIngressOperatorRole("openshift-ingress-operator", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRole, func() error {
+			return reconcilecontrolPlaneOperatorIngressOperatorRole(controlPlaneOperatorIngressOperatorRole)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress operator role: %w", err)
+		}
+
+		// Reconcile operator role binding - for ingress operator
+		controlPlaneOperatorIngressOperatorRoleBinding := controlplaneoperator.OperatorIngressOperatorRoleBinding("openshift-ingress-operator", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRoleBinding, func() error {
+			return reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(controlPlaneOperatorIngressOperatorRoleBinding, controlPlaneOperatorIngressOperatorRole, controlPlaneOperatorServiceAccount)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress operator rolebinding: %w", err)
+		}
+	}
+
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
