@@ -396,6 +396,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		log.Info("HostedCluster does not have a size label, skipping for now")
 		return ctrl.Result{}, nil
 	}
+	log = log.WithValues("desiredSize", desiredSize)
 
 	config := schedulingv1alpha1.ClusterSizingConfiguration{}
 	if err := r.Get(ctx, types.NamespacedName{Name: "cluster"}, &config); err != nil {
@@ -432,6 +433,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 			availableNodes = append(availableNodes, node)
 		}
 	}
+	log = log.WithValues("pairLabel", pairLabel)
 
 	// Find any nodes that are in the same fleet manager group and have the right size
 	// but are not labeled with the hosted cluster label. Ensure that these nodes are labeled
@@ -445,6 +447,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 			}
 		}
 		if len(needClusterLabel) > 0 {
+			log.Info("backfilling node labels")
 			for _, node := range needClusterLabel {
 				if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
 					return ctrl.Result{}, err
@@ -466,6 +469,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 				return ctrl.Result{}, fmt.Errorf("failed to get nodes from placeholders: %w", err)
 			}
 			if len(candidateNodes) > 0 {
+				log.WithValues("pairLabel", candidateNodes[0].Labels[OSDFleetManagerPairedNodesLabel]).Info("claiming candidate nodes")
 				for _, node := range candidateNodes {
 					if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
 						return ctrl.Result{}, err
@@ -476,21 +480,26 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		}
 	}
 
+	nodeNamesByZone := map[string]string{}
 	nodesByZone := map[string]corev1.Node{}
 	for _, node := range goalNodes {
 		if zone := node.Labels[corev1.LabelTopologyZone]; zone != "" {
 			if _, hasNode := nodesByZone[zone]; !hasNode {
 				nodesByZone[zone] = node
+				nodeNamesByZone[zone] = node.Name
 			}
 		}
 	}
+	log = log.WithValues("nodes", nodeNamesByZone)
 
 	if len(nodesByZone) > 1 {
+		log.Info("sufficient nodes exist for placement")
 		// If we have enough nodes, update the hosted cluster.
 		if err := r.updateHostedCluster(ctx, hc, desiredSize, &config, goalNodes); err != nil {
 			return ctrl.Result{}, err
 		}
 		// Ensure we don't have a placeholder deployment, since we have nodes
+		log.Info("removing placeholder")
 		if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -502,11 +511,13 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 	if nodesNeeded < 0 {
 		nodesNeeded = 0
 	}
+	log.WithValues("nodesNeeded", nodesNeeded).Info("deploying placeholders")
 	deployment, err := r.ensurePlaceholderDeployment(ctx, hc, desiredSize, pairLabel, nodesNeeded)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if deployment != nil && util.IsDeploymentReady(ctx, deployment) {
+		log.Info("placeholder ready, adding node labels")
 		nodes, err := r.deploymentNodes(ctx, deployment)
 		if err != nil {
 			return ctrl.Result{}, err
@@ -516,6 +527,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 				return ctrl.Result{}, err
 			}
 		}
+		log.Info("removing placeholder")
 		if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
 			return ctrl.Result{}, err
 		}
