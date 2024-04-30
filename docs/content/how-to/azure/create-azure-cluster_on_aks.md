@@ -1,5 +1,5 @@
 # Create an Azure Hosted Cluster on AKS
-This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup.
+This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup (starting in OCP 4.16).
 
 If you already have an existing AKS cluster up and running, you can jump to the [Setup ExternalDNS](#setup-externaldns)
 
@@ -31,7 +31,8 @@ az aks create \
 --node-count 3 \
 --generate-ssh-keys \
 --load-balancer-sku standard \
---os-sku AzureLinux
+--os-sku AzureLinux \ 
+--enable-fips-image
 ```
 
 Finally, get your kubeconfig to your AKS cluster
@@ -136,25 +137,8 @@ hypershift create cluster azure \
 --annotations hypershift.openshift.io/certified-operators-catalog-image=registry.redhat.io/redhat/certified-operator-index@sha256:fc68a3445d274af8d3e7d27667ad3c1e085c228b46b7537beaad3d470257be3e \
 --annotations hypershift.openshift.io/community-operators-catalog-image=registry.redhat.io/redhat/community-operator-index@sha256:4a2e1962688618b5d442342f3c7a65a18a2cb014c9e66bb3484c687cfb941b90 \
 --annotations hypershift.openshift.io/redhat-marketplace-catalog-image=registry.redhat.io/redhat/redhat-marketplace-index@sha256:ed22b093d930cfbc52419d679114f86bd588263f8c4b3e6dfad86f7b8baf9844 \
---annotations hypershift.openshift.io/redhat-operators-catalog-image=registry.redhat.io/redhat/redhat-operator-index@sha256:59b14156a8af87c0c969037713fc49be7294401b10668583839ff2e9b49c18d6 
-```
-
-## Important Notes
-You should see these pods fail
-```
-% k get pods | grep -v Running
-NAME                                                  READY   STATUS                            RESTARTS   AGE
-csi-snapshot-controller-cfb96bff7-m8kf2               0/1     CreateContainerConfigError        0          27h
-csi-snapshot-webhook-57f9799848-p57c8                 0/1     CreateContainerConfigError        0          27h
-```
-
-The `csi` pods will fail until this PR is merged: https://github.com/openshift/hypershift/pull/3819.
-
-However, your nodes should join the NodePool, and you should be able to log in to your HostedCluster by getting the console URL and the kubeadmin password.
-```
-% k get nodepool -A
-NAMESPACE   NAME                   CLUSTER                DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION                                    UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-clusters    brcox-hypershift-arm   brcox-hypershift-arm   2               2               False         False        4.16.0-0.nightly-multi-2024-02-26-105325
+--annotations hypershift.openshift.io/redhat-operators-catalog-image=registry.redhat.io/redhat/redhat-operator-index@sha256:59b14156a8af87c0c969037713fc49be7294401b10668583839ff2e9b49c18d6 \
+--fips=true
 ```
 
 ## Deleting the Azure Hosted Cluster
