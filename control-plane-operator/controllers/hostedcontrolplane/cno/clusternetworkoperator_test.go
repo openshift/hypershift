@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestReconcileDeployment(t *testing.T) {
@@ -35,7 +36,29 @@ func TestReconcileDeployment(t *testing.T) {
 				tc.params.ReleaseVersion = "4.11.0"
 			}
 
-			dep := &appsv1.Deployment{}
+			dep := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: operatorName,
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("100m"),
+											corev1.ResourceMemory: resource.MustParse("100Mi"),
+										},
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1000m"),
+											corev1.ResourceMemory: resource.MustParse("1000Mi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
 			if err := ReconcileDeployment(dep, tc.params, hyperv1.NonePlatform); err != nil {
 				t.Fatalf("ReconcileDeployment: %v", err)
 			}
@@ -52,6 +75,14 @@ func TestReconcileDeployment(t *testing.T) {
 				t.Errorf("expected 'PROXY_INTERNAL_APISERVER_ADDRESS' env var to be %s, was %s",
 					strconv.FormatBool(tc.expectProxyAPIServerAddress),
 					strconv.FormatBool(hasProxyAPIServerAddress))
+			}
+
+			// Verify the existing resources were preserved
+			if dep.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().MilliValue() != 100 ||
+				dep.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().Value()/(1024*1024) != 100 ||
+				dep.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().MilliValue() != 1000 ||
+				dep.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().Value()/(1024*1024) != 1000 {
+				t.Error("some or all existing deployment resources were not preserved")
 			}
 		})
 	}
