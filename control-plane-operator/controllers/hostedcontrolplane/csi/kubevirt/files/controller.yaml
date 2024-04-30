@@ -115,6 +115,7 @@ spec:
           - "--v=5"
           - "--csi-address=/csi/csi.sock"
           - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+          - "--timeout=3m"
           image: quay.io/openshift/origin-csi-external-snapshotter:latest
           imagePullPolicy: IfNotPresent
           terminationMessagePath: /dev/termination-log
