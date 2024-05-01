@@ -2123,6 +2123,45 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
+	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) && releaseVersion.Major == 4 && releaseVersion.Minor <= 14 {
+		// Reconcile operator role - for ingress
+		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRole, func() error {
+			return reconcileControlPlaneOperatorIngressRole(controlPlaneOperatorIngressRole)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress role: %w", err)
+		}
+
+		// Reconcile operator role binding - for ingress
+		controlPlaneOperatorIngressRoleBinding := controlplaneoperator.OperatorIngressRoleBinding("openshift-ingress", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRoleBinding, func() error {
+			return reconcileControlPlaneOperatorIngressRoleBinding(controlPlaneOperatorIngressRoleBinding, controlPlaneOperatorIngressRole, controlPlaneOperatorServiceAccount)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress rolebinding: %w", err)
+		}
+
+		// Reconcile operator role - for ingress operator
+		controlPlaneOperatorIngressOperatorRole := controlplaneoperator.OperatorIngressOperatorRole("openshift-ingress-operator", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRole, func() error {
+			return reconcilecontrolPlaneOperatorIngressOperatorRole(controlPlaneOperatorIngressOperatorRole)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress operator role: %w", err)
+		}
+
+		// Reconcile operator role binding - for ingress operator
+		controlPlaneOperatorIngressOperatorRoleBinding := controlplaneoperator.OperatorIngressOperatorRoleBinding("openshift-ingress-operator", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRoleBinding, func() error {
+			return reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(controlPlaneOperatorIngressOperatorRoleBinding, controlPlaneOperatorIngressOperatorRole, controlPlaneOperatorServiceAccount)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress operator rolebinding: %w", err)
+		}
+	}
+
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
@@ -2899,6 +2938,64 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 }
 
 func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+
+	return nil
+}
+
+func reconcileControlPlaneOperatorIngressRole(role *rbacv1.Role) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"services"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+	}
+	return nil
+}
+
+func reconcileControlPlaneOperatorIngressRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+
+	return nil
+}
+
+func reconcilecontrolPlaneOperatorIngressOperatorRole(role *rbacv1.Role) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"operator.openshift.io"},
+			Resources: []string{"ingresscontrollers"},
+			Verbs:     []string{"*"},
+		},
+	}
+	return nil
+}
+
+func reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
 	binding.RoleRef = rbacv1.RoleRef{
 		APIGroup: "rbac.authorization.k8s.io",
 		Kind:     "Role",
