@@ -4,86 +4,101 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestReconcileCatalogOperatorDeployment(t *testing.T) {
-	t.Run("Catalog operator resource preservation", func(t *testing.T) {
-		dep := &appsv1.Deployment{
-			Spec: appsv1.DeploymentSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name: catalogOperatorName,
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("100m"),
-										corev1.ResourceMemory: resource.MustParse("100Mi"),
-									},
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("1000m"),
-										corev1.ResourceMemory: resource.MustParse("1000Mi"),
-									},
-								},
-							},
-						},
-					},
+	tcs := []struct {
+		name        string
+		coResources *corev1.ResourceRequirements
+	}{
+		{
+			name: "Preserve existing resources",
+			coResources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("500Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1000m"),
+					corev1.ResourceMemory: resource.MustParse("1000Mi"),
 				},
 			},
-		}
-		if err := ReconcileCatalogOperatorDeployment(dep, config.OwnerRef{}, "", "", "", "", config.DeploymentConfig{}, "", []string{}, hyperv1.NonePlatform); err != nil {
-			t.Fatalf("ReconcileCatalogOperatorDeployment: %v", err)
-		}
+		},
+	}
 
-		// Verify the existing resources were preserved
-		if dep.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().MilliValue() != 100 ||
-			dep.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().Value()/(1024*1024) != 100 ||
-			dep.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().MilliValue() != 1000 ||
-			dep.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().Value()/(1024*1024) != 1000 {
-			t.Error("some or all existing deployment resources were not preserved")
-		}
-	})
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			dep := &appsv1.Deployment{}
+			if tc.coResources != nil {
+				dep.Spec.Template.Spec.Containers = []corev1.Container{
+					{
+						Name:      catalogOperatorName,
+						Resources: *tc.coResources,
+					},
+				}
+			}
+
+			if err := ReconcileCatalogOperatorDeployment(dep, config.OwnerRef{}, "", "", "", "", config.DeploymentConfig{}, "", []string{}, hyperv1.NonePlatform); err != nil {
+				t.Fatalf("ReconcileCatalogOperatorDeployment: %v", err)
+			}
+
+			deploymentYaml, err := util.SerializeResource(dep, hyperapi.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			testutil.CompareWithFixture(t, deploymentYaml)
+		})
+	}
 }
 
 func TestReconcileOLMOperatorDeployment(t *testing.T) {
-	t.Run("OLM operator resource preservation", func(t *testing.T) {
-		dep := &appsv1.Deployment{
-			Spec: appsv1.DeploymentSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name: olmOperatorName,
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("100m"),
-										corev1.ResourceMemory: resource.MustParse("100Mi"),
-									},
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("1000m"),
-										corev1.ResourceMemory: resource.MustParse("1000Mi"),
-									},
-								},
-							},
-						},
-					},
+	tcs := []struct {
+		name           string
+		olmOpResources *corev1.ResourceRequirements
+	}{
+		{
+			name: "Preserve existing resources",
+			olmOpResources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("500Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1000m"),
+					corev1.ResourceMemory: resource.MustParse("1000Mi"),
 				},
 			},
-		}
-		if err := ReconcileOLMOperatorDeployment(dep, config.OwnerRef{}, "", "", "", config.DeploymentConfig{}, "", []string{}, hyperv1.NonePlatform); err != nil {
-			t.Fatalf("ReconcileOLMOperatorDeployment: %v", err)
-		}
+		},
+	}
 
-		// Verify the existing resources were preserved
-		if dep.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().MilliValue() != 100 ||
-			dep.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().Value()/(1024*1024) != 100 ||
-			dep.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().MilliValue() != 1000 ||
-			dep.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().Value()/(1024*1024) != 1000 {
-			t.Error("some or all existing deployment resources were not preserved")
-		}
-	})
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			dep := &appsv1.Deployment{}
+			if tc.olmOpResources != nil {
+				dep.Spec.Template.Spec.Containers = []corev1.Container{
+					{
+						Name:      olmOperatorName,
+						Resources: *tc.olmOpResources,
+					},
+				}
+			}
+
+			if err := ReconcileOLMOperatorDeployment(dep, config.OwnerRef{}, "", "", "", config.DeploymentConfig{}, "", []string{}, hyperv1.NonePlatform); err != nil {
+				t.Fatalf("ReconcileOLMOperatorDeployment: %v", err)
+			}
+
+			deploymentYaml, err := util.SerializeResource(dep, hyperapi.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			testutil.CompareWithFixture(t, deploymentYaml)
+		})
+	}
 }
