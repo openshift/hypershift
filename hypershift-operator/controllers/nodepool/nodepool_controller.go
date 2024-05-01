@@ -117,7 +117,6 @@ type NodePoolReconciler struct {
 	client.Client
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
-	controller      controller.Controller
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
@@ -141,7 +140,7 @@ var (
 )
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	controller, err := ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}, builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
 		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
@@ -158,12 +157,22 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
-		Build(r)
-	if err != nil {
+		Complete(r); err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
 
-	r.controller = controller
+	if err := ctrl.NewControllerManagedBy(mgr).
+		For(&corev1.Secret{}).
+		WithOptions(controller.Options{
+			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			MaxConcurrentReconciles: 10,
+		}).
+		Complete(&secretJanitor{
+			NodePoolReconciler: r,
+		}); err != nil {
+		return errors.Wrap(err, "failed setting up with a controller manager")
+	}
+
 	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
 	return nil
@@ -267,26 +276,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
-	// 1. - Reconcile conditions according to current state of the world.
-	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
-
-	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
-	// It is included directly by the ignition server.  However, we need to detect the change
-	// here to trigger a nodepool update.
-	image := globalconfig.ImageConfig()
-	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
-
-	// Serialize proxy and image into a single string to use in the token secret hash.
-	globalConfigBytes := bytes.NewBuffer(nil)
-	enc := json.NewEncoder(globalConfigBytes)
-	if err := enc.Encode(proxy); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to encode proxy global config: %w", err)
+	globalConfig, err := globalConfigString(hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-	if err := enc.Encode(image); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to encode image global config: %w", err)
-	}
-	globalConfig := globalConfigBytes.String()
 
 	if isAutoscalingEnabled(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -562,11 +555,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// 3 generic core config resources: fips, ssh and haproxy.
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
 	// into the token Secret controller so we don't block Machine infra creation on this.
-	expectedCoreConfigResources := 3
-	if len(hcluster.Spec.ImageContentSources) > 0 {
-		// additional core config resource created when image content source specified.
-		expectedCoreConfigResources += 1
-	}
+	expectedCoreConfigResources := expectedCoreConfigResourcesForHostedCluster(hcluster)
 	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -643,7 +632,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := supportutil.HashSimple(config + targetVersion + pullSecretName + globalConfig)
+	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, globalConfig)
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
@@ -771,7 +760,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
 		}
 		if err == nil {
-			if err := setExpirationTimestampOnToken(ctx, r.Client, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+			if err := setExpirationTimestampOnToken(ctx, r.Client, tokenSecret, nil); err != nil && !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
 			}
 		}
@@ -818,7 +807,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetPayloadConfigHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, targetPayloadConfigHash, proxy)
+		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, targetPayloadConfigHash, globalconfig.ProxyConfig())
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
@@ -994,6 +983,15 @@ func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
 	}
 
 	return supported
+}
+
+func expectedCoreConfigResourcesForHostedCluster(hcluster *hyperv1.HostedCluster) int {
+	expectedCoreConfigResources := 3
+	if len(hcluster.Spec.ImageContentSources) > 0 {
+		// additional core config resource created when image content source specified.
+		expectedCoreConfigResources += 1
+	}
+	return expectedCoreConfigResources
 }
 
 // setMachineAndNodeConditions sets the nodePool's AllMachinesReady and AllNodesHealthy conditions.
@@ -2827,13 +2825,17 @@ func validateInfraID(infraID string) error {
 	return nil
 }
 
-func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSecret *corev1.Secret) error {
+func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSecret *corev1.Secret, now func() time.Time) error {
+	if now == nil {
+		now = time.Now
+	}
+
 	// this should be a reasonable value to allow all in flight provisions to complete.
 	timeUntilExpiry := 2 * time.Hour
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = map[string]string{}
 	}
-	tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = time.Now().Add(timeUntilExpiry).Format(time.RFC3339)
+	tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = now().Add(timeUntilExpiry).Format(time.RFC3339)
 	return c.Update(ctx, tokenSecret)
 }
 
@@ -2913,8 +2915,12 @@ func (r *NodePoolReconciler) getPullSecretBytes(ctx context.Context, hostedClust
 
 // getPullSecretName retrieves the name of the pull secret in the hosted cluster spec
 func (r *NodePoolReconciler) getPullSecretName(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (string, error) {
+	return getPullSecretName(ctx, r.Client, hostedCluster)
+}
+
+func getPullSecretName(ctx context.Context, crclient client.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
 	pullSecret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
+	if err := crclient.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
 		return "", fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
 	}
 	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
@@ -2981,4 +2987,158 @@ func aggregateMachineMessages(msgs []string) string {
 	}
 
 	return builder.String()
+}
+
+// secretJanitor reconciles secrets and determines which secrets should remain in the cluster and which should be cleaned up.
+// Any secret annotated with a nodePool name should only be on the cluster if the nodePool continues to exist
+// and if our current calculation for the inputs to the name matches what the secret is named.
+type secretJanitor struct {
+	*NodePoolReconciler
+
+	now func() time.Time
+}
+
+func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	log := ctrl.LoggerFrom(ctx).WithValues("secret", req.String())
+
+	secret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, req.NamespacedName, secret); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("not found", "request", req.String())
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "error getting secret")
+		return ctrl.Result{}, err
+	}
+
+	// only handle secrets that are associated with a NodePool
+	nodePoolName, annotated := secret.Annotations[nodePoolAnnotation]
+	if !annotated {
+		return ctrl.Result{}, nil
+	}
+	log = log.WithValues("nodePool", nodePoolName)
+
+	// only handle secret types that we know about explicitly
+	shouldHandle := false
+	for _, prefix := range []string{tokenSecretPrefix, ignitionUserDataPrefix} {
+		if strings.HasPrefix(secret.Name, prefix) {
+			shouldHandle = true
+			break
+		}
+	}
+	if !shouldHandle {
+		return ctrl.Result{}, nil
+	}
+
+	nodePool := &hyperv1.NodePool{}
+	if err := r.Client.Get(ctx, supportutil.ParseNamespacedName(nodePoolName), nodePool); err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "error getting nodepool")
+		return ctrl.Result{}, err
+	} else if apierrors.IsNotFound(err) {
+		log.Info("removing secret as nodePool is missing")
+		return ctrl.Result{}, r.Client.Delete(ctx, secret)
+	}
+
+	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	expectedCoreConfigResources := expectedCoreConfigResourcesForHostedCluster(hcluster)
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if missingConfigs {
+		return ctrl.Result{}, nil
+	}
+	targetVersion := releaseImage.Version()
+
+	pullSecretName, err := r.getPullSecretName(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	globalConfig, err := globalConfigString(hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, globalConfig)
+
+	// synchronously deleting the ignition token is unsafe; we need to clean up tokens by annotating them to expire
+	synchronousCleanup := func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
+		return c.Delete(ctx, secret)
+	}
+	type nodePoolSecret struct {
+		expectedName   string
+		matchingPrefix string
+		cleanup        func(context.Context, client.Client, *corev1.Secret) error
+	}
+	valid := false
+	options := []nodePoolSecret{
+		{
+			expectedName:   TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash).Name,
+			matchingPrefix: tokenSecretPrefix,
+			cleanup: func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
+				return setExpirationTimestampOnToken(ctx, c, secret, r.now)
+			},
+		},
+		{
+			expectedName:   IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetPayloadConfigHash).Name,
+			matchingPrefix: ignitionUserDataPrefix,
+			cleanup:        synchronousCleanup,
+		},
+	}
+	cleanup := synchronousCleanup
+	var names []string
+	for _, option := range options {
+		names = append(names, option.expectedName)
+		if secret.Name == option.expectedName {
+			valid = true
+		}
+		if strings.HasPrefix(secret.Name, option.matchingPrefix) {
+			cleanup = option.cleanup
+		}
+	}
+
+	if valid {
+		return ctrl.Result{}, nil
+	}
+
+	log.WithValues("options", names, "valid", valid).Info("removing secret as it does not match the expected set of names")
+	return ctrl.Result{}, cleanup(ctx, r.Client, secret)
+}
+
+func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
+	// 1. - Reconcile conditions according to current state of the world.
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
+
+	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
+	// It is included directly by the ignition server.  However, we need to detect the change
+	// here to trigger a nodepool update.
+	image := globalconfig.ImageConfig()
+	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
+
+	// Serialize proxy and image into a single string to use in the token secret hash.
+	globalConfigBytes := bytes.NewBuffer(nil)
+	enc := json.NewEncoder(globalConfigBytes)
+	if err := enc.Encode(proxy); err != nil {
+		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
+	}
+	if err := enc.Encode(image); err != nil {
+		return "", fmt.Errorf("failed to encode image global config: %w", err)
+	}
+	return globalConfigBytes.String(), nil
+}
+
+func payloadConfigHash(config, targetVersion, pullSecretName, globalConfig string) string {
+	return supportutil.HashSimple(config + targetVersion + pullSecretName + globalConfig)
 }

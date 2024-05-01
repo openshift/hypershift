@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -503,7 +504,7 @@ func TestDetermineRequiredNodes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			actual := determineRequiredNodes(pendingPods(test.pods), test.pods, test.nodes)
-			g.Expect(actual).To(BeEquivalentTo(test.expected))
+			g.Expect(actual).To(testutil.MatchExpected(test.expected, cmp.AllowUnexported(nodeRequirement{})))
 		})
 	}
 }
@@ -854,7 +855,7 @@ func TestNonRequestServingMachineSetsToScale(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			actual := nonRequestServingMachineSetsToScale(context.Background(), cfg, test.hostedClusters, test.machineSets)
-			g.Expect(actual).To(BeEquivalentTo(test.expect))
+			g.Expect(actual).To(testutil.MatchExpected(test.expect, cmp.AllowUnexported(machineSetReplicas{})))
 		})
 	}
 }
