@@ -254,6 +254,11 @@ const (
 	// the frequency of memory collection when memory used rises above a particular threshhold. This can be used to reduce
 	// the memory footprint of the kube-apiserver during upgrades.
 	KubeAPIServerGOMemoryLimitAnnotation = "hypershift.openshift.io/kube-apiserver-gomemlimit"
+
+	// DisableClusterAutoscalerAnnotation allows disabling the cluster autoscaler for a hosted cluster.
+	// This annotation is only set by the hypershift-operator on HosterControlPlanes.
+	// It is not set by the end-user.
+	DisableClusterAutoscalerAnnotation = "hypershift.openshift.io/disable-cluster-autoscaler"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

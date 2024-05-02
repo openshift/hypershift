@@ -1483,9 +1483,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the HostedControlPlane
+	isAutoscalingNeeded, err := r.isAutoscalingNeeded(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine if autoscaler is needed: %w", err)
+	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster)
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -1753,7 +1757,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool) error {
 	hcp.Annotations = map[string]string{
 		HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
@@ -1801,6 +1805,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 			strings.HasPrefix(key, hyperv1.ResourceRequestOverrideAnnotationPrefix) {
 			hcp.Annotations[key] = val
 		}
+	}
+
+	// Set the DisableClusterAutoscalerAnnotation if autoscaling is not needed
+	if !isAutoscalingNeeded {
+		hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation] = "true"
 	}
 
 	hcp.Spec.Channel = hcluster.Spec.Channel
@@ -4608,6 +4617,19 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
 	return r.ReleaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
+}
+
+func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
+	nodePools, err := listNodePools(ctx, r.Client, hcluster.Namespace, hcluster.Name)
+	if err != nil {
+		return false, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", hcluster.Name, err)
+	}
+	for _, nodePool := range nodePools {
+		if nodePool.Spec.AutoScaling != nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // isUpgrading returns
