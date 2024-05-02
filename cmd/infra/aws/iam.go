@@ -14,8 +14,20 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 )
 
-const (
-	imageRegistryPermPolicy = `{
+type policyBinding struct {
+	name            string
+	serviceAccounts []string
+	policy          string
+}
+
+var (
+	imageRegistryPermPolicy = policyBinding{
+		name: "openshift-image-registry",
+		serviceAccounts: []string{
+			"system:serviceaccount:openshift-image-registry:cluster-image-registry-operator",
+			"system:serviceaccount:openshift-image-registry:registry",
+		},
+		policy: `{
 	"Version": "2012-10-17",
 	"Statement": [
 		{
@@ -43,9 +55,13 @@ const (
 			"Resource": "*"
 		}
 	]
-}`
+}`,
+	}
 
-	awsEBSCSIPermPolicy = `{
+	awsEBSCSIPermPolicy = policyBinding{
+		name:            "aws-ebs-csi-driver-controller",
+		serviceAccounts: []string{"system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-controller-sa"},
+		policy: `{
 	"Version": "2012-10-17",
 	"Statement": [
 		{
@@ -94,9 +110,13 @@ const (
             }
         }
 	]
-}`
+}`,
+	}
 
-	cloudControllerPolicy = `{
+	cloudControllerPolicy = policyBinding{
+		name:            "cloud-controller",
+		serviceAccounts: []string{"system:serviceaccount:kube-system:kube-controller-manager"},
+		policy: `{
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -165,9 +185,13 @@ const (
       "Effect": "Allow"
     }
   ]
-}`
+}`,
+	}
 
-	nodePoolPolicy = `{
+	nodePoolPolicy = policyBinding{
+		name:            "node-pool",
+		serviceAccounts: []string{"system:serviceaccount:kube-system:capa-controller-manager"},
+		policy: `{
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -272,9 +296,13 @@ const (
 		}
 	}
   ]
-}`
+}`,
+	}
 
-	cloudNetworkConfigControllerPolicy = `{
+	cloudNetworkConfigControllerPolicy = policyBinding{
+		name:            "cloud-network-config-controller",
+		serviceAccounts: []string{"system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller"},
+		policy: `{
 	"Version": "2012-10-17",
 	"Statement": [
 		{
@@ -293,13 +321,17 @@ const (
 			"Resource": "*"
 		}
 	]
-}`
+}`,
+	}
 )
 
-func ingressPermPolicy(publicZone, privateZone string) string {
+func ingressPermPolicy(publicZone, privateZone string) policyBinding {
 	publicZone = ensureHostedZonePrefix(publicZone)
 	privateZone = ensureHostedZonePrefix(privateZone)
-	return fmt.Sprintf(`{
+	return policyBinding{
+		name:            "openshift-ingress",
+		serviceAccounts: []string{"system:serviceaccount:openshift-ingress-operator:ingress-operator"},
+		policy: fmt.Sprintf(`{
 	"Version": "2012-10-17",
 	"Statement": [
 		{
@@ -322,12 +354,16 @@ func ingressPermPolicy(publicZone, privateZone string) string {
 			]
 		}
 	]
-}`, publicZone, privateZone)
+}`, publicZone, privateZone),
+	}
 }
 
-func controlPlaneOperatorPolicy(hostedZone string) string {
+func controlPlaneOperatorPolicy(hostedZone string) policyBinding {
 	hostedZone = ensureHostedZonePrefix(hostedZone)
-	return fmt.Sprintf(`{
+	return policyBinding{
+		name:            "control-plane-operator",
+		serviceAccounts: []string{"system:serviceaccount:kube-system:control-plane-operator"},
+		policy: fmt.Sprintf(`{
 	"Version": "2012-10-17",
 	"Statement": [
 		{
@@ -359,11 +395,15 @@ func controlPlaneOperatorPolicy(hostedZone string) string {
 			"Resource": "arn:aws:route53:::%s"
 		}
 	]
-}`, hostedZone)
+}`, hostedZone),
+	}
 }
 
-func kmsProviderPolicy(kmsKeyARN string) string {
-	return fmt.Sprintf(`{
+func kmsProviderPolicy(kmsKeyARN string) policyBinding {
+	return policyBinding{
+		name:            "kms-provider",
+		serviceAccounts: []string{"system:serviceaccount:kube-system:kms-provider"},
+		policy: fmt.Sprintf(`{
 	"Version": "2012-10-17",
 	"Statement": [
     	{
@@ -378,7 +418,8 @@ func kmsProviderPolicy(kmsKeyARN string) string {
 			"Resource": %q
 		}
 	]
-}`, kmsKeyARN)
+}`, kmsKeyARN),
+	}
 }
 
 func ensureHostedZonePrefix(hostedZone string) string {
@@ -436,65 +477,27 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
-	ingressTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
-	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", ingressTrustPolicy, ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID))
-	if err != nil {
-		return nil, err
+	bindings := map[*string]policyBinding{
+		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID),
+		&output.Roles.ImageRegistryARN:        imageRegistryPermPolicy,
+		&output.Roles.StorageARN:              awsEBSCSIPermPolicy,
+		&output.Roles.KubeCloudControllerARN:  cloudControllerPolicy,
+		&output.Roles.NodePoolManagementARN:   nodePoolPolicy,
+		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID),
+		&output.Roles.NetworkARN:              cloudNetworkConfigControllerPolicy,
 	}
-	output.Roles.IngressARN = arn
-
-	registryTrustPolicy := oidcTrustPolicy(providerARN, providerName,
-		"system:serviceaccount:openshift-image-registry:cluster-image-registry-operator",
-		"system:serviceaccount:openshift-image-registry:registry")
-	arn, err = o.CreateOIDCRole(iamClient, "openshift-image-registry", registryTrustPolicy, imageRegistryPermPolicy)
-	if err != nil {
-		return nil, err
-	}
-	output.Roles.ImageRegistryARN = arn
-
-	csiTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-controller-sa")
-	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-controller", csiTrustPolicy, awsEBSCSIPermPolicy)
-	if err != nil {
-		return nil, err
-	}
-	output.Roles.StorageARN = arn
-
-	kubeCloudControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kube-controller-manager")
-	arn, err = o.CreateOIDCRole(iamClient, "cloud-controller", kubeCloudControllerTrustPolicy, cloudControllerPolicy)
-	if err != nil {
-		return nil, err
-	}
-	output.Roles.KubeCloudControllerARN = arn
-
-	nodePoolManagementTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:capa-controller-manager")
-	arn, err = o.CreateOIDCRole(iamClient, "node-pool", nodePoolManagementTrustPolicy, nodePoolPolicy)
-	if err != nil {
-		return nil, err
-	}
-	output.Roles.NodePoolManagementARN = arn
-
-	controlPlaneOperatorTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:control-plane-operator")
-	arn, err = o.CreateOIDCRole(iamClient, "control-plane-operator", controlPlaneOperatorTrustPolicy, controlPlaneOperatorPolicy(o.LocalZoneID))
-	if err != nil {
-		return nil, err
-	}
-	output.Roles.ControlPlaneOperatorARN = arn
-
 	if len(o.KMSKeyARN) > 0 {
-		kmsProviderTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kms-provider")
-		arn, err = o.CreateOIDCRole(iamClient, "kms-provider", kmsProviderTrustPolicy, kmsProviderPolicy(o.KMSKeyARN))
+		bindings[&output.KMSProviderRoleARN] = kmsProviderPolicy(o.KMSKeyARN)
+	}
+
+	for into, binding := range bindings {
+		trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
+		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy)
 		if err != nil {
 			return nil, err
 		}
-		output.KMSProviderRoleARN = arn
+		*into = arn
 	}
-
-	cloudNetworkConfigControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller")
-	arn, err = o.CreateOIDCRole(iamClient, "cloud-network-config-controller", cloudNetworkConfigControllerTrustPolicy, cloudNetworkConfigControllerPolicy)
-	if err != nil {
-		return nil, err
-	}
-	output.Roles.NetworkARN = arn
 
 	return output, nil
 }
