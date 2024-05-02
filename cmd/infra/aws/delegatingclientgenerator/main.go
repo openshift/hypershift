@@ -189,8 +189,8 @@ func (c *{{$service}}Client) {{$api}}WithContext(ctx aws.Context, input *{{$serv
 	if err := client.Execute(&out, struct {
 		Services           []string
 		Delegates          []string
-		DelegatesByName    map[string]map[string][]string
-		DelegatesByService map[string]map[string][]string
+		DelegatesByName    aws.ServicesByDelegate
+		DelegatesByService DelegatesByService
 	}{
 		Services:           orderedServiceNames,
 		Delegates:          orderedDelegateNames,
@@ -205,13 +205,16 @@ func (c *{{$service}}Client) {{$api}}WithContext(ctx aws.Context, input *{{$serv
 	}
 }
 
+type EndpointsByDelegate map[string][]string
+type DelegatesByService map[string]EndpointsByDelegate
+
 // byService remaps from {delegate name -> service -> APIs} to {service -> delegate name -> APIs}
-func byService(delegates map[string]map[string][]string) map[string]map[string][]string {
-	delegatesByService := map[string]map[string][]string{}
+func byService(delegates aws.ServicesByDelegate) DelegatesByService {
+	delegatesByService := DelegatesByService{}
 	for name, delegate := range delegates {
 		for service, apis := range delegate {
 			if _, ok := delegatesByService[service]; !ok {
-				delegatesByService[service] = map[string][]string{}
+				delegatesByService[service] = EndpointsByDelegate{}
 			}
 			delegatesByService[service][name] = apis
 		}
@@ -220,12 +223,12 @@ func byService(delegates map[string]map[string][]string) map[string]map[string][
 }
 
 // byDelegate remaps from {service -> delegate name -> APIs} to {delegate name -> service -> APIs}
-func byDelegate(delegatesByService map[string]map[string][]string) map[string]map[string][]string {
-	allDelegates := map[string]map[string][]string{}
+func byDelegate(delegatesByService DelegatesByService) aws.ServicesByDelegate {
+	allDelegates := aws.ServicesByDelegate{}
 	for service, delegates := range delegatesByService {
 		for name, apis := range delegates {
 			if _, ok := allDelegates[name]; !ok {
-				allDelegates[name] = map[string][]string{}
+				allDelegates[name] = aws.EndpointsByService{}
 			}
 			allDelegates[name][service] = apis
 		}
@@ -234,7 +237,7 @@ func byDelegate(delegatesByService map[string]map[string][]string) map[string]ma
 }
 
 // serviceNames returns a sorted list of service names from a map of services by delegate
-func serviceNames(delegates map[string]map[string][]string) []string {
+func serviceNames(delegates aws.ServicesByDelegate) []string {
 	allServices := sets.New[string]()
 	for _, services := range delegates {
 		for service := range services {
@@ -247,7 +250,7 @@ func serviceNames(delegates map[string]map[string][]string) []string {
 }
 
 // delegateNames returns a sorted list of delegate names from a map of services by delegate
-func delegateNames(delegates map[string]map[string][]string) []string {
+func delegateNames(delegates aws.ServicesByDelegate) []string {
 	allDelegates := sets.New[string]()
 	for name := range delegates {
 		allDelegates.Insert(name)
@@ -259,7 +262,7 @@ func delegateNames(delegates map[string]map[string][]string) []string {
 
 // adjustServices maps permission attestation names to the Go SDK names, as necessary, and
 // ignores services we do not care about.
-func adjustServices(delegates map[string]map[string][]string) map[string]map[string][]string {
+func adjustServices(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 	// some services are named differently in the Go SDK
 	serviceOverrides := map[string][]string{
 		"elasticloadbalancing": {"elb", "elbv2"},
@@ -267,9 +270,9 @@ func adjustServices(delegates map[string]map[string][]string) map[string]map[str
 	// some services we just don't care about
 	serviceIgnores := sets.New[string]("kms", "autoscaling", "iam", "tag")
 
-	adjusted := map[string]map[string][]string{}
+	adjusted := aws.ServicesByDelegate{}
 	for name, delegate := range delegates {
-		updated := map[string][]string{}
+		updated := aws.EndpointsByService{}
 		for service, apis := range delegate {
 			if serviceIgnores.Has(service) {
 				continue
@@ -291,7 +294,7 @@ func adjustServices(delegates map[string]map[string][]string) map[string]map[str
 }
 
 // adjustAPIs maps APIs into Go SDK names for the cases where the two names differ and handles the ELB duality
-func adjustAPIs(delegates map[string]map[string][]string) map[string]map[string][]string {
+func adjustAPIs(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 	// some APIs exist for the ELBv1 or v2 group, but not both, and the privilege attestations do not
 	// distinguish between them
 	apiRemovals := map[string]sets.Set[string]{
@@ -339,9 +342,9 @@ func adjustAPIs(delegates map[string]map[string][]string) map[string]map[string]
 		},
 	}
 
-	updated := map[string]map[string][]string{}
+	updated := aws.ServicesByDelegate{}
 	for name, services := range delegates {
-		updated[name] = map[string][]string{}
+		updated[name] = aws.EndpointsByService{}
 		for service, apis := range services {
 			var mapped []string
 			for _, api := range apis {
@@ -361,10 +364,10 @@ func adjustAPIs(delegates map[string]map[string][]string) map[string]map[string]
 
 // deduplicateAPIs removes duplicate APIs from the delegates for a service, preferring to use the first
 // delegate by name order, as which delegate fulfills an API does not matter
-func deduplicateAPIs(delegatesByService map[string]map[string][]string, delegateNames []string) map[string]map[string][]string {
-	updated := map[string]map[string][]string{}
+func deduplicateAPIs(delegatesByService DelegatesByService, delegateNames []string) DelegatesByService {
+	updated := DelegatesByService{}
 	for service, delegates := range delegatesByService {
-		updated[service] = map[string][]string{}
+		updated[service] = EndpointsByDelegate{}
 		apis := sets.New[string]()
 		for _, delegateName := range delegateNames {
 			if delegateApis, ok := delegates[delegateName]; ok {

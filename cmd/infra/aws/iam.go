@@ -494,7 +494,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
 		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create OIDC Role %q: with trust policy %s and permission policy %s: %v", binding.name, trustPolicy, binding.policy, err)
 		}
 		*into = arn
 	}

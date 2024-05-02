@@ -75,7 +75,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
 		Region:                region,
 		InfraID:               infraID,
-		AWSCredentialsOpts:    o.AWSPlatform.AWSCredentialsOpts,
+		AWSCredentialsOpts:    &awsinfra.DelegatedAWSCredentialOptions{AWSCredentialsOpts: &o.AWSPlatform.AWSCredentialsOpts},
 		Name:                  o.Name,
 		BaseDomain:            baseDomain,
 		BaseDomainPrefix:      baseDomainPrefix,
