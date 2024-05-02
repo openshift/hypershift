@@ -56843,11 +56843,11 @@ objects:
                     NodePool (currently only supported on AWS)\nNOTE: This is set
                     as optional to prevent validation from failing due to a limitation
                     on client side validation with open API machinery:\n\thttps://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215\nTODO
-                    Add ppc64le and s390x to enum validation once the architectures
-                    are supported"
+                    Add s390x to enum validation once the architecture is supported"
                   enum:
                   - arm64
                   - amd64
+                  - ppc64le
                   type: string
                   x-kubernetes-validations:
                   - message: Arch is immutable

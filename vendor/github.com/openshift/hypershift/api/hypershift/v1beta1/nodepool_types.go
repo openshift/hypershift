@@ -176,10 +176,10 @@ type NodePoolSpec struct {
 	// Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
 	// NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 	//	https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
-	// TODO Add ppc64le and s390x to enum validation once the architectures are supported
+	// TODO Add s390x to enum validation once the architecture is supported
 	//
 	// +kubebuilder:default:=amd64
-	// +kubebuilder:validation:Enum=arm64;amd64
+	// +kubebuilder:validation:Enum=arm64;amd64;ppc64le
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`

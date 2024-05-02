@@ -848,7 +848,7 @@ string
 <p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
 NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
-TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
+TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
 </tr>
 </table>
@@ -6901,7 +6901,7 @@ string
 <p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
 NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
-TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
+TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
 </tr>
 </tbody>
