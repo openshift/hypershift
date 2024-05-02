@@ -20,14 +20,14 @@ package v1beta1
 // AzureNodePoolPlatformApplyConfiguration represents an declarative configuration of the AzureNodePoolPlatform type for use
 // with apply.
 type AzureNodePoolPlatformApplyConfiguration struct {
-	VMSize                 *string `json:"vmsize,omitempty"`
-	ImageID                *string `json:"imageID,omitempty"`
-	DiskSizeGB             *int32  `json:"diskSizeGB,omitempty"`
-	DiskStorageAccountType *string `json:"diskStorageAccountType,omitempty"`
-	AvailabilityZone       *string `json:"availabilityZone,omitempty"`
-	DiskEncryptionSetID    *string `json:"diskEncryptionSetID,omitempty"`
-	EnableEphemeralOSDisk  *bool   `json:"enableEphemeralOSDisk,omitempty"`
-	SubnetID               *string `json:"subnetID,omitempty"`
+	VMSize                 *string                        `json:"vmsize,omitempty"`
+	ImageID                *string                        `json:"imageID,omitempty"`
+	DiskSizeGB             *int32                         `json:"diskSizeGB,omitempty"`
+	DiskStorageAccountType *string                        `json:"diskStorageAccountType,omitempty"`
+	AvailabilityZone       *string                        `json:"availabilityZone,omitempty"`
+	DiskEncryptionSetID    *string                        `json:"diskEncryptionSetID,omitempty"`
+	EnableEphemeralOSDisk  *bool                          `json:"enableEphemeralOSDisk,omitempty"`
+	SubnetID               *string                        `json:"subnetID,omitempty"`
 	Diagnostics            *DiagnosticsApplyConfiguration `json:"diagnostics,omitempty"`
 }
 

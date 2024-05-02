@@ -96,6 +96,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.ClusterNetworkingApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &applyconfigurationhypershiftv1alpha1.ClusterVersionStatusApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Diagnostics"):
+		return &applyconfigurationhypershiftv1alpha1.DiagnosticsApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("DNSSpec"):
 		return &applyconfigurationhypershiftv1alpha1.DNSSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("EtcdSpec"):

@@ -926,13 +926,12 @@ type AzureNodePoolPlatform struct {
 	//
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
-
 	// +immutable
 	// +required
 	SubnetID string `json:"subnetID"`
 
 	// Diagnostics specifies the diagnostics settings for a virtual machine.
-	// If not specified then Boot diagnostics (Managed) will be enabled.
+	// If not specified then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
 }
@@ -1019,6 +1018,7 @@ type Diagnostics struct {
 	// StorageAccountType determines if the storage account for storing the diagnostics data
 	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
 	// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
+	// +kubebuilder:default:=Disabled
 	StorageAccountType string `json:"storageAccountType,omitempty"`
 	// StorageAccountURI is the URI of the user-managed storage account.
 	// The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
@@ -1026,8 +1026,8 @@ type Diagnostics struct {
 	// You can find the correct endpoint by looking for the Blob Primary Endpoint in the
 	// endpoints tab in the Azure console or with the CLI by issuing
 	// `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
-	// +optional
-	// +kubebuilder:validation:Pattern=`^https://`
+	// +kubebuilder:validation:Format=uri
 	// +kubebuilder:validation:MaxLength=1024
+	// +optional
 	StorageAccountURI string `json:"storageAccountURI,omitempty"`
 }

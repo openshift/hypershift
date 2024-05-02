@@ -897,11 +897,20 @@ type AzureNodePoolPlatform struct {
 	// EnableEphemeralOSDisk enables ephemeral OS disk
 	// +optional
 	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
-	// SubnetName is the name of the subnet to place the Nodes into
+	// SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+	// different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+	// in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+	// hcluster.Spec.Platform.Azure.SubscriptionID.
 	//
-	// +kubebuilder:default:=default
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
 	SubnetID string `json:"subnetID"`
+	// Diagnostics specifies the diagnostics settings for a virtual machine.
+	// If not specified then Boot diagnostics will be disabled.
+	// +optional
+	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation
@@ -977,4 +986,24 @@ type Taint struct {
 	// that do not tolerate the taint.
 	// Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
 	Effect corev1.TaintEffect `json:"effect"`
+}
+
+// Diagnostics specifies the diagnostics settings for a virtual machine.
+// +kubebuilder:validation:XValidation:rule="self.storageAccountType == 'UserManaged' ? has(self.storageAccountURI) : true", message="storageAccountURI is required when storageAccountType is UserManaged"
+type Diagnostics struct {
+	// StorageAccountType determines if the storage account for storing the diagnostics data
+	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+	// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
+	// +kubebuilder:default:=Disabled
+	StorageAccountType string `json:"storageAccountType,omitempty"`
+	// StorageAccountURI is the URI of the user-managed storage account.
+	// The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+	// but may differ if you are using Azure DNS zone endpoints.
+	// You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+	// endpoints tab in the Azure console or with the CLI by issuing
+	// `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+	// +kubebuilder:validation:Format=uri
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	StorageAccountURI string `json:"storageAccountURI,omitempty"`
 }

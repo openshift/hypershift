@@ -2459,7 +2459,7 @@ Diagnostics
 <td>
 <em>(Optional)</em>
 <p>Diagnostics specifies the diagnostics settings for a virtual machine.
-If not specified then Boot diagnostics (Managed) will be enabled.</p>
+If not specified then Boot diagnostics will be disabled.</p>
 </td>
 </tr>
 </tbody>
