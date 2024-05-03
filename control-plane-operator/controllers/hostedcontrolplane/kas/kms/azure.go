@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	activeAzureKMSUnixSocketFileName = "azurekmsactive.socket"
-	activeAzureKMSHealthPort         = 8787
+	azureActiveKMSUnixSocketFileName = "azurekmsactive.socket"
+	azureActiveKMSHealthPort         = 8787
 
-	backupAzureKMSUnixSocketFileName = "azurekmsbackup.socket"
-	backupAzureKMSHealthPort         = 8788
+	azureBackupKMSUnixSocketFileName = "azurekmsbackup.socket"
+	azureBackupKMSHealthPort         = 8788
 
 	azureKMSCredsFileKey          = "azure.json"
 	azureProviderConfigNamePrefix = "azure"
@@ -47,8 +47,8 @@ var (
 		},
 	}
 
-	activeAzureKMSUnixSocket = fmt.Sprintf("unix://%s/%s", azureKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), activeAzureKMSUnixSocketFileName)
-	backupAzureKMSUnixSocket = fmt.Sprintf("unix://%s/%s", azureKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), backupAzureKMSUnixSocketFileName)
+	azureActiveKMSUnixSocket = fmt.Sprintf("unix://%s/%s", azureKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), azureActiveKMSUnixSocketFileName)
+	azureBackupKMSUnixSocket = fmt.Sprintf("unix://%s/%s", azureKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), azureBackupKMSUnixSocketFileName)
 )
 
 var _ IKMSProvider = &azureKMSProvider{}
@@ -79,7 +79,7 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfigur
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		KMS: &v1.KMSConfiguration{
 			Name:      fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
-			Endpoint:  activeAzureKMSUnixSocket,
+			Endpoint:  azureActiveKMSUnixSocket,
 			CacheSize: ptr.To[int32](100),
 			Timeout:   &metav1.Duration{Duration: 35 * time.Second},
 		},
@@ -92,7 +92,7 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfigur
 		providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 			KMS: &v1.KMSConfiguration{
 				Name:      fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
-				Endpoint:  backupAzureKMSUnixSocket,
+				Endpoint:  azureBackupKMSUnixSocket,
 				CacheSize: ptr.To[int32](100),
 				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
 			},
@@ -126,13 +126,13 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	podSpec.Containers = append(podSpec.Containers,
 		util.BuildContainer(
 			kasContainerAzureKMSActive(),
-			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, activeAWSKMSUnixSocket, activeAzureKMSHealthPort)),
+			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort)),
 	)
 	if p.kmsSpec.BackupKey != nil {
 		podSpec.Containers = append(podSpec.Containers,
 			util.BuildContainer(
 				kasContainerAzureKMSBackup(),
-				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, backupAWSKMSUnixSocket, backupAzureKMSHealthPort)),
+				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort)),
 		)
 	}
 
