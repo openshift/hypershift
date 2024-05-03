@@ -10,25 +10,205 @@ import (
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/util"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 )
 
 const (
-	controllerName            = "RequestServingNodeAutoscaler"
+	autoscalerControllerName  = "RequestServingNodeAutoscaler"
+	descalerControllerName    = "MachineSetDescaler"
 	machineSetAnnotation      = "hypershift.openshift.io/machineset"
 	machineSetNamespace       = "openshift-machine-api"
 	machineNameNodeAnnotation = "machine.openshift.io/machine"
 	machineMachineSetLabel    = "machine.openshift.io/cluster-api-machineset"
 )
+
+const (
+	// nodeScaleDownDelay is the amount of time a node must exist before it is considered for scaling down
+	nodeScaleDownDelay = 5 * time.Minute
+
+	// pendingWaitTime is the amount of time a pod must be pending before it is considered for scaling
+	pendingWaitTime = 1 * time.Minute
+)
+
+type MachineSetDescaler struct {
+	client.Client
+}
+
+func (r *MachineSetDescaler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Client = mgr.GetClient()
+	builder := ctrl.NewControllerManagedBy(mgr).
+		For(&corev1.Node{}).
+		WithOptions(controller.Options{
+			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			MaxConcurrentReconciles: 1,
+		}).
+		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(mapHostedClusterToNodesFn(r.Client, mgr))).
+		Named(descalerControllerName)
+	return builder.Complete(r)
+}
+
+func (r *MachineSetDescaler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx).WithValues("node", req.Name)
+	node := &corev1.Node{}
+	if err := r.Get(ctx, req.NamespacedName, node); err != nil {
+		if !errors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get node: %w", err)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if _, hasServingComponentLabel := node.Labels[hyperv1.RequestServingComponentLabel]; !hasServingComponentLabel {
+		return ctrl.Result{}, nil
+	}
+
+	if _, hasHostedClusterLabel := node.Labels[hyperv1.HostedClusterLabel]; !hasHostedClusterLabel {
+		return ctrl.Result{}, nil
+	}
+
+	hcName := node.Labels[HostedClusterNameLabel]
+	hcNamespace := node.Labels[HostedClusterNamespaceLabel]
+	if hcName == "" || hcNamespace == "" {
+		return ctrl.Result{}, nil
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{}
+	hcNotFound := false
+	if err := r.Get(ctx, types.NamespacedName{Name: hcName, Namespace: hcNamespace}, hostedCluster); err != nil {
+		if errors.IsNotFound(err) {
+			hcNotFound = true
+		} else {
+			return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
+		}
+	}
+	machineSetList := &machinev1beta1.MachineSetList{}
+	if err := r.List(ctx, machineSetList, client.InNamespace(machineSetNamespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list machinesets: %w", err)
+	}
+	machineList := &machinev1beta1.MachineList{}
+	if err := r.List(ctx, machineList, client.InNamespace(machineSetNamespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list machines: %w", err)
+	}
+	nodeList := &corev1.NodeList{}
+	if err := r.List(ctx, nodeList); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list nodes: %w", err)
+	}
+	var toScaleDown []machinev1beta1.MachineSet
+	var requeueAfter time.Duration
+	if hcNotFound {
+		toScaleDown = nodeMachineSetsToScaleDown(node, machineSetList.Items, machineList.Items, nodeList.Items)
+	} else {
+		toScaleDown, requeueAfter = hostedClusterMachineSetsToScaleDown(ctx, hostedCluster, machineSetList.Items, machineList.Items, nodeList.Items)
+	}
+
+	if len(toScaleDown) == 0 {
+		if requeueAfter > 0 {
+			log.Info("Requeuing reconciliation", "after", requeueAfter)
+		}
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	}
+	var errs []error
+	for i := range toScaleDown {
+		scale := &autoscalingv1.Scale{Spec: autoscalingv1.ScaleSpec{Replicas: 0}}
+		log.Info("Scaling down machineset", "machineset", toScaleDown[i].Name)
+		if err := r.SubResource("scale").Update(ctx, &toScaleDown[i], client.WithSubResourceBody(scale)); err != nil {
+			errs = append(errs, fmt.Errorf("failed to scale down machineset %s: %w", toScaleDown[i].Name, err))
+		}
+	}
+	return ctrl.Result{RequeueAfter: requeueAfter}, utilerrors.NewAggregate(errs)
+}
+
+// nodeMachineSetsToScaleDown returns a list of machine sets that should be scaled down
+// given a node labeled for a HostedCluster that no longer exists
+func nodeMachineSetsToScaleDown(node *corev1.Node, machineSets []machinev1beta1.MachineSet, machines []machinev1beta1.Machine, nodes []corev1.Node) []machinev1beta1.MachineSet {
+	var nodesToScaleDown []corev1.Node
+	pairLabel := node.Labels[OSDFleetManagerPairedNodesLabel]
+	if pairLabel != "" {
+		nodesToScaleDown = filterNodes(nodes, func(n *corev1.Node) bool {
+			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel
+		})
+	} else {
+		nodesToScaleDown = []corev1.Node{*node}
+	}
+	var result []machinev1beta1.MachineSet
+	for _, n := range nodesToScaleDown {
+		msName := nodeMachineSet(&n, machines)
+		ms := findMachineSet(msName, machineSets)
+		if ms != nil {
+			if ptr.Deref(ms.Spec.Replicas, 0) == 0 {
+				continue
+			}
+			result = append(result, *ms)
+		}
+	}
+	return result
+}
+
+// hostedClusterMachineSetsToScaleDown returns a list of machine sets that should be scaled down
+// given the current state of a HostedCluster
+func hostedClusterMachineSetsToScaleDown(ctx context.Context, hostedCluster *hyperv1.HostedCluster, machineSets []machinev1beta1.MachineSet, machines []machinev1beta1.Machine, nodes []corev1.Node) ([]machinev1beta1.MachineSet, time.Duration) {
+	var result []machinev1beta1.MachineSet
+	log := ctrl.LoggerFrom(ctx)
+
+	additionalNodeSelector := util.ParseNodeSelector(hostedCluster.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation])
+	var sizeLabelSelector map[string]string
+	if sizeLabel := hostedCluster.Labels[hyperv1.HostedClusterSizeLabel]; sizeLabel != "" {
+		sizeLabelSelector = map[string]string{hyperv1.NodeSizeLabel: sizeLabel}
+	}
+	if len(additionalNodeSelector) == 0 && len(sizeLabelSelector) == 0 {
+		return nil, 0
+	}
+	clusterNodes := filterNodes(nodes, func(n *corev1.Node) bool {
+		return n.Labels[hyperv1.HostedClusterLabel] == clusterKey(hostedCluster)
+	})
+	activeNodes := filterNodes(clusterNodes, func(n *corev1.Node) bool {
+		return labelsMatchSelector(n.Labels, sizeLabelSelector) || labelsMatchSelector(n.Labels, additionalNodeSelector)
+	})
+	if len(activeNodes) == 0 {
+		return nil, 0
+	}
+	nodesToScaleDown := filterNodes(clusterNodes, func(n *corev1.Node) bool {
+		return findNode(n.Name, activeNodes) == nil
+	})
+	if len(nodesToScaleDown) == 0 {
+		return nil, 0
+	}
+	log.Info("Nodes to scale down", "toScaleDown", nodeNames(nodesToScaleDown), "clusterNodes", nodeNames(clusterNodes), "activeNodes", nodeNames(activeNodes))
+	newerNodes := 0
+	for _, node := range nodesToScaleDown {
+		// Skip nodes that are too new to scale down
+		if node.CreationTimestamp.Time.Add(nodeScaleDownDelay).After(time.Now()) {
+			newerNodes++
+			continue
+		}
+		msName := nodeMachineSet(&node, machines)
+		ms := findMachineSet(msName, machineSets)
+		if ms != nil {
+			if ms.Spec.Replicas == nil || *ms.Spec.Replicas == 0 {
+				continue
+			}
+			result = append(result, *ms)
+		}
+	}
+	var requeue time.Duration
+	if newerNodes > 0 {
+		log.Info("Newer nodes exist, requeueing reconciliation", "count", newerNodes)
+		requeue = nodeScaleDownDelay
+	}
+	return result, requeue
+}
 
 type RequestServingNodeAutoscaler struct {
 	client.Client
@@ -37,11 +217,11 @@ type RequestServingNodeAutoscaler struct {
 func (r *RequestServingNodeAutoscaler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Pod{}, builder.WithPredicates()).
+		For(&corev1.Pod{}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
-		}).Named(controllerName)
+		}).Named(autoscalerControllerName)
 	return builder.Complete(r)
 }
 
@@ -87,7 +267,11 @@ func (r *RequestServingNodeAutoscaler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("failed to list nodes: %w", err)
 	}
 
-	machineSetsToScale := determineMachineSetsToScale(podList.Items, machineSets, machineList.Items, nodeList.Items)
+	machineSetsToScale, pendingPods, requiredNodes := machineSetsToScaleUp(podList.Items, machineSets, machineList.Items, nodeList.Items)
+	if len(machineSetsToScale) > 0 {
+		log.Info("Machinesets to scale", "machinesets", machineSetNames(machineSetsToScale),
+			"pending pods", podNames(pendingPods), "required nodes", requiredNodes)
+	}
 
 	var errs []error
 	for i := range machineSetsToScale {
@@ -100,11 +284,11 @@ func (r *RequestServingNodeAutoscaler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{}, utilerrors.NewAggregate(errs)
 }
 
-func determineMachineSetsToScale(pods []corev1.Pod, machineSets []machinev1beta1.MachineSet, machines []machinev1beta1.Machine, nodes []corev1.Node) []machinev1beta1.MachineSet {
+func machineSetsToScaleUp(pods []corev1.Pod, machineSets []machinev1beta1.MachineSet, machines []machinev1beta1.Machine, nodes []corev1.Node) ([]machinev1beta1.MachineSet, []corev1.Pod, []nodeRequirement) {
 	var result []machinev1beta1.MachineSet
 	pendingPods := filterPods(pods, isPodPending)
 	if len(pendingPods) == 0 {
-		return nil
+		return nil, nil, nil
 	}
 	requiredNodeCounts := determineRequiredNodes(pendingPods, pods, nodes)
 
@@ -129,7 +313,7 @@ func determineMachineSetsToScale(pods []corev1.Pod, machineSets []machinev1beta1
 	}
 
 	if len(placeHoldersNeeded) == 0 {
-		return result
+		return result, pendingPods, requiredNodeCounts
 	}
 
 	// Determine which pair labels we cannot
@@ -241,13 +425,17 @@ func determineMachineSetsToScale(pods []corev1.Pod, machineSets []machinev1beta1
 		result = append(result, machineSetsToScaleUp...)
 	}
 
-	return result
+	return result, pendingPods, requiredNodeCounts
 }
 
 type nodeRequirement struct {
 	sizeLabel string
 	pairLabel string
 	count     int
+}
+
+func (n nodeRequirement) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("{%q: %q, %q: %q, %q: %d}", "size", n.sizeLabel, "pair", n.pairLabel, "count", n.count)), nil
 }
 
 func addRequirement(reqs *[]nodeRequirement, sizeLabel, pairLabel string, count int) {
@@ -270,28 +458,44 @@ func addRequirement(reqs *[]nodeRequirement, sizeLabel, pairLabel string, count 
 	}
 }
 
-func determineRequiredNodes(pendingPods, allPods []corev1.Pod, nodes []corev1.Node) []nodeRequirement {
-	var result []nodeRequirement
+type podPair struct {
+	p1 corev1.Pod
+	p2 corev1.Pod
+}
+
+func findPodPairs(pendingPods, allPods []corev1.Pod) []podPair {
+	var result []podPair
 	skipPods := sets.New[string]()
 	for i := range pendingPods {
 		pod := &pendingPods[i]
 		if skipPods.Has(pod.Name) {
 			continue
 		}
-		if pairLabel := podPairLabel(pod, nodes); pairLabel != "" {
-			addRequirement(&result, podSize(pod), pairLabel, 1)
-			continue
-		}
-		pairPod := getPairPod(pod, pendingPods)
+		pairPod := getPairPod(pod, allPods)
 		if pairPod != nil {
-			addRequirement(&result, podSize(pod), "", 2)
+			result = append(result, podPair{p1: *pod, p2: *pairPod})
 			skipPods.Insert(pairPod.Name)
-			continue
 		}
-		pairPod = getPairPod(pod, allPods)
-		if pairPod != nil {
-			addRequirement(&result, podSize(pod), podPairLabel(pairPod, nodes), 1)
+	}
+	return result
+}
+
+func determineRequiredNodes(pendingPods, allPods []corev1.Pod, nodes []corev1.Node) []nodeRequirement {
+	var result []nodeRequirement
+	podPairs := findPodPairs(pendingPods, allPods)
+
+	for _, pair := range podPairs {
+		pairLabel := podPairLabel(&pair.p1, nodes)
+		if pairLabel == "" {
+			pairLabel = podPairLabel(&pair.p2, nodes)
 		}
+		pendingCount := 0
+		for _, p := range []corev1.Pod{pair.p1, pair.p2} {
+			if isPodPending(&p) {
+				pendingCount++
+			}
+		}
+		addRequirement(&result, podSize(&pair.p1), pairLabel, pendingCount)
 	}
 	return result
 }
@@ -393,6 +597,9 @@ func nodeMachineSet(n *corev1.Node, machines []machinev1beta1.Machine) string {
 		return ""
 	}
 	parts := strings.Split(namespacedName, "/")
+	if len(parts) != 2 {
+		return ""
+	}
 	machineName := parts[1]
 	for _, m := range machines {
 		if m.Name == machineName {
@@ -403,5 +610,46 @@ func nodeMachineSet(n *corev1.Node, machines []machinev1beta1.Machine) string {
 }
 
 func isPodPending(p *corev1.Pod) bool {
-	return p.Status.Phase == corev1.PodPending
+	return p.Status.Phase == corev1.PodPending && p.DeletionTimestamp.IsZero() && time.Since(p.CreationTimestamp.Time) > pendingWaitTime
+}
+
+func labelsMatchSelector(objectLabels map[string]string, selector map[string]string) bool {
+	if len(selector) == 0 {
+		return false
+	}
+	return labels.Set(selector).AsSelector().Matches(labels.Set(objectLabels))
+}
+
+func findMachineSet(name string, machineSets []machinev1beta1.MachineSet) *machinev1beta1.MachineSet {
+	for i := range machineSets {
+		ms := &machineSets[i]
+		if ms.Name == name {
+			return ms
+		}
+	}
+	return nil
+}
+
+func nodeNames(nodes []corev1.Node) []string {
+	names := make([]string, 0, len(nodes))
+	for i := range nodes {
+		names = append(names, nodes[i].Name)
+	}
+	return names
+}
+
+func machineSetNames(machineSets []machinev1beta1.MachineSet) []string {
+	names := make([]string, 0, len(machineSets))
+	for i := range machineSets {
+		names = append(names, machineSets[i].Name)
+	}
+	return names
+}
+
+func podNames(pods []corev1.Pod) []string {
+	names := make([]string, 0, len(pods))
+	for i := range pods {
+		names = append(names, pods[i].Name)
+	}
+	return names
 }
