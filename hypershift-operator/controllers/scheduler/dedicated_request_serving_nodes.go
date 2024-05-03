@@ -120,7 +120,7 @@ func (r *DedicatedServingComponentScheduler) SetupWithManager(mgr ctrl.Manager, 
 
 	r.createOrUpdate = createOrUpdateProvider.CreateOrUpdate
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}, builder.WithPredicates(util.PredicatesForHostedClusterAnnotationScoping())).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(util.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
