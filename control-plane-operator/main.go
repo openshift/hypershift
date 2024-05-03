@@ -385,15 +385,17 @@ func NewStartCommand() *cobra.Command {
 			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 		}
 
-		releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			ComponentImages: componentImages,
+		}
+
+		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate: &releaseinfo.StaticProviderDecorator{
-					Delegate: &releaseinfo.CachedProvider{
-						Inner: &releaseinfo.RegistryClientProvider{},
-						Cache: map[string]*releaseinfo.ReleaseImage{},
-					},
-					ComponentImages: componentImages,
-				},
+				Delegate:          coreReleaseProvider,
 				RegistryOverrides: registryOverrides,
 			},
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
@@ -413,7 +415,8 @@ func NewStartCommand() *cobra.Command {
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
-			ReleaseProvider:                         releaseProvider,
+			ReleaseProvider:                         cpReleaseProvider,
+			UserReleaseProvider:                     coreReleaseProvider,
 			EnableCIDebugOutput:                     enableCIDebugOutput,
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,
