@@ -329,173 +329,76 @@ func ParseNodeSelector(str string) map[string]string {
 }
 
 // PredicatesForHostedClusterAnnotationScoping returns predicate filters for all event types that will ignore incoming
-// event requests for hostedcluster resources that do not match the "scope" annotation
-// specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the default behavior is to accept all events for hostedclusters that do not have the annotation.
-// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
-func PredicatesForHostedClusterAnnotationScoping() predicate.Predicate {
-	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
-	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
-	filter := func(obj client.Object) bool {
-		if hcAnnotationScopingEnabledEnvVal != "true" {
-			return true
-		}
-		hostedClusterScopeAnnotation := ""
-		if obj.GetAnnotations() != nil {
-			hostedClusterScopeAnnotation = obj.GetAnnotations()[HostedClustersScopeAnnotation]
-		}
-		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
-			return true
-		}
-		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
-			return false // ignore event; the hostedcluster has a scope annotation that does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
-		}
-		return true
-	}
-	return predicate.NewPredicateFuncs(filter)
-}
-
-// PredicatesForHostedClusterChildResourcesAnnotationScoping returns predicate filters for all event types that will ignore incoming
 // event requests for resources in which the parent hostedcluster does not
 // match the "scope" annotation specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the
 // default behavior is to accept all events for hostedclusters that do not have the annotation.
 // The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
-func PredicatesForHostedClusterChildResourcesAnnotationScoping(r client.Reader) predicate.Predicate {
+func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Predicate {
 	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
 	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
 	filter := func(obj client.Object) bool {
 		if hcAnnotationScopingEnabledEnvVal != "true" {
-			return true
+			return true // process event; the scoping feature has not been enabled via the ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var
 		}
-		hostedClusterName := ""
-		if obj.GetAnnotations() != nil {
-			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
-		}
-		if hostedClusterName == "" {
-			return true
-		}
-		namespacedName := ParseNamespacedName(hostedClusterName)
-		hcluster := &hyperv1.HostedCluster{}
-		err := r.Get(context.Background(), namespacedName, hcluster)
-		if err != nil {
-			return true
-		}
-		hostedClusterScopeAnnotation := ""
-		if hcluster.GetAnnotations() != nil {
-			hostedClusterScopeAnnotation = hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
-		}
+		hostedClusterScopeAnnotation := getHostedClusterScopeAnnotation(obj, r)
 		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
-			return true
+			return true // process event; both the operator's scope and hostedcluster's scope are empty
 		}
 		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
-			return false // ignore event; the parent hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
+			return false // ignore event; the associated hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
 		}
 		return true
 	}
 	return predicate.NewPredicateFuncs(filter)
 }
 
-// PredicatesForNodepoolAnnotationScoping returns predicate filters for all event types that will ignore incoming
-// event requests for nodepool resources in which their owning hostedcluster resource doesn't have a scope annotation
-// that matches what is specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the default behavior
-// is to accept all nodepool events in which the owning hostedcluster resource does not have a corresponding scope annotation defined.
-// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
-func PredicatesForNodepoolAnnotationScoping(r client.Reader) predicate.Predicate {
-	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
-	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
-	filter := func(obj client.Object) bool {
-		if hcAnnotationScopingEnabledEnvVal != "true" {
-			return true
+// getHostedClusterScopeAnnotation will extract the "scope" annotation from the hostedcluster resource that owns the specified object.
+// Depending on the object type being passed in, slightly different paths will be used to ultimately retrieve the hostedcluster resource containing the annotation.
+// If an annotation is not found, an empty string is returned.
+func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
+	hostedClusterName := ""
+	nodePoolName := ""
+	switch obj.(type) {
+	case *hyperv1.HostedCluster:
+		hc, ok := obj.(*hyperv1.HostedCluster)
+		if !ok {
+			return ""
 		}
-
+		if hc.GetAnnotations() != nil {
+			return hc.GetAnnotations()[HostedClustersScopeAnnotation]
+		}
+	case *hyperv1.NodePool:
 		np, ok := obj.(*hyperv1.NodePool)
 		if !ok {
-			return true
+			return ""
 		}
-
-		// use the Cluster Name from the nodepool spec to get the owning hostedcluster object
-		hostedClusterName := ""
-		if np.Spec.ClusterName != "" {
-			hostedClusterName = np.Spec.ClusterName
-		}
-		if hostedClusterName == "" {
-			return true
-		}
-		namespacedName := ParseNamespacedName(fmt.Sprintf("%s/%s", np.Namespace, hostedClusterName))
-		hcluster := &hyperv1.HostedCluster{}
-		err := r.Get(context.Background(), namespacedName, hcluster)
-		if err != nil {
-			return true
-		}
-
-		hostedClusterScopeAnnotation := ""
-		if hcluster.GetAnnotations() != nil {
-			hostedClusterScopeAnnotation = hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
-		}
-		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
-			return true
-		}
-		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
-			return false // ignore event; the associated hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
-		}
-		return true
-	}
-	return predicate.NewPredicateFuncs(filter)
-}
-
-// PredicatesForNodepoolChildResourcesAnnotationScoping returns predicate filters for all event types that will ignore incoming
-// event requests for resources in which the parent hostedcluster does not
-// match the "scope" annotation specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the
-// default behavior is to accept all events for hostedclusters that do not have the annotation.
-// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
-func PredicatesForNodepoolChildResourcesAnnotationScoping(r client.Reader) predicate.Predicate {
-	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
-	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
-	filter := func(obj client.Object) bool {
-		if hcAnnotationScopingEnabledEnvVal != "true" {
-			return true
-		}
-
-		// use the object's "nodePool" annotation to retrieve the parent nodepool object
-		nodePoolName := ""
+		hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
+	default:
 		if obj.GetAnnotations() != nil {
 			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
+			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
 		}
-		if nodePoolName == "" {
-			return true
+		if nodePoolName != "" {
+			namespacedName := ParseNamespacedName(nodePoolName)
+			np := &hyperv1.NodePool{}
+			err := r.Get(context.Background(), namespacedName, np)
+			if err != nil {
+				return ""
+			}
+			hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
 		}
-		namespacedName := ParseNamespacedName(nodePoolName)
-		np := &hyperv1.NodePool{}
-		err := r.Get(context.Background(), namespacedName, np)
-		if err != nil {
-			return true
-		}
-
-		// use the Cluster Name from the nodepool spec to get the owning hostedcluster object
-		hostedClusterName := ""
-		if np.Spec.ClusterName != "" {
-			hostedClusterName = np.Spec.ClusterName
-		}
-		if hostedClusterName == "" {
-			return true
-		}
-		namespacedName = ParseNamespacedName(fmt.Sprintf("%s/%s", np.Namespace, hostedClusterName))
-		hcluster := &hyperv1.HostedCluster{}
-		err = r.Get(context.Background(), namespacedName, hcluster)
-		if err != nil {
-			return true
-		}
-
-		hostedClusterScopeAnnotation := ""
-		if hcluster.GetAnnotations() != nil {
-			hostedClusterScopeAnnotation = hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
-		}
-		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
-			return true
-		}
-		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
-			return false // ignore event; the associated hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
-		}
-		return true
 	}
-	return predicate.NewPredicateFuncs(filter)
+	if hostedClusterName == "" {
+		return ""
+	}
+	namespacedName := ParseNamespacedName(hostedClusterName)
+	hcluster := &hyperv1.HostedCluster{}
+	err := r.Get(context.Background(), namespacedName, hcluster)
+	if err != nil {
+		return ""
+	}
+	if hcluster.GetAnnotations() != nil {
+		return hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
+	}
+	return ""
 }
