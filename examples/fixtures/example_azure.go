@@ -13,7 +13,7 @@ type ExampleAzureOptions struct {
 	BootImageID            string
 	MachineIdentityID      string
 	InstanceType           string
-	SecurityGroupName      string
+	SecurityGroupID        string
 	DiskSizeGB             int32
 	AvailabilityZones      []string
 	DiskEncryptionSetID    string

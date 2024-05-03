@@ -70,7 +70,7 @@ type CreateInfraOutput struct {
 	BootImageID       string `json:"bootImageID"`
 	InfraID           string `json:"infraID"`
 	MachineIdentityID string `json:"machineIdentityID"`
-	SecurityGroupName string `json:"securityGroupName"`
+	SecurityGroupID   string `json:"securityGroupID"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -182,12 +182,13 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 		// Extract network security group name if one exists
 		if vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup != nil && vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID != nil {
-			result.SecurityGroupName, err = azureutil.GetNetworkSecurityGroupNameFromNetworkSecurityGroupID(*vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID)
+			result.SecurityGroupID = *vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID
+			securityGroupName, err := azureutil.GetNetworkSecurityGroupNameFromNetworkSecurityGroupID(*vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID)
 			if err != nil {
 				return nil, err
 			}
 
-			l.Info("Successfully retrieved existing network security group", "name", result.SecurityGroupName)
+			l.Info("Successfully retrieved existing network security group", "name", securityGroupName)
 		}
 	} else {
 		// Create a network security group
@@ -195,7 +196,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		if err != nil {
 			return nil, err
 		}
-		result.SecurityGroupName = securityGroupName
+		result.SecurityGroupID = nsgID
 		l.Info("Successfully created network security group", "name", securityGroupName)
 
 		// Create a VNET with the network security group

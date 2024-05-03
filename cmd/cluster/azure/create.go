@@ -120,7 +120,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		BootImageID:            infra.BootImageID,
 		MachineIdentityID:      infra.MachineIdentityID,
 		InstanceType:           opts.AzurePlatform.InstanceType,
-		SecurityGroupName:      infra.SecurityGroupName,
+		SecurityGroupID:        infra.SecurityGroupID,
 		DiskSizeGB:             opts.AzurePlatform.DiskSizeGB,
 		AvailabilityZones:      opts.AzurePlatform.AvailabilityZones,
 		DiskEncryptionSetID:    opts.AzurePlatform.DiskEncryptionSetID,

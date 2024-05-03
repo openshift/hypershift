@@ -64,6 +64,11 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		return AzureConfig{}, fmt.Errorf("failed to determine subnet name from SubnetID: %w", err)
 	}
 
+	securityGroupName, err := azureutil.GetNetworkSecurityGroupNameFromNetworkSecurityGroupID(hcp.Spec.Platform.Azure.SecurityGroupID)
+	if err != nil {
+		return AzureConfig{}, fmt.Errorf("failed to determine security group name from SecurityGroupID: %w", err)
+	}
+
 	azureConfig := AzureConfig{
 		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
 		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
@@ -74,7 +79,7 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		VnetName:                     hcp.Spec.Platform.Azure.VnetName,
 		VnetResourceGroup:            hcp.Spec.Platform.Azure.ResourceGroupName,
 		SubnetName:                   subnetName,
-		SecurityGroupName:            hcp.Spec.Platform.Azure.SecurityGroupName,
+		SecurityGroupName:            securityGroupName,
 		SecurityGroupResourceGroup:   hcp.Spec.Platform.Azure.ResourceGroupName,
 		LoadBalancerName:             hcp.Spec.InfraID,
 		CloudProviderBackoff:         true,
