@@ -34,7 +34,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	api "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/testutil"
@@ -431,6 +431,8 @@ metadata:
   name: set-pids-limit
 spec:
   containerRuntimeConfig:
+    logSizeMax: "0"
+    overlaySize: "0"
     pidsLimit: 2048
 `
 
