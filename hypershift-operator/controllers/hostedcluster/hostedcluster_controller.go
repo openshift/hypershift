@@ -3356,6 +3356,13 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 		return hcp.Status.VersionStatus
 	}
 
+	// The following code is legacy support to preserve
+	// compatability with older HostedControlPlane controllers, which
+	// may not be populating hcp.Status.VersionStatus.
+	//
+	// It is also used before the HostedControlPlane is created to bootstrap
+	// the ClusterVersionStatus.
+
 	releaseImage := hyperutil.HCControlPlaneReleaseImage(hcluster)
 
 	// If there's no history, rebuild it from scratch.
@@ -3378,9 +3385,20 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// Assume the previous status is still current.
 	version := hcluster.Status.Version.DeepCopy()
 
-	// The following code is legacy support to preserve
-	// compatability with older HostedControlPlane controllers, which
-	// may not be populating hcp.Status.VersionStatus.
+	// If a new rollout is needed, update the desired version and prepend a new
+	// partial history entry to unblock rollouts.
+	if releaseImage != hcluster.Status.Version.Desired.Image {
+		version.Desired.Image = releaseImage
+		version.ObservedGeneration = hcluster.Generation
+		// TODO: leaky
+		version.History = append([]configv1.UpdateHistory{
+			{
+				State:       configv1.PartialUpdate,
+				Image:       releaseImage,
+				StartedTime: metav1.NewTime(clock.Now()),
+			},
+		}, version.History...)
+	}
 
 	// If the hosted control plane doesn't exist, there's no way to assess the
 	// rollout so return early.
@@ -3407,22 +3425,6 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	if hcp.Status.LastReleaseImageTransitionTime != nil {
 		//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 		version.History[0].CompletionTime = hcp.Status.LastReleaseImageTransitionTime.DeepCopy()
-	}
-
-	// If a new rollout is needed, update the desired version and prepend a new
-	// partial history entry to unblock rollouts.
-	rolloutNeeded := releaseImage != hcluster.Status.Version.Desired.Image
-	if rolloutNeeded {
-		version.Desired.Image = releaseImage
-		version.ObservedGeneration = hcluster.Generation
-		// TODO: leaky
-		version.History = append([]configv1.UpdateHistory{
-			{
-				State:       configv1.PartialUpdate,
-				Image:       releaseImage,
-				StartedTime: metav1.NewTime(clock.Now()),
-			},
-		}, version.History...)
 	}
 
 	return version
