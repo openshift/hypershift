@@ -76,6 +76,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "Deprecated, use -e2e.availability-zones instead")
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
+	flag.BoolVar(&globalOpts.configurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSOidcS3BucketName, "e2e.aws-oidc-s3-bucket-name", "", "AWS S3 Bucket Name to setup the OIDC provider in")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSKmsKeyAlias, "e2e.aws-kms-key-alias", "", "AWS KMS Key Alias to use when creating encrypted nodepools, when empty the default EBS KMS Key will be used")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
@@ -396,6 +397,7 @@ type options struct {
 
 type configurableClusterOptions struct {
 	AWSCredentialsFile            string
+	AWSMultiArch                  bool
 	AzureCredentialsFile          string
 	AzureLocation                 string
 	Region                        string
@@ -507,6 +509,7 @@ func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		Region:         o.configurableClusterOptions.Region,
 		EndpointAccess: o.configurableClusterOptions.AWSEndpointAccess,
 		IssuerURL:      o.IssuerURL,
+		MultiArch:      o.configurableClusterOptions.AWSMultiArch,
 	}
 	opts.AdditionalTags = append(opts.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {

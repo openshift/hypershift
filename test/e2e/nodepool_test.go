@@ -130,6 +130,23 @@ func TestNodePool(t *testing.T) {
 	executeNodePoolTests(t, nodePoolTestCasesPerHostedCluster)
 }
 
+func TestNodePoolMultiArch(t *testing.T) {
+	t.Parallel()
+	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
+		{
+			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
+				return []NodePoolTestCase{
+					{
+						name: "TestNodePoolArm64Create",
+						test: NewNodePoolArm64CreateTest(hostedCluster),
+					},
+				}
+			},
+		},
+	}
+	executeNodePoolTests(t, nodePoolTestCasesPerHostedCluster)
+}
+
 func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []HostedClusterNodePoolTestCases) {
 	for i, _ := range nodePoolTestCasesPerHostedCluster {
 		t.Run(fmt.Sprintf("HostedCluster%d", i), func(t *testing.T) {
