@@ -87,6 +87,9 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
 			CloudName:            "openstack",
 			APIServerInternalIPs: []string{}, // TODO(dulek): Strongly not sure how to do this.
+			LoadBalancer: &configv1.OpenStackPlatformLoadBalancer{
+				Type: configv1.LoadBalancerTypeUserManaged,
+			},
 		}
 	}
 }
