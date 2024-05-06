@@ -54,6 +54,7 @@ func NewStartCommand() *cobra.Command {
 	var connectDirectlyToCloudAPIs bool
 	var resolveFromGuestClusterDNS bool
 	var resolveFromManagementClusterDNS bool
+	var disableResolver bool
 
 	cmd.Flags().StringVar(&proxyHostname, "konnectivity-hostname", "konnectivity-server-local", "The hostname of the konnectivity service.")
 	cmd.Flags().IntVar(&proxyPort, "konnectivity-port", 8090, "The konnectivity port that socks5 proxy should connect to.")
@@ -61,6 +62,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&connectDirectlyToCloudAPIs, "connect-directly-to-cloud-apis", false, "If true, traffic destined for AWS or Azure APIs should be sent there directly rather than going through konnectivity. If enabled, proxy env vars from the mgmt cluster must be propagated to this container")
 	cmd.Flags().BoolVar(&resolveFromGuestClusterDNS, "resolve-from-guest-cluster-dns", false, "If DNS resolving should use the guest clusters cluster-dns")
 	cmd.Flags().BoolVar(&resolveFromManagementClusterDNS, "resolve-from-management-cluster-dns", false, "If guest cluster's dns fails, fallback to the management cluster's dns")
+	cmd.Flags().BoolVar(&disableResolver, "disable-resolver", false, "If true, DNS resolving is disabled. Takes precedence over resolve-from-management-cluster-dns and resolve-from-management-cluster-dns")
 
 	cmd.Flags().StringVar(&caCertPath, "ca-cert-path", "/etc/konnectivity/proxy-ca/ca.crt", "The path to the konnectivity client's ca-cert.")
 	cmd.Flags().StringVar(&clientCertPath, "tls-cert-path", "/etc/konnectivity/proxy-client/tls.crt", "The path to the konnectivity client's tls certificate.")
@@ -84,6 +86,7 @@ func NewStartCommand() *cobra.Command {
 			Dial: dialFunc,
 			Resolver: proxyResolver{
 				client:                       client,
+				disableResolver:              disableResolver,
 				resolveFromGuestCluster:      resolveFromGuestClusterDNS,
 				resolveFromManagementCluster: resolveFromManagementClusterDNS,
 				dnsFallback:                  dnsFallbackToMC,
@@ -250,12 +253,13 @@ func (gr *guestClusterResolver) resolve(ctx context.Context, name string) (net.I
 }
 
 // proxyResolver tries to resolve addresses using the following steps in order:
-// 1. Not at all for cloud provider apis, as we do not want to tunnel them through Konnectivity.
+// 1. Not at all for cloud provider apis (we do not want to tunnel them through Konnectivity) or when disableResolver is true.
 // 2. If the address is a valid Kubernetes service and that service exists in the guest cluster, it's clusterIP is returned.
 // 3. If --resolve-from-guest-cluster-dns is set, it uses the guest clusters dns. If that fails, fallback to the management cluster's resolution.
 // 4. Lastly, Golang's default resolver is used.
 type proxyResolver struct {
 	client                       client.Client
+	disableResolver              bool
 	resolveFromGuestCluster      bool
 	resolveFromManagementCluster bool
 	dnsFallback                  *dnsFallbackToManagementCluster
@@ -265,7 +269,7 @@ type proxyResolver struct {
 
 func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
 	// Preserve the host so we can recognize it
-	if isCloudAPI(name) {
+	if isCloudAPI(name) || d.disableResolver {
 		return ctx, nil, nil
 	}
 	l := d.log.WithValues("name", name)
