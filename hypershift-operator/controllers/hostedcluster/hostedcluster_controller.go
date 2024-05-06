@@ -20,6 +20,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -30,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -169,6 +171,9 @@ type HostedClusterReconciler struct {
 
 	OIDCStorageProviderS3BucketName string
 	S3Client                        s3iface.S3API
+
+	OIDCStorageProviderAzureContainerName string
+	AzureStorageClient                    *azblob.Client
 
 	MetricsSet    metrics.MetricsSet
 	SREConfigHash string
@@ -1738,32 +1743,29 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
-	// Reconcile the AWS OIDC discovery
-	switch hcluster.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
-			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidOIDCConfiguration),
-				Status:             metav1.ConditionFalse,
-				Reason:             hyperv1.OIDCConfigurationInvalidReason,
-				ObservedGeneration: hcluster.Generation,
-				Message:            err.Error(),
-			})
-			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile AWS OIDC documents: %s, failed to update status: %w", err, statusErr)
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
-		}
+	// Reconcile the OIDC discovery
+	if err := r.reconcileOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 			Type:               string(hyperv1.ValidOIDCConfiguration),
-			Status:             metav1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.OIDCConfigurationInvalidReason,
 			ObservedGeneration: hcluster.Generation,
-			Message:            "OIDC configuration is valid",
+			Message:            err.Error(),
 		})
-		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile OIDC documents: %s, failed to update status: %w", err, statusErr)
 		}
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile the OIDC documents: %w", err)
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.ValidOIDCConfiguration),
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		ObservedGeneration: hcluster.Generation,
+		Message:            "OIDC configuration is valid",
+	})
+	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
 
 	log.Info("successfully reconciled")
@@ -4529,7 +4531,7 @@ func oidcDocumentGenerators() map[string]oidc.OIDCDocumentGeneratorFunc {
 	}
 }
 
-func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileOIDCDocuments(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	if hcp.Status.KubeConfig == nil {
 		return nil
 	}
@@ -4547,8 +4549,18 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return nil
 	}
 
-	if r.OIDCStorageProviderS3BucketName == "" || r.S3Client == nil {
-		return errors.New("hypershift wasn't configured with a S3 bucket or credentials, this makes it unable to set up OIDC for AWS clusters. Please install hypershift with the --oidc-storage-provider-s3-bucket-name, --oidc-storage-provider-s3-region and --oidc-storage-provider-s3-credentials flags set. The bucket must pre-exist and the credentials must be authorized to write into it")
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if r.OIDCStorageProviderS3BucketName == "" || r.S3Client == nil {
+			return errors.New("hypershift wasn't configured with a S3 bucket or credentials, this makes it unable to set up OIDC for AWS clusters. Please install hypershift with the --oidc-storage-provider-s3-bucket-name, --oidc-storage-provider-s3-region and --oidc-storage-provider-s3-credentials flags set. The bucket must pre-exist and the credentials must be authorized to write into it")
+		}
+	case hyperv1.AzurePlatform:
+		if r.OIDCStorageProviderAzureContainerName == "" || r.AzureStorageClient == nil {
+			return fmt.Errorf("hypershift wasn't configured with Azure storage credentials and a container name, can not clean up OIDC documents from bucket. Please either set those up or clean up manually and then remove the %s finalizer from the hosted cluster", oidcDocumentsFinalizer)
+		}
+	default:
+		// nothing to do
+		return nil
 	}
 
 	secret := &corev1.Secret{
@@ -4575,27 +4587,39 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		if err != nil {
 			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
-		_, err = r.S3Client.PutObject(&s3.PutObjectInput{
-			Body:   bodyReader,
-			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
-			Key:    aws.String(hcluster.Spec.InfraID + path),
-		})
-		if err != nil {
-			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, r.OIDCStorageProviderS3BucketName)
-			if awsErr := awserr.Error(nil); errors.As(err, &awsErr) {
-				switch awsErr.Code() {
-				case s3.ErrCodeNoSuchBucket:
-					wrapped = fmt.Errorf("%w: %s: this could be a misconfiguration of the hypershift operator; check the --oidc-storage-provider-s3-bucket-name flag", wrapped, awsErr.Code())
-				default:
-					// Generally, the underlying message from AWS has unique per-request
-					// info not suitable for publishing as condition messages, so just
-					// return the code. If other specific error types can be handled, add
-					// new switch cases and try to provide more actionable info to the
-					// user.
-					wrapped = fmt.Errorf("%w: aws returned an error: %s", wrapped, awsErr.Code())
+		fullPath := hcluster.Spec.InfraID + path
+		switch hcluster.Spec.Platform.Type {
+		case hyperv1.AWSPlatform:
+			_, err = r.S3Client.PutObject(&s3.PutObjectInput{
+				Body:   bodyReader,
+				Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
+				Key:    aws.String(fullPath),
+			})
+			if err != nil {
+				wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, r.OIDCStorageProviderS3BucketName)
+				if awsErr := awserr.Error(nil); errors.As(err, &awsErr) {
+					switch awsErr.Code() {
+					case s3.ErrCodeNoSuchBucket:
+						wrapped = fmt.Errorf("%w: %s: this could be a misconfiguration of the hypershift operator; check the --oidc-storage-provider-s3-bucket-name flag", wrapped, awsErr.Code())
+					default:
+						// Generally, the underlying message from AWS has unique per-request
+						// info not suitable for publishing as condition messages, so just
+						// return the code. If other specific error types can be handled, add
+						// new switch cases and try to provide more actionable info to the
+						// user.
+						wrapped = fmt.Errorf("%w: aws returned an error: %s", wrapped, awsErr.Code())
+					}
 				}
+				return wrapped
 			}
-			return wrapped
+		case hyperv1.AzurePlatform:
+			document, err := io.ReadAll(bodyReader)
+			if err != nil {
+				return fmt.Errorf("could not read OIDC document from generator: %w", err)
+			}
+			if _, err := r.AzureStorageClient.UploadBuffer(ctx, r.OIDCStorageProviderAzureContainerName, fullPath, document, nil); err != nil {
+				return fmt.Errorf("could not update the OIDC document %q to the container %q: %w", fullPath, r.OIDCStorageProviderAzureContainerName, err)
+			}
 		}
 	}
 
@@ -4604,7 +4628,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return fmt.Errorf("failed to update the hosted cluster after adding the %s finalizer: %w", oidcDocumentsFinalizer, err)
 	}
 
-	log.Info("Successfully uploaded the OIDC documents to the S3 bucket")
+	log.Info("Successfully uploaded the OIDC documents to the storage bucket")
 
 	return nil
 }
@@ -4614,24 +4638,39 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 		return nil
 	}
 
-	if r.OIDCStorageProviderS3BucketName == "" || r.S3Client == nil {
-		return fmt.Errorf("hypershift wasn't configured with AWS credentials and a bucket, can not clean up OIDC documents from bucket. Please either set those up or clean up manually and then remove the %s finalizer from the hosted cluster", oidcDocumentsFinalizer)
-	}
-
-	var objectsToDelete []*s3.ObjectIdentifier
-	for path := range oidcDocumentGenerators() {
-		objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{
-			Key: aws.String(hcluster.Spec.InfraID + path),
-		})
-	}
-
-	if _, err := r.S3Client.DeleteObjects(&s3.DeleteObjectsInput{
-		Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
-		Delete: &s3.Delete{Objects: objectsToDelete},
-	}); err != nil {
-		if awsErr := awserr.Error(nil); !errors.As(err, &awsErr) || awsErr.Code() != s3.ErrCodeNoSuchBucket {
-			return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if r.OIDCStorageProviderS3BucketName == "" || r.S3Client == nil {
+			return fmt.Errorf("hypershift wasn't configured with AWS credentials and a bucket, can not clean up OIDC documents from bucket. Please either set those up or clean up manually and then remove the %s finalizer from the hosted cluster", oidcDocumentsFinalizer)
 		}
+
+		var objectsToDelete []*s3.ObjectIdentifier
+		for path := range oidcDocumentGenerators() {
+			objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{
+				Key: aws.String(hcluster.Spec.InfraID + path),
+			})
+		}
+
+		if _, err := r.S3Client.DeleteObjects(&s3.DeleteObjectsInput{
+			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
+			Delete: &s3.Delete{Objects: objectsToDelete},
+		}); err != nil {
+			if awsErr := awserr.Error(nil); !errors.As(err, &awsErr) || awsErr.Code() != s3.ErrCodeNoSuchBucket {
+				return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
+			}
+		}
+	case hyperv1.AzurePlatform:
+		if r.OIDCStorageProviderAzureContainerName == "" || r.AzureStorageClient == nil {
+			return fmt.Errorf("hypershift wasn't configured with Azure storage credentials and a container name, can not clean up OIDC documents from bucket. Please either set those up or clean up manually and then remove the %s finalizer from the hosted cluster", oidcDocumentsFinalizer)
+		}
+
+		for path := range oidcDocumentGenerators() {
+			if _, err := r.AzureStorageClient.DeleteBlob(ctx, r.OIDCStorageProviderAzureContainerName, hcluster.Spec.InfraID+path, nil); err != nil {
+				return fmt.Errorf("failed to delete OIDC object %s from Azure storage container %s: %w", hcluster.Spec.InfraID+path, r.OIDCStorageProviderAzureContainerName, err)
+			}
+		}
+	default:
+		// nothing to do
 	}
 
 	controllerutil.RemoveFinalizer(hcluster, oidcDocumentsFinalizer)
@@ -4639,7 +4678,7 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 		return fmt.Errorf("failed to update hostedcluster after removing %s finalizer: %w", oidcDocumentsFinalizer, err)
 	}
 
-	log.Info("Successfully deleted the OIDC documents from the S3 bucket")
+	log.Info("Successfully deleted the OIDC documents from the storage bucket")
 	return nil
 }
 

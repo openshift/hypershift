@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	"github.com/openshift/hypershift/support/config"
@@ -30,6 +31,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -94,22 +96,27 @@ func main() {
 }
 
 type StartOptions struct {
-	Namespace                              string
-	DeploymentName                         string
-	PodName                                string
-	MetricsAddr                            string
-	CertDir                                string
-	EnableOCPClusterMonitoring             bool
-	EnableCIDebugOutput                    bool
-	ControlPlaneOperatorImage              string
-	RegistryOverrides                      map[string]string
-	PrivatePlatform                        string
-	OIDCStorageProviderS3BucketName        string
-	OIDCStorageProviderS3Region            string
-	OIDCStorageProviderS3Credentials       string
-	EnableUWMTelemetryRemoteWrite          bool
-	EnableValidatingWebhook                bool
-	EnableDedicatedRequestServingIsolation bool
+	Namespace                                  string
+	DeploymentName                             string
+	PodName                                    string
+	MetricsAddr                                string
+	CertDir                                    string
+	EnableOCPClusterMonitoring                 bool
+	EnableCIDebugOutput                        bool
+	ControlPlaneOperatorImage                  string
+	RegistryOverrides                          map[string]string
+	PrivatePlatform                            string
+	OIDCStorageProviderS3BucketName            string
+	OIDCStorageProviderS3Region                string
+	OIDCStorageProviderS3Credentials           string
+	OIDCStorageProviderAzureBucketServiceURL   string
+	OIDCStorageProviderAzureContainerName      string
+	OIDCStorageProviderAzureTenantID           string
+	OIDCStorageProviderAzureClientID           string
+	OIDCStorageProviderAzureFederatedTokenPath string
+	EnableUWMTelemetryRemoteWrite              bool
+	EnableValidatingWebhook                    bool
+	EnableDedicatedRequestServingIsolation     bool
 }
 
 func NewStartCommand() *cobra.Command {
@@ -119,15 +126,13 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := StartOptions{
-		Namespace:                        "hypershift",
-		DeploymentName:                   "operator",
-		MetricsAddr:                      "0",
-		CertDir:                          "",
-		ControlPlaneOperatorImage:        "",
-		RegistryOverrides:                map[string]string{},
-		PrivatePlatform:                  string(hyperv1.NonePlatform),
-		OIDCStorageProviderS3Region:      "",
-		OIDCStorageProviderS3Credentials: "",
+		Namespace:                 "hypershift",
+		DeploymentName:            "operator",
+		MetricsAddr:               "0",
+		CertDir:                   "",
+		ControlPlaneOperatorImage: "",
+		RegistryOverrides:         map[string]string{},
+		PrivatePlatform:           string(hyperv1.NonePlatform),
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -140,9 +145,14 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
-	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", opts.OIDCStorageProviderS3BucketName, "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderAzureBucketServiceURL, "oidc-storage-provider-azure-bucket-service-url", opts.OIDCStorageProviderAzureBucketServiceURL, "Service URL the bucket in which to store the clusters OIDC discovery information. Required for Azure guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderAzureContainerName, "oidc-storage-provider-azure-container-name", opts.OIDCStorageProviderAzureContainerName, "Container name in the storage bucket in which to store the clusters OIDC discovery information. Required for Azure guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderAzureTenantID, "oidc-storage-provider-azure-tenant-id", opts.OIDCStorageProviderAzureTenantID, "Tenant ID for the OIDC bucket. Required for Azure guest clusters.")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderAzureClientID, "oidc-storage-provider-azure-client-id", opts.OIDCStorageProviderAzureClientID, "Client ID for the OIDC bucket. Required for Azure guest clusters.")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderAzureFederatedTokenPath, "oidc-storage-provider-azure-federated-token-path", opts.OIDCStorageProviderAzureFederatedTokenPath, "Location of the federated token file for the OIDC bucket. Required for Azure guest clusters.")
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
@@ -337,6 +347,22 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		s3Client := s3.New(awsSession, awsConfig)
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
+	}
+	if opts.OIDCStorageProviderAzureBucketServiceURL != "" {
+		credential, err := azidentity.NewWorkloadIdentityCredential(&azidentity.WorkloadIdentityCredentialOptions{
+			ClientID:      opts.OIDCStorageProviderAzureClientID,
+			TenantID:      opts.OIDCStorageProviderAzureTenantID,
+			TokenFilePath: opts.OIDCStorageProviderAzureFederatedTokenPath,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to construct Azure identity credential: %w", err)
+		}
+		client, err := azblob.NewClient(opts.OIDCStorageProviderAzureBucketServiceURL, credential, nil)
+		if err != nil {
+			return fmt.Errorf("failed to construct Azure blob client: %w", err)
+		}
+		hostedClusterReconciler.AzureStorageClient = client
+		hostedClusterReconciler.OIDCStorageProviderAzureContainerName = opts.OIDCStorageProviderAzureContainerName
 	}
 	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate, metricsSet, opts.Namespace); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
