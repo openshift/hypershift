@@ -21,9 +21,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	cliversion "github.com/openshift/hypershift/cmd/version"
 	"github.com/spf13/cobra"
 
-	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/product-cli/cmd/create"
 	"github.com/openshift/hypershift/product-cli/cmd/destroy"
 )
@@ -40,14 +40,13 @@ func main() {
 		},
 	}
 
-	cmd.Version = version.String()
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	defer cancel()
 
 	cmd.AddCommand(create.NewCommand())
 	cmd.AddCommand(destroy.NewCommand())
+	cmd.AddCommand(cliversion.NewVersionCommand())
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT)
