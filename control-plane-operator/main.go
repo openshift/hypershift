@@ -22,7 +22,6 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
-	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/util"
@@ -140,11 +139,6 @@ func defaultCommand() *cobra.Command {
 	return cmd
 
 }
-
-const (
-	// Default AWS KMS provider image. Can be overriden with annotation on HostedCluster
-	defaultAWSKMSProviderImage = "registry.ci.openshift.org/hypershift/aws-encryption-provider:latest"
-)
 
 func NewStartCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -360,17 +354,11 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		awsKMSProviderImage := defaultAWSKMSProviderImage
-		if envImage := os.Getenv(images.AWSEncryptionProviderEnvVar); len(envImage) > 0 {
-			awsKMSProviderImage = envImage
-		}
-
 		componentImages := map[string]string{
 			util.AvailabilityProberImageName: availabilityProberImage,
 			"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
 			"socks5-proxy":                   socks5ProxyImage,
 			"token-minter":                   tokenMinterImage,
-			"aws-kms-provider":               awsKMSProviderImage,
 			util.CPOImageName:                cpoImage,
 			util.CPPKIOImageName:             cpoImage,
 		}
