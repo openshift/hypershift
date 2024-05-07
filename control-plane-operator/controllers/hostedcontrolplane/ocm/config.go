@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	configKey = "config.yaml"
+	ConfigKey = "config.yaml"
 )
 
 func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
@@ -29,7 +29,7 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 		cm.Data = map[string]string{}
 	}
 	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-	if configStr, exists := cm.Data[configKey]; exists && len(configStr) > 0 {
+	if configStr, exists := cm.Data[ConfigKey]; exists && len(configStr) > 0 {
 		err := util.DeserializeResource(configStr, config, api.Scheme)
 		if err != nil {
 			return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
@@ -42,7 +42,7 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
 	}
-	cm.Data[configKey] = configStr
+	cm.Data[ConfigKey] = configStr
 	return nil
 }
 
@@ -55,6 +55,11 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 		Kind:       "OpenShiftControllerManagerConfig",
 		APIVersion: openshiftcpv1.GroupVersion.String(),
 	}
+
+	// Do not modify cfg.Controllers!
+	// This field is currently owned by the HCCO.
+	// When we add Capabilities support, we will set Controllers here
+	// but we have to remove setting it in the HCCO at the same time.
 
 	cfg.Build.ImageTemplateFormat.Format = dockerBuilderImage
 	cfg.Deployer.ImageTemplateFormat.Format = deployerImage
