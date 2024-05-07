@@ -2808,6 +2808,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 			Resources: []string{
 				"events",
 				"configmaps",
+				"configmaps/finalizers",
 				"persistentvolumeclaims",
 				"pods",
 				"pods/log",

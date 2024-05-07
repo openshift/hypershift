@@ -996,6 +996,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{
 					"events",
 					"configmaps",
+					"configmaps/finalizers",
 					"persistentvolumeclaims",
 					"pods",
 					"pods/log",
