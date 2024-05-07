@@ -439,12 +439,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	// Start controllers to manage dedicated request serving isolation
 	if opts.EnableDedicatedRequestServingIsolation {
-		nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
-			Client: mgr.GetClient(),
-		}
-		if err := nodeReaper.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
-		}
 		// Use the new scheduler if we support size tagging on hosted clusters
 		if enableSizeTagging {
 			hcScheduler := scheduler.DedicatedServingComponentSchedulerAndSizer{}
@@ -459,7 +453,17 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			if err := autoScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create autoscaler controller: %w", err)
 			}
+			deScaler := scheduler.MachineSetDescaler{}
+			if err := deScaler.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create machine set descaler controller: %w", err)
+			}
 		} else {
+			nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+				Client: mgr.GetClient(),
+			}
+			if err := nodeReaper.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
+			}
 			hcScheduler := scheduler.DedicatedServingComponentScheduler{
 				Client: mgr.GetClient(),
 			}

@@ -54,27 +54,31 @@ type DedicatedServingComponentNodeReaper struct {
 func (r *DedicatedServingComponentNodeReaper) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).
-		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
-			// when a HostedCluster changes, queue the nodes for it
-			nodes := &corev1.NodeList{}
-			if err := r.List(ctx, nodes,
-				client.HasLabels{hyperv1.RequestServingComponentLabel},
-				client.MatchingLabels{
-					hyperv1.HostedClusterLabel:  fmt.Sprintf("%s-%s", object.GetNamespace(), object.GetName()),
-					HostedClusterNamespaceLabel: object.GetNamespace(),
-					HostedClusterNameLabel:      object.GetName(),
-				}); err != nil {
-				mgr.GetLogger().Error(err, "failed to list nodes when enqueuing for hosted cluster")
-				return nil
-			}
-			var out []reconcile.Request
-			for _, node := range nodes.Items {
-				out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: node.Namespace, Name: node.Name}})
-			}
-			return out
-		})).
+		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(mapHostedClusterToNodesFn(r.Client, mgr))).
 		Named("DedicatedServingComponentNodeReaper")
 	return builder.Complete(r)
+}
+
+func mapHostedClusterToNodesFn(c client.Client, mgr ctrl.Manager) handler.MapFunc {
+	return func(ctx context.Context, object client.Object) []reconcile.Request {
+		// when a HostedCluster changes, queue the nodes for it
+		nodes := &corev1.NodeList{}
+		if err := c.List(ctx, nodes,
+			client.HasLabels{hyperv1.RequestServingComponentLabel},
+			client.MatchingLabels{
+				hyperv1.HostedClusterLabel:  fmt.Sprintf("%s-%s", object.GetNamespace(), object.GetName()),
+				HostedClusterNamespaceLabel: object.GetNamespace(),
+				HostedClusterNameLabel:      object.GetName(),
+			}); err != nil {
+			mgr.GetLogger().Error(err, "failed to list nodes when enqueuing for hosted cluster")
+			return nil
+		}
+		var out []reconcile.Request
+		for _, node := range nodes.Items {
+			out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: node.Namespace, Name: node.Name}})
+		}
+		return out
+	}
 }
 
 func (r *DedicatedServingComponentNodeReaper) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
