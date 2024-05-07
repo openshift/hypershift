@@ -2448,8 +2448,7 @@ string
 <p>AzurePlatformSpec specifies configuration for clusters running on Azure. Generally, the HyperShift API assumes bring
 your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
 would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
-fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID and
-within the same ResourceGroupName.</p>
+fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.</p>
 </p>
 <table>
 <thead>
@@ -2505,8 +2504,9 @@ string
 </td>
 <td>
 <p>ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
-Cluster are to be placed.
-In ARO HCP, this will be the managed resource group where customer cloud resources will be created.</p>
+Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.</p>
+<p>In ARO HCP, this will be the managed resource group where customer cloud resources will be created.</p>
+<p>Resource group naming requirements can be found here: <a href="https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/">https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/</a>.</p>
 <p>Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
 ResourceGroupName is <resourceGroupName>.</p>
 </td>
@@ -2519,9 +2519,10 @@ string
 </em>
 </td>
 <td>
-<em>(Optional)</em>
-<p>VnetID is the ID of an existing VNET to use in creating VMs.
-In ARO HCP, this will be the ID of the customer provided VNET.</p>
+<p>VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+other than the one specified in ResourceGroupName, but it must exist under the same subscription as
+SubscriptionID.</p>
+<p>In ARO HCP, this will be the ID of the customer provided VNET.</p>
 <p>Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName></p>
 </td>
 </tr>
@@ -2534,8 +2535,9 @@ string
 </td>
 <td>
 <p>SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
-subnet ID is expected to be a subnet within the VnetID / VnetName.
-In ARO HCP, managed services will create the aforementioned load balancer.</p>
+subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
+same subscription as SubscriptionID.</p>
+<p>In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.</p>
 </td>
 </tr>
 <tr>
@@ -2570,7 +2572,9 @@ string
 </td>
 <td>
 <p>SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
-configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM).</p>
+configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
+expected to exist under the same subscription as SubscriptionID and in the same resource group VnetID is located
+in.</p>
 </td>
 </tr>
 </tbody>

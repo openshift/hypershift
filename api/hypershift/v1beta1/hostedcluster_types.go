@@ -1699,13 +1699,13 @@ type AWSServiceEndpoint struct {
 // AzurePlatformSpec specifies configuration for clusters running on Azure. Generally, the HyperShift API assumes bring
 // your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
 // would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
-// fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID and
-// within the same ResourceGroupName.
+// fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
 type AzurePlatformSpec struct {
 	// Credentials is the object containing existing Azure credentials needed for creating and managing cloud
 	// infrastructure resources.
 	//
 	// +kubebuilder:validation:Required
+	// +required
 	Credentials corev1.LocalObjectReference `json:"credentials"`
 
 	// Cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
@@ -1721,37 +1721,50 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Location is immutable"
 	// +immutable
+	// +required
 	Location string `json:"location"`
 
 	// ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
-	// Cluster are to be placed.
+	// Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.
+	//
 	// In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
 	//
-	// Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+	// Resource group naming requirements can be found here: https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/.
+	//
+	//Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
 	//          ResourceGroupName is <resourceGroupName>.
 	//
 	// +kubebuilder:default:=default
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ResourceGroupName is immutable"
 	// +immutable
+	// +required
 	ResourceGroupName string `json:"resourceGroup"`
 
-	// VnetID is the ID of an existing VNET to use in creating VMs.
+	// VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+	// other than the one specified in ResourceGroupName, but it must exist under the same subscription as
+	// SubscriptionID.
+	//
 	// In ARO HCP, this will be the ID of the customer provided VNET.
 	//
 	// Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
 	//
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="VnetID is immutable"
-	// +optional
 	// +immutable
+	// +required
 	VnetID string `json:"vnetID,omitempty"`
 
 	// SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
-	// subnet ID is expected to be a subnet within the VnetID / VnetName.
-	// In ARO HCP, managed services will create the aforementioned load balancer.
+	// subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
+	// same subscription as SubscriptionID.
+	//
+	// In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.
 	//
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
+	// +immutable
 	// +required
 	SubnetID string `json:"subnetID"`
 
@@ -1760,6 +1773,7 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SubscriptionID is immutable"
 	// +immutable
+	// +required
 	SubscriptionID string `json:"subscriptionID"`
 
 	// MachineIdentityID is used as the user-assigned identity to be assigned to the VMs
@@ -1768,12 +1782,14 @@ type AzurePlatformSpec struct {
 	MachineIdentityID string `json:"machineIdentityID,omitempty"`
 
 	// SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
-	// configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM).
+	// configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
+	// expected to exist under the same subscription as SubscriptionID and in the same resource group VnetID is located
+	// in.
 	//
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SecurityGroupID is immutable"
 	// +kubebuilder:validation:Required
-	// +required
 	// +immutable
+	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
 }
 
