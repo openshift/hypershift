@@ -2578,17 +2578,14 @@ string
 </tr>
 <tr>
 <td>
-<code>securityGroupName</code></br>
+<code>securityGroupID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<em>(Optional)</em>
-<p>SecurityGroupName is the name of an existing security group on SubnetName. This field is provided as part of the
+<p>SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM).</p>
-<p>Example: if your Network Security Group ID is /subscriptions/<subscriptionID>/resourcegroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<securityGroupName>,
-your SecurityGroupName is <securityGroupName></p>
 </td>
 </tr>
 </tbody>

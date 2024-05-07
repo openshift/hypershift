@@ -1779,16 +1779,14 @@ type AzurePlatformSpec struct {
 	// +optional
 	MachineIdentityID string `json:"machineIdentityID,omitempty"`
 
-	// SecurityGroupName is the name of an existing security group on SubnetName. This field is provided as part of the
+	// SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 	// configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM).
 	//
-	// Example: if your Network Security Group ID is /subscriptions/<subscriptionID>/resourcegroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<securityGroupName>,
-	//          your SecurityGroupName is <securityGroupName>
-	//
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SecurityGroupName is immutable"
-	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SecurityGroupID is immutable"
+	// +kubebuilder:validation:Required
+	// +required
 	// +immutable
-	SecurityGroupName string `json:"securityGroupName,omitempty"`
+	SecurityGroupID string `json:"securityGroupID,omitempty"`
 }
 
 // Release represents the metadata for an OCP release payload image.

@@ -1570,7 +1570,7 @@ type AzurePlatformSpec struct {
 	SubnetID          string `json:"subnetID"`
 	SubscriptionID    string `json:"subscriptionID"`
 	MachineIdentityID string `json:"machineIdentityID"`
-	SecurityGroupName string `json:"securityGroupName"`
+	SecurityGroupID   string `json:"securityGroupID"`
 }
 
 // Release represents the metadata for an OCP release payload image.
