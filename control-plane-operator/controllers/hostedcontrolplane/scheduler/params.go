@@ -66,22 +66,6 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			TimeoutSeconds:      5,
 		},
 	}
-	params.ReadinessProbes = config.ReadinessProbes{
-		schedulerContainerMain().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromInt(schedulerSecurePort),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			TimeoutSeconds:      5,
-		},
-	}
 	params.DeploymentConfig.SetDefaults(hcp, labels, nil)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.SetDefaultSecurityContext = setDefaultSecurityContext
