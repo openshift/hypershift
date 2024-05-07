@@ -197,6 +197,7 @@ type AzurePlatformOptions struct {
 	DiskSizeGB             int32
 	AvailabilityZones      []string
 	ResourceGroupName      string
+	VnetID                 string
 	DiskEncryptionSetID    string
 	NetworkSecurityGroup   string
 	EnableEphemeralOSDisk  bool

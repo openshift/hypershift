@@ -384,14 +384,14 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AzurePlatform,
 			Azure: &hyperv1.AzurePlatformSpec{
-				Credentials:           corev1.LocalObjectReference{Name: credentialSecret.Name},
-				Location:              o.Azure.Location,
-				ResourceGroupName:     o.Azure.ResourceGroupName,
-				VnetID:                o.Azure.VnetID,
-				SubnetID:              o.Azure.SubnetID,
-				SubscriptionID:        o.Azure.Creds.SubscriptionID,
-				MachineIdentityID:     o.Azure.MachineIdentityID,
-				SecurityGroupID:       o.Azure.SecurityGroupID,
+				Credentials:       corev1.LocalObjectReference{Name: credentialSecret.Name},
+				Location:          o.Azure.Location,
+				ResourceGroupName: o.Azure.ResourceGroupName,
+				VnetID:            o.Azure.VnetID,
+				SubnetID:          o.Azure.SubnetID,
+				SubscriptionID:    o.Azure.Creds.SubscriptionID,
+				MachineIdentityID: o.Azure.MachineIdentityID,
+				SecurityGroupID:   o.Azure.SecurityGroupID,
 			},
 		}
 

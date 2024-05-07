@@ -36,6 +36,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().Int32Var(&opts.AzurePlatform.DiskSizeGB, "root-disk-size", opts.AzurePlatform.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
 	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availability-zones", opts.AzurePlatform.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.VnetID, "vnet-id", opts.AzurePlatform.VnetID, "An existing VNET ID.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskEncryptionSetID, "disk-encryption-set-id", opts.AzurePlatform.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroup, "network-security-group", opts.AzurePlatform.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network created for HostedCluster.")
 	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
@@ -95,6 +96,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			CredentialsFile:      opts.AzurePlatform.CredentialsFile,
 			BaseDomain:           opts.BaseDomain,
 			RHCOSImage:           rhcosImage,
+			VnetID:               opts.AzurePlatform.VnetID,
 			ResourceGroupName:    opts.AzurePlatform.ResourceGroupName,
 			NetworkSecurityGroup: opts.AzurePlatform.NetworkSecurityGroup,
 			ResourceGroupTags:    opts.AzurePlatform.ResourceGroupTags,
@@ -113,7 +115,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
 		Location:               infra.Location,
 		ResourceGroupName:      infra.ResourceGroupName,
-		VnetName:               infra.VnetName,
 		VnetID:                 infra.VNetID,
 		SubnetID:               infra.SubnetID,
 		SubnetName:             infra.SubnetName,

@@ -69,6 +69,11 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		return AzureConfig{}, fmt.Errorf("failed to determine security group name from SecurityGroupID: %w", err)
 	}
 
+	vnetName, vnetResourceGroup, err := azureutil.GetVnetNameAndResourceGroupFromVnetID(hcp.Spec.Platform.Azure.VnetID)
+	if err != nil {
+		return AzureConfig{}, fmt.Errorf("failed to determine vnet name from VnetID: %w", err)
+	}
+
 	azureConfig := AzureConfig{
 		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
 		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
@@ -76,24 +81,17 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		SubscriptionID:               hcp.Spec.Platform.Azure.SubscriptionID,
 		ResourceGroup:                hcp.Spec.Platform.Azure.ResourceGroupName,
 		Location:                     hcp.Spec.Platform.Azure.Location,
-		VnetName:                     hcp.Spec.Platform.Azure.VnetName,
-		VnetResourceGroup:            hcp.Spec.Platform.Azure.ResourceGroupName,
+		VnetName:                     vnetName,
+		VnetResourceGroup:            vnetResourceGroup,
 		SubnetName:                   subnetName,
 		SecurityGroupName:            securityGroupName,
-		SecurityGroupResourceGroup:   hcp.Spec.Platform.Azure.ResourceGroupName,
+		SecurityGroupResourceGroup:   vnetResourceGroup,
 		LoadBalancerName:             hcp.Spec.InfraID,
 		CloudProviderBackoff:         true,
 		CloudProviderBackoffDuration: 6,
 		UseInstanceMetadata:          true,
 		LoadBalancerSku:              "standard",
 		DisableOutboundSNAT:          true,
-	}
-
-	// In ARO HCP, the VNET and NSG will be in the network resource group; it will not be in the resource group
-	// containing all other cloud infrastructure resources.
-	if hcp.Spec.Platform.Azure.VnetResourceGroupName != "" {
-		azureConfig.VnetResourceGroup = hcp.Spec.Platform.Azure.VnetResourceGroupName
-		azureConfig.SecurityGroupResourceGroup = hcp.Spec.Platform.Azure.VnetResourceGroupName
 	}
 
 	return azureConfig, nil

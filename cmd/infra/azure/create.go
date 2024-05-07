@@ -52,6 +52,7 @@ type CreateInfraOptions struct {
 	OutputFile           string
 	RHCOSImage           string
 	ResourceGroupName    string
+	VnetID               string
 	NetworkSecurityGroup string
 	ResourceGroupTags    map[string]string
 	SubnetID             string
@@ -167,9 +168,9 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 	l.Info("Successfully assigned contributor role to managed identity", "name", identityID)
 
-	// Retrieve a client's existing virtual network if a vnet resource group was provided; otherwise, create a new VNET with a network security group
-	if len(o.VnetResourceGroupName) > 0 {
-		vnet, err := getClientsVirtualNetwork(ctx, subscriptionID, o.VnetResourceGroupName, o.ClientVnetName, azureCreds)
+	// Retrieve a client's existing virtual network if a VNET ID was provided; otherwise, create a new VNET with a network security group
+	if len(o.VnetID) > 0 {
+		vnet, err := azureutil.GetVnetInfoFromVnetID(ctx, o.VnetID, subscriptionID, azureCreds)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +181,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.VnetName = *vnet.Name
 		l.Info("Successfully retrieved existing vnet", "name", result.VnetName)
 
-		// Extract network security group name if one exists
+		// Extract network security group name
 		if vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup != nil && vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID != nil {
 			result.SecurityGroupID = *vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID
 			securityGroupName, err := azureutil.GetNetworkSecurityGroupNameFromNetworkSecurityGroupID(*vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID)
@@ -459,40 +460,6 @@ func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGr
 
 	if vnet.Properties.Subnets[0].ID == nil || vnet.Properties.Subnets[0].Name == nil {
 		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no subnet ID or name")
-	}
-
-	return vnet, nil
-}
-
-func getClientsVirtualNetwork(ctx context.Context, subscriptionID string, vnetResourceGroupName string, clientVnetName string, azureCreds azcore.TokenCredential) (armnetwork.VirtualNetworksClientGetResponse, error) {
-	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, nil)
-	if err != nil {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to create new virtual networks client: %w", err)
-	}
-
-	vnet, err := networksClient.Get(ctx, vnetResourceGroupName, clientVnetName, nil)
-	if err != nil {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to get virtual network: %w", err)
-	}
-
-	if vnet.ID == nil {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("virtual network has no ID")
-	}
-
-	if vnet.Name == nil {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("virtual network has no name")
-	}
-
-	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) == 0 {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnets found for resource group '%s'", vnetResourceGroupName)
-	}
-
-	if vnet.Properties.Subnets[0].ID == nil {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnet ID found for resource group '%s'", vnetResourceGroupName)
-	}
-
-	if vnet.Properties.Subnets[0].Name == nil {
-		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnet name found for resource group '%s'", vnetResourceGroupName)
 	}
 
 	return vnet, nil

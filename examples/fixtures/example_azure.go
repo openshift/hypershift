@@ -6,7 +6,6 @@ type ExampleAzureOptions struct {
 	Creds                  util.AzureCreds
 	Location               string
 	ResourceGroupName      string
-	VnetName               string
 	VnetID                 string
 	SubnetID               string
 	SubnetName             string
