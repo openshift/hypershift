@@ -3169,8 +3169,6 @@ spec:
                         type: string
                       vnetID:
                         type: string
-                      vnetName:
-                        type: string
                     required:
                     - credentials
                     - location
@@ -3180,7 +3178,6 @@ spec:
                     - subnetID
                     - subscriptionID
                     - vnetID
-                    - vnetName
                     type: object
                   ibmcloud:
                     description: IBMCloud defines IBMCloud specific settings for components
@@ -7595,26 +7592,12 @@ spec:
                         x-kubernetes-validations:
                         - message: VnetID is immutable
                           rule: self == oldSelf
-                      vnetName:
-                        description: |-
-                          VnetName is the resource name of an existing VNET to use in creating VMs. If this field is included, it should
-                          be the resource name matching the VnetID.
-                          In ARO HCP, this will be the name of the customer provided VNET.
-
-
-                          Example: if your VNET ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>,
-                                   your VnetName is <vnetName>
-                        type: string
-                        x-kubernetes-validations:
-                        - message: VnetName is immutable
-                          rule: self == oldSelf
                     required:
                     - credentials
                     - location
                     - resourceGroup
                     - subnetID
                     - subscriptionID
-                    - vnetName
                     type: object
                   ibmcloud:
                     description: IBMCloud defines IBMCloud specific settings for components

@@ -2513,21 +2513,6 @@ ResourceGroupName is <resourceGroupName>.</p>
 </tr>
 <tr>
 <td>
-<code>vnetName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>VnetName is the resource name of an existing VNET to use in creating VMs. If this field is included, it should
-be the resource name matching the VnetID.
-In ARO HCP, this will be the name of the customer provided VNET.</p>
-<p>Example: if your VNET ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>,
-your VnetName is <vnetName></p>
-</td>
-</tr>
-<tr>
-<td>
 <code>vnetID</code></br>
 <em>
 string

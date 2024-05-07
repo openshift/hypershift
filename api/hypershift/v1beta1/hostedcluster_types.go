@@ -1736,18 +1736,6 @@ type AzurePlatformSpec struct {
 	// +immutable
 	ResourceGroupName string `json:"resourceGroup"`
 
-	// VnetName is the resource name of an existing VNET to use in creating VMs. If this field is included, it should
-	// be the resource name matching the VnetID.
-	// In ARO HCP, this will be the name of the customer provided VNET.
-	//
-	// Example: if your VNET ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>,
-	//          your VnetName is <vnetName>
-	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="VnetName is immutable"
-	// +immutable
-	VnetName string `json:"vnetName"`
-
 	// VnetID is the ID of an existing VNET to use in creating VMs.
 	// In ARO HCP, this will be the ID of the customer provided VNET.
 	//

@@ -1565,7 +1565,6 @@ type AzurePlatformSpec struct {
 	Cloud             string `json:"cloud,omitempty"`
 	Location          string `json:"location"`
 	ResourceGroupName string `json:"resourceGroup"`
-	VnetName          string `json:"vnetName"`
 	VnetID            string `json:"vnetID"`
 	SubnetID          string `json:"subnetID"`
 	SubscriptionID    string `json:"subscriptionID"`
