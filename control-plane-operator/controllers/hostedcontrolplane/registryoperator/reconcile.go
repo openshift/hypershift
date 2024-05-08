@@ -113,38 +113,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 				PriorityClass: config.DefaultPriorityClass,
 			},
 			SetDefaultSecurityContext: setDefaultSecurityContext,
-			ReadinessProbes: config.ReadinessProbes{
-				containerMain().Name: {
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/metrics",
-							Port:   intstr.FromInt(metricsPort),
-							Scheme: corev1.URISchemeHTTPS,
-						},
-					},
-					InitialDelaySeconds: 15,
-					PeriodSeconds:       60,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
-					TimeoutSeconds:      5,
-				},
-			},
-			LivenessProbes: config.LivenessProbes{
-				containerMain().Name: {
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/metrics",
-							Port:   intstr.FromInt(metricsPort),
-							Scheme: corev1.URISchemeHTTPS,
-						},
-					},
-					InitialDelaySeconds: 60,
-					PeriodSeconds:       60,
-					SuccessThreshold:    1,
-					FailureThreshold:    5,
-					TimeoutSeconds:      5,
-				},
-			},
 			Resources: config.ResourcesSpec{
 				containerMain().Name: {
 					Requests: corev1.ResourceList{
