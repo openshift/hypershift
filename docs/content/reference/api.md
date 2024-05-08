@@ -2573,8 +2573,7 @@ string
 <td>
 <p>SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
-expected to exist under the same subscription as SubscriptionID and in the same resource group VnetID is located
-in.</p>
+expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
 </tbody>
