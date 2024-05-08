@@ -6,13 +6,13 @@ type ExampleAzureOptions struct {
 	Creds                  util.AzureCreds
 	Location               string
 	ResourceGroupName      string
-	VnetName               string
 	VnetID                 string
+	SubnetID               string
 	SubnetName             string
 	BootImageID            string
 	MachineIdentityID      string
 	InstanceType           string
-	SecurityGroupName      string
+	SecurityGroupID        string
 	DiskSizeGB             int32
 	AvailabilityZones      []string
 	DiskEncryptionSetID    string

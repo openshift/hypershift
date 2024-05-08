@@ -197,12 +197,13 @@ type AzurePlatformOptions struct {
 	DiskSizeGB             int32
 	AvailabilityZones      []string
 	ResourceGroupName      string
+	VnetID                 string
 	DiskEncryptionSetID    string
 	NetworkSecurityGroup   string
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
-	SubnetName             string
+	SubnetID               string
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {

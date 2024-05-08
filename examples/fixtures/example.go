@@ -387,12 +387,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Credentials:       corev1.LocalObjectReference{Name: credentialSecret.Name},
 				Location:          o.Azure.Location,
 				ResourceGroupName: o.Azure.ResourceGroupName,
-				VnetName:          o.Azure.VnetName,
 				VnetID:            o.Azure.VnetID,
-				SubnetName:        o.Azure.SubnetName,
+				SubnetID:          o.Azure.SubnetID,
 				SubscriptionID:    o.Azure.Creds.SubscriptionID,
 				MachineIdentityID: o.Azure.MachineIdentityID,
-				SecurityGroupName: o.Azure.SecurityGroupName,
+				SecurityGroupID:   o.Azure.SecurityGroupID,
 			},
 		}
 
