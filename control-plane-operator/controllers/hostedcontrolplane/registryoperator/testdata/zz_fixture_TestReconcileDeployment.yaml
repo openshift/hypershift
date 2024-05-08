@@ -88,30 +88,10 @@ spec:
         - name: AZURE_ENVIRONMENT_FILEPATH
           value: /tmp/azurestackcloud.json
         image: quay.io/openshift/cluster-image-registry-operator:latest
-        livenessProbe:
-          failureThreshold: 5
-          httpGet:
-            path: /metrics
-            port: 60000
-            scheme: HTTPS
-          initialDelaySeconds: 60
-          periodSeconds: 60
-          successThreshold: 1
-          timeoutSeconds: 5
         name: cluster-image-registry-operator
         ports:
         - containerPort: 60000
           name: metrics
-        readinessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /metrics
-            port: 60000
-            scheme: HTTPS
-          initialDelaySeconds: 15
-          periodSeconds: 60
-          successThreshold: 1
-          timeoutSeconds: 5
         resources:
           requests:
             cpu: 10m
