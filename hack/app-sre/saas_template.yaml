@@ -57939,6 +57939,15 @@ objects:
                       pattern: ^([0-9]+(\.[0-9]+)?(s|m|h))+$
                       type: string
                   type: object
+                nonRequestServingNodesBufferPerZone:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  description: |-
+                    NonRequestServingNodesBufferPerZone is the number of extra nodes to allocate for non request serving
+                    workloads per zone.
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
                 sizes:
                   description: |-
                     Sizes holds the different t-shirt size classes into which guest clusters will be sorted.
@@ -58036,6 +58045,17 @@ objects:
                         description: Management configures the management aspects
                           of this size class on the management plane.
                         properties:
+                          nonRequestServingNodesPerZone:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              NonRequestServingNodesPerZone is the number of nodes to allocate for non request serving workloads
+                              per HostedCluster. This will likely be a fraction of a node (ie. 0.2) to allow 5 HostedClusters in
+                              a single node. The total number of nodes needed per HostedCluster is this number multiplied by 3
+                              (number of zones).
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
                           placeholders:
                             description: |-
                               Placeholders configures the number of dummy workloads that will be scheduled irrespective of

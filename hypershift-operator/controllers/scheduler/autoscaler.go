@@ -3,17 +3,23 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"math"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/support/util"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -27,21 +33,84 @@ import (
 )
 
 const (
-	autoscalerControllerName  = "RequestServingNodeAutoscaler"
-	descalerControllerName    = "MachineSetDescaler"
-	machineSetAnnotation      = "hypershift.openshift.io/machineset"
-	machineSetNamespace       = "openshift-machine-api"
-	machineNameNodeAnnotation = "machine.openshift.io/machine"
-	machineMachineSetLabel    = "machine.openshift.io/cluster-api-machineset"
+	autoscalerControllerName                  = "RequestServingNodeAutoscaler"
+	descalerControllerName                    = "MachineSetDescaler"
+	nonRequestServingAutoscalerControllerName = "NonRequestServingNodeAutoscaler"
+	machineSetAnnotation                      = "hypershift.openshift.io/machineset"
+	machineSetNamespace                       = "openshift-machine-api"
+	machineNameNodeAnnotation                 = "machine.openshift.io/machine"
+	machineMachineSetLabel                    = "machine.openshift.io/cluster-api-machineset"
+	clusterAPIMachineTypeLabel                = "machine.openshift.io/cluster-api-machine-type"
+	nonRequestServingLabelPrefix              = "non-serving"
+	maxSizeMachineSetAnnotation               = "machine.openshift.io/cluster-api-autoscaler-node-group-max-size"
+	minSizeMachineSetAnnotation               = "machine.openshift.io/cluster-api-autoscaler-node-group-min-size"
 )
 
 const (
 	// nodeScaleDownDelay is the amount of time a node must exist before it is considered for scaling down
 	nodeScaleDownDelay = 5 * time.Minute
-
-	// pendingWaitTime is the amount of time a pod must be pending before it is considered for scaling
-	pendingWaitTime = 1 * time.Minute
 )
+
+type NonRequestServingNodeAutoscaler struct {
+	client.Client
+}
+
+func (r *NonRequestServingNodeAutoscaler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Client = mgr.GetClient()
+	builder := ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}).
+		WithOptions(controller.Options{
+			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			MaxConcurrentReconciles: 1,
+		}).
+		Watches(&machinev1beta1.MachineSet{}, &handler.EnqueueRequestForObject{}).
+		Watches(&schedulingv1alpha1.ClusterSizingConfiguration{}, &handler.EnqueueRequestForObject{}).
+		Named(nonRequestServingAutoscalerControllerName)
+	return builder.Complete(r)
+}
+
+func (r *NonRequestServingNodeAutoscaler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	config := &schedulingv1alpha1.ClusterSizingConfiguration{}
+	if err := r.Get(ctx, types.NamespacedName{Name: "cluster"}, config); err != nil {
+		return ctrl.Result{}, fmt.Errorf("could not get cluster sizing configuration: %w", err)
+	}
+	if err := validateConfigForNonRequestServing(config); err != nil {
+		log.Info("Invalid cluster sizing configuration, skipping for now", "msg", err)
+		return ctrl.Result{}, nil
+	}
+
+	hostedClusters := &hyperv1.HostedClusterList{}
+	if err := r.List(ctx, hostedClusters); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list hosted clusters: %w", err)
+	}
+
+	machineSets := &machinev1beta1.MachineSetList{}
+	if err := r.List(ctx, machineSets, client.InNamespace(machineSetNamespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list machinesets: %w", err)
+	}
+
+	nonReqServingMachineSets := filterMachineSets(machineSets.Items, func(ms *machinev1beta1.MachineSet) bool {
+		return strings.HasPrefix(ms.Spec.Template.ObjectMeta.Labels[clusterAPIMachineTypeLabel], nonRequestServingLabelPrefix)
+	})
+
+	if err := validateNonRequestServingMachineSets(nonReqServingMachineSets); err != nil {
+		log.Info("Invalid non request serving machinesets", "error", err)
+		return ctrl.Result{}, nil
+	}
+
+	machineSetsWithReplicas := nonRequestServingMachineSetsToScale(ctx, config, hostedClusters.Items, nonReqServingMachineSets)
+	var errs []error
+	for _, msr := range machineSetsWithReplicas {
+		log.Info("Scaling non request serving machineset", "machineset", msr.machineSet.Name, "replicas", msr.replicas)
+		scale := &autoscalingv1.Scale{Spec: autoscalingv1.ScaleSpec{Replicas: msr.replicas}}
+		if err := r.SubResource("scale").Update(ctx, &msr.machineSet, client.WithSubResourceBody(scale)); err != nil {
+			errs = append(errs, fmt.Errorf("failed to scale non request serving machineset %s: %w", msr.machineSet.Name, err))
+		}
+	}
+	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+}
 
 type MachineSetDescaler struct {
 	client.Client
@@ -170,9 +239,17 @@ func hostedClusterMachineSetsToScaleDown(ctx context.Context, hostedCluster *hyp
 	if len(additionalNodeSelector) == 0 && len(sizeLabelSelector) == 0 {
 		return nil, 0
 	}
-	clusterNodes := filterNodes(nodes, func(n *corev1.Node) bool {
+	var clusterNodes []corev1.Node
+	nodesWithClusterLabel := filterNodes(nodes, func(n *corev1.Node) bool {
 		return n.Labels[hyperv1.HostedClusterLabel] == clusterKey(hostedCluster)
 	})
+	if len(nodesWithClusterLabel) > 0 {
+		pairLabel := nodesWithClusterLabel[0].Labels[OSDFleetManagerPairedNodesLabel]
+		clusterNodes = filterNodes(nodes, func(n *corev1.Node) bool {
+			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel
+		})
+	}
+
 	activeNodes := filterNodes(clusterNodes, func(n *corev1.Node) bool {
 		return labelsMatchSelector(n.Labels, sizeLabelSelector) || labelsMatchSelector(n.Labels, additionalNodeSelector)
 	})
@@ -610,7 +687,7 @@ func nodeMachineSet(n *corev1.Node, machines []machinev1beta1.Machine) string {
 }
 
 func isPodPending(p *corev1.Pod) bool {
-	return p.Status.Phase == corev1.PodPending && p.DeletionTimestamp.IsZero() && time.Since(p.CreationTimestamp.Time) > pendingWaitTime
+	return p.Status.Phase == corev1.PodPending && p.DeletionTimestamp.IsZero()
 }
 
 func labelsMatchSelector(objectLabels map[string]string, selector map[string]string) bool {
@@ -652,4 +729,122 @@ func podNames(pods []corev1.Pod) []string {
 		names = append(names, pods[i].Name)
 	}
 	return names
+}
+
+func validateConfigForNonRequestServing(config *schedulingv1alpha1.ClusterSizingConfiguration) error {
+	if condition := meta.FindStatusCondition(config.Status.Conditions, schedulingv1alpha1.ClusterSizingConfigurationValidType); condition == nil || condition.Status != metav1.ConditionTrue {
+		msg := ""
+		if condition != nil {
+			msg = condition.Message
+		}
+		return fmt.Errorf("cluster sizing configuration is not valid: %s", msg)
+	}
+
+	for _, sizeConfig := range config.Spec.Sizes {
+		if sizeConfig.Management == nil || sizeConfig.Management.NonRequestServingNodesPerZone == nil {
+			return fmt.Errorf("non request serving nodes per zone is not set for size %s", sizeConfig.Name)
+		}
+	}
+	return nil
+}
+
+func validateNonRequestServingMachineSets(machineSets []machinev1beta1.MachineSet) error {
+	if len(machineSets) != 3 {
+		return fmt.Errorf("expected 3 non request serving machinesets, found %d", len(machineSets))
+	}
+
+	// Ensure that we have consistent min/max size across machinesets
+	minSizes := sets.New[int]()
+	maxSizes := sets.New[int]()
+	for _, ms := range machineSets {
+		minSize, err := strconv.Atoi(ms.Annotations[minSizeMachineSetAnnotation])
+		if err != nil {
+			return fmt.Errorf("failed to parse min size annotation (%q): %w", ms.Annotations[minSizeMachineSetAnnotation], err)
+		}
+		minSizes.Insert(minSize)
+		maxSize, err := strconv.Atoi(ms.Annotations[maxSizeMachineSetAnnotation])
+		if err != nil {
+			return fmt.Errorf("failed to parse max size annotation (%q): %w", ms.Annotations[maxSizeMachineSetAnnotation], err)
+		}
+		maxSizes.Insert(maxSize)
+	}
+	if minSizes.Len() != 1 || maxSizes.Len() != 1 {
+		return fmt.Errorf("inconsistent min/max sizes across non request serving machinesets")
+	}
+
+	minSize := minSizes.UnsortedList()[0]
+	maxSize := maxSizes.UnsortedList()[0]
+
+	if maxSize < minSize || maxSize < 1 {
+		return fmt.Errorf("invalid min/max sizes, minSize: %d, maxSize: %d", minSize, maxSize)
+	}
+	return nil
+}
+
+type machineSetReplicas struct {
+	machineSet machinev1beta1.MachineSet
+	replicas   int32
+}
+
+func nonRequestServingMachineSetsToScale(ctx context.Context, config *schedulingv1alpha1.ClusterSizingConfiguration, hostedClusters []hyperv1.HostedCluster, machineSets []machinev1beta1.MachineSet) []machineSetReplicas {
+	log := ctrl.LoggerFrom(ctx)
+	hcCountBySize := make(map[string]int)
+	notLabeled := 0
+	for _, hc := range hostedClusters {
+		sizeLabelValue := hc.Labels[hyperv1.HostedClusterSizeLabel]
+		if sizeLabelValue == "" {
+			notLabeled++
+			continue
+		}
+		hcCountBySize[sizeLabelValue]++
+	}
+	if notLabeled > 0 {
+		log.Info("WARNING: Hosted clusters without size label. Using the smallest size for them.", "count", notLabeled)
+		for _, sizeConfig := range config.Spec.Sizes {
+			if sizeConfig.Criteria.From == 0 {
+				hcCountBySize[sizeConfig.Name] += notLabeled
+				break
+			}
+		}
+	}
+
+	// calculate the number of non request serving nodes required per zone
+	nodesNeededQty := resource.MustParse("0")
+	for size, count := range hcCountBySize {
+		sizeConfigFound := false
+		for _, sizeConfig := range config.Spec.Sizes {
+			if sizeConfig.Name == size {
+				sizeConfigFound = true
+				nodesForSize := *sizeConfig.Management.NonRequestServingNodesPerZone
+				nodesForSize.Mul(int64(count))
+				nodesNeededQty.Add(nodesForSize)
+				break
+			}
+		}
+		if !sizeConfigFound {
+			log.Info("WARNING: No size configuration found for hosted cluster size", "size", size)
+		}
+	}
+	if config.Spec.NonRequestServingNodesBufferPerZone != nil {
+		nodesNeededQty.Add(*config.Spec.NonRequestServingNodesBufferPerZone)
+	}
+	nodesNeeded := int32(math.Ceil(nodesNeededQty.AsApproximateFloat64()))
+	minNodes, _ := strconv.Atoi(machineSets[0].Annotations[minSizeMachineSetAnnotation]) // this has been validated, skipping error check
+	maxNodes, _ := strconv.Atoi(machineSets[0].Annotations[maxSizeMachineSetAnnotation])
+
+	if nodesNeeded < int32(minNodes) {
+		nodesNeeded = int32(minNodes)
+	}
+	if nodesNeeded > int32(maxNodes) {
+		nodesNeeded = int32(maxNodes)
+	}
+
+	var result []machineSetReplicas
+	for _, ms := range machineSets {
+		if ptr.Deref(ms.Spec.Replicas, 0) == nodesNeeded {
+			continue
+		}
+		result = append(result, machineSetReplicas{machineSet: ms, replicas: nodesNeeded})
+	}
+	return result
 }
