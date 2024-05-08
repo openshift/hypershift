@@ -863,11 +863,21 @@ type AgentNodePoolPlatform struct {
 }
 
 type AzureNodePoolPlatform struct {
+	// VMSize is the Azure VM instance type to use for the nodes being created in the nodepool.
+	//
+	// +kubebuilder:validation:Required
+	// +required
 	VMSize string `json:"vmsize"`
-	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
-	// subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
+
+	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
+	// is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
+	// The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
+	// Hosted Cluster specification respecitvely, hcluster.Spec.Platform.Azure.SubscriptionID and
+	// hcluster.Spec.Platform.Azure.ResourceGroupName.
+	//
 	// +optional
 	ImageID string `json:"imageID,omitempty"`
+
 	// DiskSizeGB is the size in GB to assign to the OS disk
 	// CAPZ default is 30GB, https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599
 	//
@@ -875,6 +885,7 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
+
 	// DiskStorageAccountType is the disk storage account type to use. Valid values are:
 	// * Standard_LRS: HDD
 	// * StandardSSD_LRS: Standard SSD
@@ -888,16 +899,26 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Enum=Standard_LRS;StandardSSD_LRS;Premium_LRS;UltraSSD_LRS
 	// +optional
 	DiskStorageAccountType string `json:"diskStorageAccountType,omitempty"`
-	// AvailabilityZone of the nodepool. Must not be specified for clusters
-	// in a location that does not support AvailabilityZone.
+
+	// AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+	// for clusters in a location that does not support AvailabilityZone.
+	//
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
-	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
+
+	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+	// needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+	// DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+	// listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.
+	//
 	// +optional
 	DiskEncryptionSetID string `json:"diskEncryptionSetID,omitempty"`
-	// EnableEphemeralOSDisk enables ephemeral OS disk
+
+	// EnableEphemeralOSDisk is a flag when set to true, will enable ephemeral OS disk.
+	//
 	// +optional
 	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
+
 	// SubnetName is the name of the subnet to place the Nodes into
 	//
 	// +kubebuilder:default:=default
