@@ -81,8 +81,6 @@ spec:
           value: openshift-image-registry
         - name: OPERATOR_NAME
           value: cluster-image-registry-operator
-        - name: OPERATOR_IMAGE
-          value: quay.io/openshift/cluster-image-registry-operator:latest
         - name: IMAGE
           value: quay.io/openshift/docker-registry:latest
         - name: IMAGE_PRUNER
