@@ -872,7 +872,7 @@ type AzureNodePoolPlatform struct {
 	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
 	// is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
 	// The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
-	// Hosted Cluster specification respecitvely, hcluster.Spec.Platform.Azure.SubscriptionID and
+	// Hosted Cluster specification respectively, hcluster.Spec.Platform.Azure.SubscriptionID and
 	// hcluster.Spec.Platform.Azure.ResourceGroupName.
 	//
 	// +optional
@@ -919,11 +919,16 @@ type AzureNodePoolPlatform struct {
 	// +optional
 	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
 
-	// SubnetName is the name of the subnet to place the Nodes into
+	// SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+	// different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+	// in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+	// hcluster.Spec.Platform.Azure.SubscriptionID.
 	//
-	// +kubebuilder:default:=default
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
-	SubnetName string `json:"subnetName"`
+	// +immutable
+	// +required
+	SubnetID string `json:"subnetID"`
 }
 
 // We define our own condition type since metav1.Condition has validation

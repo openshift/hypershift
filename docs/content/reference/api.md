@@ -2358,7 +2358,7 @@ string
 <p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
 is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
 The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
-Hosted Cluster specification respecitvely, hcluster.Spec.Platform.Azure.SubscriptionID and
+Hosted Cluster specification respectively, hcluster.Spec.Platform.Azure.SubscriptionID and
 hcluster.Spec.Platform.Azure.ResourceGroupName.</p>
 </td>
 </tr>
@@ -2435,13 +2435,16 @@ bool
 </tr>
 <tr>
 <td>
-<code>subnetName</code></br>
+<code>subnetID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>SubnetName is the name of the subnet to place the Nodes into</p>
+<p>SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+hcluster.Spec.Platform.Azure.SubscriptionID.</p>
 </td>
 </tr>
 </tbody>

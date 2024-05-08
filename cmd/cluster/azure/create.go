@@ -117,7 +117,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		ResourceGroupName:      infra.ResourceGroupName,
 		VnetID:                 infra.VNetID,
 		SubnetID:               infra.SubnetID,
-		SubnetName:             infra.SubnetName,
 		BootImageID:            infra.BootImageID,
 		MachineIdentityID:      infra.MachineIdentityID,
 		InstanceType:           opts.AzurePlatform.InstanceType,

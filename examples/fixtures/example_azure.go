@@ -8,7 +8,6 @@ type ExampleAzureOptions struct {
 	ResourceGroupName      string
 	VnetID                 string
 	SubnetID               string
-	SubnetName             string
 	BootImageID            string
 	MachineIdentityID      string
 	InstanceType           string

@@ -67,7 +67,6 @@ type CreateInfraOutput struct {
 	VNetID            string `json:"vnetID"`
 	VnetName          string `json:"vnetName"`
 	SubnetID          string `json:"subnetID"`
-	SubnetName        string `json:"subnetName"`
 	BootImageID       string `json:"bootImageID"`
 	InfraID           string `json:"infraID"`
 	MachineIdentityID string `json:"machineIdentityID"`
@@ -176,7 +175,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
-		result.SubnetName = *vnet.Properties.Subnets[0].Name
 		result.VNetID = *vnet.ID
 		result.VnetName = *vnet.Name
 		l.Info("Successfully retrieved existing vnet", "name", result.VnetName)
@@ -206,7 +204,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			return nil, err
 		}
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
-		result.SubnetName = *vnet.Properties.Subnets[0].Name
 		result.VNetID = *vnet.ID
 		result.VnetName = *vnet.Name
 		l.Info("Successfully created vnet", "name", result.VnetName)
