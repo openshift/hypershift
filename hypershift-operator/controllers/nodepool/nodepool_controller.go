@@ -471,7 +471,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Validate modifying CPU arch support for platform
-	if (nodePool.Spec.Arch != "amd64") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform) {
+	if !isArchAndPlatformSupported(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidArchPlatform,
 			Status:             corev1.ConditionFalse,
@@ -969,6 +969,31 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 	return ctrl.Result{}, nil
+}
+
+func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
+	supported := false
+
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitectureARM64 {
+			supported = true
+		}
+	case hyperv1.AzurePlatform, hyperv1.KubevirtPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 {
+			supported = true
+		}
+	case hyperv1.AgentPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE {
+			supported = true
+		}
+	case hyperv1.PowerVSPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE {
+			supported = true
+		}
+	}
+
+	return supported
 }
 
 // setMachineAndNodeConditions sets the nodePool's AllMachinesReady and AllNodesHealthy conditions.

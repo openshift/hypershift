@@ -26,6 +26,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	opts.Arch = hyperv1.ArchitecturePPC64LE
 	opts.PowerVSPlatform = core.PowerVSPlatformOptions{
 		Region:                 "us-south",
 		Zone:                   "us-south",

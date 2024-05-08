@@ -503,7 +503,8 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 	}
 
 	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
-	if !opts.AWSPlatform.MultiArch && !opts.Render {
+	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
+	if !opts.AWSPlatform.MultiArch && !opts.Render && opts.Arch != hyperv1.ArchitecturePPC64LE {
 		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
 		if err != nil {
 			return err
@@ -514,11 +515,12 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 		}
 	}
 
-	// Validate arch is only amd64 or arm64
+	// Validate arch is only hyperv1.ArchitectureAMD64 or hyperv1.ArchitectureARM64 or hyperv1.ArchitecturePPC64LE
 	arch := strings.ToLower(opts.Arch)
 	switch arch {
-	case "amd64":
-	case "arm64":
+	case hyperv1.ArchitectureAMD64:
+	case hyperv1.ArchitectureARM64:
+	case hyperv1.ArchitecturePPC64LE:
 	default:
 		return fmt.Errorf("specified arch is not supported: %s", opts.Arch)
 	}

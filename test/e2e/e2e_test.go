@@ -494,9 +494,11 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
 	}
 
-	// Arch is only currently valid for aws platform
-	if o.Platform == hyperv1.AWSPlatform || o.Platform == hyperv1.AzurePlatform {
-		createOption.Arch = "amd64"
+	switch o.Platform {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
+		createOption.Arch = hyperv1.ArchitectureAMD64
+	case hyperv1.PowerVSPlatform:
+		createOption.Arch = hyperv1.ArchitecturePPC64LE
 	}
 
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)

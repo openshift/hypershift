@@ -3078,3 +3078,67 @@ func newKVInfraMapMock(objects []client.Object) kvinfra.KubevirtInfraClientMap {
 		"",
 		"")
 }
+
+func TestIsArchAndPlatformSupported(t *testing.T) {
+	testCases := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+		expect   bool
+	}{
+		{
+			name: "supported arch and platform used",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					Arch: hyperv1.ArchitectureAMD64,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "supported platform with multiple arch - amd64",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AgentPlatform,
+					},
+					Arch: hyperv1.ArchitectureAMD64,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "supported platform with multiple arch - ppc64le",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AgentPlatform,
+					},
+					Arch: hyperv1.ArchitecturePPC64LE,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "unsupported arch and platform used",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					Arch: hyperv1.ArchitecturePPC64LE,
+				},
+			},
+			expect: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isArchAndPlatformSupported(tc.nodePool)).To(Equal(tc.expect))
+		})
+	}
+}
