@@ -80,14 +80,60 @@ func TestGetNetworkSecurityGroupNameFromNetworkSecurityGroupID(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.testCaseName, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			nsgID, nsgRG, err := GetNameAndResourceGroupFromNetworkSecurityGroupID(tc.nsgID)
+			nsgName, nsgRG, err := GetNameAndResourceGroupFromNetworkSecurityGroupID(tc.nsgID)
 			if tc.expectedErr {
 				g.Expect(err).To(Not(BeNil()))
 				g.Expect(err).To(HaveOccurred(), "invalid nsg ID format: "+tc.nsgID)
 			} else {
 				g.Expect(err).To(BeNil())
-				g.Expect(nsgID).To(Equal(tc.expectedNSGName))
+				g.Expect(nsgName).To(Equal(tc.expectedNSGName))
 				g.Expect(nsgRG).To(Equal(tc.expectedNSGRG))
+			}
+		})
+	}
+}
+
+func TestGetVnetNameAndResourceGroupFromVnetID(t *testing.T) {
+	tests := []struct {
+		testCaseName     string
+		vnetID           string
+		expectedVnetName string
+		expectedVnetRG   string
+		expectedErr      bool
+	}{
+		{
+			testCaseName:     "empty VNET ID",
+			vnetID:           "",
+			expectedVnetName: "",
+			expectedVnetRG:   "",
+			expectedErr:      true,
+		},
+		{
+			testCaseName:     "improperly formed VNET ID",
+			vnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/",
+			expectedVnetName: "",
+			expectedVnetRG:   "",
+			expectedErr:      true,
+		},
+		{
+			testCaseName:     "properly formed VNET ID",
+			vnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
+			expectedVnetName: "myVnetName",
+			expectedVnetRG:   "myResourceGroupName",
+			expectedErr:      false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.testCaseName, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			vnetName, vnetRG, err := GetVnetNameAndResourceGroupFromVnetID(tc.vnetID)
+			if tc.expectedErr {
+				g.Expect(err).To(Not(BeNil()))
+				g.Expect(err).To(HaveOccurred(), "invalid VNET ID format: "+tc.vnetID)
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(vnetName).To(Equal(tc.expectedVnetName))
+				g.Expect(vnetRG).To(Equal(tc.expectedVnetRG))
 			}
 		})
 	}
