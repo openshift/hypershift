@@ -29,23 +29,27 @@ func GetSubnetNameFromSubnetID(subnetID string) (string, error) {
 	return subnet.Name, nil
 }
 
-// GetNetworkSecurityGroupNameFromNetworkSecurityGroupID extracts the network security group (nsg) name from a nsg ID
+// GetNameAndResourceGroupFromNetworkSecurityGroupID extracts the network security group (nsg) name and its resourrce group name from a nsg ID
 // Example nsg ID: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/networkSecurityGroups/<nsgName>
-func GetNetworkSecurityGroupNameFromNetworkSecurityGroupID(nsgID string) (string, error) {
+func GetNameAndResourceGroupFromNetworkSecurityGroupID(nsgID string) (string, string, error) {
 	nsg, err := arm.ParseResourceID(nsgID)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse network security group ID %q: %v", nsgID, err)
+		return "", "", fmt.Errorf("failed to parse network security group ID %q: %v", nsgID, err)
 	}
 
 	if !strings.EqualFold(nsg.ResourceType.Type, "networkSecurityGroups") {
-		return "", fmt.Errorf("invalid resource type '%s', expected 'networkSecurityGroups'", nsg.ResourceType.Type)
+		return "", "", fmt.Errorf("invalid resource type '%s', expected 'networkSecurityGroups'", nsg.ResourceType.Type)
 	}
 
 	if nsg.Name == "" {
-		return "", fmt.Errorf("failed to parse network security group name from %q", nsgID)
+		return "", "", fmt.Errorf("failed to parse network security group name from %q", nsgID)
 	}
 
-	return nsg.Name, nil
+	if nsg.ResourceGroupName == "" {
+		return "", "", fmt.Errorf("failed to parse resource group name from %q", nsgID)
+	}
+
+	return nsg.Name, nsg.ResourceGroupName, nil
 }
 
 // GetVnetNameAndResourceGroupFromVnetID extracts the VNET name and its resource group from a VNET ID
