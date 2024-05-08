@@ -121,13 +121,25 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		}
 	}
 	var apiserverProxy string
+	var noProxy string
 	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" && util.ConnectsThroughInternetToControlplane(hcluster.Spec.Platform) {
 		apiserverProxy = hcluster.Spec.Configuration.Proxy.HTTPSProxy
+		noProxy = hcluster.Spec.Configuration.Proxy.NoProxy
 	}
 
 	machineConfig := manifests.MachineConfigAPIServerHAProxy()
 	ignition.SetMachineConfigLabels(machineConfig)
-	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, apiServerExternalAddress, apiServerInternalAddress, apiServerExternalPort, apiServerInternalPort, apiserverProxy)
+
+	// Sanity check, thought this should never be <0 as hcluster.Spec.Networking is defaulted in the API.
+	var serviceNetworkCIDR, clusterNetworkCIDR string
+	if len(hcluster.Spec.Networking.ServiceNetwork) > 0 {
+		serviceNetworkCIDR = hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String()
+	}
+	if len(hcluster.Spec.Networking.ClusterNetwork) > 0 {
+		clusterNetworkCIDR = hcluster.Spec.Networking.ClusterNetwork[0].CIDR.String()
+	}
+
+	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, apiServerExternalAddress, apiServerInternalAddress, apiServerExternalPort, apiServerInternalPort, apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
 	if err != nil {
 		return "", true, fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}
@@ -193,7 +205,7 @@ var (
 	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(MustAsset("apiserver-haproxy/haproxy.cfg")))
 )
 
-func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32, proxyAddr string) ([]byte, error) {
+func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
 
@@ -215,7 +227,18 @@ func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAP
 			},
 		},
 	}
-	if proxyAddr == "" {
+
+	// Check if no proxy contains any address that should result in skipping the system proxy
+	skipProxyForKAS := func() bool {
+		for _, s := range []string{internalAPIAddress, "kubernetes", serviceNetwork, clusterNetwork} {
+			if strings.Contains(noProxy, s) {
+				return true
+			}
+		}
+		return false
+	}()
+
+	if proxyAddr == "" || skipProxyForKAS {
 		filesToAdd = append(filesToAdd, []fileToAdd{
 			{
 				template: haProxyConfigTemplate,
