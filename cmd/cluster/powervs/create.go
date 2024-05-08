@@ -26,7 +26,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.Arch = hyperv1.ArchitecturePPC64LE
 	opts.PowerVSPlatform = core.PowerVSPlatformOptions{
 		Region:                 "us-south",
 		Zone:                   "us-south",
@@ -94,6 +93,9 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	// Load or create infrastructure for the cluster
 	var infra *powervsinfra.Infra
+
+	opts.Arch = hyperv1.ArchitecturePPC64LE
+
 	if len(opts.InfrastructureJSON) > 0 {
 		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
