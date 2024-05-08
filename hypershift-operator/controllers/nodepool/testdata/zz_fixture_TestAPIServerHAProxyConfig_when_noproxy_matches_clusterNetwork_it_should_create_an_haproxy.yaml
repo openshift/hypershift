@@ -1,0 +1,42 @@
+ignition:
+  version: 3.2.0
+storage:
+  files:
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,IyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLXgKaXAgYWRkciBhZGQgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbS8zMiBicmQgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbSBzY29wZSBob3N0IGRldiBsbwppcCByb3V0ZSBhZGQgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbS8zMiBkZXYgbG8gc2NvcGUgbGluayBzcmMgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbQo=
+    mode: 493
+    overwrite: true
+    path: /usr/local/bin/setup-apiserver-ip.sh
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,IyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLXgKaXAgYWRkciBkZWxldGUgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbS8zMiBkZXYgbG8KaXAgcm91dGUgZGVsIGNsdXN0ZXIuaW50ZXJuYWwuZXhhbXBsZS5jb20vMzIgZGV2IGxvIHNjb3BlIGxpbmsgc3JjIGNsdXN0ZXIuaW50ZXJuYWwuZXhhbXBsZS5jb20K
+    mode: 493
+    overwrite: true
+    path: /usr/local/bin/teardown-apiserver-ip.sh
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,Z2xvYmFsCiAgbWF4Y29ubiA3MDAwCiAgbG9nIHN0ZG91dCBsb2NhbDAKICBsb2cgc3Rkb3V0IGxvY2FsMSBub3RpY2UKCmRlZmF1bHRzCiAgbW9kZSB0Y3AKICB0aW1lb3V0IGNsaWVudCAxMG0KICB0aW1lb3V0IHNlcnZlciAxMG0KICB0aW1lb3V0IGNvbm5lY3QgMTBzCiAgdGltZW91dCBjbGllbnQtZmluIDVzCiAgdGltZW91dCBzZXJ2ZXItZmluIDVzCiAgdGltZW91dCBxdWV1ZSA1cwogIHJldHJpZXMgMwoKZnJvbnRlbmQgbG9jYWxfYXBpc2VydmVyCiAgYmluZCBjbHVzdGVyLmludGVybmFsLmV4YW1wbGUuY29tOjg0NDMKICBsb2cgZ2xvYmFsCiAgbW9kZSB0Y3AKICBvcHRpb24gdGNwbG9nCiAgZGVmYXVsdF9iYWNrZW5kIHJlbW90ZV9hcGlzZXJ2ZXIKCmJhY2tlbmQgcmVtb3RlX2FwaXNlcnZlcgogIG1vZGUgdGNwCiAgbG9nIGdsb2JhbAogIG9wdGlvbiBodHRwY2hrIEdFVCAvdmVyc2lvbgogIG9wdGlvbiBsb2ctaGVhbHRoLWNoZWNrcwogIGRlZmF1bHQtc2VydmVyIGludGVyIDEwcyBmYWxsIDMgcmlzZSAzCiAgc2VydmVyIGNvbnRyb2xwbGFuZSBjbHVzdGVyLmV4YW1wbGUuY29tOjQ0Mwo=
+    mode: 420
+    overwrite: true
+    path: /etc/kubernetes/apiserver-proxy-config/haproxy.cfg
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,YXBpVmVyc2lvbjogdjEKa2luZDogUG9kCm1ldGFkYXRhOgogIGNyZWF0aW9uVGltZXN0YW1wOiBudWxsCiAgbGFiZWxzOgogICAgazhzLWFwcDoga3ViZS1hcGlzZXJ2ZXItcHJveHkKICBuYW1lOiBrdWJlLWFwaXNlcnZlci1wcm94eQogIG5hbWVzcGFjZToga3ViZS1zeXN0ZW0Kc3BlYzoKICBjb250YWluZXJzOgogIC0gY29tbWFuZDoKICAgIC0gaGFwcm94eQogICAgLSAtZgogICAgLSAvdXNyL2xvY2FsL2V0Yy9oYXByb3h5CiAgICBpbWFnZTogaGEtcHJveHktaW1hZ2U6bGF0ZXN0CiAgICBsaXZlbmVzc1Byb2JlOgogICAgICBmYWlsdXJlVGhyZXNob2xkOiAzCiAgICAgIGh0dHBHZXQ6CiAgICAgICAgaG9zdDogY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbQogICAgICAgIHBhdGg6IC92ZXJzaW9uCiAgICAgICAgcG9ydDogODQ0MwogICAgICAgIHNjaGVtZTogSFRUUFMKICAgICAgaW5pdGlhbERlbGF5U2Vjb25kczogMTIwCiAgICAgIHBlcmlvZFNlY29uZHM6IDEyMAogICAgICBzdWNjZXNzVGhyZXNob2xkOiAxCiAgICBuYW1lOiBoYXByb3h5CiAgICBwb3J0czoKICAgIC0gY29udGFpbmVyUG9ydDogODQ0MwogICAgICBob3N0UG9ydDogODQ0MwogICAgICBuYW1lOiBhcGlzZXJ2ZXIKICAgICAgcHJvdG9jb2w6IFRDUAogICAgcmVzb3VyY2VzOgogICAgICByZXF1ZXN0czoKICAgICAgICBjcHU6IDEzbQogICAgICAgIG1lbW9yeTogMTZNaQogICAgc2VjdXJpdHlDb250ZXh0OgogICAgICBydW5Bc1VzZXI6IDEwMDEKICAgIHZvbHVtZU1vdW50czoKICAgIC0gbW91bnRQYXRoOiAvdXNyL2xvY2FsL2V0Yy9oYXByb3h5CiAgICAgIG5hbWU6IGNvbmZpZwogIGhvc3ROZXR3b3JrOiB0cnVlCiAgcHJpb3JpdHlDbGFzc05hbWU6IHN5c3RlbS1ub2RlLWNyaXRpY2FsCiAgdm9sdW1lczoKICAtIGhvc3RQYXRoOgogICAgICBwYXRoOiAvZXRjL2t1YmVybmV0ZXMvYXBpc2VydmVyLXByb3h5LWNvbmZpZwogICAgbmFtZTogY29uZmlnCnN0YXR1czoge30K
+    mode: 420
+    overwrite: true
+    path: /etc/kubernetes/manifests/kube-apiserver-proxy.yaml
+systemd:
+  units:
+  - contents: |
+      [Unit]
+      Description=Sets up local IP to proxy API server requests
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/setup-apiserver-ip.sh
+      ExecStop=/usr/local/bin/teardown-apiserver-ip.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+    enabled: true
+    name: apiserver-ip.service
