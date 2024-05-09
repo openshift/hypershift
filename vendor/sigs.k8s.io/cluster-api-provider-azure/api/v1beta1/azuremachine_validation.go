@@ -67,6 +67,10 @@ func ValidateAzureMachineSpec(spec AzureMachineSpec) field.ErrorList {
 		allErrs = append(allErrs, errs...)
 	}
 
+	if errs := ValidateCapacityReservationGroupID(spec.CapacityReservationGroupID, field.NewPath("capacityReservationGroupID")); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
 	return allErrs
 }
 
@@ -449,6 +453,19 @@ func ValidateConfidentialCompute(managedDisk *ManagedDiskParameters, profile *Se
 				allErrs = append(allErrs, field.Invalid(fieldPath.Child("SecureBootEnabled"), profile.UefiSettings.SecureBootEnabled,
 					fmt.Sprintf("SecureBootEnabled should be set to true when securityEncryptionType is set to '%s'", SecurityEncryptionTypeDiskWithVMGuestState)))
 			}
+		}
+	}
+
+	return allErrs
+}
+
+// ValidateCapacityReservationGroupID validates the capacity reservation group id.
+func ValidateCapacityReservationGroupID(capacityReservationGroupID *string, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if capacityReservationGroupID != nil {
+		if _, err := azureutil.ParseResourceID(*capacityReservationGroupID); err != nil {
+			allErrs = append(allErrs, field.Invalid(fldPath, capacityReservationGroupID, "must be a valid Azure resource ID"))
 		}
 	}
 

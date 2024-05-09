@@ -18,7 +18,19 @@ spec:
     singular: azuremanagedcluster
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - description: Cluster to which this AzureManagedCluster belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: string
+    - description: Time duration since creation of this AzureManagedCluster
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AzureManagedCluster is the Schema for the azuremanagedclusters
@@ -48,6 +60,8 @@ spec:
                 description: |-
                   ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
                   Immutable, populated by the AKS API at create.
+                  Because this field is programmatically set by CAPZ after resource creation, we define it as +optional
+                  in the API schema to permit resource admission.
                 properties:
                   host:
                     description: The hostname on which the API server is serving.
