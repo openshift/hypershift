@@ -184,7 +184,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		// Extract network security group name
 		if vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup != nil && vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID != nil {
 			result.SecurityGroupID = *vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID
-			securityGroupName, err := azureutil.GetNetworkSecurityGroupNameFromNetworkSecurityGroupID(*vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID)
+			securityGroupName, _, err := azureutil.GetNameAndResourceGroupFromNetworkSecurityGroupID(*vnet.Properties.Subnets[0].Properties.NetworkSecurityGroup.ID)
 			if err != nil {
 				return nil, err
 			}
