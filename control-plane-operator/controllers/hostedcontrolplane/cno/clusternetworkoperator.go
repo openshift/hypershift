@@ -550,9 +550,10 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	},
 		{
 			// CNO uses konnectivity-proxy to perform proxy readiness checks through the hosted cluster's network
+			// Disable the resolver to ensure that CNO connects to the exact proxy address provided
 			Name:    "konnectivity-proxy",
 			Image:   params.Images.Socks5Proxy,
-			Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true"},
+			Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--disable-resolver"},
 			Args:    []string{"run"},
 			Env: []corev1.EnvVar{{
 				Name:  "KUBECONFIG",
