@@ -30,3 +30,26 @@ func AssumeRoleWithWebIdentity(sess *session.Session, roleSessionName, roleArn, 
 		*resp.Credentials.SessionToken,
 	), nil
 }
+
+func AssumeRole(sess *session.Session, roleSessionName, roleArn string) (*credentials.Credentials, error) {
+	svc := sts.New(sess)
+	input := &sts.AssumeRoleInput{
+		RoleArn:         aws.String(roleArn),
+		RoleSessionName: aws.String(roleSessionName),
+	}
+
+	resp, err := svc.AssumeRole(input)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Credentials == nil {
+		return nil, credentials.ErrStaticCredentialsEmpty
+
+	}
+
+	return credentials.NewStaticCredentials(
+		*resp.Credentials.AccessKeyId,
+		*resp.Credentials.SecretAccessKey,
+		*resp.Credentials.SessionToken,
+	), nil
+}

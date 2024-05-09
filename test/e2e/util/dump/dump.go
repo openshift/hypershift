@@ -11,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
+	"github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/upsert"
 	"go.uber.org/zap/zaptest"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -42,11 +43,11 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 
 // DumpMachineConsoleLogs dumps machine console logs for the given hostedcluster.
 // This is only useful for AWS clusters.
-func DumpMachineConsoleLogs(ctx context.Context, hc *hyperv1.HostedCluster, awsCredentialsFile string, artifactDir string) error {
+func DumpMachineConsoleLogs(ctx context.Context, hc *hyperv1.HostedCluster, awsCredentials util.AWSCredentialsOptions, artifactDir string) error {
 	consoleLogs := consolelogsaws.ConsoleLogOpts{
 		Name:               hc.Name,
 		Namespace:          hc.Namespace,
-		AWSCredentialsFile: awsCredentialsFile,
+		AWSCredentialsOpts: awsCredentials,
 		OutputDir:          filepath.Join(artifactDir, "machine-console-logs"),
 	}
 	err := consoleLogs.Run(ctx)

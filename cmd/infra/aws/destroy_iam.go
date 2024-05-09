@@ -16,15 +16,16 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 type DestroyIAMOptions struct {
 	Region             string
-	AWSCredentialsFile string
-	AWSKey             string
-	AWSSecretKey       string
+	AWSCredentialsOpts awsutil.AWSCredentialsOptions
 	InfraID            string
 	Log                logr.Logger
+
+	CredentialsSecretData *util.CredentialsSecretData
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
@@ -35,20 +36,23 @@ func NewDestroyIAMCommand() *cobra.Command {
 	}
 
 	opts := DestroyIAMOptions{
-		Region:             "us-east-1",
-		AWSCredentialsFile: "",
-		InfraID:            "",
-		Log:                log.Log,
+		Region:  "us-east-1",
+		InfraID: "",
+		Log:     log.Log,
 	}
 
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
 
-	cmd.MarkFlagRequired("aws-creds")
+	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+
 	cmd.MarkFlagRequired("infra-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := opts.AWSCredentialsOpts.Validate()
+		if err != nil {
+			return err
+		}
 		if err := opts.DestroyIAM(cmd.Context()); err != nil {
 			return err
 		}
@@ -74,11 +78,13 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
-	awsSession := awsutil.NewSession("cli-destroy-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-destroy-iam", o.CredentialsSecretData, o.Region)
+	if err != nil {
+		return err
+	}
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
-	var err error
 	err = o.DestroyOIDCResources(ctx, iamClient)
 	if err != nil {
 		return err

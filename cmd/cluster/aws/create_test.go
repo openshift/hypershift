@@ -6,6 +6,8 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 func TestIsRequiredOption(t *testing.T) {
@@ -25,7 +27,7 @@ func TestIsRequiredOption(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := IsRequiredOption("", test.value)
+			err := util.ValidateRequiredOption("", test.value)
 			if test.expectedError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -44,7 +46,9 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			inputOptions: &core.CreateOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformOptions{
-					AWSCredentialsFile: "",
+					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+						AWSCredentialsFile: "",
+					},
 				},
 			},
 			expectError: true,
@@ -53,7 +57,9 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			inputOptions: &core.CreateOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformOptions{
-					AWSCredentialsFile: "asdf",
+					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+						AWSCredentialsFile: "asdf",
+					},
 				},
 				PullSecretFile: "",
 			},
@@ -63,7 +69,9 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			inputOptions: &core.CreateOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformOptions{
-					AWSCredentialsFile: "asdf",
+					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+						AWSCredentialsFile: "asdf",
+					},
 				},
 				PullSecretFile: "asdf",
 			},
@@ -73,7 +81,8 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ValidateCreateCredentialInfo(test.inputOptions)
+			options := test.inputOptions
+			err := ValidateCreateCredentialInfo(options.AWSPlatform.AWSCredentialsOpts, options.CredentialSecretName, options.Namespace, options.PullSecretFile)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
