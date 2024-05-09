@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/manifests"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/blang/semver"
@@ -102,7 +103,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 						Name: "credentials",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: NodePoolManagementCredsSecret("").Name,
+								SecretName: manifests.NodePoolManagementCredsSecret("").Name,
 							},
 						},
 					},
@@ -261,10 +262,10 @@ sts_regional_endpoints = regional
 		return nil
 	}
 	for arn, secret := range map[string]*corev1.Secret{
-		hcluster.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN:  KubeCloudControllerCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN:   NodePoolManagementCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN: ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.RolesRef.NetworkARN:              CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN:  manifests.KubeCloudControllerCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN:   manifests.NodePoolManagementCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN: manifests.ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.NetworkARN:              manifests.CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.AWS.RolesRef.StorageARN:              AWSEBSCSIDriverCredsSecret(controlPlaneNamespace),
 	} {
 		err := syncSecret(secret, arn)
@@ -363,42 +364,6 @@ func (AWS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 
 func (AWS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
-}
-
-func KubeCloudControllerCredsSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "cloud-controller-creds",
-		},
-	}
-}
-
-func NodePoolManagementCredsSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "node-management-creds",
-		},
-	}
-}
-
-func ControlPlaneOperatorCredsSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "control-plane-operator-creds",
-		},
-	}
-}
-
-func CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "cloud-network-config-controller-creds",
-		},
-	}
 }
 
 func AWSEBSCSIDriverCredsSecret(controlPlaneNamespace string) *corev1.Secret {

@@ -1701,12 +1701,13 @@ type AWSServiceEndpoint struct {
 // would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
 // fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
 type AzurePlatformSpec struct {
-	// Credentials is the object containing existing Azure credentials needed for creating and managing cloud
-	// infrastructure resources.
+	// TenantID is the id for the Azure tenant in which this Hosted Cluster will be created.
 	//
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="TenantID is immutable"
+	// +immutable
 	// +required
-	Credentials corev1.LocalObjectReference `json:"credentials"`
+	TenantID string `json:"tenantID,omitempty"`
 
 	// Cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
 	//
@@ -1791,6 +1792,70 @@ type AzurePlatformSpec struct {
 	// +immutable
 	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// IngressClientID is the client ID appropriate for the Ingress Operator.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="IngressClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	IngressClientID string `json:"ingressClientID"`
+
+	// ImageRegistryClientID is the client ID appropriate for the Image Registry Operator.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ImageRegistryClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	ImageRegistryClientID string `json:"imageRegistryClientID"`
+
+	// DiskClientID is the client ID appropriate for the Storage Operator. // TODO(skuznets): differentiate file & disk
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="DiskClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	DiskClientID string `json:"diskClientID"`
+
+	// FileClientID is the client ID appropriate for the Storage Operator. // TODO(skuznets): differentiate file & disk
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="FileClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	FileClientID string `json:"fileClientID"`
+
+	// NetworkClientID is the client ID for appropriate for the Network Operator.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="NetworkClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	NetworkClientID string `json:"networkClientID"`
+
+	// KubeCloudControllerClientID is the client ID appropriate for the KCM/KCC.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="KubeCloudControllerClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	KubeCloudControllerClientID string `json:"kubeCloudControllerClientID"`
+
+	// NodePoolManagementClientID is the client ID appropriate for the CAPI Controller.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="NodePoolManagementClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	NodePoolManagementClientID string `json:"nodePoolManagementClientID"`
+
+	// ControlPlaneOperatorClientID is the client ID appropriate for the Control Plane Operator.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControlPlaneOperatorClientID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	ControlPlaneOperatorClientID string `json:"controlPlaneOperatorClientID"`
 }
 
 // Release represents the metadata for an OCP release payload image.

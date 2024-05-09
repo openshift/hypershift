@@ -6,6 +6,8 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
@@ -56,7 +58,7 @@ func (a Azure) ReconcileCAPIInfraCR(
 	}
 
 	if _, err := createOrUpdate(ctx, client, azureClusterIdentity, func() error {
-		return reconcileAzureClusterIdentity(ctx, client, hcluster, azureClusterIdentity, controlPlaneNamespace)
+		return reconcileAzureClusterIdentity(hcluster, azureClusterIdentity, controlPlaneNamespace)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile Azure cluster identity: %w", err)
 	}
@@ -142,60 +144,21 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 }
 
 func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	var source corev1.Secret
-
-	// Sync user cloud-credentials secret
-	name := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Azure.Credentials.Name}
-	if err := c.Get(ctx, name, &source); err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", name, err)
-	}
-
-	userCloudCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: name.Name}}
-	if _, err := createOrUpdate(ctx, c, userCloudCreds, func() error {
-		if userCloudCreds.Data == nil {
-			userCloudCreds.Data = map[string][]byte{}
+	secretData := resources.AzureFederatedTokenCredentialSecretData(hcluster.ObjectMeta.Name, hcluster.Spec.InfraID, hcluster.Spec.Platform.Azure)
+	for clientId, secret := range map[string]*corev1.Secret{
+		hcluster.Spec.Platform.Azure.KubeCloudControllerClientID:  manifests.KubeCloudControllerCredsSecret(hcluster.Namespace),
+		hcluster.Spec.Platform.Azure.NodePoolManagementClientID:   manifests.NodePoolManagementCredsSecret(hcluster.Namespace), // TODO: not sure we need it, https://capz.sigs.k8s.io/topics/workload-identity does not have CAPZ using a secret
+		hcluster.Spec.Platform.Azure.ControlPlaneOperatorClientID: manifests.ControlPlaneOperatorCredsSecret(hcluster.Namespace),
+		hcluster.Spec.Platform.Azure.NetworkClientID:              manifests.CloudNetworkConfigControllerCredsSecret(hcluster.Namespace),
+		// TODO: aws puts storage creds, do we need to?
+	} {
+		if _, err := createOrUpdate(ctx, c, secret, func() error {
+			secret.Data = secretData
+			secret.Data["azure_client_id"] = []byte(clientId)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile guest cluster secret %s/%s: %w", secret.Namespace, secret.Name, err)
 		}
-		for k, v := range source.Data {
-			userCloudCreds.Data[k] = v
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	// Sync Azure Client Secret in its own secret for since CAPZ needs it in a specific key value
-	// https://capz.sigs.k8s.io/topics/multitenancy#manual-service-principal-identity
-	azureClientSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "azure-client-secret", Namespace: controlPlaneNamespace}}
-	if _, err := createOrUpdate(ctx, c, azureClientSecret, func() error {
-		if azureClientSecret.Data == nil {
-			azureClientSecret.Data = map[string][]byte{}
-		}
-		for k, v := range source.Data {
-			if k == "AZURE_CLIENT_SECRET" {
-				azureClientSecret.Data["clientSecret"] = v
-			}
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	// Sync CNCC secret
-	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
-	secretData := map[string][]byte{
-		"azure_client_id":       userCloudCreds.Data["AZURE_CLIENT_ID"],
-		"azure_client_secret":   userCloudCreds.Data["AZURE_CLIENT_SECRET"],
-		"azure_region":          []byte(hcluster.Spec.Platform.Azure.Location),
-		"azure_resource_prefix": []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
-		"azure_resourcegroup":   []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),
-		"azure_subscription_id": userCloudCreds.Data["AZURE_SUBSCRIPTION_ID"],
-		"azure_tenant_id":       userCloudCreds.Data["AZURE_TENANT_ID"],
-	}
-	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
-		cloudNetworkConfigCreds.Data = secretData
-		return nil
-	}); err != nil {
-		return err
 	}
 
 	return nil
@@ -246,17 +209,11 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	return nil
 }
 
-func reconcileAzureClusterIdentity(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
-	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: hcluster.Spec.Platform.Azure.Credentials.Name, Namespace: controlPlaneNamespace}}
-	if err := c.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", credentialsSecret, err)
-	}
-
+func reconcileAzureClusterIdentity(hcluster *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
 	azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-		ClientID:     string(credentialsSecret.Data["AZURE_CLIENT_ID"]),
-		ClientSecret: corev1.SecretReference{Name: "azure-client-secret", Namespace: controlPlaneNamespace},
-		TenantID:     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
-		Type:         capiazure.ServicePrincipal,
+		ClientID: hcluster.Spec.Platform.Azure.NodePoolManagementClientID,
+		TenantID: hcluster.Spec.Platform.Azure.TenantID,
+		Type:     capiazure.WorkloadIdentity,
 		AllowedNamespaces: &capiazure.AllowedNamespaces{
 			NamespaceList: []string{
 				controlPlaneNamespace,

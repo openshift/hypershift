@@ -5,7 +5,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func AWSIngressCloudCredsSecret() *corev1.Secret {
+func IngressCloudCredsSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "openshift-ingress-operator",
@@ -14,7 +14,7 @@ func AWSIngressCloudCredsSecret() *corev1.Secret {
 	}
 }
 
-func AWSImageRegistryCloudCredsSecret() *corev1.Secret {
+func ImageRegistryCloudCredsSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "openshift-image-registry",
@@ -23,11 +23,38 @@ func AWSImageRegistryCloudCredsSecret() *corev1.Secret {
 	}
 }
 
-func AWSStorageCloudCredsSecret() *corev1.Secret {
+func EBSStorageCloudCredsSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "openshift-cluster-csi-drivers",
 			Name:      "ebs-cloud-credentials",
+		},
+	}
+}
+
+func ClusterNetworkingCloudCredsSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-cloud-network-config-controller",
+			Name:      "cloud-credentials",
+		},
+	}
+}
+
+func AzureDiskCloudCredsSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-cluster-csi-drivers",
+			Name:      "azure-disk-credentials",
+		},
+	}
+}
+
+func AzureFileCloudCredsSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-cluster-csi-drivers",
+			Name:      "azure-file-credentials",
 		},
 	}
 }

@@ -17,22 +17,26 @@ limitations under the License.
 
 package v1beta1
 
-import (
-	v1 "k8s.io/api/core/v1"
-)
-
 // AzurePlatformSpecApplyConfiguration represents an declarative configuration of the AzurePlatformSpec type for use
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
-	Credentials       *v1.LocalObjectReference `json:"credentials,omitempty"`
-	Cloud             *string                  `json:"cloud,omitempty"`
-	Location          *string                  `json:"location,omitempty"`
-	ResourceGroupName *string                  `json:"resourceGroup,omitempty"`
-	VnetID            *string                  `json:"vnetID,omitempty"`
-	SubnetID          *string                  `json:"subnetID,omitempty"`
-	SubscriptionID    *string                  `json:"subscriptionID,omitempty"`
-	MachineIdentityID *string                  `json:"machineIdentityID,omitempty"`
-	SecurityGroupID   *string                  `json:"securityGroupID,omitempty"`
+	TenantID                     *string `json:"tenantID,omitempty"`
+	Cloud                        *string `json:"cloud,omitempty"`
+	Location                     *string `json:"location,omitempty"`
+	ResourceGroupName            *string `json:"resourceGroup,omitempty"`
+	VnetID                       *string `json:"vnetID,omitempty"`
+	SubnetID                     *string `json:"subnetID,omitempty"`
+	SubscriptionID               *string `json:"subscriptionID,omitempty"`
+	MachineIdentityID            *string `json:"machineIdentityID,omitempty"`
+	SecurityGroupID              *string `json:"securityGroupID,omitempty"`
+	IngressClientID              *string `json:"ingressClientID,omitempty"`
+	ImageRegistryClientID        *string `json:"imageRegistryClientID,omitempty"`
+	DiskClientID                 *string `json:"diskClientID,omitempty"`
+	FileClientID                 *string `json:"fileClientID,omitempty"`
+	NetworkClientID              *string `json:"networkClientID,omitempty"`
+	KubeCloudControllerClientID  *string `json:"kubeCloudControllerClientID,omitempty"`
+	NodePoolManagementClientID   *string `json:"nodePoolManagementClientID,omitempty"`
+	ControlPlaneOperatorClientID *string `json:"controlPlaneOperatorClientID,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs an declarative configuration of the AzurePlatformSpec type for use with
@@ -41,11 +45,11 @@ func AzurePlatformSpec() *AzurePlatformSpecApplyConfiguration {
 	return &AzurePlatformSpecApplyConfiguration{}
 }
 
-// WithCredentials sets the Credentials field in the declarative configuration to the given value
+// WithTenantID sets the TenantID field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Credentials field is set to the value of the last call.
-func (b *AzurePlatformSpecApplyConfiguration) WithCredentials(value v1.LocalObjectReference) *AzurePlatformSpecApplyConfiguration {
-	b.Credentials = &value
+// If called multiple times, the TenantID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithTenantID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.TenantID = &value
 	return b
 }
 
@@ -110,5 +114,69 @@ func (b *AzurePlatformSpecApplyConfiguration) WithMachineIdentityID(value string
 // If called multiple times, the SecurityGroupID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithSecurityGroupID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.SecurityGroupID = &value
+	return b
+}
+
+// WithIngressClientID sets the IngressClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IngressClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithIngressClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.IngressClientID = &value
+	return b
+}
+
+// WithImageRegistryClientID sets the ImageRegistryClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageRegistryClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithImageRegistryClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.ImageRegistryClientID = &value
+	return b
+}
+
+// WithDiskClientID sets the DiskClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DiskClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithDiskClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.DiskClientID = &value
+	return b
+}
+
+// WithFileClientID sets the FileClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the FileClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithFileClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.FileClientID = &value
+	return b
+}
+
+// WithNetworkClientID sets the NetworkClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NetworkClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithNetworkClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.NetworkClientID = &value
+	return b
+}
+
+// WithKubeCloudControllerClientID sets the KubeCloudControllerClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeCloudControllerClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithKubeCloudControllerClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.KubeCloudControllerClientID = &value
+	return b
+}
+
+// WithNodePoolManagementClientID sets the NodePoolManagementClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NodePoolManagementClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithNodePoolManagementClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.NodePoolManagementClientID = &value
+	return b
+}
+
+// WithControlPlaneOperatorClientID sets the ControlPlaneOperatorClientID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ControlPlaneOperatorClientID field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithControlPlaneOperatorClientID(value string) *AzurePlatformSpecApplyConfiguration {
+	b.ControlPlaneOperatorClientID = &value
 	return b
 }

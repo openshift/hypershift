@@ -40,6 +40,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	platformmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/manifests"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -2666,7 +2667,7 @@ func reconcileControlPlaneOperatorDeployment(
 				Name: "provider-creds",
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: platformaws.ControlPlaneOperatorCredsSecret("").Name,
+						SecretName: platformmanifests.ControlPlaneOperatorCredsSecret("").Name,
 					},
 				},
 			})
