@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -21,12 +22,17 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
 	// DebugDeploymentsAnnotation contains a comma separated list of deployment names which should always be scaled to 0
 	// for development.
-	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
+	DebugDeploymentsAnnotation               = "hypershift.openshift.io/debug-deployments"
+	EnableHostedClustersAnnotationScopingEnv = "ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING"
+	HostedClustersScopeAnnotationEnv         = "HOSTEDCLUSTERS_SCOPE_ANNOTATION"
+	HostedClustersScopeAnnotation            = "hypershift.openshift.io/scope"
+	HostedClusterAnnotation                  = "hypershift.openshift.io/cluster"
 )
 
 // ParseNamespacedName expects a string with the format "namespace/name"
@@ -320,4 +326,79 @@ func ParseNodeSelector(str string) map[string]string {
 		result[kv[0]] = kv[1]
 	}
 	return result
+}
+
+// PredicatesForHostedClusterAnnotationScoping returns predicate filters for all event types that will ignore incoming
+// event requests for resources in which the parent hostedcluster does not
+// match the "scope" annotation specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the
+// default behavior is to accept all events for hostedclusters that do not have the annotation.
+// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
+func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Predicate {
+	hcAnnotationScopingEnabledEnvVal := os.Getenv(EnableHostedClustersAnnotationScopingEnv)
+	hcScopeAnnotationEnvVal := os.Getenv(HostedClustersScopeAnnotationEnv)
+	filter := func(obj client.Object) bool {
+		if hcAnnotationScopingEnabledEnvVal != "true" {
+			return true // process event; the scoping feature has not been enabled via the ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var
+		}
+		hostedClusterScopeAnnotation := getHostedClusterScopeAnnotation(obj, r)
+		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
+			return true // process event; both the operator's scope and hostedcluster's scope are empty
+		}
+		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
+			return false // ignore event; the associated hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
+		}
+		return true
+	}
+	return predicate.NewPredicateFuncs(filter)
+}
+
+// getHostedClusterScopeAnnotation will extract the "scope" annotation from the hostedcluster resource that owns the specified object.
+// Depending on the object type being passed in, slightly different paths will be used to ultimately retrieve the hostedcluster resource containing the annotation.
+// If an annotation is not found, an empty string is returned.
+func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
+	hostedClusterName := ""
+	nodePoolName := ""
+	switch obj.(type) {
+	case *hyperv1.HostedCluster:
+		hc, ok := obj.(*hyperv1.HostedCluster)
+		if !ok {
+			return ""
+		}
+		if hc.GetAnnotations() != nil {
+			return hc.GetAnnotations()[HostedClustersScopeAnnotation]
+		}
+	case *hyperv1.NodePool:
+		np, ok := obj.(*hyperv1.NodePool)
+		if !ok {
+			return ""
+		}
+		hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
+	default:
+		if obj.GetAnnotations() != nil {
+			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
+			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
+		}
+		if nodePoolName != "" {
+			namespacedName := ParseNamespacedName(nodePoolName)
+			np := &hyperv1.NodePool{}
+			err := r.Get(context.Background(), namespacedName, np)
+			if err != nil {
+				return ""
+			}
+			hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
+		}
+	}
+	if hostedClusterName == "" {
+		return ""
+	}
+	namespacedName := ParseNamespacedName(hostedClusterName)
+	hcluster := &hyperv1.HostedCluster{}
+	err := r.Get(context.Background(), namespacedName, hcluster)
+	if err != nil {
+		return ""
+	}
+	if hcluster.GetAnnotations() != nil {
+		return hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
+	}
+	return ""
 }
