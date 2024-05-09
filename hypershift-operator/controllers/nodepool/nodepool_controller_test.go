@@ -20,6 +20,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
+	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
+	crconditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
@@ -50,6 +52,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/yaml"
 )
 
 func TestIsUpdatingConfig(t *testing.T) {
@@ -3948,5 +3951,292 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(shouldKeepOldUserData).To(Equal(tc.expected))
 		})
+	}
+}
+
+func TestSetPerformanceProfileStatus(t *testing.T) {
+	controlPlaneNamespace := "clusters-hostedcluster01"
+	userClustersNamespace := "clusters"
+	nodePoolName := "hostedcluster01"
+
+	testCases := []struct {
+		name                         string
+		PerformanceProfileStatusCM   *corev1.ConfigMap
+		wantConditions               map[string]hyperv1.NodePoolCondition
+		hasPerformanceProfileApplied bool
+	}{
+
+		{
+			name:                         "No Performance profile applied",
+			PerformanceProfileStatusCM:   &corev1.ConfigMap{},
+			wantConditions:               map[string]hyperv1.NodePoolCondition{},
+			hasPerformanceProfileApplied: false,
+		},
+
+		{
+			name: "Performance profile is available",
+			PerformanceProfileStatusCM: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "perfprofile-" + nodePoolName + "-status",
+					Namespace: controlPlaneNamespace,
+					Labels: map[string]string{
+						"hypershift.openshift.io/nto-generated-performance-profile-status": "true",
+						"hypershift.openshift.io/nodePool":                                 nodePoolName,
+						"hypershift.openshift.io/performanceProfileName":                   nodePoolName,
+					},
+					Annotations: map[string]string{
+						"hypershift.openshift.io/nodePool": nodePoolName,
+					},
+				},
+				Data: map[string]string{
+					"status": makePerformanceProfileStatusAsString(
+						withCondition(crconditionsv1.Condition{
+							Type:   crconditionsv1.ConditionAvailable,
+							Status: corev1.ConditionTrue,
+						}),
+						withCondition(crconditionsv1.Condition{
+							Type:   crconditionsv1.ConditionUpgradeable,
+							Status: corev1.ConditionTrue,
+						})),
+				},
+			},
+			wantConditions: map[string]hyperv1.NodePoolCondition{
+				hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
+					Status:  corev1.ConditionTrue,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType,
+					Status:  corev1.ConditionTrue,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+			},
+			hasPerformanceProfileApplied: true,
+		},
+		{
+			name: "Performance profile is progressing",
+			PerformanceProfileStatusCM: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "perfprofile-" + nodePoolName + "-status",
+					Namespace: controlPlaneNamespace,
+					Labels: map[string]string{
+						"hypershift.openshift.io/nto-generated-performance-profile-status": "true",
+						"hypershift.openshift.io/nodePool":                                 nodePoolName,
+						"hypershift.openshift.io/performanceProfileName":                   nodePoolName,
+					},
+					Annotations: map[string]string{
+						"hypershift.openshift.io/nodePool": nodePoolName,
+					},
+				},
+				Data: map[string]string{
+					"status": makePerformanceProfileStatusAsString(
+						withCondition(crconditionsv1.Condition{
+							Type:    crconditionsv1.ConditionProgressing,
+							Status:  corev1.ConditionTrue,
+							Reason:  "DeploymentStarting",
+							Message: "Deployment is starting",
+						})),
+				},
+			},
+			wantConditions: map[string]hyperv1.NodePoolCondition{
+				hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType,
+					Status:  corev1.ConditionTrue,
+					Reason:  "DeploymentStarting",
+					Message: "Deployment is starting",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+			},
+			hasPerformanceProfileApplied: true,
+		},
+		{
+			name: "Performance profile is degraded",
+			PerformanceProfileStatusCM: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "perfprofile-" + nodePoolName + "-status",
+					Namespace: controlPlaneNamespace,
+					Labels: map[string]string{
+						"hypershift.openshift.io/nto-generated-performance-profile-status": "true",
+						"hypershift.openshift.io/nodePool":                                 nodePoolName,
+						"hypershift.openshift.io/performanceProfileName":                   nodePoolName,
+					},
+					Annotations: map[string]string{
+						"hypershift.openshift.io/nodePool": nodePoolName,
+					},
+				},
+				Data: map[string]string{
+					"status": makePerformanceProfileStatusAsString(
+						withCondition(crconditionsv1.Condition{
+							Type:    crconditionsv1.ConditionDegraded,
+							Status:  corev1.ConditionTrue,
+							Message: "Cannot list Tuned Profiles to match with profile perfprofile-hostedcluster01",
+							Reason:  "GettingTunedStatusFailed",
+						})),
+				},
+			},
+			wantConditions: map[string]hyperv1.NodePoolCondition{
+				hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType: {
+					Type:    hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType,
+					Status:  corev1.ConditionTrue,
+					Message: "Cannot list Tuned Profiles to match with profile perfprofile-hostedcluster01",
+					Reason:  "GettingTunedStatusFailed",
+				},
+			},
+			hasPerformanceProfileApplied: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := NodePoolReconciler{
+				Client: fake.NewClientBuilder().Build(),
+			}
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: userClustersNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: nodePoolName,
+				},
+			}
+			performanceProfileConditions := []string{
+				hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
+				hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType,
+				hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType,
+				hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType,
+			}
+
+			ctx := context.Background()
+
+			// In case performance profile is applied, a config map holding the performance profile status is generated
+			// by NTO should exist on the hosted control plane namespace.
+			if tc.hasPerformanceProfileApplied {
+				r.Create(ctx, tc.PerformanceProfileStatusCM)
+			}
+			err := r.SetPerformanceProfileConditions(ctx, logr.Discard(), nodePool, controlPlaneNamespace, false)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// In case there is no performance profile applied, no configmap with status is expected.
+			// Therefore, we expect the nodepool conditions to have no performance profile conditions.
+			if !tc.hasPerformanceProfileApplied {
+				for _, NodePoolCondition := range performanceProfileConditions {
+					cond := FindStatusCondition(nodePool.Status.Conditions, NodePoolCondition)
+					g.Expect(cond).To(BeNil())
+				}
+				return
+			}
+
+			for _, NodePoolCondition := range performanceProfileConditions {
+				gotCondition := FindStatusCondition(nodePool.Status.Conditions, NodePoolCondition)
+				wantCondition := tc.wantConditions[NodePoolCondition]
+				g.Expect(gotCondition).ToNot(BeNil(), "expected condition %s to be found under the NodePool status", NodePoolCondition)
+				g.Expect(gotCondition.Status).To(Equal(wantCondition.Status), "got condition %s status equals to %s, want %s", gotCondition.Type, gotCondition.Status, wantCondition.Status)
+				g.Expect(gotCondition.Message).To(Equal(wantCondition.Message), "got condition %s message equals to %s, want %s", gotCondition.Type, gotCondition.Message, wantCondition.Message)
+				g.Expect(gotCondition.Reason).To(Equal(wantCondition.Reason), "got condition %s reason equals to %s, want %s", gotCondition.Type, gotCondition.Reason, wantCondition.Reason)
+			}
+		})
+	}
+}
+
+func makePerformanceProfileStatusAsString(opts ...func(*performanceprofilev2.PerformanceProfileStatus)) string {
+	status := &performanceprofilev2.PerformanceProfileStatus{
+		Conditions: []crconditionsv1.Condition{
+			{
+				Type:   "Available",
+				Status: "False",
+			},
+			{
+				Type:   "Upgradeable",
+				Status: "False",
+			},
+			{
+				Type:   "Progressing",
+				Status: "False",
+			},
+			{
+				Type:   "Degraded",
+				Status: "False",
+			},
+		},
+		Tuned:        k8sutilspointer.String("openshift-cluster-node-tuning-operator/openshift-node-performance-performance"),
+		RuntimeClass: k8sutilspointer.String("performance-performance"),
+	}
+
+	for _, f := range opts {
+		f(status)
+	}
+	// A test code we fully control of,
+	// hence no error should be return
+	b, _ := yaml.Marshal(status)
+	return string(b)
+}
+
+func withCondition(condition crconditionsv1.Condition) func(*performanceprofilev2.PerformanceProfileStatus) {
+	return func(status *performanceprofilev2.PerformanceProfileStatus) {
+		for i := range status.Conditions {
+			if status.Conditions[i].Type == condition.Type {
+				status.Conditions[i] = condition
+			}
+		}
 	}
 }
