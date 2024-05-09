@@ -168,6 +168,8 @@ type KubevirtPlatformCreateOptions struct {
 
 type AWSPlatformOptions struct {
 	AWSCredentialsFile      string
+	RoleArn                 string
+	StsCredentialsFile      string
 	AdditionalTags          []string
 	IAMJSON                 string
 	InstanceType            string

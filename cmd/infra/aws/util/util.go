@@ -1,6 +1,8 @@
 package util
 
 import (
+	"fmt"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"time"
 
 	utilpointer "k8s.io/utils/pointer"
@@ -12,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
-func NewSession(agent string, credentialsFile string, credKey string, credSecretKey string, region string) *session.Session {
+func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *session.Session {
 	sessionOpts := session.Options{}
 	if credentialsFile != "" {
 		sessionOpts.SharedConfigFiles = append(sessionOpts.SharedConfigFiles, credentialsFile)
@@ -29,6 +31,50 @@ func NewSession(agent string, credentialsFile string, credKey string, credSecret
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
 	})
 	return awsSession
+}
+
+func NewStsSession(agent, credentialsFile, roleArn, region string) (*session.Session, error) {
+	stsSessionOpts := session.Options{}
+	if credentialsFile != "" {
+		stsSessionOpts.SharedConfigFiles = append(stsSessionOpts.SharedConfigFiles, credentialsFile)
+	} else {
+		return nil, fmt.Errorf("STS credentials file is required")
+	}
+
+	mySession := session.Must(session.NewSessionWithOptions(stsSessionOpts))
+	stsClient := sts.New(mySession)
+
+	role, err := stsClient.AssumeRole(&sts.AssumeRoleInput{
+		RoleArn:         aws.String(roleArn),
+		RoleSessionName: aws.String(agent),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	creds := credentials.NewStaticCredentials(
+		*role.Credentials.AccessKeyId,
+		*role.Credentials.SecretAccessKey,
+		*role.Credentials.SessionToken,
+	)
+
+	awsSessionOpts := session.Options{
+		Config: aws.Config{
+			Credentials: creds,
+		},
+	}
+
+	if region != "" {
+		awsSessionOpts.Config.Region = utilpointer.String(region)
+	}
+
+	awsSession := session.Must(session.NewSessionWithOptions(awsSessionOpts))
+	awsSession.Handlers.Build.PushBackNamed(request.NamedHandler{
+		Name: "openshift.io/hypershift",
+		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
+	})
+	return awsSession, nil
 }
 
 // NewAWSRoute53Config generates an AWS config with slightly different Retryer timings

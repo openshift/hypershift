@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"strings"
 	"time"
 
@@ -33,6 +34,8 @@ type DestroyInfraOptions struct {
 	Region              string
 	InfraID             string
 	AWSCredentialsFile  string
+	RoleArn             string
+	StsCredentialsFile  string
 	AWSKey              string
 	AWSSecretKey        string
 	Name                string
@@ -50,13 +53,17 @@ func NewDestroyCommand() *cobra.Command {
 	}
 
 	opts := DestroyInfraOptions{
-		Region: "us-east-1",
-		Name:   "example",
-		Log:    log.Log,
+		Region:             "us-east-1",
+		Name:               "example",
+		Log:                log.Log,
+		RoleArn:            "",
+		StsCredentialsFile: "",
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume when destroying the infra.")
+	cmd.Flags().StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
@@ -64,7 +71,13 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().DurationVar(&opts.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
 	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("aws-creds")
+	if opts.AWSCredentialsFile == "" {
+		cmd.MarkFlagRequired("role-arn")
+		cmd.MarkFlagRequired("sts-creds")
+	}
+	if opts.RoleArn == "" && opts.StsCredentialsFile == "" {
+		cmd.MarkFlagRequired("aws-creds")
+	}
 	cmd.MarkFlagRequired("base-domain")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -106,7 +119,16 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
-	awsSession := awsutil.NewSession("cli-destroy-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	var awsSession *session.Session
+	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+		var err error
+		awsSession, err = awsutil.NewStsSession("cli-destroy-infra", o.StsCredentialsFile, o.RoleArn, o.Region)
+		if err != nil {
+			return fmt.Errorf("failed to create STS session: %w", err)
+		}
+	} else {
+		awsSession = awsutil.NewSession("cli-destroy-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	}
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 	elbClient := elb.New(awsSession, awsConfig)

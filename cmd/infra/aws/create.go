@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"net"
 	"os"
 	"time"
@@ -27,6 +28,8 @@ type CreateInfraOptions struct {
 	Region             string
 	InfraID            string
 	AWSCredentialsFile string
+	RoleArn            string
+	StsCredentialsFile string
 	AWSKey             string
 	AWSSecretKey       string
 	Name               string
@@ -80,12 +83,16 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
-		Region: "us-east-1",
-		Name:   "example",
+		Region:             "us-east-1",
+		Name:               "example",
+		RoleArn:            "",
+		StsCredentialsFile: "",
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume when creating the infra.")
+	cmd.Flags().StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
@@ -97,7 +104,13 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 
 	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("aws-creds")
+	if opts.RoleArn == "" {
+		cmd.MarkFlagRequired("aws-creds")
+	} else {
+		cmd.MarkFlagRequired("role-arn")
+		cmd.MarkFlagRequired("sts-creds")
+	}
+
 	cmd.MarkFlagRequired("base-domain")
 
 	l := log.Log
@@ -141,7 +154,16 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) error {
 func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
 	l.Info("Creating infrastructure", "id", o.InfraID)
 
-	awsSession := awsutil.NewSession("cli-create-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	var awsSession *session.Session
+	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+		var err error
+		awsSession, err = awsutil.NewStsSession("cli-create-infra", o.StsCredentialsFile, o.RoleArn, o.Region)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create STS session: %w", err)
+		}
+	} else {
+		awsSession = awsutil.NewSession("cli-create-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	}
 	ec2Client := ec2.New(awsSession, awsutil.NewConfig())
 	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
 
