@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ import (
 type DestroyIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
+	RoleArn            string
+	StsCredentialsFile string
 	AWSKey             string
 	AWSSecretKey       string
 	InfraID            string
@@ -37,15 +40,26 @@ func NewDestroyIAMCommand() *cobra.Command {
 	opts := DestroyIAMOptions{
 		Region:             "us-east-1",
 		AWSCredentialsFile: "",
+		RoleArn:            "",
+		StsCredentialsFile: "",
 		InfraID:            "",
 		Log:                log.Log,
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume when destroying the cluster.")
+	cmd.Flags().StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
 
-	cmd.MarkFlagRequired("aws-creds")
+	if opts.AWSCredentialsFile == "" {
+		cmd.MarkFlagRequired("role-arn")
+		cmd.MarkFlagRequired("sts-creds")
+	}
+	if opts.RoleArn == "" && opts.StsCredentialsFile == "" {
+		cmd.MarkFlagRequired("aws-creds")
+	}
+
 	cmd.MarkFlagRequired("infra-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -74,7 +88,16 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
-	awsSession := awsutil.NewSession("cli-destroy-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	var awsSession *session.Session
+	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+		var err error
+		awsSession, err = awsutil.NewStsSession("cli-destroy-iam", o.StsCredentialsFile, o.RoleArn, o.Region)
+		if err != nil {
+			return fmt.Errorf("failed to create STS session: %w", err)
+		}
+	} else {
+		awsSession = awsutil.NewSession("cli-destroy-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	}
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 

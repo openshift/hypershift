@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"os"
 	"path/filepath"
 	"time"
@@ -24,6 +25,8 @@ type ConsoleLogOpts struct {
 	Name               string
 	Namespace          string
 	AWSCredentialsFile string
+	RoleArn            string
+	StsCredentialsFile string
 	AWSKey             string
 	AWSSecretKey       string
 	OutputDir          string
@@ -32,7 +35,10 @@ type ConsoleLogOpts struct {
 func NewCommand() *cobra.Command {
 
 	opts := &ConsoleLogOpts{
-		Namespace: "clusters",
+		Namespace:          "clusters",
+		RoleArn:            "",
+		StsCredentialsFile: "",
+		AWSCredentialsFile: "",
 	}
 
 	cmd := &cobra.Command{
@@ -44,10 +50,18 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.Namespace, "namespace", "n", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume when retrieving logs.")
+	cmd.Flags().StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role..")
 	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", opts.OutputDir, "Directory where to place console logs (required)")
 
 	cmd.MarkFlagRequired("name")
-	cmd.MarkFlagRequired("aws-creds")
+	if opts.AWSCredentialsFile == "" {
+		cmd.MarkFlagRequired("role-arn")
+		cmd.MarkFlagRequired("sts-creds")
+	}
+	if opts.RoleArn == "" && opts.StsCredentialsFile == "" {
+		cmd.MarkFlagRequired("aws-creds")
+	}
 	cmd.MarkFlagRequired("output-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -74,7 +88,16 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	}
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
-	awsSession := awsutil.NewSession("cli-console-logs", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	var awsSession *session.Session
+	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+		var err error
+		awsSession, err = awsutil.NewStsSession("cli-console-logs", o.StsCredentialsFile, o.RoleArn, region)
+		if err != nil {
+			return fmt.Errorf("failed to create STS session: %w", err)
+		}
+	} else {
+		awsSession = awsutil.NewSession("cli-console-logs", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	}
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 

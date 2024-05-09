@@ -21,11 +21,15 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	opts.AWSPlatform = core.AWSPlatformDestroyOptions{
 		AWSCredentialsFile: "",
+		RoleArn:            "",
+		StsCredentialsFile: "",
 		PreserveIAM:        false,
 		Region:             "us-east-1",
 	}
 
 	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.AWSPlatform.RoleArn, "role-arn", opts.AWSPlatform.RoleArn, "The ARN of the role to assume when destroying the cluster.")
+	cmd.Flags().StringVar(&opts.AWSPlatform.StsCredentialsFile, "sts-creds", opts.AWSPlatform.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.PreserveIAM, "preserve-iam", opts.AWSPlatform.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Cluster's region; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "Cluster's base domain; inferred from the hosted cluster by default")
@@ -73,6 +77,8 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		Region:              region,
 		InfraID:             infraID,
 		AWSCredentialsFile:  o.AWSPlatform.AWSCredentialsFile,
+		RoleArn:             o.AWSPlatform.RoleArn,
+		StsCredentialsFile:  o.AWSPlatform.StsCredentialsFile,
 		AWSKey:              awsKeyID,
 		AWSSecretKey:        awsSecretKey,
 		Name:                o.Name,
@@ -90,6 +96,8 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		destroyOpts := awsinfra.DestroyIAMOptions{
 			Region:             region,
 			AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
+			RoleArn:            o.AWSPlatform.RoleArn,
+			StsCredentialsFile: o.AWSPlatform.StsCredentialsFile,
 			AWSKey:             awsKeyID,
 			AWSSecretKey:       awsSecretKey,
 			InfraID:            infraID,
@@ -142,8 +150,17 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 // the credentials secret is not empty, that it can be retrieved.
 func ValidateCredentialInfo(opts *core.DestroyOptions) error {
 	if len(opts.CredentialSecretName) == 0 {
-		if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
-			return err
+		if opts.AWSPlatform.AWSCredentialsFile == "" {
+			if err := IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
+				return err
+			}
+			if err := IsRequiredOption("sts-creds", opts.AWSPlatform.StsCredentialsFile); err != nil {
+				return err
+			}
+		} else {
+			if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+				return err
+			}
 		}
 	} else {
 		// Check the secret exists now, otherwise stop

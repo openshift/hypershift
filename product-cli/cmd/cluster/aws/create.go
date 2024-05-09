@@ -18,7 +18,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.AWSPlatform = core.AWSPlatformOptions{
-		AWSCredentialsFile: "",
+		RoleArn:            "",
+		StsCredentialsFile: "",
 		Region:             "us-east-1",
 		InstanceType:       "",
 		RootVolumeType:     "gp3",
@@ -27,7 +28,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		EndpointAccess:     string(hyperv1.Public),
 	}
 
-	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Filepath to an AWS credentials file.")
+	cmd.Flags().StringVar(&opts.AWSPlatform.RoleArn, "role-arn", opts.AWSPlatform.RoleArn, "The ARN of the role to assume when creating the cluster (Required).")
+	cmd.Flags().StringVar(&opts.AWSPlatform.StsCredentialsFile, "sts-creds", opts.AWSPlatform.StsCredentialsFile, "STS credentials file to use when assuming the role (Required).")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "The region to use for created AWS infrastructure.")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availability zones in which NodePools will be created.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "The instance type for the NodePool machines.")
@@ -39,7 +41,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "The endpoint access for the control plane endpoints (ex. Public, PublicAndPrivate, Private).")
 	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for etcd encryption; if this is not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.EnableProxy, "enable-proxy", opts.AWSPlatform.EnableProxy, "Enables if a proxy should be set up for internet connectivity, rather than allowing direct internet access from the the NodePool machines.")
-	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: aws-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
+	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL.")
 	cmd.PersistentFlags().BoolVar(&opts.AWSPlatform.MultiArch, "multi-arch", opts.AWSPlatform.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
 

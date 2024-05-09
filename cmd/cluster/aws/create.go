@@ -26,6 +26,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 	opts.AWSPlatform = core.AWSPlatformOptions{
 		AWSCredentialsFile: "",
+		RoleArn:            "",
+		StsCredentialsFile: "",
 		Region:             "us-east-1",
 		InstanceType:       "",
 		RootVolumeType:     "gp3",
@@ -36,6 +38,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.AWSPlatform.RoleArn, "role-arn", opts.AWSPlatform.RoleArn, "The ARN of the role to assume when creating the cluster.")
+	cmd.Flags().StringVar(&opts.AWSPlatform.StsCredentialsFile, "sts-creds", opts.AWSPlatform.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availability zones in which NodePools will be created")
@@ -131,6 +135,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Region:             opts.AWSPlatform.Region,
 			InfraID:            opts.InfraID,
 			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
+			RoleArn:            opts.AWSPlatform.RoleArn,
+			StsCredentialsFile: opts.AWSPlatform.StsCredentialsFile,
 			AWSSecretKey:       AWSSecretKey,
 			AWSKey:             AWSKey,
 			Name:               opts.Name,
@@ -162,6 +168,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		opt := awsinfra.CreateIAMOptions{
 			Region:             opts.AWSPlatform.Region,
 			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
+			RoleArn:            opts.AWSPlatform.RoleArn,
+			StsCredentialsFile: opts.AWSPlatform.StsCredentialsFile,
 			AWSSecretKey:       AWSSecretKey,
 			AWSKey:             AWSKey,
 			InfraID:            infra.InfraID,
@@ -252,8 +260,18 @@ func IsRequiredOption(flag string, value string) error {
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
 func ValidateCreateCredentialInfo(opts *core.CreateOptions) error {
 	if len(opts.CredentialSecretName) == 0 {
-		if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
-			return err
+		if opts.AWSPlatform.AWSCredentialsFile == "" {
+			if err := IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
+				return err
+			}
+			if err := IsRequiredOption("sts-creds", opts.AWSPlatform.StsCredentialsFile); err != nil {
+				return err
+			}
+		}
+		if opts.AWSPlatform.RoleArn == "" && opts.AWSPlatform.StsCredentialsFile == "" {
+			if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+				return err
+			}
 		}
 		if err := IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
 			return err

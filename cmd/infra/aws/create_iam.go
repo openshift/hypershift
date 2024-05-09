@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -25,6 +26,8 @@ import (
 type CreateIAMOptions struct {
 	Region                          string
 	AWSCredentialsFile              string
+	RoleArn                         string
+	StsCredentialsFile              string
 	AWSKey                          string
 	AWSSecretKey                    string
 	OIDCStorageProviderS3BucketName string
@@ -61,10 +64,14 @@ func NewCreateIAMCommand() *cobra.Command {
 	opts := CreateIAMOptions{
 		Region:             "us-east-1",
 		AWSCredentialsFile: "",
+		StsCredentialsFile: "",
+		RoleArn:            "",
 		InfraID:            "",
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume when creating the iam.")
+	cmd.Flags().StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "The name of the bucket in which the OIDC discovery document is stored")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "The region of the bucket in which the OIDC discovery document is stored")
@@ -77,7 +84,14 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
-	cmd.MarkFlagRequired("aws-creds")
+	if opts.AWSCredentialsFile == "" {
+		cmd.MarkFlagRequired("role-arn")
+		cmd.MarkFlagRequired("sts-creds")
+	}
+	if opts.RoleArn == "" && opts.StsCredentialsFile == "" {
+		cmd.MarkFlagRequired("aws-creds")
+	}
+
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("public-zone-id")
 	cmd.MarkFlagRequired("private-zone-id")
@@ -155,7 +169,17 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 
-	awsSession := awsutil.NewSession("cli-create-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	var awsSession *session.Session
+	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+		var err error
+		awsSession, err = awsutil.NewStsSession("cli-create-iam", o.StsCredentialsFile, o.RoleArn, o.Region)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create STS session: %w", err)
+		}
+	} else {
+		awsSession = awsutil.NewSession("cli-create-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	}
+
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 

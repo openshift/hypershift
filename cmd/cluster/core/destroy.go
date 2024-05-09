@@ -43,6 +43,8 @@ type DestroyOptions struct {
 
 type AWSPlatformDestroyOptions struct {
 	AWSCredentialsFile  string
+	RoleArn             string
+	StsCredentialsFile  string
 	BaseDomain          string
 	BaseDomainPrefix    string
 	PreserveIAM         bool
