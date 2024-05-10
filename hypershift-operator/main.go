@@ -457,6 +457,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			if err := deScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create machine set descaler controller: %w", err)
 			}
+			nonRequestServingNodeAutoscaler := scheduler.NonRequestServingNodeAutoscaler{}
+			if err := nonRequestServingNodeAutoscaler.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create non request serving node autoscaler controller: %w", err)
+			}
 		} else {
 			nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
 				Client: mgr.GetClient(),

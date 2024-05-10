@@ -55,6 +55,12 @@ type ClusterSizingConfigurationSpec struct {
 	// use fewer resources, but allow for some lag on scale-up to ensure that the use is sustained before
 	// incurring the larger cost for scale-up.
 	TransitionDelay TransitionDelayConfiguration `json:"transitionDelay,omitempty"`
+
+	// +kubebuilder:validation:Optional
+
+	// NonRequestServingNodesBufferPerZone is the number of extra nodes to allocate for non request serving
+	// workloads per zone.
+	NonRequestServingNodesBufferPerZone *resource.Quantity `json:"nonRequestServingNodesBufferPerZone,omitempty"`
 }
 
 // SizeConfiguration holds options for clusters of a given size.
@@ -135,6 +141,14 @@ type Management struct {
 	// Placeholders configures the number of dummy workloads that will be scheduled irrespective of
 	// HostedClusters in order to keep a set of nodes ready to accept new cluster creation and scheduling.
 	Placeholders int `json:"placeholders,omitempty"`
+
+	// +kubebuilder:validation:Optional
+
+	// NonRequestServingNodesPerZone is the number of nodes to allocate for non request serving workloads
+	// per HostedCluster. This will likely be a fraction of a node (ie. 0.2) to allow 5 HostedClusters in
+	// a single node. The total number of nodes needed per HostedCluster is this number multiplied by 3
+	// (number of zones).
+	NonRequestServingNodesPerZone *resource.Quantity `json:"nonRequestServingNodesPerZone,omitempty"`
 }
 
 // ConcurrencyConfiguration defines bounds for the concurrency of clusters transitioning between states.

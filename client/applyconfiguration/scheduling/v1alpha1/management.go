@@ -17,10 +17,15 @@ limitations under the License.
 
 package v1alpha1
 
+import (
+	resource "k8s.io/apimachinery/pkg/api/resource"
+)
+
 // ManagementApplyConfiguration represents an declarative configuration of the Management type for use
 // with apply.
 type ManagementApplyConfiguration struct {
-	Placeholders *int `json:"placeholders,omitempty"`
+	Placeholders                  *int               `json:"placeholders,omitempty"`
+	NonRequestServingNodesPerZone *resource.Quantity `json:"nonRequestServingNodesPerZone,omitempty"`
 }
 
 // ManagementApplyConfiguration constructs an declarative configuration of the Management type for use with
@@ -34,5 +39,13 @@ func Management() *ManagementApplyConfiguration {
 // If called multiple times, the Placeholders field is set to the value of the last call.
 func (b *ManagementApplyConfiguration) WithPlaceholders(value int) *ManagementApplyConfiguration {
 	b.Placeholders = &value
+	return b
+}
+
+// WithNonRequestServingNodesPerZone sets the NonRequestServingNodesPerZone field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NonRequestServingNodesPerZone field is set to the value of the last call.
+func (b *ManagementApplyConfiguration) WithNonRequestServingNodesPerZone(value resource.Quantity) *ManagementApplyConfiguration {
+	b.NonRequestServingNodesPerZone = &value
 	return b
 }

@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -141,4 +143,14 @@ func MarshalYamlAndDiff(a, b runtime.Object, t *testing.T) string {
 		t.Fatalf("failed to marshal: %v", err)
 	}
 	return cmp.Diff(string(aYAML), string(bYAML))
+}
+
+// MatchExpected ensures that `cmp.Diff(actual, expected)` returns nothing.
+// Usage looks like:
+//
+//	Expect(actual).To(MatchExpected(expected))
+func MatchExpected(expected any, opts ...cmp.Option) types.GomegaMatcher {
+	return WithTransform(func(actual any) string {
+		return cmp.Diff(actual, expected, opts...)
+	}, BeEmpty())
 }
