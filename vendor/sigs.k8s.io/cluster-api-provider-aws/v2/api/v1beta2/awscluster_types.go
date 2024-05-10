@@ -166,13 +166,19 @@ type Bastion struct {
 	AMI string `json:"ami,omitempty"`
 }
 
+// LoadBalancerType defines the type of load balancer to use.
 type LoadBalancerType string
 
 var (
-	LoadBalancerTypeClassic  = LoadBalancerType("classic")
-	LoadBalancerTypeELB      = LoadBalancerType("elb")
-	LoadBalancerTypeALB      = LoadBalancerType("alb")
-	LoadBalancerTypeNLB      = LoadBalancerType("nlb")
+	// LoadBalancerTypeClassic is the classic ELB type.
+	LoadBalancerTypeClassic = LoadBalancerType("classic")
+	// LoadBalancerTypeELB is the ELB type.
+	LoadBalancerTypeELB = LoadBalancerType("elb")
+	// LoadBalancerTypeALB is the ALB type.
+	LoadBalancerTypeALB = LoadBalancerType("alb")
+	// LoadBalancerTypeNLB is the NLB type.
+	LoadBalancerTypeNLB = LoadBalancerType("nlb")
+	// LoadBalancerTypeDisabled disables the load balancer.
 	LoadBalancerTypeDisabled = LoadBalancerType("disabled")
 )
 
@@ -214,6 +220,10 @@ type AWSLoadBalancerSpec struct {
 	// +optional
 	HealthCheckProtocol *ELBProtocol `json:"healthCheckProtocol,omitempty"`
 
+	// HealthCheck sets custom health check configuration to the API target group.
+	// +optional
+	HealthCheck *TargetGroupHealthCheckAPISpec `json:"healthCheck,omitempty"`
+
 	// AdditionalSecurityGroups sets the security groups used by the load balancer. Expected to be security group IDs
 	// This is optional - if not provided new security groups will be created for the load balancer
 	// +optional
@@ -251,11 +261,16 @@ type AdditionalListenerSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port int64 `json:"port"`
+
 	// Protocol sets the protocol for the additional listener.
 	// Currently only TCP is supported.
 	// +kubebuilder:validation:Enum=TCP
 	// +kubebuilder:default=TCP
 	Protocol ELBProtocol `json:"protocol,omitempty"`
+
+	// HealthCheck sets the optional custom health check configuration to the API target group.
+	// +optional
+	HealthCheck *TargetGroupHealthCheckAdditionalSpec `json:"healthCheck,omitempty"`
 }
 
 // AWSClusterStatus defines the observed state of AWSCluster.
@@ -268,6 +283,7 @@ type AWSClusterStatus struct {
 	Conditions     clusterv1.Conditions     `json:"conditions,omitempty"`
 }
 
+// S3Bucket defines a supporting S3 bucket for the cluster, currently can be optionally used for Ignition.
 type S3Bucket struct {
 	// ControlPlaneIAMInstanceProfile is a name of the IAMInstanceProfile, which will be allowed
 	// to read control-plane node bootstrap data from S3 Bucket.
@@ -293,6 +309,10 @@ type S3Bucket struct {
 	// +kubebuilder:validation:MaxLength:=63
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`
 	Name string `json:"name"`
+
+	// BestEffortDeleteObjects defines whether access/permission errors during object deletion should be ignored.
+	// +optional
+	BestEffortDeleteObjects *bool `json:"bestEffortDeleteObjects,omitempty"`
 }
 
 // +kubebuilder:object:root=true

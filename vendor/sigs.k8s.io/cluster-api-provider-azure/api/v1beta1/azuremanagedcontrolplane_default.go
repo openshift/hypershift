@@ -101,8 +101,13 @@ func (m *AzureManagedControlPlane) setDefaultSubnet() {
 // setDefaultFleetsMember sets the default FleetsMember for an AzureManagedControlPlane.
 func setDefaultFleetsMember(fleetsMember *FleetsMember, labels map[string]string) *FleetsMember {
 	result := fleetsMember.DeepCopy()
-	if clusterName, ok := labels[clusterv1.ClusterNameLabel]; ok && fleetsMember != nil && fleetsMember.Name == "" {
-		result.Name = clusterName
+	if fleetsMember != nil {
+		if clusterName, ok := labels[clusterv1.ClusterNameLabel]; ok && fleetsMember.Name == "" {
+			result.Name = clusterName
+		}
+		if fleetsMember.Group == "" {
+			result.Group = "default"
+		}
 	}
 	return result
 }
@@ -205,5 +210,16 @@ func (m *AzureManagedControlPlane) setDefaultOIDCIssuerProfile() {
 func (m *AzureManagedControlPlane) setDefaultDNSPrefix() {
 	if m.Spec.DNSPrefix == nil {
 		m.Spec.DNSPrefix = ptr.To(m.Name)
+	}
+}
+
+func (m *AzureManagedControlPlane) setDefaultAKSExtensions() {
+	for _, extension := range m.Spec.Extensions {
+		if extension.Plan != nil && extension.Plan.Name == "" {
+			extension.Plan.Name = fmt.Sprintf("%s-%s", m.Name, extension.Plan.Product)
+		}
+		if extension.AutoUpgradeMinorVersion == nil {
+			extension.AutoUpgradeMinorVersion = ptr.To(true)
+		}
 	}
 }

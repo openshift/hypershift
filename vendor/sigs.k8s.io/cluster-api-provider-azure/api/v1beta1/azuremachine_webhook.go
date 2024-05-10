@@ -206,6 +206,13 @@ func (mw *azureMachineWebhook) ValidateUpdate(ctx context.Context, oldObj, newOb
 		}
 	}
 
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("spec", "capacityReservationGroupID"),
+		old.Spec.CapacityReservationGroupID,
+		m.Spec.CapacityReservationGroupID); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
 	if len(allErrs) == 0 {
 		return nil, nil
 	}
