@@ -1895,6 +1895,28 @@ objects:
                       ClusterClassVariable defines a variable which can
                       be configured in the Cluster topology and used in patches.
                     properties:
+                      metadata:
+                        description: |-
+                          Metadata is the metadata of a variable.
+                          It can be used to add additional data for higher level tools to
+                          a ClusterClassVariable.
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              Annotations is an unstructured key value map that can be used to store and
+                              retrieve arbitrary metadata.
+                              They are not queryable.
+                            type: object
+                          labels:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              Map of string keys and values that can be used to organize and categorize
+                              (scope and select) variables.
+                            type: object
+                        type: object
                       name:
                         description: Name of the variable.
                         type: string
@@ -2732,6 +2754,28 @@ objects:
                                 This will be `inline` for variables defined in the ClusterClass or the name of a patch defined in the ClusterClass
                                 for variables discovered from a DiscoverVariables runtime extensions.
                               type: string
+                            metadata:
+                              description: |-
+                                Metadata is the metadata of a variable.
+                                It can be used to add additional data for higher level tools to
+                                a ClusterClassVariable.
+                              properties:
+                                annotations:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Annotations is an unstructured key value map that can be used to store and
+                                    retrieve arbitrary metadata.
+                                    They are not queryable.
+                                  type: object
+                                labels:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to organize and categorize
+                                    (scope and select) variables.
+                                  type: object
+                              type: object
                             required:
                               description: |-
                                 Required specifies if the variable is required.
@@ -5846,11 +5890,25 @@ objects:
                   format: int32
                   type: integer
                 replicas:
-                  default: 1
                   description: |-
                     Replicas is the number of desired replicas.
                     This is a pointer to distinguish between explicit zero and unspecified.
-                    Defaults to 1.
+
+
+                    Defaults to:
+                    * if the Kubernetes autoscaler min size and max size annotations are set:
+                      - if it's a new MachineSet, use min size
+                      - if the replicas field of the old MachineSet is < min size, use min size
+                      - if the replicas field of the old MachineSet is > max size, use max size
+                      - if the replicas field of the old MachineSet is in the (min size, max size) range, keep the value from the oldMS
+                    * otherwise use 1
+                    Note: Defaulting will be run whenever the replicas field is not set:
+                    * A new MachineSet is created with replicas not set.
+                    * On an existing MachineSet the replicas field was first set and is now unset.
+                    Those cases are especially relevant for the following Kubernetes autoscaler use cases:
+                    * A new MachineSet is created and replicas should be managed by the autoscaler
+                    * An existing MachineSet which initially wasn't controlled by the autoscaler
+                      should be later controlled by the autoscaler
                   format: int32
                   type: integer
                 selector:
@@ -8761,6 +8819,62 @@ objects:
                           AdditionalListenerSpec defines the desired state of an
                           additional listener on an AWS load balancer.
                         properties:
+                          healthCheck:
+                            description: HealthCheck sets the optional custom health
+                              check configuration to the API target group.
+                            properties:
+                              intervalSeconds:
+                                description: |-
+                                  The approximate amount of time, in seconds, between health checks of an individual
+                                  target.
+                                format: int64
+                                maximum: 300
+                                minimum: 5
+                                type: integer
+                              path:
+                                description: |-
+                                  The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                  otherwise the path will be ignored.
+                                type: string
+                              port:
+                                description: |-
+                                  The port the load balancer uses when performing health checks for additional target groups. When
+                                  not specified this value will be set for the same of listener port.
+                                type: string
+                              protocol:
+                                description: |-
+                                  The protocol to use to health check connect with the target. When not specified the Protocol
+                                  will be the same of the listener.
+                                enum:
+                                - TCP
+                                - HTTP
+                                - HTTPS
+                                type: string
+                              thresholdCount:
+                                description: |-
+                                  The number of consecutive health check successes required before considering
+                                  a target healthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                              timeoutSeconds:
+                                description: |-
+                                  The amount of time, in seconds, during which no response from a target means
+                                  a failed health check.
+                                format: int64
+                                maximum: 120
+                                minimum: 2
+                                type: integer
+                              unhealthyThresholdCount:
+                                description: |-
+                                  The number of consecutive health check failures required before considering
+                                  a target unhealthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                            type: object
                           port:
                             description: Port sets the port for the additional listener.
                             format: int64
@@ -8807,6 +8921,43 @@ objects:
                         DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                         file of each instance. This is by default, false.
                       type: boolean
+                    healthCheck:
+                      description: HealthCheck sets custom health check configuration
+                        to the API target group.
+                      properties:
+                        intervalSeconds:
+                          description: |-
+                            The approximate amount of time, in seconds, between health checks of an individual
+                            target.
+                          format: int64
+                          maximum: 300
+                          minimum: 5
+                          type: integer
+                        thresholdCount:
+                          description: |-
+                            The number of consecutive health check successes required before considering
+                            a target healthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                        timeoutSeconds:
+                          description: |-
+                            The amount of time, in seconds, during which no response from a target means
+                            a failed health check.
+                          format: int64
+                          maximum: 120
+                          minimum: 2
+                          type: integer
+                        unhealthyThresholdCount:
+                          description: |-
+                            The number of consecutive health check failures required before considering
+                            a target unhealthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                      type: object
                     healthCheckProtocol:
                       description: |-
                         HealthCheckProtocol sets the protocol type for ELB health check target
@@ -9142,6 +9293,15 @@ objects:
                               NatGatewayID is the NAT gateway id associated with the subnet.
                               Ignored unless the subnet is managed by the provider, in which case this is set on the public subnet where the NAT gateway resides. It is then used to determine routes for private subnets in the same AZ as the public subnet.
                             type: string
+                          parentZoneName:
+                            description: |-
+                              ParentZoneName is the zone name where the current subnet's zone is tied when
+                              the zone is a Local Zone.
+
+
+                              The subnets in Local Zone or Wavelength Zone locations consume the ParentZoneName
+                              to select the correct private route table to egress traffic to the internet.
+                            type: string
                           resourceID:
                             description: |-
                               ResourceID is the subnet identifier from AWS, READ ONLY.
@@ -9157,6 +9317,42 @@ objects:
                             description: Tags is a collection of tags describing the
                               resource.
                             type: object
+                          zoneType:
+                            description: |-
+                              ZoneType defines the type of the zone where the subnet is created.
+
+
+                              The valid values are availability-zone, local-zone, and wavelength-zone.
+
+
+                              Subnet with zone type availability-zone (regular) is always selected to create cluster
+                              resources, like Load Balancers, NAT Gateways, Contol Plane nodes, etc.
+
+
+                              Subnet with zone type local-zone or wavelength-zone is not eligible to automatically create
+                              regular cluster resources.
+
+
+                              The public subnet in availability-zone or local-zone is associated with regular public
+                              route table with default route entry to a Internet Gateway.
+
+
+                              The public subnet in wavelength-zone is associated with a carrier public
+                              route table with default route entry to a Carrier Gateway.
+
+
+                              The private subnet in the availability-zone is associated with a private route table with
+                              the default route entry to a NAT Gateway created in that zone.
+
+
+                              The private subnet in the local-zone or wavelength-zone is associated with a private route table with
+                              the default route entry re-using the NAT Gateway in the Region (preferred from the
+                              parent zone, the zone type availability-zone in the region, or first table available).
+                            enum:
+                            - availability-zone
+                            - local-zone
+                            - wavelength-zone
+                            type: string
                         required:
                         - id
                         type: object
@@ -9188,6 +9384,14 @@ objects:
                             default subnets. Defaults to 3
                           minimum: 1
                           type: integer
+                        carrierGatewayId:
+                          description: |-
+                            CarrierGatewayID is the id of the internet gateway associated with the VPC,
+                            for carrier network (Wavelength Zones).
+                          type: string
+                          x-kubernetes-validations:
+                          - message: Carrier Gateway ID must start with 'cagw-'
+                            rule: self.startsWith('cagw-')
                         cidrBlock:
                           description: |-
                             CidrBlock is the CIDR block to be used when the provider creates a managed VPC.
@@ -9310,6 +9514,10 @@ objects:
                     (https://coreos.github.io/ignition/) for bootstrapping (requires
                     BootstrapFormatIgnition feature flag to be enabled).
                   properties:
+                    bestEffortDeleteObjects:
+                      description: BestEffortDeleteObjects defines whether access/permission
+                        errors during object deletion should be ignored.
+                      type: boolean
                     controlPlaneIAMInstanceProfile:
                       description: |-
                         ControlPlaneIAMInstanceProfile is a name of the IAMInstanceProfile, which will be allowed
@@ -9359,6 +9567,62 @@ objects:
                           AdditionalListenerSpec defines the desired state of an
                           additional listener on an AWS load balancer.
                         properties:
+                          healthCheck:
+                            description: HealthCheck sets the optional custom health
+                              check configuration to the API target group.
+                            properties:
+                              intervalSeconds:
+                                description: |-
+                                  The approximate amount of time, in seconds, between health checks of an individual
+                                  target.
+                                format: int64
+                                maximum: 300
+                                minimum: 5
+                                type: integer
+                              path:
+                                description: |-
+                                  The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                  otherwise the path will be ignored.
+                                type: string
+                              port:
+                                description: |-
+                                  The port the load balancer uses when performing health checks for additional target groups. When
+                                  not specified this value will be set for the same of listener port.
+                                type: string
+                              protocol:
+                                description: |-
+                                  The protocol to use to health check connect with the target. When not specified the Protocol
+                                  will be the same of the listener.
+                                enum:
+                                - TCP
+                                - HTTP
+                                - HTTPS
+                                type: string
+                              thresholdCount:
+                                description: |-
+                                  The number of consecutive health check successes required before considering
+                                  a target healthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                              timeoutSeconds:
+                                description: |-
+                                  The amount of time, in seconds, during which no response from a target means
+                                  a failed health check.
+                                format: int64
+                                maximum: 120
+                                minimum: 2
+                                type: integer
+                              unhealthyThresholdCount:
+                                description: |-
+                                  The number of consecutive health check failures required before considering
+                                  a target unhealthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                            type: object
                           port:
                             description: Port sets the port for the additional listener.
                             format: int64
@@ -9405,6 +9669,43 @@ objects:
                         DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                         file of each instance. This is by default, false.
                       type: boolean
+                    healthCheck:
+                      description: HealthCheck sets custom health check configuration
+                        to the API target group.
+                      properties:
+                        intervalSeconds:
+                          description: |-
+                            The approximate amount of time, in seconds, between health checks of an individual
+                            target.
+                          format: int64
+                          maximum: 300
+                          minimum: 5
+                          type: integer
+                        thresholdCount:
+                          description: |-
+                            The number of consecutive health check successes required before considering
+                            a target healthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                        timeoutSeconds:
+                          description: |-
+                            The amount of time, in seconds, during which no response from a target means
+                            a failed health check.
+                          format: int64
+                          maximum: 120
+                          minimum: 2
+                          type: integer
+                        unhealthyThresholdCount:
+                          description: |-
+                            The number of consecutive health check failures required before considering
+                            a target unhealthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                      type: object
                     healthCheckProtocol:
                       description: |-
                         HealthCheckProtocol sets the protocol type for ELB health check target
@@ -9709,6 +10010,15 @@ objects:
                       description: PlacementGroupName specifies the name of the placement
                         group in which to launch the instance.
                       type: string
+                    placementGroupPartition:
+                      description: |-
+                        PlacementGroupPartition is the partition number within the placement group in which to launch the instance.
+                        This value is only valid if the placement group, referred in `PlacementGroupName`, was created with
+                        strategy set to partition.
+                      format: int64
+                      maximum: 7
+                      minimum: 1
+                      type: integer
                     privateDnsName:
                       description: PrivateDNSName is the options for the instance
                         hostname.
@@ -9733,6 +10043,10 @@ objects:
                     privateIp:
                       description: The private IPv4 address assigned to the instance.
                       type: string
+                    publicIPOnLaunch:
+                      description: PublicIPOnLaunch is the option to associate a public
+                        IP on instance launch
+                      type: boolean
                     publicIp:
                       description: The public IPv4 address assigned to the instance,
                         if applicable.
@@ -9953,6 +10267,7 @@ objects:
                                   name:
                                     description: Name of the TargetGroup. Must be
                                       unique over the same group of listeners.
+                                    maxLength: 32
                                     type: string
                                   port:
                                     description: Port is the exposed port
@@ -9986,6 +10301,9 @@ objects:
                                         format: int64
                                         type: integer
                                       timeoutSeconds:
+                                        format: int64
+                                        type: integer
+                                      unhealthyThresholdCount:
                                         format: int64
                                         type: integer
                                     type: object
@@ -10169,6 +10487,7 @@ objects:
                                   name:
                                     description: Name of the TargetGroup. Must be
                                       unique over the same group of listeners.
+                                    maxLength: 32
                                     type: string
                                   port:
                                     description: Port is the exposed port
@@ -10202,6 +10521,9 @@ objects:
                                         format: int64
                                         type: integer
                                       timeoutSeconds:
+                                        format: int64
+                                        type: integer
+                                      unhealthyThresholdCount:
                                         format: int64
                                         type: integer
                                     type: object
@@ -10719,6 +11041,8 @@ objects:
               description: AWSClusterTemplateSpec defines the desired state of AWSClusterTemplate.
               properties:
                 template:
+                  description: AWSClusterTemplateResource defines the desired state
+                    of AWSClusterTemplate.
                   properties:
                     metadata:
                       description: |-
@@ -11147,6 +11471,8 @@ objects:
               description: AWSClusterTemplateSpec defines the desired state of AWSClusterTemplate.
               properties:
                 template:
+                  description: AWSClusterTemplateResource defines the desired state
+                    of AWSClusterTemplateResource.
                   properties:
                     metadata:
                       description: |-
@@ -11245,6 +11571,63 @@ objects:
                                   AdditionalListenerSpec defines the desired state of an
                                   additional listener on an AWS load balancer.
                                 properties:
+                                  healthCheck:
+                                    description: HealthCheck sets the optional custom
+                                      health check configuration to the API target
+                                      group.
+                                    properties:
+                                      intervalSeconds:
+                                        description: |-
+                                          The approximate amount of time, in seconds, between health checks of an individual
+                                          target.
+                                        format: int64
+                                        maximum: 300
+                                        minimum: 5
+                                        type: integer
+                                      path:
+                                        description: |-
+                                          The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                          otherwise the path will be ignored.
+                                        type: string
+                                      port:
+                                        description: |-
+                                          The port the load balancer uses when performing health checks for additional target groups. When
+                                          not specified this value will be set for the same of listener port.
+                                        type: string
+                                      protocol:
+                                        description: |-
+                                          The protocol to use to health check connect with the target. When not specified the Protocol
+                                          will be the same of the listener.
+                                        enum:
+                                        - TCP
+                                        - HTTP
+                                        - HTTPS
+                                        type: string
+                                      thresholdCount:
+                                        description: |-
+                                          The number of consecutive health check successes required before considering
+                                          a target healthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                      timeoutSeconds:
+                                        description: |-
+                                          The amount of time, in seconds, during which no response from a target means
+                                          a failed health check.
+                                        format: int64
+                                        maximum: 120
+                                        minimum: 2
+                                        type: integer
+                                      unhealthyThresholdCount:
+                                        description: |-
+                                          The number of consecutive health check failures required before considering
+                                          a target unhealthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                    type: object
                                   port:
                                     description: Port sets the port for the additional
                                       listener.
@@ -11292,6 +11675,43 @@ objects:
                                 DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                                 file of each instance. This is by default, false.
                               type: boolean
+                            healthCheck:
+                              description: HealthCheck sets custom health check configuration
+                                to the API target group.
+                              properties:
+                                intervalSeconds:
+                                  description: |-
+                                    The approximate amount of time, in seconds, between health checks of an individual
+                                    target.
+                                  format: int64
+                                  maximum: 300
+                                  minimum: 5
+                                  type: integer
+                                thresholdCount:
+                                  description: |-
+                                    The number of consecutive health check successes required before considering
+                                    a target healthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                                timeoutSeconds:
+                                  description: |-
+                                    The amount of time, in seconds, during which no response from a target means
+                                    a failed health check.
+                                  format: int64
+                                  maximum: 120
+                                  minimum: 2
+                                  type: integer
+                                unhealthyThresholdCount:
+                                  description: |-
+                                    The number of consecutive health check failures required before considering
+                                    a target unhealthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                              type: object
                             healthCheckProtocol:
                               description: |-
                                 HealthCheckProtocol sets the protocol type for ELB health check target
@@ -11633,6 +12053,15 @@ objects:
                                       NatGatewayID is the NAT gateway id associated with the subnet.
                                       Ignored unless the subnet is managed by the provider, in which case this is set on the public subnet where the NAT gateway resides. It is then used to determine routes for private subnets in the same AZ as the public subnet.
                                     type: string
+                                  parentZoneName:
+                                    description: |-
+                                      ParentZoneName is the zone name where the current subnet's zone is tied when
+                                      the zone is a Local Zone.
+
+
+                                      The subnets in Local Zone or Wavelength Zone locations consume the ParentZoneName
+                                      to select the correct private route table to egress traffic to the internet.
+                                    type: string
                                   resourceID:
                                     description: |-
                                       ResourceID is the subnet identifier from AWS, READ ONLY.
@@ -11648,6 +12077,42 @@ objects:
                                     description: Tags is a collection of tags describing
                                       the resource.
                                     type: object
+                                  zoneType:
+                                    description: |-
+                                      ZoneType defines the type of the zone where the subnet is created.
+
+
+                                      The valid values are availability-zone, local-zone, and wavelength-zone.
+
+
+                                      Subnet with zone type availability-zone (regular) is always selected to create cluster
+                                      resources, like Load Balancers, NAT Gateways, Contol Plane nodes, etc.
+
+
+                                      Subnet with zone type local-zone or wavelength-zone is not eligible to automatically create
+                                      regular cluster resources.
+
+
+                                      The public subnet in availability-zone or local-zone is associated with regular public
+                                      route table with default route entry to a Internet Gateway.
+
+
+                                      The public subnet in wavelength-zone is associated with a carrier public
+                                      route table with default route entry to a Carrier Gateway.
+
+
+                                      The private subnet in the availability-zone is associated with a private route table with
+                                      the default route entry to a NAT Gateway created in that zone.
+
+
+                                      The private subnet in the local-zone or wavelength-zone is associated with a private route table with
+                                      the default route entry re-using the NAT Gateway in the Region (preferred from the
+                                      parent zone, the zone type availability-zone in the region, or first table available).
+                                    enum:
+                                    - availability-zone
+                                    - local-zone
+                                    - wavelength-zone
+                                    type: string
                                 required:
                                 - id
                                 type: object
@@ -11679,6 +12144,14 @@ objects:
                                     default subnets. Defaults to 3
                                   minimum: 1
                                   type: integer
+                                carrierGatewayId:
+                                  description: |-
+                                    CarrierGatewayID is the id of the internet gateway associated with the VPC,
+                                    for carrier network (Wavelength Zones).
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: Carrier Gateway ID must start with 'cagw-'
+                                    rule: self.startsWith('cagw-')
                                 cidrBlock:
                                   description: |-
                                     CidrBlock is the CIDR block to be used when the provider creates a managed VPC.
@@ -11802,6 +12275,11 @@ objects:
                             (https://coreos.github.io/ignition/) for bootstrapping (requires
                             BootstrapFormatIgnition feature flag to be enabled).
                           properties:
+                            bestEffortDeleteObjects:
+                              description: BestEffortDeleteObjects defines whether
+                                access/permission errors during object deletion should
+                                be ignored.
+                              type: boolean
                             controlPlaneIAMInstanceProfile:
                               description: |-
                                 ControlPlaneIAMInstanceProfile is a name of the IAMInstanceProfile, which will be allowed
@@ -11851,6 +12329,63 @@ objects:
                                   AdditionalListenerSpec defines the desired state of an
                                   additional listener on an AWS load balancer.
                                 properties:
+                                  healthCheck:
+                                    description: HealthCheck sets the optional custom
+                                      health check configuration to the API target
+                                      group.
+                                    properties:
+                                      intervalSeconds:
+                                        description: |-
+                                          The approximate amount of time, in seconds, between health checks of an individual
+                                          target.
+                                        format: int64
+                                        maximum: 300
+                                        minimum: 5
+                                        type: integer
+                                      path:
+                                        description: |-
+                                          The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                          otherwise the path will be ignored.
+                                        type: string
+                                      port:
+                                        description: |-
+                                          The port the load balancer uses when performing health checks for additional target groups. When
+                                          not specified this value will be set for the same of listener port.
+                                        type: string
+                                      protocol:
+                                        description: |-
+                                          The protocol to use to health check connect with the target. When not specified the Protocol
+                                          will be the same of the listener.
+                                        enum:
+                                        - TCP
+                                        - HTTP
+                                        - HTTPS
+                                        type: string
+                                      thresholdCount:
+                                        description: |-
+                                          The number of consecutive health check successes required before considering
+                                          a target healthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                      timeoutSeconds:
+                                        description: |-
+                                          The amount of time, in seconds, during which no response from a target means
+                                          a failed health check.
+                                        format: int64
+                                        maximum: 120
+                                        minimum: 2
+                                        type: integer
+                                      unhealthyThresholdCount:
+                                        description: |-
+                                          The number of consecutive health check failures required before considering
+                                          a target unhealthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                    type: object
                                   port:
                                     description: Port sets the port for the additional
                                       listener.
@@ -11898,6 +12433,43 @@ objects:
                                 DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                                 file of each instance. This is by default, false.
                               type: boolean
+                            healthCheck:
+                              description: HealthCheck sets custom health check configuration
+                                to the API target group.
+                              properties:
+                                intervalSeconds:
+                                  description: |-
+                                    The approximate amount of time, in seconds, between health checks of an individual
+                                    target.
+                                  format: int64
+                                  maximum: 300
+                                  minimum: 5
+                                  type: integer
+                                thresholdCount:
+                                  description: |-
+                                    The number of consecutive health check successes required before considering
+                                    a target healthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                                timeoutSeconds:
+                                  description: |-
+                                    The amount of time, in seconds, during which no response from a target means
+                                    a failed health check.
+                                  format: int64
+                                  maximum: 120
+                                  minimum: 2
+                                  type: integer
+                                unhealthyThresholdCount:
+                                  description: |-
+                                    The number of consecutive health check failures required before considering
+                                    a target unhealthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                              type: object
                             healthCheckProtocol:
                               description: |-
                                 HealthCheckProtocol sets the protocol type for ELB health check target
@@ -14284,6 +14856,47 @@ objects:
                   description: Ignition defined options related to the bootstrapping
                     systems where Ignition is used.
                   properties:
+                    proxy:
+                      description: |-
+                        Proxy defines proxy settings for Ignition.
+                        Only valid for Ignition versions 3.1 and above.
+                      properties:
+                        httpProxy:
+                          description: |-
+                            HTTPProxy is the HTTP proxy to use for Ignition.
+                            A single URL that specifies the proxy server to use for HTTP and HTTPS requests,
+                            unless overridden by the HTTPSProxy or NoProxy options.
+                          type: string
+                        httpsProxy:
+                          description: |-
+                            HTTPSProxy is the HTTPS proxy to use for Ignition.
+                            A single URL that specifies the proxy server to use for HTTPS requests,
+                            unless overridden by the NoProxy option.
+                          type: string
+                        noProxy:
+                          description: |-
+                            NoProxy is the list of domains to not proxy for Ignition.
+                            Specifies a list of strings to hosts that should be excluded from proxying.
+
+
+                            Each value is represented by:
+                            - An IP address prefix (1.2.3.4)
+                            - An IP address prefix in CIDR notation (1.2.3.4/8)
+                            - A domain name
+                              - A domain name matches that name and all subdomains
+                              - A domain name with a leading . matches subdomains only
+                            - A special DNS label (*), indicates that no proxying should be done
+
+
+                            An IP address prefix and domain name can also include a literal port number (1.2.3.4:80).
+                          items:
+                            description: IgnitionNoProxy defines the list of domains
+                              to not proxy for Ignition.
+                            maxLength: 2048
+                            type: string
+                          maxItems: 64
+                          type: array
+                      type: object
                     storageType:
                       default: ClusterObjectStore
                       description: |-
@@ -14308,6 +14921,24 @@ objects:
                       - ClusterObjectStore
                       - UnencryptedUserData
                       type: string
+                    tls:
+                      description: |-
+                        TLS defines TLS settings for Ignition.
+                        Only valid for Ignition versions 3.1 and above.
+                      properties:
+                        certificateAuthorities:
+                          description: |-
+                            CASources defines the list of certificate authorities to use for Ignition.
+                            The value is the certificate bundle (in PEM format). The bundle can contain multiple concatenated certificates.
+                            Supported schemes are http, https, tftp, s3, arn, gs, and `data` (RFC 2397) URL scheme.
+                          items:
+                            description: IgnitionCASource defines the source of the
+                              certificate authority to use for Ignition.
+                            maxLength: 65536
+                            type: string
+                          maxItems: 64
+                          type: array
+                      type: object
                     version:
                       default: "2.3"
                       description: Version defines which version of Ignition will
@@ -14477,6 +15108,15 @@ objects:
                   description: PlacementGroupName specifies the name of the placement
                     group in which to launch the instance.
                   type: string
+                placementGroupPartition:
+                  description: |-
+                    PlacementGroupPartition is the partition number within the placement group in which to launch the instance.
+                    This value is only valid if the placement group, referred in `PlacementGroupName`, was created with
+                    strategy set to partition.
+                  format: int64
+                  maximum: 7
+                  minimum: 1
+                  type: integer
                 privateDnsName:
                   description: PrivateDNSName is the options for the instance hostname.
                   properties:
@@ -15352,6 +15992,47 @@ objects:
                           description: Ignition defined options related to the bootstrapping
                             systems where Ignition is used.
                           properties:
+                            proxy:
+                              description: |-
+                                Proxy defines proxy settings for Ignition.
+                                Only valid for Ignition versions 3.1 and above.
+                              properties:
+                                httpProxy:
+                                  description: |-
+                                    HTTPProxy is the HTTP proxy to use for Ignition.
+                                    A single URL that specifies the proxy server to use for HTTP and HTTPS requests,
+                                    unless overridden by the HTTPSProxy or NoProxy options.
+                                  type: string
+                                httpsProxy:
+                                  description: |-
+                                    HTTPSProxy is the HTTPS proxy to use for Ignition.
+                                    A single URL that specifies the proxy server to use for HTTPS requests,
+                                    unless overridden by the NoProxy option.
+                                  type: string
+                                noProxy:
+                                  description: |-
+                                    NoProxy is the list of domains to not proxy for Ignition.
+                                    Specifies a list of strings to hosts that should be excluded from proxying.
+
+
+                                    Each value is represented by:
+                                    - An IP address prefix (1.2.3.4)
+                                    - An IP address prefix in CIDR notation (1.2.3.4/8)
+                                    - A domain name
+                                      - A domain name matches that name and all subdomains
+                                      - A domain name with a leading . matches subdomains only
+                                    - A special DNS label (*), indicates that no proxying should be done
+
+
+                                    An IP address prefix and domain name can also include a literal port number (1.2.3.4:80).
+                                  items:
+                                    description: IgnitionNoProxy defines the list
+                                      of domains to not proxy for Ignition.
+                                    maxLength: 2048
+                                    type: string
+                                  maxItems: 64
+                                  type: array
+                              type: object
                             storageType:
                               default: ClusterObjectStore
                               description: |-
@@ -15376,6 +16057,24 @@ objects:
                               - ClusterObjectStore
                               - UnencryptedUserData
                               type: string
+                            tls:
+                              description: |-
+                                TLS defines TLS settings for Ignition.
+                                Only valid for Ignition versions 3.1 and above.
+                              properties:
+                                certificateAuthorities:
+                                  description: |-
+                                    CASources defines the list of certificate authorities to use for Ignition.
+                                    The value is the certificate bundle (in PEM format). The bundle can contain multiple concatenated certificates.
+                                    Supported schemes are http, https, tftp, s3, arn, gs, and `data` (RFC 2397) URL scheme.
+                                  items:
+                                    description: IgnitionCASource defines the source
+                                      of the certificate authority to use for Ignition.
+                                    maxLength: 65536
+                                    type: string
+                                  maxItems: 64
+                                  type: array
+                              type: object
                             version:
                               default: "2.3"
                               description: Version defines which version of Ignition
@@ -15547,6 +16246,15 @@ objects:
                           description: PlacementGroupName specifies the name of the
                             placement group in which to launch the instance.
                           type: string
+                        placementGroupPartition:
+                          description: |-
+                            PlacementGroupPartition is the partition number within the placement group in which to launch the instance.
+                            This value is only valid if the placement group, referred in `PlacementGroupName`, was created with
+                            strategy set to partition.
+                          format: int64
+                          maximum: 7
+                          minimum: 1
+                          type: integer
                         privateDnsName:
                           description: PrivateDNSName is the options for the instance
                             hostname.
@@ -16954,6 +17662,7 @@ objects:
       name: v1beta2
       schema:
         openAPIV3Schema:
+          description: ROSACluster is the Schema for the ROSAClusters API.
           properties:
             apiVersion:
               description: |-
@@ -16973,6 +17682,7 @@ objects:
             metadata:
               type: object
             spec:
+              description: ROSAClusterSpec defines the desired state of ROSACluster.
               properties:
                 controlPlaneEndpoint:
                   description: ControlPlaneEndpoint represents the endpoint used to
@@ -16991,7 +17701,7 @@ objects:
                   type: object
               type: object
             status:
-              description: ROSAClusterStatus defines the observed state of ROSACluster
+              description: ROSAClusterStatus defines the observed state of ROSACluster.
               properties:
                 failureDomains:
                   additionalProperties:
@@ -17083,6 +17793,19 @@ objects:
             spec:
               description: RosaMachinePoolSpec defines the desired state of RosaMachinePool.
               properties:
+                additionalSecurityGroups:
+                  description: |-
+                    AdditionalSecurityGroups is an optional set of security groups to associate
+                    with all node instances of the machine pool.
+                  items:
+                    type: string
+                  type: array
+                additionalTags:
+                  additionalProperties:
+                    type: string
+                  description: AdditionalTags are user-defined tags to be added on
+                    the underlying EC2 instances associated with this machine pool.
+                  type: object
                 autoRepair:
                   default: false
                   description: |-
@@ -17114,6 +17837,16 @@ objects:
                     type: string
                   description: Labels specifies labels for the Kubernetes node objects
                   type: object
+                nodeDrainGracePeriod:
+                  description: |-
+                    NodeDrainGracePeriod is grace period for how long Pod Disruption Budget-protected workloads will be
+                    respected during upgrades. After this grace period, any workloads protected by Pod Disruption
+                    Budgets that have not been successfully drained from a node will be forcibly evicted.
+
+
+                    Valid values are from 0 to 1 week(10080m|168h) .
+                    0 or empty value means that the MachinePool can be drained without any time limitation.
+                  type: string
                 nodePoolName:
                   description: |-
                     NodePoolName specifies the name of the nodepool in Rosa
@@ -17132,15 +17865,50 @@ objects:
                   type: array
                 subnet:
                   type: string
+                  x-kubernetes-validations:
+                  - message: subnet is immutable
+                    rule: self == oldSelf
+                taints:
+                  description: Taints specifies the taints to apply to the nodes of
+                    the machine pool
+                  items:
+                    description: RosaTaint represents a taint to be applied to a node.
+                    properties:
+                      effect:
+                        description: |-
+                          The effect of the taint on pods that do not tolerate the taint.
+                          Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                        enum:
+                        - NoSchedule
+                        - PreferNoSchedule
+                        - NoExecute
+                        type: string
+                      key:
+                        description: The taint key to be applied to a node.
+                        type: string
+                      value:
+                        description: The taint value corresponding to the taint key.
+                        pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                        type: string
+                    required:
+                    - effect
+                    - key
+                    type: object
+                  type: array
+                tuningConfigs:
+                  description: |-
+                    TuningConfigs specifies the names of the tuning configs to be applied to this MachinePool.
+                    Tuning configs must already exist.
+                  items:
+                    type: string
+                  type: array
                 version:
                   description: |-
-                    Version specifies the penshift version of the nodes associated with this machinepool.
+                    Version specifies the OpenShift version of the nodes associated with this machinepool.
                     ROSAControlPlane version is used if not set.
                   type: string
-                  x-kubernetes-validations:
-                  - message: version must be a valid semantic version
-                    rule: self.matches('^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$')
               required:
+              - instanceType
               - nodePoolName
               type: object
             status:
@@ -17251,7 +18019,7 @@ objects:
     scope: Namespaced
     versions:
     - additionalPrinterColumns:
-      - description: Type of Azure Identity
+      - description: Type of AzureClusterIdentity
         jsonPath: .spec.type
         name: Type
         type: string
@@ -17775,6 +18543,7 @@ objects:
                               - node
                               - control-plane
                               - bastion
+                              - all
                               type: string
                             routeTable:
                               description: RouteTable defines the route table that
@@ -18524,6 +19293,7 @@ objects:
                             - node
                             - control-plane
                             - bastion
+                            - all
                             type: string
                           routeTable:
                             description: RouteTable defines the route table that should
@@ -19134,6 +19904,7 @@ objects:
                                       - node
                                       - control-plane
                                       - bastion
+                                      - all
                                       type: string
                                     securityGroup:
                                       description: SecurityGroup defines the NSG (network
@@ -19634,6 +20405,7 @@ objects:
                                     - node
                                     - control-plane
                                     - bastion
+                                    - all
                                     type: string
                                   securityGroup:
                                     description: SecurityGroup defines the NSG (network
@@ -19912,8 +20684,16 @@ objects:
     scope: Namespaced
     versions:
     - additionalPrinterColumns:
+      - description: Cluster to which this AzureMachine belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        priority: 1
+        type: string
       - jsonPath: .status.conditions[?(@.type=='Ready')].status
         name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+        name: Severity
         type: string
       - jsonPath: .status.conditions[?(@.type=='Ready')].reason
         name: Reason
@@ -19925,11 +20705,6 @@ objects:
       - description: Azure VM provisioning state
         jsonPath: .status.vmState
         name: State
-        type: string
-      - description: Cluster to which this AzureMachine belongs
-        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
-        name: Cluster
-        priority: 1
         type: string
       - description: Machine object to which this AzureMachine belongs
         jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name
@@ -20002,6 +20777,11 @@ objects:
                   description: AllocatePublicIP allows the ability to create dynamic
                     public ips for machines where this value is true.
                   type: boolean
+                capacityReservationGroupID:
+                  description: |-
+                    CapacityReservationGroupID specifies the capacity reservation group resource id that should be
+                    used for allocating the virtual machine.
+                  type: string
                 dataDisks:
                   description: DataDisk specifies the parameters that are used to
                     add one or more data disks to the machine
@@ -20883,6 +21663,11 @@ objects:
                           description: AllocatePublicIP allows the ability to create
                             dynamic public ips for machines where this value is true.
                           type: boolean
+                        capacityReservationGroupID:
+                          description: |-
+                            CapacityReservationGroupID specifies the capacity reservation group resource id that should be
+                            used for allocating the virtual machine.
+                          type: string
                         dataDisks:
                           description: DataDisk specifies the parameters that are
                             used to add one or more data disks to the machine
@@ -21515,7 +22300,19 @@ objects:
       singular: azuremanagedcluster
     scope: Namespaced
     versions:
-    - name: v1beta1
+    - additionalPrinterColumns:
+      - description: Cluster to which this AzureManagedCluster belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - jsonPath: .status.ready
+        name: Ready
+        type: string
+      - description: Time duration since creation of this AzureManagedCluster
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: AzureManagedCluster is the Schema for the azuremanagedclusters
@@ -21545,6 +22342,8 @@ objects:
                   description: |-
                     ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
                     Immutable, populated by the AKS API at create.
+                    Because this field is programmatically set by CAPZ after resource creation, we define it as +optional
+                    in the API schema to permit resource admission.
                   properties:
                     host:
                       description: The hostname on which the API server is serving.
@@ -21667,7 +22466,29 @@ objects:
       singular: azuremanagedcontrolplane
     scope: Namespaced
     versions:
-    - name: v1beta1
+    - additionalPrinterColumns:
+      - description: Cluster to which this AzureManagedControlPlane belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+        name: Severity
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+        name: Reason
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].message
+        name: Message
+        priority: 1
+        type: string
+      - description: Time duration since creation of this AzureManagedControlPlane
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: AzureManagedControlPlane is the Schema for the azuremanagedcontrolplanes
@@ -21762,9 +22583,29 @@ objects:
                     privateDNSZone:
                       description: PrivateDNSZone enables private dns zone mode for
                         private cluster.
+                      type: string
+                  type: object
+                asoManagedClusterPatches:
+                  description: |-
+                    ASOManagedClusterPatches defines JSON merge patches to be applied to the generated ASO ManagedCluster resource.
+                    WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                    otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                    operation is possible.
+                  items:
+                    type: string
+                  type: array
+                autoUpgradeProfile:
+                  description: AutoUpgradeProfile defines the auto upgrade configuration.
+                  properties:
+                    upgradeChannel:
+                      description: UpgradeChannel determines the type of upgrade channel
+                        for automatically upgrading the cluster.
                       enum:
-                      - System
-                      - None
+                      - node-image
+                      - none
+                      - patch
+                      - rapid
+                      - stable
                       type: string
                   type: object
                 autoscalerProfile:
@@ -21927,6 +22768,114 @@ objects:
                     It must be within the Kubernetes service address range specified in serviceCidr.
                     Immutable.
                   type: string
+                enablePreviewFeatures:
+                  description: EnablePreviewFeatures enables preview features for
+                    the cluster.
+                  type: boolean
+                extensions:
+                  description: Extensions is a list of AKS extensions to be installed
+                    on the cluster.
+                  items:
+                    description: |-
+                      AKSExtension represents the configuration for an AKS cluster extension.
+                      See also [AKS doc].
+
+
+                      [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/cluster-extensions
+                    properties:
+                      aksAssignedIdentityType:
+                        description: AKSAssignedIdentityType is the type of the AKS
+                          assigned identity.
+                        enum:
+                        - SystemAssigned
+                        - UserAssigned
+                        type: string
+                      autoUpgradeMinorVersion:
+                        default: true
+                        description: AutoUpgradeMinorVersion is a flag to note if
+                          this extension participates in auto upgrade of minor version,
+                          or not.
+                        type: boolean
+                      configurationSettings:
+                        additionalProperties:
+                          type: string
+                        description: ConfigurationSettings are the name-value pairs
+                          for configuring this extension.
+                        type: object
+                      extensionType:
+                        description: |-
+                          ExtensionType is the type of the Extension of which this resource is an instance.
+                          It must be one of the Extension Types registered with Microsoft.KubernetesConfiguration by the Extension publisher.
+                        type: string
+                      identity:
+                        description: Identity is the identity type of the Extension
+                          resource in an AKS cluster.
+                        enum:
+                        - SystemAssigned
+                        type: string
+                      name:
+                        description: Name is the name of the extension.
+                        type: string
+                      plan:
+                        description: Plan is the plan of the extension.
+                        properties:
+                          name:
+                            description: Name is the user-defined name of the 3rd
+                              Party Artifact that is being procured.
+                            type: string
+                          product:
+                            description: Product is the name of the 3rd Party artifact
+                              that is being procured.
+                            type: string
+                          promotionCode:
+                            description: PromotionCode is a publisher-provided promotion
+                              code as provisioned in Data Market for the said product/artifact.
+                            type: string
+                          publisher:
+                            description: Publisher is the name of the publisher of
+                              the 3rd Party Artifact that is being bought.
+                            type: string
+                          version:
+                            description: Version is the version of the plan.
+                            type: string
+                        type: object
+                      releaseTrain:
+                        description: |-
+                          ReleaseTrain is the release train this extension participates in for auto-upgrade (e.g. Stable, Preview, etc.)
+                          This is only used if autoUpgradeMinorVersion is ‘true’.
+                        type: string
+                      scope:
+                        description: Scope is the scope at which this extension is
+                          enabled.
+                        properties:
+                          releaseNamespace:
+                            description: |-
+                              ReleaseNamespace is the namespace where the extension Release must be placed, for a Cluster-scoped extension.
+                              Required for Cluster-scoped extensions.
+                            type: string
+                          scopeType:
+                            description: ScopeType is the scope of the extension.
+                              It can be either Cluster or Namespace, but not both.
+                            enum:
+                            - Cluster
+                            - Namespace
+                            type: string
+                          targetNamespace:
+                            description: |-
+                              TargetNamespace is the namespace where the extension will be created for a Namespace-scoped extension.
+                              Required for Namespace-scoped extensions.
+                            type: string
+                        required:
+                        - scopeType
+                        type: object
+                      version:
+                        description: Version is the version of the extension.
+                        type: string
+                    required:
+                    - extensionType
+                    - name
+                    type: object
+                  type: array
                 fleetsMember:
                   description: |-
                     FleetsMember is the spec for the fleet this cluster is a member of.
@@ -22093,6 +23042,13 @@ objects:
                     For the AzureManagedControlPlaneTemplate, this field is used
                     only to fulfill the CAPI contract.
                   type: object
+                networkDataplane:
+                  description: NetworkDataplane is the dataplane used for building
+                    the Kubernetes network.
+                  enum:
+                  - azure
+                  - cilium
+                  type: string
                 networkPlugin:
                   description: NetworkPlugin used for building Kubernetes network.
                   enum:
@@ -22112,6 +23068,7 @@ objects:
                   enum:
                   - azure
                   - calico
+                  - cilium
                   type: string
                 nodeResourceGroupName:
                   description: |-
@@ -22141,6 +23098,89 @@ objects:
                     ResourceGroupName is the name of the Azure resource group for this AKS Cluster.
                     Immutable.
                   type: string
+                securityProfile:
+                  description: SecurityProfile defines the security profile for cluster.
+                  properties:
+                    azureKeyVaultKms:
+                      description: AzureKeyVaultKms defines Azure Key Vault Management
+                        Services Profile for the security profile.
+                      properties:
+                        enabled:
+                          description: Enabled enables the Azure Key Vault key management
+                            service. The default is false.
+                          type: boolean
+                        keyID:
+                          description: |-
+                            KeyID defines the Identifier of Azure Key Vault key.
+                            When Azure Key Vault key management service is enabled, this field is required and must be a valid key identifier.
+                          type: string
+                        keyVaultNetworkAccess:
+                          default: Public
+                          description: |-
+                            KeyVaultNetworkAccess defines the network access of key vault.
+                            The possible values are Public and Private.
+                            Public means the key vault allows public access from all networks.
+                            Private means the key vault disables public access and enables private link. The default value is Public.
+                          type: string
+                        keyVaultResourceID:
+                          description: KeyVaultResourceID is the Resource ID of key
+                            vault. When keyVaultNetworkAccess is Private, this field
+                            is required and must be a valid resource ID.
+                          type: string
+                      required:
+                      - enabled
+                      - keyID
+                      type: object
+                    defender:
+                      description: Defender settings for the security profile.
+                      properties:
+                        logAnalyticsWorkspaceResourceID:
+                          description: |-
+                            LogAnalyticsWorkspaceResourceID is the ID of the Log Analytics workspace that has to be associated with Microsoft Defender.
+                            When Microsoft Defender is enabled, this field is required and must be a valid workspace resource ID.
+                          type: string
+                        securityMonitoring:
+                          description: SecurityMonitoring profile defines the Microsoft
+                            Defender threat detection for Cloud settings for the security
+                            profile.
+                          properties:
+                            enabled:
+                              description: Enabled enables Defender threat detection
+                              type: boolean
+                          required:
+                          - enabled
+                          type: object
+                      required:
+                      - logAnalyticsWorkspaceResourceID
+                      - securityMonitoring
+                      type: object
+                    imageCleaner:
+                      description: ImageCleaner settings for the security profile.
+                      properties:
+                        enabled:
+                          description: Enabled enables the Image Cleaner on AKS cluster.
+                          type: boolean
+                        intervalHours:
+                          description: IntervalHours defines Image Cleaner scanning
+                            interval in hours. Default value is 24 hours.
+                          maximum: 2160
+                          minimum: 24
+                          type: integer
+                      required:
+                      - enabled
+                      type: object
+                    workloadIdentity:
+                      description: Workloadidentity enables Kubernetes applications
+                        to access Azure cloud resources securely with Azure AD. Ensure
+                        to enable OIDC issuer while enabling Workload Identity
+                      properties:
+                        enabled:
+                          description: Enabled enables the workload identity.
+                          type: boolean
+                      required:
+                      - enabled
+                      type: object
+                  type: object
                 sku:
                   description: SKU is the SKU of the AKS to be provisioned.
                   properties:
@@ -22175,6 +23215,7 @@ objects:
                     cidrBlock:
                       type: string
                     name:
+                      description: Name is the name of the virtual network.
                       type: string
                     resourceGroup:
                       description: ResourceGroup is the name of the Azure resource
@@ -22307,6 +23348,11 @@ objects:
               description: AzureManagedControlPlaneStatus defines the observed state
                 of AzureManagedControlPlane.
               properties:
+                autoUpgradeVersion:
+                  description: AutoUpgradeVersion is the Kubernetes version populated
+                    after auto-upgrade based on the upgrade channel.
+                  minLength: 2
+                  type: string
                 conditions:
                   description: Conditions defines current service state of the AzureManagedControlPlane.
                   items:
@@ -22552,9 +23598,30 @@ objects:
                             privateDNSZone:
                               description: PrivateDNSZone enables private dns zone
                                 mode for private cluster.
+                              type: string
+                          type: object
+                        asoManagedClusterPatches:
+                          description: |-
+                            ASOManagedClusterPatches defines JSON merge patches to be applied to the generated ASO ManagedCluster resource.
+                            WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                            otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                            operation is possible.
+                          items:
+                            type: string
+                          type: array
+                        autoUpgradeProfile:
+                          description: AutoUpgradeProfile defines the auto upgrade
+                            configuration.
+                          properties:
+                            upgradeChannel:
+                              description: UpgradeChannel determines the type of upgrade
+                                channel for automatically upgrading the cluster.
                               enum:
-                              - System
-                              - None
+                              - node-image
+                              - none
+                              - patch
+                              - rapid
+                              - stable
                               type: string
                           type: object
                         autoscalerProfile:
@@ -22702,6 +23769,116 @@ objects:
                             It must be within the Kubernetes service address range specified in serviceCidr.
                             Immutable.
                           type: string
+                        enablePreviewFeatures:
+                          description: EnablePreviewFeatures enables preview features
+                            for the cluster.
+                          type: boolean
+                        extensions:
+                          description: Extensions is a list of AKS extensions to be
+                            installed on the cluster.
+                          items:
+                            description: |-
+                              AKSExtension represents the configuration for an AKS cluster extension.
+                              See also [AKS doc].
+
+
+                              [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/cluster-extensions
+                            properties:
+                              aksAssignedIdentityType:
+                                description: AKSAssignedIdentityType is the type of
+                                  the AKS assigned identity.
+                                enum:
+                                - SystemAssigned
+                                - UserAssigned
+                                type: string
+                              autoUpgradeMinorVersion:
+                                default: true
+                                description: AutoUpgradeMinorVersion is a flag to
+                                  note if this extension participates in auto upgrade
+                                  of minor version, or not.
+                                type: boolean
+                              configurationSettings:
+                                additionalProperties:
+                                  type: string
+                                description: ConfigurationSettings are the name-value
+                                  pairs for configuring this extension.
+                                type: object
+                              extensionType:
+                                description: |-
+                                  ExtensionType is the type of the Extension of which this resource is an instance.
+                                  It must be one of the Extension Types registered with Microsoft.KubernetesConfiguration by the Extension publisher.
+                                type: string
+                              identity:
+                                description: Identity is the identity type of the
+                                  Extension resource in an AKS cluster.
+                                enum:
+                                - SystemAssigned
+                                type: string
+                              name:
+                                description: Name is the name of the extension.
+                                type: string
+                              plan:
+                                description: Plan is the plan of the extension.
+                                properties:
+                                  name:
+                                    description: Name is the user-defined name of
+                                      the 3rd Party Artifact that is being procured.
+                                    type: string
+                                  product:
+                                    description: Product is the name of the 3rd Party
+                                      artifact that is being procured.
+                                    type: string
+                                  promotionCode:
+                                    description: PromotionCode is a publisher-provided
+                                      promotion code as provisioned in Data Market
+                                      for the said product/artifact.
+                                    type: string
+                                  publisher:
+                                    description: Publisher is the name of the publisher
+                                      of the 3rd Party Artifact that is being bought.
+                                    type: string
+                                  version:
+                                    description: Version is the version of the plan.
+                                    type: string
+                                type: object
+                              releaseTrain:
+                                description: |-
+                                  ReleaseTrain is the release train this extension participates in for auto-upgrade (e.g. Stable, Preview, etc.)
+                                  This is only used if autoUpgradeMinorVersion is ‘true’.
+                                type: string
+                              scope:
+                                description: Scope is the scope at which this extension
+                                  is enabled.
+                                properties:
+                                  releaseNamespace:
+                                    description: |-
+                                      ReleaseNamespace is the namespace where the extension Release must be placed, for a Cluster-scoped extension.
+                                      Required for Cluster-scoped extensions.
+                                    type: string
+                                  scopeType:
+                                    description: ScopeType is the scope of the extension.
+                                      It can be either Cluster or Namespace, but not
+                                      both.
+                                    enum:
+                                    - Cluster
+                                    - Namespace
+                                    type: string
+                                  targetNamespace:
+                                    description: |-
+                                      TargetNamespace is the namespace where the extension will be created for a Namespace-scoped extension.
+                                      Required for Namespace-scoped extensions.
+                                    type: string
+                                required:
+                                - scopeType
+                                type: object
+                              version:
+                                description: Version is the version of the extension.
+                                type: string
+                            required:
+                            - extensionType
+                            - name
+                            type: object
+                          type: array
                         fleetsMember:
                           description: |-
                             FleetsMember is the spec for the fleet this cluster is a member of.
@@ -22868,6 +24045,13 @@ objects:
                             For the AzureManagedControlPlaneTemplate, this field is used
                             only to fulfill the CAPI contract.
                           type: object
+                        networkDataplane:
+                          description: NetworkDataplane is the dataplane used for
+                            building the Kubernetes network.
+                          enum:
+                          - azure
+                          - cilium
+                          type: string
                         networkPlugin:
                           description: NetworkPlugin used for building Kubernetes
                             network.
@@ -22889,6 +24073,7 @@ objects:
                           enum:
                           - azure
                           - calico
+                          - cilium
                           type: string
                         oidcIssuerProfile:
                           description: OIDCIssuerProfile is the OIDC issuer profile
@@ -22906,6 +24091,101 @@ objects:
                           - userAssignedNATGateway
                           - userDefinedRouting
                           type: string
+                        resourceGroupName:
+                          description: |-
+                            ResourceGroupName is the name of the Azure resource group for this AKS Cluster.
+                            Immutable.
+                          type: string
+                        securityProfile:
+                          description: SecurityProfile defines the security profile
+                            for cluster.
+                          properties:
+                            azureKeyVaultKms:
+                              description: AzureKeyVaultKms defines Azure Key Vault
+                                Management Services Profile for the security profile.
+                              properties:
+                                enabled:
+                                  description: Enabled enables the Azure Key Vault
+                                    key management service. The default is false.
+                                  type: boolean
+                                keyID:
+                                  description: |-
+                                    KeyID defines the Identifier of Azure Key Vault key.
+                                    When Azure Key Vault key management service is enabled, this field is required and must be a valid key identifier.
+                                  type: string
+                                keyVaultNetworkAccess:
+                                  default: Public
+                                  description: |-
+                                    KeyVaultNetworkAccess defines the network access of key vault.
+                                    The possible values are Public and Private.
+                                    Public means the key vault allows public access from all networks.
+                                    Private means the key vault disables public access and enables private link. The default value is Public.
+                                  type: string
+                                keyVaultResourceID:
+                                  description: KeyVaultResourceID is the Resource
+                                    ID of key vault. When keyVaultNetworkAccess is
+                                    Private, this field is required and must be a
+                                    valid resource ID.
+                                  type: string
+                              required:
+                              - enabled
+                              - keyID
+                              type: object
+                            defender:
+                              description: Defender settings for the security profile.
+                              properties:
+                                logAnalyticsWorkspaceResourceID:
+                                  description: |-
+                                    LogAnalyticsWorkspaceResourceID is the ID of the Log Analytics workspace that has to be associated with Microsoft Defender.
+                                    When Microsoft Defender is enabled, this field is required and must be a valid workspace resource ID.
+                                  type: string
+                                securityMonitoring:
+                                  description: SecurityMonitoring profile defines
+                                    the Microsoft Defender threat detection for Cloud
+                                    settings for the security profile.
+                                  properties:
+                                    enabled:
+                                      description: Enabled enables Defender threat
+                                        detection
+                                      type: boolean
+                                  required:
+                                  - enabled
+                                  type: object
+                              required:
+                              - logAnalyticsWorkspaceResourceID
+                              - securityMonitoring
+                              type: object
+                            imageCleaner:
+                              description: ImageCleaner settings for the security
+                                profile.
+                              properties:
+                                enabled:
+                                  description: Enabled enables the Image Cleaner on
+                                    AKS cluster.
+                                  type: boolean
+                                intervalHours:
+                                  description: IntervalHours defines Image Cleaner
+                                    scanning interval in hours. Default value is 24
+                                    hours.
+                                  maximum: 2160
+                                  minimum: 24
+                                  type: integer
+                              required:
+                              - enabled
+                              type: object
+                            workloadIdentity:
+                              description: Workloadidentity enables Kubernetes applications
+                                to access Azure cloud resources securely with Azure
+                                AD. Ensure to enable OIDC issuer while enabling Workload
+                                Identity
+                              properties:
+                                enabled:
+                                  description: Enabled enables the workload identity.
+                                  type: boolean
+                              required:
+                              - enabled
+                              type: object
+                          type: object
                         sku:
                           description: SKU is the SKU of the AKS to be provisioned.
                           properties:
@@ -22935,6 +24215,7 @@ objects:
                             cidrBlock:
                               type: string
                             name:
+                              description: Name is the name of the virtual network.
                               type: string
                             resourceGroup:
                               description: ResourceGroup is the name of the Azure
@@ -23064,6 +24345,7 @@ objects:
                       required:
                       - identityRef
                       - location
+                      - resourceGroupName
                       - version
                       type: object
                   required:
@@ -23102,6 +24384,27 @@ objects:
     scope: Namespaced
     versions:
     - additionalPrinterColumns:
+      - description: Cluster to which this AzureManagedMachinePool belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+        name: Severity
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+        name: Reason
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].message
+        name: Message
+        priority: 1
+        type: string
+      - description: Time duration since creation of this AzureManagedMachinePool
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
       - jsonPath: .spec.mode
         name: Mode
         type: string
@@ -23139,6 +24442,15 @@ objects:
                     AdditionalTags is an optional set of tags to add to Azure resources managed by the
                     Azure provider, in addition to the ones added by default.
                   type: object
+                asoManagedClustersAgentPoolPatches:
+                  description: |-
+                    ASOManagedClustersAgentPoolPatches defines JSON merge patches to be applied to the generated ASO ManagedClustersAgentPool resource.
+                    WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                    otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                    operation is possible.
+                  items:
+                    type: string
+                  type: array
                 availabilityZones:
                   description: |-
                     AvailabilityZones - Availability zones for nodes. Must use VirtualMachineScaleSets AgentPoolType.
@@ -23866,6 +25178,15 @@ objects:
                             AdditionalTags is an optional set of tags to add to Azure resources managed by the
                             Azure provider, in addition to the ones added by default.
                           type: object
+                        asoManagedClustersAgentPoolPatches:
+                          description: |-
+                            ASOManagedClustersAgentPoolPatches defines JSON merge patches to be applied to the generated ASO ManagedClustersAgentPool resource.
+                            WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                            otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                            operation is possible.
+                          items:
+                            type: string
+                          type: array
                         availabilityZones:
                           description: |-
                             AvailabilityZones - Availability zones for nodes. Must use VirtualMachineScaleSets AgentPoolType.
