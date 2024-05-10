@@ -18,7 +18,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
-					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+					Credentials: awsutil.AWSCredentialsOptions{
 						AWSCredentialsFile: "",
 					},
 				},
@@ -29,7 +29,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
-					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+					Credentials: awsutil.AWSCredentialsOptions{
 						AWSCredentialsFile: "asdf",
 					},
 				},
@@ -41,7 +41,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			options := test.inputOptions
-			err := ValidateCredentialInfo(options.AWSPlatform.AWSCredentialsOpts, options.CredentialSecretName, options.Namespace)
+			err := ValidateCredentialInfo(options.AWSPlatform.Credentials, options.CredentialSecretName, options.Namespace)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

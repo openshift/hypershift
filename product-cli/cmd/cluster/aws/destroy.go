@@ -27,10 +27,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credentials: pull-secret and base-domain. The secret must exist in the supplied \"--namespace\".")
 	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
-	opts.AWSPlatform.AWSCredentialsOpts.BindProductFlags(cmd.Flags())
+	opts.AWSPlatform.Credentials.BindProductFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := hypershiftaws.ValidateCredentialInfo(opts.AWSPlatform.AWSCredentialsOpts, opts.CredentialSecretName, opts.Namespace)
+		err := hypershiftaws.ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return err
 		}

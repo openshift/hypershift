@@ -17,7 +17,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/conditions"
@@ -1485,7 +1484,7 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 	})
 }
 
-func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	g := NewWithT(t)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
@@ -1530,7 +1529,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	}
 }
 
-func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	g := NewWithT(t)
 
 	_, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)

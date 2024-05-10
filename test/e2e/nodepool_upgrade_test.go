@@ -12,7 +12,6 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
@@ -33,7 +32,7 @@ type NodePoolUpgradeTest struct {
 
 	hostedCluster        *hyperv1.HostedCluster
 	hostedClusterClient  crclient.Client
-	clusterOpts          core.CreateOptions
+	clusterOpts          e2eutil.PlatformAgnosticOptions
 	upgradeType          hyperv1.UpgradeType
 	previousReleaseImage string
 	latestReleaseImage   string
@@ -83,7 +82,7 @@ func (ipu *NodePoolInPlaceUpgradeTestManifest) BuildNodePoolManifest(defaultNode
 }
 
 func NewNodePoolUpgradeTest(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster,
-	hcClient crclient.Client, clusterOpts core.CreateOptions, previousReleaseImage, latestReleaseImage string) *NodePoolUpgradeTest {
+	hcClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions, previousReleaseImage, latestReleaseImage string) *NodePoolUpgradeTest {
 	return &NodePoolUpgradeTest{
 		ctx:                  ctx,
 		hostedCluster:        hostedCluster,

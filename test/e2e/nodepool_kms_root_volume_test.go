@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,13 +21,13 @@ import (
 type KMSRootVolumeTest struct {
 	DummyInfraSetup
 	hostedCluster *hyperv1.HostedCluster
-	clusterOpts   core.CreateOptions
+	clusterOpts   e2eutil.PlatformAgnosticOptions
 	ctx           context.Context
 
 	EncryptionKey string
 }
 
-func NewKMSRootVolumeTest(ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterOpts core.CreateOptions) *KMSRootVolumeTest {
+func NewKMSRootVolumeTest(ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterOpts e2eutil.PlatformAgnosticOptions) *KMSRootVolumeTest {
 	return &KMSRootVolumeTest{
 		hostedCluster: hostedCluster,
 		clusterOpts:   clusterOpts,
@@ -44,7 +43,7 @@ func (k *KMSRootVolumeTest) Setup(t *testing.T) {
 	t.Log("Starting test KMSRootVolumeTest")
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
 		t.Fatalf("failed to retrieve kms key arn")
 	}
@@ -86,7 +85,7 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	instanceID := providerID[strings.LastIndex(providerID, "/")+1:]
 	t.Logf("instanceID: %s", instanceID)
 
-	ec2client := ec2Client(k.clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
+	ec2client := ec2Client(k.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
 	output, err := ec2client.DescribeVolumesWithContext(k.ctx, &ec2.DescribeVolumesInput{
 		Filters: []*ec2.Filter{
 			{

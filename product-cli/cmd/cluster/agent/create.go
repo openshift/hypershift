@@ -15,15 +15,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.AgentPlatform = core.AgentPlatformCreateOptions{
-		APIServerAddress:   "",
-		AgentNamespace:     "",
-		AgentLabelSelector: "",
-	}
-
-	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset.")
-	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
-	cmd.Flags().StringVar(&opts.AgentPlatform.AgentLabelSelector, "agentLabelSelector", opts.AgentPlatform.AgentLabelSelector, "A LabelSelector used to select Agents according to their labels, in JSON format")
+	agentOpts := &agent.CreateOptions{}
+	agent.BindOptions(agentOpts, cmd.Flags())
 	_ = cmd.MarkFlagRequired("agent-namespace")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -35,7 +28,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := createCluster(ctx, opts); err != nil {
+		if err := agent.CreateCluster(ctx, opts, agentOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -43,8 +36,4 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	return cmd
-}
-
-func createCluster(ctx context.Context, opts *core.CreateOptions) error {
-	return core.CreateCluster(ctx, opts, agent.ApplyPlatformSpecificsValues)
 }
