@@ -19,14 +19,13 @@ type AzurePlatformCreateOptions struct {
 	DiskEncryptionSetID    string
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
-	SubnetName             string
+	SubnetID               string
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	platformOpts := &AzurePlatformCreateOptions{
 		InstanceType: "Standard_D4s_v4",
 		DiskSize:     120,
-		SubnetName:   "default",
 	}
 
 	cmd := &cobra.Command{
@@ -42,7 +41,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().StringVar(&platformOpts.DiskEncryptionSetID, "disk-encryption-set-id", platformOpts.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 	cmd.Flags().BoolVar(&platformOpts.EnableEphemeralOSDisk, "enable-ephemeral-disk", platformOpts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the NodePool will be setup with ephemeral OS disks")
 	cmd.Flags().StringVar(&platformOpts.DiskStorageAccountType, "disk-storage-account-type", platformOpts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
-	cmd.Flags().StringVar(&platformOpts.SubnetName, "subnet-name", platformOpts.SubnetName, "The subnet name where the VMs will be placed.")
+	cmd.Flags().StringVar(&platformOpts.SubnetID, "subnet-id", platformOpts.SubnetID, "The subnet id where the VMs will be placed.")
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
@@ -63,7 +62,7 @@ func (o *AzurePlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool 
 		DiskEncryptionSetID:    o.DiskEncryptionSetID,
 		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
 		DiskStorageAccountType: o.DiskStorageAccountType,
-		SubnetName:             o.SubnetName,
+		SubnetID:               o.SubnetID,
 	}
 	return nil
 }

@@ -721,7 +721,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					DiskEncryptionSetID:    o.Azure.DiskEncryptionSetID,
 					EnableEphemeralOSDisk:  o.Azure.EnableEphemeralOSDisk,
 					DiskStorageAccountType: o.Azure.DiskStorageAccountType,
-					SubnetName:             o.Azure.SubnetName,
+					SubnetID:               o.Azure.SubnetID,
 				}
 				nodePools = append(nodePools, nodePool)
 			}
@@ -738,7 +738,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				DiskEncryptionSetID:    o.Azure.DiskEncryptionSetID,
 				EnableEphemeralOSDisk:  o.Azure.EnableEphemeralOSDisk,
 				DiskStorageAccountType: o.Azure.DiskStorageAccountType,
-				SubnetName:             o.Azure.SubnetName,
+				SubnetID:               o.Azure.SubnetID,
 			}
 			nodePools = append(nodePools, nodePool)
 		}

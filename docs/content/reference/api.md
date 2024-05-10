@@ -2343,6 +2343,7 @@ string
 </em>
 </td>
 <td>
+<p>VMSize is the Azure VM instance type to use for the nodes being created in the nodepool.</p>
 </td>
 </tr>
 <tr>
@@ -2354,8 +2355,11 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
-subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd</p>
+<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
+is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
+The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
+Hosted Cluster specification respectively, hcluster.Spec.Platform.Azure.SubscriptionID and
+hcluster.Spec.Platform.Azure.ResourceGroupName.</p>
 </td>
 </tr>
 <tr>
@@ -2398,8 +2402,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>AvailabilityZone of the nodepool. Must not be specified for clusters
-in a location that does not support AvailabilityZone.</p>
+<p>AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+for clusters in a location that does not support AvailabilityZone.</p>
 </td>
 </tr>
 <tr>
@@ -2411,7 +2415,10 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.</p>
+<p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.</p>
 </td>
 </tr>
 <tr>
@@ -2423,18 +2430,21 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>EnableEphemeralOSDisk enables ephemeral OS disk</p>
+<p>EnableEphemeralOSDisk is a flag when set to true, will enable ephemeral OS disk.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>subnetName</code></br>
+<code>subnetID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>SubnetName is the name of the subnet to place the Nodes into</p>
+<p>SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+hcluster.Spec.Platform.Azure.SubscriptionID.</p>
 </td>
 </tr>
 </tbody>

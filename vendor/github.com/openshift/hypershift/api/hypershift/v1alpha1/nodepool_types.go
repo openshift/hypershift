@@ -901,7 +901,7 @@ type AzureNodePoolPlatform struct {
 	//
 	// +kubebuilder:default:=default
 	// +kubebuilder:validation:Required
-	SubnetName string `json:"subnetName"`
+	SubnetID string `json:"subnetID"`
 }
 
 // We define our own condition type since metav1.Condition has validation
