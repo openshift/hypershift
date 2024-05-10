@@ -95,7 +95,7 @@ func validateNonRequestServingSizeConfig(sizes []schedulingv1alpha1.SizeConfigur
 	nilCount := 0
 	setCount := 0
 	for _, size := range sizes {
-		if size.Management.NonRequestServingNodesPerZone == nil {
+		if size.Management == nil || size.Management.NonRequestServingNodesPerZone == nil {
 			nilCount++
 		} else {
 			setCount++
