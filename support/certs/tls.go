@@ -5,7 +5,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1"
+	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -131,7 +131,7 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 		return nil, errors.Errorf("certificate subject is not set, or invalid")
 	}
 
-	cert.SubjectKeyId, err = rsaPubKeySHA1Hash(&key.PublicKey)
+	cert.SubjectKeyId, err = rsaPubKeySHA512Hash(&key.PublicKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to set subject key identifier")
 	}
@@ -170,7 +170,7 @@ func signedCertificate(
 		BasicConstraintsValid: true,
 	}
 
-	certTmpl.SubjectKeyId, err = rsaPubKeySHA1Hash(&key.PublicKey)
+	certTmpl.SubjectKeyId, err = rsaPubKeySHA512Hash(&key.PublicKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to set subject key identifier")
 	}
@@ -182,8 +182,8 @@ func signedCertificate(
 	return x509.ParseCertificate(certBytes)
 }
 
-func rsaPubKeySHA1Hash(pub *rsa.PublicKey) ([]byte, error) {
-	hash := sha1.New()
+func rsaPubKeySHA512Hash(pub *rsa.PublicKey) ([]byte, error) {
+	hash := sha512.New()
 	if _, err := hash.Write(pub.N.Bytes()); err != nil {
 		return nil, err
 	}
