@@ -300,6 +300,9 @@ const (
 	// ClusterSizeOverrideAnnotation allows overriding the value of the size label regardless of the number
 	// of workers associated with the HostedCluster. The value should be the desired size label.
 	ClusterSizeOverrideAnnotation = "hypershift.openshift.io/cluster-size-override"
+
+	// KubeAPIServerVerbosityLevelAnnotation allows specifing the log verbosity of kube-apiserver.
+	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
