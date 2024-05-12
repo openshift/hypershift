@@ -197,7 +197,7 @@ type AzurePlatformOptions struct {
 	ResourceGroupName      string
 	VnetID                 string
 	DiskEncryptionSetID    string
-	NetworkSecurityGroup   string
+	NetworkSecurityGroupID string
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
