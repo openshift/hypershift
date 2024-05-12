@@ -171,6 +171,7 @@ objects:
     resources:
     - events
     - configmaps
+    - configmaps/finalizers
     - persistentvolumeclaims
     - pods
     - pods/log
