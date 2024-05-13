@@ -14,6 +14,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(aws.NewCreateIAMCommand())
+	cmd.AddCommand(aws.NewCreateCLIRoleCommand())
 
 	return cmd
 }

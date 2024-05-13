@@ -2,6 +2,7 @@ package aws
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"text/template"
@@ -543,46 +544,14 @@ func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI) (string
 
 // CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
 func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string) (string, error) {
-	roleName := fmt.Sprintf("%s-%s", o.InfraID, name)
-	role, err := existingRole(client, roleName)
-	var arn string
-	if err != nil {
-		return "", err
-	}
-	if role == nil {
-		output, err := client.CreateRole(&iam.CreateRoleInput{
-			AssumeRolePolicyDocument: aws.String(trustPolicy),
-			RoleName:                 aws.String(roleName),
-			Tags:                     o.additionalIAMTags,
-		})
-		if err != nil {
-			return "", err
-		}
-		log.Log.Info("Created role", "name", roleName)
-		arn = *output.Role.Arn
-	} else {
-		log.Log.Info("Found existing role", "name", roleName)
-		arn = *role.Arn
+	createIAMRoleOpts := CreateIAMRoleOptions{
+		RoleName:          fmt.Sprintf("%s-%s", o.InfraID, name),
+		TrustPolicy:       trustPolicy,
+		PermissionsPolicy: permPolicy,
+		additionalIAMTags: o.additionalIAMTags,
 	}
 
-	rolePolicyName := roleName
-	hasPolicy, err := existingRolePolicy(client, roleName, rolePolicyName)
-	if err != nil {
-		return "", err
-	}
-	if !hasPolicy {
-		_, err = client.PutRolePolicy(&iam.PutRolePolicyInput{
-			PolicyName:     aws.String(rolePolicyName),
-			PolicyDocument: aws.String(permPolicy),
-			RoleName:       aws.String(roleName),
-		})
-		if err != nil {
-			return "", err
-		}
-		log.Log.Info("Created role policy", "name", rolePolicyName)
-	}
-
-	return arn, nil
+	return createIAMRoleOpts.CreateRoleWithInlinePolicy(context.Background(), client)
 }
 
 func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string) error {
@@ -684,6 +653,51 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		log.Log.Info("Created role policy", "name", rolePolicyName)
 	}
 	return nil
+}
+
+type CreateIAMRoleOptions struct {
+	RoleName          string
+	TrustPolicy       string
+	PermissionsPolicy string
+
+	additionalIAMTags []*iam.Tag
+}
+
+func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, client iamiface.IAMAPI) (string, error) {
+	role, err := existingRole(client, o.RoleName)
+	var arn string
+	if err != nil {
+		return "", err
+	}
+	if role == nil {
+		output, err := client.CreateRoleWithContext(ctx, &iam.CreateRoleInput{
+			AssumeRolePolicyDocument: aws.String(o.TrustPolicy),
+			RoleName:                 aws.String(o.RoleName),
+			Tags:                     o.additionalIAMTags,
+		})
+		if err != nil {
+			return "", err
+		}
+		log.Log.Info("Created role", "name", o.RoleName)
+		arn = *output.Role.Arn
+	} else {
+		log.Log.Info("Found existing role", "name", o.RoleName)
+		arn = *role.Arn
+	}
+
+	rolePolicyName := o.RoleName
+
+	_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+		PolicyName:     aws.String(rolePolicyName),
+		PolicyDocument: aws.String(o.PermissionsPolicy),
+		RoleName:       aws.String(o.RoleName),
+	})
+	if err != nil {
+		return "", err
+	}
+	log.Log.Info("Added/Updated role policy", "name", rolePolicyName)
+
+	return arn, nil
 }
 
 func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
