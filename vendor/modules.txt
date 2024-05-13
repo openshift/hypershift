@@ -25,7 +25,7 @@ github.com/Azure/azure-sdk-for-go/sdk/azcore/tracing
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/azidentity
 github.com/Azure/azure-sdk-for-go/sdk/azidentity/internal
-# github.com/Azure/azure-sdk-for-go/sdk/internal v1.6.0
+# github.com/Azure/azure-sdk-for-go/sdk/internal v1.7.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/internal/diag
 github.com/Azure/azure-sdk-for-go/sdk/internal/errorinfo
@@ -34,12 +34,9 @@ github.com/Azure/azure-sdk-for-go/sdk/internal/log
 github.com/Azure/azure-sdk-for-go/sdk/internal/poller
 github.com/Azure/azure-sdk-for-go/sdk/internal/temporal
 github.com/Azure/azure-sdk-for-go/sdk/internal/uuid
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization v1.0.0
+# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3 v3.0.0-beta.2
 ## explicit; go 1.18
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
-## explicit; go 1.18
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.7.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5
@@ -49,9 +46,9 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork v1.1.0
+# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5 v5.1.1
 ## explicit; go 1.18
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns v1.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns
@@ -116,7 +113,7 @@ github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/version
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/public
-# github.com/IBM-Cloud/power-go-client v1.5.9
+# github.com/IBM-Cloud/power-go-client v1.6.0
 ## explicit; go 1.20
 github.com/IBM-Cloud/power-go-client/clients/instance
 github.com/IBM-Cloud/power-go-client/errors
@@ -166,10 +163,10 @@ github.com/IBM-Cloud/power-go-client/power/client/storage_types
 github.com/IBM-Cloud/power-go-client/power/client/swagger_spec
 github.com/IBM-Cloud/power-go-client/power/client/workspaces
 github.com/IBM-Cloud/power-go-client/power/models
-# github.com/IBM/go-sdk-core/v5 v5.15.3
+# github.com/IBM/go-sdk-core/v5 v5.17.2
 ## explicit; go 1.20
 github.com/IBM/go-sdk-core/v5/core
-# github.com/IBM/ibm-cos-sdk-go v1.10.2
+# github.com/IBM/ibm-cos-sdk-go v1.10.3
 ## explicit; go 1.19
 github.com/IBM/ibm-cos-sdk-go/aws
 github.com/IBM/ibm-cos-sdk-go/aws/arn
@@ -219,7 +216,7 @@ github.com/IBM/networking-go-sdk/directlinkv1
 github.com/IBM/networking-go-sdk/dnsrecordsv1
 github.com/IBM/networking-go-sdk/transitgatewayapisv1
 github.com/IBM/networking-go-sdk/zonesv1
-# github.com/IBM/platform-services-go-sdk v0.59.3
+# github.com/IBM/platform-services-go-sdk v0.60.0
 ## explicit; go 1.20
 github.com/IBM/platform-services-go-sdk/common
 github.com/IBM/platform-services-go-sdk/globalcatalogv1
@@ -228,7 +225,7 @@ github.com/IBM/platform-services-go-sdk/iamidentityv1
 github.com/IBM/platform-services-go-sdk/iampolicymanagementv1
 github.com/IBM/platform-services-go-sdk/resourcecontrollerv2
 github.com/IBM/platform-services-go-sdk/resourcemanagerv2
-# github.com/IBM/vpc-go-sdk v0.48.0
+# github.com/IBM/vpc-go-sdk v0.50.0
 ## explicit; go 1.18
 github.com/IBM/vpc-go-sdk/common
 github.com/IBM/vpc-go-sdk/vpcv1
@@ -247,7 +244,7 @@ github.com/armon/go-socks5
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/aws/aws-sdk-go v1.51.17
+# github.com/aws/aws-sdk-go v1.52.6
 ## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
@@ -493,7 +490,7 @@ github.com/go-playground/locales/currency
 # github.com/go-playground/universal-translator v0.18.1
 ## explicit; go 1.18
 github.com/go-playground/universal-translator
-# github.com/go-playground/validator/v10 v10.17.0
+# github.com/go-playground/validator/v10 v10.19.0
 ## explicit; go 1.18
 github.com/go-playground/validator/v10
 # github.com/gobuffalo/flect v1.0.2
@@ -640,7 +637,7 @@ github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1
 ## explicit; go 1.11
 github.com/kylelemons/godebug/diff
 github.com/kylelemons/godebug/pretty
-# github.com/leodido/go-urn v1.3.0
+# github.com/leodido/go-urn v1.4.0
 ## explicit; go 1.18
 github.com/leodido/go-urn
 github.com/leodido/go-urn/scim/schema
@@ -965,7 +962,7 @@ github.com/xiang90/probing
 # github.com/xlab/treeprint v1.2.0
 ## explicit; go 1.13
 github.com/xlab/treeprint
-# go.etcd.io/bbolt v1.3.8
+# go.etcd.io/bbolt v1.3.9
 ## explicit; go 1.17
 go.etcd.io/bbolt
 # go.etcd.io/etcd/api/v3 v3.5.13
@@ -988,8 +985,8 @@ go.etcd.io/etcd/client/pkg/v3/testutil
 go.etcd.io/etcd/client/pkg/v3/tlsutil
 go.etcd.io/etcd/client/pkg/v3/transport
 go.etcd.io/etcd/client/pkg/v3/types
-# go.etcd.io/etcd/client/v2 v2.305.12
-## explicit; go 1.20
+# go.etcd.io/etcd/client/v2 v2.305.13
+## explicit; go 1.21
 go.etcd.io/etcd/client/v2
 # go.etcd.io/etcd/client/v3 v3.5.13
 ## explicit; go 1.21
@@ -1001,8 +998,8 @@ go.etcd.io/etcd/client/v3/internal/resolver
 go.etcd.io/etcd/client/v3/namespace
 go.etcd.io/etcd/client/v3/naming/endpoints
 go.etcd.io/etcd/client/v3/naming/endpoints/internal
-# go.etcd.io/etcd/pkg/v3 v3.5.12
-## explicit; go 1.20
+# go.etcd.io/etcd/pkg/v3 v3.5.13
+## explicit; go 1.21
 go.etcd.io/etcd/pkg/v3/adt
 go.etcd.io/etcd/pkg/v3/contention
 go.etcd.io/etcd/pkg/v3/cpuutil
@@ -1019,15 +1016,15 @@ go.etcd.io/etcd/pkg/v3/runtime
 go.etcd.io/etcd/pkg/v3/schedule
 go.etcd.io/etcd/pkg/v3/traceutil
 go.etcd.io/etcd/pkg/v3/wait
-# go.etcd.io/etcd/raft/v3 v3.5.12
-## explicit; go 1.20
+# go.etcd.io/etcd/raft/v3 v3.5.13
+## explicit; go 1.21
 go.etcd.io/etcd/raft/v3
 go.etcd.io/etcd/raft/v3/confchange
 go.etcd.io/etcd/raft/v3/quorum
 go.etcd.io/etcd/raft/v3/raftpb
 go.etcd.io/etcd/raft/v3/tracker
-# go.etcd.io/etcd/server/v3 v3.5.12
-## explicit; go 1.20
+# go.etcd.io/etcd/server/v3 v3.5.13
+## explicit; go 1.21
 go.etcd.io/etcd/server/v3/auth
 go.etcd.io/etcd/server/v3/config
 go.etcd.io/etcd/server/v3/datadir
@@ -1070,8 +1067,8 @@ go.etcd.io/etcd/server/v3/proxy/grpcproxy/cache
 go.etcd.io/etcd/server/v3/verify
 go.etcd.io/etcd/server/v3/wal
 go.etcd.io/etcd/server/v3/wal/walpb
-# go.etcd.io/etcd/tests/v3 v3.5.12
-## explicit; go 1.20
+# go.etcd.io/etcd/tests/v3 v3.5.13
+## explicit; go 1.21
 go.etcd.io/etcd/tests/v3/integration
 # go.mongodb.org/mongo-driver v1.14.0
 ## explicit; go 1.18
@@ -1169,7 +1166,7 @@ go.uber.org/zap/internal/ztest
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
 go.uber.org/zap/zaptest
-# golang.org/x/crypto v0.22.0
+# golang.org/x/crypto v0.23.0
 ## explicit; go 1.18
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
@@ -1199,7 +1196,7 @@ golang.org/x/exp/slices
 # golang.org/x/mod v0.17.0
 ## explicit; go 1.18
 golang.org/x/mod/semver
-# golang.org/x/net v0.24.0
+# golang.org/x/net v0.25.0
 ## explicit; go 1.18
 golang.org/x/net/context
 golang.org/x/net/html
@@ -1224,14 +1221,14 @@ golang.org/x/oauth2/internal
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.19.0
+# golang.org/x/sys v0.20.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.19.0
+# golang.org/x/term v0.20.0
 ## explicit; go 1.18
 golang.org/x/term
 # golang.org/x/text v0.15.0
