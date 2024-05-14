@@ -430,9 +430,14 @@ func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp 
 		}
 
 		// default to level of 2
-		kasVerbosityLevel := "-v2"
+		kasVerbosityLevel := "--v=2"
 		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
-			kasVerbosityLevel = fmt.Sprintf("--v=%s", hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation])
+			kasAnnotationValue := hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]
+			_, err := strconv.Atoi(kasAnnotationValue)
+			// ensure integer value in annotation
+			if err == nil {
+				kasVerbosityLevel = fmt.Sprintf("--v=%s", kasAnnotationValue)
+			}
 		}
 
 		c.Args = []string{
