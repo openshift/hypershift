@@ -14,6 +14,9 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,6 +35,73 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/infraid"
 )
+
+func DefaultOptions() *CreateOptions {
+	return &CreateOptions{
+		Namespace:                      "clusters",
+		Name:                           "example",
+		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
+		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
+		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
+		Log:                            log.Log,
+		Arch:                           "amd64",
+		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
+		NetworkType:                    string(hyperv1.OVNKubernetes),
+	}
+}
+
+// BindOptions binds options that should always be exposed to users in all CLIs
+func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+}
+
+func bindCoreOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
+	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
+	flags.StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
+	flags.StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specificed domain for services with publishing type LoadBalancer or Route.")
+	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenShiftSDN or Other.")
+	flags.StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
+	flags.StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
+	flags.StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
+	flags.BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
+	flags.StringVar(&opts.RenderInto, "render-into", opts.RenderInto, "Render output as YAML into this file instead of applying. If unset, YAML will be output to stdout.")
+	flags.StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
+	flags.StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
+	flags.StringVar(&opts.ImageContentSources, "image-content-sources", opts.ImageContentSources, "Path to a file with image content sources")
+	flags.Int32Var(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If 0 or greater, creates a nodepool with that many replicas; else if less than 0, does not create a nodepool.")
+	flags.DurationVar(&opts.NodeDrainTimeout, "node-drain-timeout", opts.NodeDrainTimeout, "The NodeDrainTimeout on any created NodePools")
+	flags.DurationVar(&opts.NodeVolumeDetachTimeout, "node-volume-detach-timeout", opts.NodeVolumeDetachTimeout, "The NodeVolumeDetachTimeout on any created NodePools")
+	flags.StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
+	flags.BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
+	flags.BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine autorepair with machine health checks")
+	flags.StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
+	flags.BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
+	flags.StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
+	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
+	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
+	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
+	flags.BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. Cannot be defined with service-cidr or cluster-cidr flag.")
+	flags.StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
+	flags.BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
+	flags.DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
+	flags.Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
+	flags.Var(&opts.OLMCatalogPlacement, "olm-catalog-placement", "The OLM Catalog Placement for the HostedCluster. Supported options: Management, Guest")
+	flags.BoolVar(&opts.OLMDisableDefaultSources, "olm-disable-default-sources", opts.OLMDisableDefaultSources, "Disables the OLM default catalog sources for the HostedCluster.")
+	flags.StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
+	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
+}
+
+// BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
+func BindDeveloperOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+
+	flags.StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "Override the default image used to deploy the control plane operator")
+	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4.15.0-0.nightly), this flag is ignored if release-image is set")
+
+	flags.StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
+}
 
 type CreateOptions struct {
 	AdditionalTrustBundle            string
