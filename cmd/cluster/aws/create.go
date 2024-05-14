@@ -327,7 +327,11 @@ func DefaultOptions() *CreateOptions {
 }
 
 func BindOptions(opts *CreateOptions, flags *flag.FlagSet) {
-	flags.StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
+	bindCoreOptions(opts, flags)
+	opts.Credentials.BindProductFlags(flags)
+}
+
+func bindCoreOptions(opts *CreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.Region, "region", opts.Region, "Region to use for AWS infrastructure.")
 	flags.StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availability zones in which NodePools will be created")
 	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
@@ -341,8 +345,13 @@ func BindOptions(opts *CreateOptions, flags *flag.FlagSet) {
 	flags.BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
-	flags.BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
+}
+
+func BindDeveloperOptions(opts *CreateOptions, flags *flag.FlagSet) {
+	bindCoreOptions(opts, flags)
+	flags.StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
+	flags.BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	opts.Credentials.BindFlags(flags)
 }
 
@@ -356,7 +365,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	awsOpts := DefaultOptions()
-	BindOptions(awsOpts, cmd.Flags())
+	BindDeveloperOptions(awsOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if opts.Timeout > 0 {
