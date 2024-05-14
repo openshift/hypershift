@@ -43,6 +43,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	}
 
 	args := []string{
+		"--expander=priority,least-waste",
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
