@@ -84,14 +84,6 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
-	if opts.AWSCredentialsFile == "" {
-		cmd.MarkFlagRequired("role-arn")
-		cmd.MarkFlagRequired("sts-creds")
-	}
-	if opts.RoleArn == "" && opts.StsCredentialsFile == "" {
-		cmd.MarkFlagRequired("aws-creds")
-	}
-
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("public-zone-id")
 	cmd.MarkFlagRequired("private-zone-id")
@@ -100,6 +92,10 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("oidc-bucket-region")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := util.ValidateAwsStsCredentialInfo(opts.AWSCredentialsFile, opts.StsCredentialsFile, opts.RoleArn)
+		if err != nil {
+			return err
+		}
 		client, err := util.GetClient()
 		if err != nil {
 			log.Log.Error(err, "failed to create client")

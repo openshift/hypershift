@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 func TestIsRequiredOption(t *testing.T) {
@@ -25,7 +26,7 @@ func TestIsRequiredOption(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := IsRequiredOption("", test.value)
+			err := util.IsRequiredOption("", test.value)
 			if test.expectedError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

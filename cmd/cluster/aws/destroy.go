@@ -21,7 +21,6 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	opts.AWSPlatform = core.AWSPlatformDestroyOptions{
 		AWSCredentialsFile: "",
-		RoleArn:            "",
 		StsCredentialsFile: "",
 		PreserveIAM:        false,
 		Region:             "us-east-1",
@@ -146,21 +145,25 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
 }
 
-// ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds is not empty; validates if
+// ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds or sts-creds mutually exclusive and are not empty; validates if
 // the credentials secret is not empty, that it can be retrieved.
 func ValidateCredentialInfo(opts *core.DestroyOptions) error {
 	if len(opts.CredentialSecretName) == 0 {
 		if opts.AWSPlatform.AWSCredentialsFile == "" {
-			if err := IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
+			if err := util.IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
 				return err
 			}
-			if err := IsRequiredOption("sts-creds", opts.AWSPlatform.StsCredentialsFile); err != nil {
+			if err := util.IsRequiredOption("sts-creds", opts.AWSPlatform.StsCredentialsFile); err != nil {
 				return err
 			}
-		} else {
-			if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+		}
+		if opts.AWSPlatform.RoleArn == "" && opts.AWSPlatform.StsCredentialsFile == "" {
+			if err := util.IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
 				return err
 			}
+		}
+		if opts.AWSPlatform.StsCredentialsFile != "" && opts.AWSPlatform.AWSCredentialsFile != "" {
+			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
 		}
 	} else {
 		// Check the secret exists now, otherwise stop

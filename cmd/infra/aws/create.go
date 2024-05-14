@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/openshift/hypershift/cmd/util"
 	"net"
 	"os"
 	"time"
@@ -104,17 +105,14 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 
 	cmd.MarkFlagRequired("infra-id")
-	if opts.RoleArn == "" {
-		cmd.MarkFlagRequired("aws-creds")
-	} else {
-		cmd.MarkFlagRequired("role-arn")
-		cmd.MarkFlagRequired("sts-creds")
-	}
-
 	cmd.MarkFlagRequired("base-domain")
 
 	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := util.ValidateAwsStsCredentialInfo(opts.AWSCredentialsFile, opts.StsCredentialsFile, opts.RoleArn)
+		if err != nil {
+			return err
+		}
 		if err := opts.Run(cmd.Context(), l); err != nil {
 			l.Error(err, "Failed to create infrastructure")
 			return err
@@ -157,6 +155,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	var awsSession *session.Session
 	if o.RoleArn != "" && o.StsCredentialsFile != "" {
 		var err error
+		//awsSession, err = awsutil.NewStsSession("cli-create-infra", o.StsCredentialsFile, o.RoleArn, o.AWSKey, o.AWSSecretKey,o.SessionToken, o.Region)
 		awsSession, err = awsutil.NewStsSession("cli-create-infra", o.StsCredentialsFile, o.RoleArn, o.Region)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create STS session: %w", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/openshift/hypershift/cmd/util"
 	"strings"
 	"time"
 
@@ -52,17 +53,13 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
 
-	if opts.AWSCredentialsFile == "" {
-		cmd.MarkFlagRequired("role-arn")
-		cmd.MarkFlagRequired("sts-creds")
-	}
-	if opts.RoleArn == "" && opts.StsCredentialsFile == "" {
-		cmd.MarkFlagRequired("aws-creds")
-	}
-
 	cmd.MarkFlagRequired("infra-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := util.ValidateAwsStsCredentialInfo(opts.AWSCredentialsFile, opts.StsCredentialsFile, opts.RoleArn)
+		if err != nil {
+			return err
+		}
 		if err := opts.DestroyIAM(cmd.Context()); err != nil {
 			return err
 		}
