@@ -248,32 +248,27 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	return nil
 }
 
-// IsRequiredOption returns a cobra style error message when the flag value is empty
-func IsRequiredOption(flag string, value string) error {
-	if len(value) == 0 {
-		return fmt.Errorf("required flag(s) \"%s\" not set", flag)
-	}
-	return nil
-}
-
 // ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
 func ValidateCreateCredentialInfo(opts *core.CreateOptions) error {
 	if len(opts.CredentialSecretName) == 0 {
 		if opts.AWSPlatform.AWSCredentialsFile == "" {
-			if err := IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
+			if err := util.IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
 				return err
 			}
-			if err := IsRequiredOption("sts-creds", opts.AWSPlatform.StsCredentialsFile); err != nil {
+			if err := util.IsRequiredOption("sts-creds", opts.AWSPlatform.StsCredentialsFile); err != nil {
 				return err
 			}
 		}
 		if opts.AWSPlatform.RoleArn == "" && opts.AWSPlatform.StsCredentialsFile == "" {
-			if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+			if err := util.IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
 				return err
 			}
 		}
-		if err := IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
+		if opts.AWSPlatform.StsCredentialsFile != "" && opts.AWSPlatform.AWSCredentialsFile != "" {
+			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
+		}
+		if err := util.IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
 			return err
 		}
 	} else {

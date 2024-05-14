@@ -1,7 +1,6 @@
 package util
 
 import (
-	"fmt"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"time"
 
@@ -34,11 +33,14 @@ func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *
 }
 
 func NewStsSession(agent, credentialsFile, roleArn, region string) (*session.Session, error) {
-	stsSessionOpts := session.Options{}
+	stsSessionOpts := session.Options{
+		SharedConfigFiles: []string{},
+		Config:            aws.Config{},
+		Profile:           "",
+	}
+
 	if credentialsFile != "" {
 		stsSessionOpts.SharedConfigFiles = append(stsSessionOpts.SharedConfigFiles, credentialsFile)
-	} else {
-		return nil, fmt.Errorf("STS credentials file is required")
 	}
 
 	mySession := session.Must(session.NewSessionWithOptions(stsSessionOpts))
@@ -60,9 +62,12 @@ func NewStsSession(agent, credentialsFile, roleArn, region string) (*session.Ses
 	)
 
 	awsSessionOpts := session.Options{
+		SharedConfigFiles: []string{},
 		Config: aws.Config{
 			Credentials: creds,
 		},
+		Profile:           "",
+		SharedConfigState: session.SharedConfigDisable,
 	}
 
 	if region != "" {

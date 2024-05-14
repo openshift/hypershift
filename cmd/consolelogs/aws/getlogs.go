@@ -55,16 +55,13 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", opts.OutputDir, "Directory where to place console logs (required)")
 
 	cmd.MarkFlagRequired("name")
-	if opts.AWSCredentialsFile == "" {
-		cmd.MarkFlagRequired("role-arn")
-		cmd.MarkFlagRequired("sts-creds")
-	}
-	if opts.RoleArn == "" && opts.StsCredentialsFile == "" {
-		cmd.MarkFlagRequired("aws-creds")
-	}
 	cmd.MarkFlagRequired("output-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := util.ValidateAwsStsCredentialInfo(opts.AWSCredentialsFile, opts.StsCredentialsFile, opts.RoleArn)
+		if err != nil {
+			return err
+		}
 		if err := opts.Run(cmd.Context()); err != nil {
 			log.Log.Error(err, "Failed to get console logs")
 			return err
