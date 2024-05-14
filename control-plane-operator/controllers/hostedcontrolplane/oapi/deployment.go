@@ -68,6 +68,12 @@ var (
 			oasAuditWebhookConfigFileVolume().Name: "/etc/kubernetes/auditwebhook",
 		},
 	}
+
+	additionalTrustBundleVolumeMount = util.PodVolumeMounts{
+		oasContainerMain().Name: {
+			additionalTrustBundleProjectedVolume().Name: "/etc/pki/tls/certs",
+		},
+	}
 )
 
 func openShiftAPIServerLabels() map[string]string {
@@ -77,7 +83,7 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, internalOAuthDisable bool, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, internalOAuthDisable bool, platformType hyperv1.PlatformType, hcpAdditionalTrustBundle *corev1.LocalObjectReference, clusterConf *hyperv1.ClusterConfiguration) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main OAS container
@@ -186,6 +192,33 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = ""
 	}
 
+	var additionalCAs []corev1.VolumeProjection
+
+	// if hostedCluster additionalTrustBundle is set, add it to the volumeProjection
+	if hcpAdditionalTrustBundle != nil {
+		additionalCAs = append(additionalCAs, corev1.VolumeProjection{
+			ConfigMap: &corev1.ConfigMapProjection{
+				LocalObjectReference: *hcpAdditionalTrustBundle,
+				Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "additional-ca-bundle.pem"}},
+			},
+		})
+	}
+
+	// if hostedCluster clusterConfiguration.AdditionalTrustedCA is set, add it to the volumeProjection
+	if clusterConf != nil && clusterConf.Image != nil && len(clusterConf.Image.AdditionalTrustedCA.Name) > 0 {
+		additionalCAs = append(additionalCAs, corev1.VolumeProjection{
+			ConfigMap: &corev1.ConfigMapProjection{
+				LocalObjectReference: corev1.LocalObjectReference{Name: clusterConf.Image.AdditionalTrustedCA.Name},
+			},
+		})
+	}
+
+	if len(additionalCAs) > 0 {
+		projVol := util.BuildProjectedVolume(additionalTrustBundleProjectedVolume(), additionalCAs, buildAdditionalTrustBundleProjectedVolume)
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, projVol)
+		additionalTrustBundleGeneratorContainer := util.FindContainer(oasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+		additionalTrustBundleGeneratorContainer.VolumeMounts = append(additionalTrustBundleGeneratorContainer.VolumeMounts, additionalTrustBundleVolumeMount.ContainerMounts(oasContainerMain().Name)...)
+	}
 	if auditWebhookRef != nil {
 		applyOASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
 	}
@@ -433,6 +466,18 @@ func serviceCASignerVolume() *corev1.Volume {
 func buildServiceCASignerVolume(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.ServiceServingCA("").Name
+}
+
+func additionalTrustBundleProjectedVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "additional-trust-bundle",
+	}
+}
+
+func buildAdditionalTrustBundleProjectedVolume(v *corev1.Volume, additionalCAs []corev1.VolumeProjection) {
+	v.Projected = &corev1.ProjectedVolumeSource{
+		Sources: additionalCAs,
+	}
 }
 
 func pullSecretVolume() *corev1.Volume {
