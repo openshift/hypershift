@@ -10,6 +10,11 @@ func BuildVolume(volume *corev1.Volume, buildFn func(*corev1.Volume)) corev1.Vol
 	return *volume
 }
 
+func BuildProjectedVolume(volume *corev1.Volume, volumeProjection []corev1.VolumeProjection, buildFn func(*corev1.Volume, []corev1.VolumeProjection)) corev1.Volume {
+	buildFn(volume, volumeProjection)
+	return *volume
+}
+
 func DeploymentAddTrustBundleVolume(trustBundleConfigMap *corev1.LocalObjectReference, deployment *appsv1.Deployment) {
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 		Name:      "trusted-ca",
