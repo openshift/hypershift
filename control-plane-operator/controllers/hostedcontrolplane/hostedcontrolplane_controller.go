@@ -2955,6 +2955,21 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 		return fmt.Errorf("failed to restart network node identity: %w", err)
 	}
 
+	// Clean up ovnkube-sbdb Route if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.OVNKubeSBDBRoute(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-sbdb route: %w", err)
+	}
+
+	// Clean up ovnkube-master-external Service if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterExternalService(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-master-external service: %w", err)
+	}
+
+	// Clean up ovnkube-master-internal Service if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterInternalService(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-master-internal service: %w", err)
+	}
+
 	return nil
 }
 

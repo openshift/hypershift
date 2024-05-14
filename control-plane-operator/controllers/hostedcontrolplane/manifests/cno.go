@@ -74,3 +74,21 @@ func OVNKubeSBDBRoute(namespace string) *routev1.Route {
 		},
 	}
 }
+
+func MasterExternalService(namespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "ovnkube-master-external",
+		},
+	}
+}
+
+func MasterInternalService(namespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "ovnkube-master-internal",
+		},
+	}
+}
