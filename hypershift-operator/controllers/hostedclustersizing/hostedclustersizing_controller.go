@@ -15,6 +15,7 @@ import (
 	hyperutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -218,6 +219,12 @@ func (r *reconciler) reconcile(
 		return nil, fmt.Errorf("failed to determine if HCCO reports node count: %w", err)
 	}
 
+	// Determine if the Kube API Server is available to determine if we can trust the node count from nodepool.status.replicas
+	// If the Kube API Server is not available, we cannot trust the node count from nodepool.status.replicas
+	// Ref: kubernetes-sigs/cluster-api#10195
+	kasAvailableCondition := meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hypershiftv1beta1.KubeAPIServerAvailable))
+	kasAvailable := kasAvailableCondition != nil && kasAvailableCondition.Status == metav1.ConditionTrue
+
 	// first, we figure out the node count for the hosted cluster
 	var nodeCount uint32
 	if hccoReportsNodeCount {
@@ -236,7 +243,18 @@ func (r *reconciler) reconcile(
 		}
 
 		for _, nodePool := range nodePools.Items {
-			nodeCount += uint32(nodePool.Status.Replicas)
+			var replicas uint32
+			// If autoscaling, the replicas should be returned from status
+			if nodePool.Spec.AutoScaling != nil {
+				// If the Kube API Server is not available, and we already have a size label, skip processing
+				if !kasAvailable && sizeClassLabelPresent {
+					return nil, nil
+				}
+				replicas = uint32(nodePool.Status.Replicas)
+			} else if nodePool.Spec.Replicas != nil {
+				replicas = uint32(*nodePool.Spec.Replicas)
+			}
+			nodeCount += replicas
 		}
 	}
 
