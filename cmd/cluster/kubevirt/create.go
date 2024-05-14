@@ -26,14 +26,24 @@ func DefaultOptions() *CreateOptions {
 }
 
 func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The API server address that should be used for components outside the control plane")
-	flags.StringVar(&opts.ServicePublishingStrategy, "service-publishing-strategy", opts.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
+	bindCoreOptions(opts, flags)
+	kubevirtnodepool.BindOptions(opts.NodePoolOpts, flags)
+}
+
+func bindCoreOptions(opts *CreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfraKubeConfigFile, "infra-kubeconfig-file", opts.InfraKubeConfigFile, "Path to a kubeconfig file of an external infra cluster to be used to create the guest clusters nodes onto")
 	flags.StringVar(&opts.InfraNamespace, "infra-namespace", opts.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
 	flags.StringArrayVar(&opts.InfraStorageClassMappings, "infra-storage-class-mapping", opts.InfraStorageClassMappings, "KubeVirt CSI mapping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
+}
+
+func BindDeveloperOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+
+	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The API server address that should be used for components outside the control plane")
+	flags.StringVar(&opts.ServicePublishingStrategy, "service-publishing-strategy", opts.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
 	flags.StringArrayVar(&opts.InfraVolumeSnapshotClassMappings, "infra-volumesnapshot-class-mapping", opts.InfraVolumeSnapshotClassMappings, "KubeVirt CSI mapping of an infra VolumeSnapshotClass to a guest cluster VolumeSnapshotCluster. Mapping is structured as <infra volume snapshot class>/<guest volume snapshot class>. Example, mapping the infra volume snapshot class ocs-storagecluster-rbd-snap to a guest volume snapshot class called rdb-snap. --infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
 
-	kubevirtnodepool.BindOptions(opts.NodePoolOpts, flags)
+	kubevirtnodepool.BindDeveloperOptions(opts.NodePoolOpts, flags)
 }
 
 type CreateOptions struct {
@@ -257,7 +267,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	kubevirtOpts := DefaultOptions()
-	BindOptions(kubevirtOpts, cmd.Flags())
+	BindDeveloperOptions(kubevirtOpts, cmd.Flags())
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

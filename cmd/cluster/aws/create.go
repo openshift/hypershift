@@ -180,8 +180,10 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.infra.MachineCIDR)}}
 	}
 
-	baseDomainPrefix := ptr.To("none")
-	if o.infra.BaseDomainPrefix != "" {
+	var baseDomainPrefix *string
+	if o.infra.BaseDomainPrefix == "none" {
+		baseDomainPrefix = ptr.To("")
+	} else if o.infra.BaseDomainPrefix != "" {
 		baseDomainPrefix = ptr.To(o.infra.BaseDomainPrefix)
 	}
 	cluster.Spec.DNS = hyperv1.DNSSpec{

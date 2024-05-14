@@ -31,19 +31,27 @@ func DefaultOptions() *KubevirtPlatformCreateOptions {
 }
 
 func BindOptions(opts *KubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+}
+
+func bindCoreOptions(opts *KubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Memory, "memory", opts.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
 	flags.Uint32Var(&opts.Cores, "cores", opts.Cores, "The number of cores inside the vmi, Must be a value greater or equal 1")
 	flags.StringVar(&opts.RootVolumeStorageClass, "root-volume-storage-class", opts.RootVolumeStorageClass, "The storage class to use for machines in the NodePool")
 	flags.Uint32Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume for machines in the NodePool in Gi")
 	flags.StringVar(&opts.RootVolumeAccessModes, "root-volume-access-modes", opts.RootVolumeAccessModes, "The access modes of the root volume to use for machines in the NodePool (comma-delimited list)")
 	flags.StringVar(&opts.RootVolumeVolumeMode, "root-volume-volume-mode", opts.RootVolumeVolumeMode, "The volume mode of the root volume to use for machines in the NodePool. Supported values are \"Block\", \"Filesystem\"")
-	flags.StringVar(&opts.ContainerDiskImage, "containerdisk", opts.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
 	flags.StringVar(&opts.CacheStrategyType, "root-volume-cache-strategy", opts.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 	flags.StringVar(&opts.NetworkInterfaceMultiQueue, "network-multiqueue", opts.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
 	flags.StringVar(&opts.QoSClass, "qos-class", opts.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
 	flags.StringArrayVar(&opts.AdditionalNetworks, "additional-network", opts.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
 	flags.BoolVar(opts.AttachDefaultNetwork, "attach-default-network", *opts.AttachDefaultNetwork, `Specify if the default pod network should be attached to the nodes. This can only be set if --additional-network is configured`)
 	flags.StringToStringVar(&opts.VmNodeSelector, "vm-node-selector", opts.VmNodeSelector, "A comma separated list of key=value pairs to use as the node selector for the KubeVirt VirtualMachines to be scheduled onto. (e.g. role=kubevirt,size=large)")
+}
+
+func BindDeveloperOptions(opts *KubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+	flags.StringVar(&opts.ContainerDiskImage, "containerdisk", opts.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
 }
 
 type KubevirtPlatformCreateOptions struct {
@@ -151,7 +159,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		Short:        "Creates basic functional NodePool resources for KubeVirt platform",
 		SilenceUsage: true,
 	}
-	BindOptions(platformOpts, cmd.Flags())
+	BindDeveloperOptions(platformOpts, cmd.Flags())
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
 	return cmd
