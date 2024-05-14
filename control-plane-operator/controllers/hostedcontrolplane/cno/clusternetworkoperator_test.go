@@ -7,10 +7,14 @@ import (
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestReconcileDeployment(t *testing.T) {
@@ -18,6 +22,7 @@ func TestReconcileDeployment(t *testing.T) {
 		name                        string
 		params                      Params
 		expectProxyAPIServerAddress bool
+		cnoResources                *corev1.ResourceRequirements
 	}{
 		{
 			name:                        "No private apiserver connectivity, proxy apiserver address is set",
@@ -26,6 +31,20 @@ func TestReconcileDeployment(t *testing.T) {
 		{
 			name:   "Private apiserver connectivity, proxy apiserver address is unset",
 			params: Params{IsPrivate: true},
+		},
+		{
+			name:                        "Preserve existing resources",
+			expectProxyAPIServerAddress: true,
+			cnoResources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("500Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1000m"),
+					corev1.ResourceMemory: resource.MustParse("1000Mi"),
+				},
+			},
 		},
 	}
 
@@ -36,6 +55,16 @@ func TestReconcileDeployment(t *testing.T) {
 			}
 
 			dep := &appsv1.Deployment{}
+
+			if tc.cnoResources != nil {
+				dep.Spec.Template.Spec.Containers = []corev1.Container{
+					{
+						Name:      operatorName,
+						Resources: *tc.cnoResources,
+					},
+				}
+			}
+
 			if err := ReconcileDeployment(dep, tc.params, hyperv1.NonePlatform); err != nil {
 				t.Fatalf("ReconcileDeployment: %v", err)
 			}
@@ -53,6 +82,13 @@ func TestReconcileDeployment(t *testing.T) {
 					strconv.FormatBool(tc.expectProxyAPIServerAddress),
 					strconv.FormatBool(hasProxyAPIServerAddress))
 			}
+
+			deploymentYaml, err := util.SerializeResource(dep, hyperapi.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			testutil.CompareWithFixture(t, deploymentYaml)
+
 		})
 	}
 }
