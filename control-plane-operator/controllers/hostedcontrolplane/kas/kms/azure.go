@@ -26,10 +26,6 @@ const (
 
 	azureKMSCredsFileKey          = "azure.json"
 	azureProviderConfigNamePrefix = "azure"
-
-	// https://github.com/Azure/kubernetes-kms
-	// TODO: get image from payload
-	azureKMSProviderImage = "mcr.microsoft.com/oss/azure/kms/keyvault:v0.5.0"
 )
 
 var (
@@ -58,14 +54,13 @@ type azureKMSProvider struct {
 	kmsImage string
 }
 
-func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec) (*azureKMSProvider, error) {
+func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMSProvider, error) {
 	if kmsSpec == nil {
 		return nil, fmt.Errorf("azure kms metadata not specified")
 	}
 	return &azureKMSProvider{
-		kmsSpec: kmsSpec,
-		// TODO: get image from payload
-		kmsImage: azureKMSProviderImage,
+		kmsSpec:  kmsSpec,
+		kmsImage: image,
 	}, nil
 }
 

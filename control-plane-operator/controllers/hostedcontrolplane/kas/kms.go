@@ -47,7 +47,7 @@ func GetKMSProvider(kmsSpec *hyperv1.KMSSpec, images KubeAPIServerImages) (kms.I
 	case hyperv1.AWS:
 		return kms.NewAWSKMSProvider(kmsSpec.AWS, images.AWSKMS, images.TokenMinterImage)
 	case hyperv1.AZURE:
-		return kms.NewAzureKMSProvider(kmsSpec.Azure)
+		return kms.NewAzureKMSProvider(kmsSpec.Azure, images.AzureKMS)
 	default:
 		return nil, fmt.Errorf("unrecognized kms provider %s", kmsSpec.Provider)
 	}

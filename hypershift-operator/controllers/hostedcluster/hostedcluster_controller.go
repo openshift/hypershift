@@ -2611,14 +2611,6 @@ func reconcileControlPlaneOperatorDeployment(
 			},
 		)
 	}
-	if envImage := os.Getenv(images.AWSEncryptionProviderEnvVar); len(envImage) > 0 {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  images.AWSEncryptionProviderEnvVar,
-				Value: envImage,
-			},
-		)
-	}
 	if len(defaultIngressDomain) > 0 {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
