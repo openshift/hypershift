@@ -25,6 +25,7 @@ type DestroyIAMOptions struct {
 	AWSCredentialsFile string
 	RoleArn            string
 	StsCredentialsFile string
+	AWSSessionToken    string
 	AWSKey             string
 	AWSSecretKey       string
 	InfraID            string
@@ -86,9 +87,9 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	var awsSession *session.Session
-	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+	if o.RoleArn != "" {
 		var err error
-		awsSession, err = awsutil.NewStsSession("cli-destroy-iam", o.StsCredentialsFile, o.RoleArn, o.Region)
+		awsSession, err = awsutil.NewStsSession("cli-destroy-iam", o.StsCredentialsFile, o.AWSKey, o.AWSSecretKey, o.AWSSessionToken, o.RoleArn, o.Region)
 		if err != nil {
 			return fmt.Errorf("failed to create STS session: %w", err)
 		}

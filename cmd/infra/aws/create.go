@@ -31,6 +31,7 @@ type CreateInfraOptions struct {
 	AWSCredentialsFile string
 	RoleArn            string
 	StsCredentialsFile string
+	AWSSessionToken    string
 	AWSKey             string
 	AWSSecretKey       string
 	Name               string
@@ -153,10 +154,9 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	l.Info("Creating infrastructure", "id", o.InfraID)
 
 	var awsSession *session.Session
-	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+	if o.RoleArn != "" {
 		var err error
-		//awsSession, err = awsutil.NewStsSession("cli-create-infra", o.StsCredentialsFile, o.RoleArn, o.AWSKey, o.AWSSecretKey,o.SessionToken, o.Region)
-		awsSession, err = awsutil.NewStsSession("cli-create-infra", o.StsCredentialsFile, o.RoleArn, o.Region)
+		awsSession, err = awsutil.NewStsSession("cli-create-infra", o.StsCredentialsFile, o.AWSKey, o.AWSSecretKey, o.AWSSessionToken, o.RoleArn, o.Region)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create STS session: %w", err)
 		}

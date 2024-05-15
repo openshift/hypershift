@@ -63,10 +63,10 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	region := o.AWSPlatform.Region
 
 	// Override the credentialSecret with credentialFile
-	var awsKeyID, awsSecretKey string
+	var awsKeyID, awsSecretKey, awsSessionToken string
 	var err error
 	if len(o.AWSPlatform.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
-		_, awsKeyID, awsSecretKey, err = util.ExtractOptionsFromSecret(nil, o.CredentialSecretName, o.Namespace, "")
+		_, awsKeyID, awsSecretKey, awsSessionToken, err = util.ExtractOptionsFromSecret(nil, o.CredentialSecretName, o.Namespace, "")
 		if err != nil {
 			return err
 		}
@@ -78,6 +78,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		AWSCredentialsFile:  o.AWSPlatform.AWSCredentialsFile,
 		RoleArn:             o.AWSPlatform.RoleArn,
 		StsCredentialsFile:  o.AWSPlatform.StsCredentialsFile,
+		AWSSessionToken:     awsSessionToken,
 		AWSKey:              awsKeyID,
 		AWSSecretKey:        awsSecretKey,
 		Name:                o.Name,
@@ -97,6 +98,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
 			RoleArn:            o.AWSPlatform.RoleArn,
 			StsCredentialsFile: o.AWSPlatform.StsCredentialsFile,
+			AWSSessionToken:    awsSessionToken,
 			AWSKey:             awsKeyID,
 			AWSSecretKey:       awsSecretKey,
 			InfraID:            infraID,
@@ -166,6 +168,9 @@ func ValidateCredentialInfo(opts *core.DestroyOptions) error {
 			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
 		}
 	} else {
+		if err := util.IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
+			return err
+		}
 		// Check the secret exists now, otherwise stop
 		opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
 		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {

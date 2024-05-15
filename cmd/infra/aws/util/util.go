@@ -32,11 +32,11 @@ func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *
 	return awsSession
 }
 
-func NewStsSession(agent, credentialsFile, roleArn, region string) (*session.Session, error) {
-	stsSessionOpts := session.Options{
-		SharedConfigFiles: []string{},
-		Config:            aws.Config{},
-		Profile:           "",
+func NewStsSession(agent, credentialsFile, credKey, credSecretKey, sessionToken, roleArn, region string) (*session.Session, error) {
+	stsSessionOpts := session.Options{}
+
+	if credKey != "" && credSecretKey != "" && sessionToken != "" {
+		stsSessionOpts.Config.Credentials = credentials.NewStaticCredentials(credKey, credSecretKey, sessionToken)
 	}
 
 	if credentialsFile != "" {
@@ -62,12 +62,9 @@ func NewStsSession(agent, credentialsFile, roleArn, region string) (*session.Ses
 	)
 
 	awsSessionOpts := session.Options{
-		SharedConfigFiles: []string{},
 		Config: aws.Config{
 			Credentials: creds,
 		},
-		Profile:           "",
-		SharedConfigState: session.SharedConfigDisable,
 	}
 
 	if region != "" {

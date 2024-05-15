@@ -28,6 +28,7 @@ type CreateIAMOptions struct {
 	AWSCredentialsFile              string
 	RoleArn                         string
 	StsCredentialsFile              string
+	AWSSessionToken                 string
 	AWSKey                          string
 	AWSSecretKey                    string
 	OIDCStorageProviderS3BucketName string
@@ -166,9 +167,9 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 
 	var awsSession *session.Session
-	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+	if o.RoleArn != "" {
 		var err error
-		awsSession, err = awsutil.NewStsSession("cli-create-iam", o.StsCredentialsFile, o.RoleArn, o.Region)
+		awsSession, err = awsutil.NewStsSession("cli-create-iam", o.StsCredentialsFile, o.AWSKey, o.AWSSecretKey, o.AWSSessionToken, o.RoleArn, o.Region)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create STS session: %w", err)
 		}
