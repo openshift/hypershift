@@ -540,8 +540,9 @@ type podPair struct {
 	p2 corev1.Pod
 }
 
-func findPodPairs(pendingPods, allPods []corev1.Pod) []podPair {
+func findPodPairs(pendingPods, allPods []corev1.Pod) ([]podPair, []corev1.Pod) {
 	var result []podPair
+	var singlePods []corev1.Pod
 	skipPods := sets.New[string]()
 	for i := range pendingPods {
 		pod := &pendingPods[i]
@@ -552,14 +553,16 @@ func findPodPairs(pendingPods, allPods []corev1.Pod) []podPair {
 		if pairPod != nil {
 			result = append(result, podPair{p1: *pod, p2: *pairPod})
 			skipPods.Insert(pairPod.Name)
+		} else {
+			singlePods = append(singlePods, *pod)
 		}
 	}
-	return result
+	return result, singlePods
 }
 
 func determineRequiredNodes(pendingPods, allPods []corev1.Pod, nodes []corev1.Node) []nodeRequirement {
 	var result []nodeRequirement
-	podPairs := findPodPairs(pendingPods, allPods)
+	podPairs, singlePods := findPodPairs(pendingPods, allPods)
 
 	for _, pair := range podPairs {
 		pairLabel := podPairLabel(&pair.p1, nodes)
@@ -573,6 +576,16 @@ func determineRequiredNodes(pendingPods, allPods []corev1.Pod, nodes []corev1.No
 			}
 		}
 		addRequirement(&result, podSize(&pair.p1), pairLabel, pendingCount)
+	}
+	for _, pod := range singlePods {
+		pairLabel := podPairLabel(&pod, nodes)
+		// Only add a requirement for pods that have a specific pair label requirement
+		// These are for a specific hosted cluster. Single pods that do not have a specific
+		// pair label requirement are generic placeholders and are likely in the middle of
+		// being rolled out by their corresponding deployment.
+		if pairLabel != "" {
+			addRequirement(&result, podSize(&pod), pairLabel, 1)
+		}
 	}
 	return result
 }
