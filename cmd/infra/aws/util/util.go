@@ -1,7 +1,10 @@
 package util
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"os"
 	"time"
 
 	utilpointer "k8s.io/utils/pointer"
@@ -32,15 +35,27 @@ func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *
 	return awsSession
 }
 
-func NewStsSession(agent, credentialsFile, credKey, credSecretKey, sessionToken, roleArn, region string) (*session.Session, error) {
+func NewStsSession(agent, stsCredentialsFile, credKey, credSecretKey, sessionToken, roleArn, region string) (*session.Session, error) {
 	stsSessionOpts := session.Options{}
 
 	if credKey != "" && credSecretKey != "" && sessionToken != "" {
 		stsSessionOpts.Config.Credentials = credentials.NewStaticCredentials(credKey, credSecretKey, sessionToken)
 	}
 
-	if credentialsFile != "" {
-		stsSessionOpts.SharedConfigFiles = append(stsSessionOpts.SharedConfigFiles, credentialsFile)
+	var stsCreds struct {
+		Credentials Credentials `json:"Credentials"`
+	}
+
+	if stsCredentialsFile != "" {
+		rawStsCreds, err := os.ReadFile(stsCredentialsFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read sts credentials file: %w", err)
+		}
+		err = json.Unmarshal(rawStsCreds, &stsCreds)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal sts credentials: %w", err)
+		}
+		stsSessionOpts.Config.Credentials = credentials.NewStaticCredentials(stsCreds.Credentials.AccessKeyId, stsCreds.Credentials.SecretAccessKey, stsCreds.Credentials.SessionToken)
 	}
 
 	mySession := session.Must(session.NewSessionWithOptions(stsSessionOpts))
@@ -100,4 +115,11 @@ func NewConfig() *aws.Config {
 		MinThrottleDelay: 5 * time.Second,
 	}
 	return awsConfig
+}
+
+type Credentials struct {
+	AccessKeyId     string `json:"AccessKeyId"`
+	SecretAccessKey string `json:"SecretAccessKey"`
+	SessionToken    string `json:"SessionToken"`
+	Expiration      string `json:"Expiration"`
 }
