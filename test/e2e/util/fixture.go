@@ -209,7 +209,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			t.Logf("Skipping cluster dump because no artifact directory was provided")
 			return nil
 		}
-		dumpDir := filepath.Join(artifactDir, strings.ReplaceAll(t.Name(), "/", "_"))
+		dumpDir := filepath.Join(artifactDir, artifactSubdirFor(t))
 
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
@@ -235,4 +235,8 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			return nil
 		}
 	}
+}
+
+func artifactSubdirFor(t *testing.T) string {
+	return strings.ReplaceAll(t.Name(), "/", "_")
 }
