@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -127,6 +128,9 @@ func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 
 	hostedCluster, err := r.getHostedCluster(ctx, request.NamespacedName)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, err
 	}
 
