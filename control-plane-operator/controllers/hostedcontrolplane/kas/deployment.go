@@ -429,21 +429,18 @@ func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp 
 			"hyperkube",
 		}
 
-		// default to level of 2
-		kasVerbosityLevel := "--v=2"
+		kasVerbosityLevel := 2
 		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
-			kasAnnotationValue := hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]
-			_, err := strconv.Atoi(kasAnnotationValue)
-			// ensure integer value in annotation
+			parsedKASVerbosityValue, err := strconv.Atoi(hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation])
 			if err == nil {
-				kasVerbosityLevel = fmt.Sprintf("--v=%s", kasAnnotationValue)
+				kasVerbosityLevel = parsedKASVerbosityValue
 			}
 		}
 
 		c.Args = []string{
 			"kube-apiserver",
 			fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
-			kasVerbosityLevel,
+			fmt.Sprintf("--v=%d", kasVerbosityLevel),
 		}
 
 		c.Env = []corev1.EnvVar{{
