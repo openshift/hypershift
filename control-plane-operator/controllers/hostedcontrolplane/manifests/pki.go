@@ -146,6 +146,24 @@ func OVNKubernetesControlPlaneService(ns string) *corev1.Service {
 	}
 }
 
+func AzureDiskCsiDriverControllerMetricsService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-disk-csi-driver-controller-metrics",
+			Namespace: ns,
+		},
+	}
+}
+
+func AzureFileCsiDriverControllerMetricsService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-file-csi-driver-controller-metrics",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-signer")
 }
