@@ -2495,18 +2495,48 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
 		}
 	case hyperv1.AzurePlatform:
-		azureDiskCsiDriverControllerMetricsServingCert := manifests.AzureDiskCsiDriverControllerMetricsServingCert(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
-			return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
+		azureDiskCsiDriverControllerMetricsService := manifests.AzureDiskCsiDriverControllerMetricsService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), azureDiskCsiDriverControllerMetricsService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve azure-disk-csi-driver-controller-metrics service: %w", err)
+			}
 		}
 
-		azureFileCsiDriverControllerMetricsServingCert := manifests.AzureFileCsiDriverControllerMetricsServingCert(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
-			return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile azure file csi driver controller metrics serving cert: %w", err)
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureDiskCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+			azureDiskCsiDriverControllerMetricsServingCert := manifests.AzureDiskCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+			err = removeServiceCASecret(ctx, r.Client, azureDiskCsiDriverControllerMetricsServingCert)
+			if err != nil {
+				return err
+			}
+
+			if _, err = createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
+				return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
+			}
+		}
+
+		azureFileCsiDriverControllerMetricsService := manifests.AzureFileCsiDriverControllerMetricsService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(azureFileCsiDriverControllerMetricsService), azureFileCsiDriverControllerMetricsService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve azure-file-csi-driver-controller-metrics service: %w", err)
+			}
+		}
+
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureFileCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+			azureFileCsiDriverControllerMetricsServingCert := manifests.AzureFileCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+			err = removeServiceCASecret(ctx, r.Client, azureFileCsiDriverControllerMetricsServingCert)
+			if err != nil {
+				return err
+			}
+
+			if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
+				return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile azure file csi driver controller metrics serving cert: %w", err)
+			}
 		}
 	}
 
