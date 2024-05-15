@@ -27,6 +27,7 @@ type ConsoleLogOpts struct {
 	AWSCredentialsFile string
 	RoleArn            string
 	StsCredentialsFile string
+	AWSSessionToken    string
 	AWSKey             string
 	AWSSecretKey       string
 	OutputDir          string
@@ -86,9 +87,9 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
 	var awsSession *session.Session
-	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+	if o.RoleArn != "" {
 		var err error
-		awsSession, err = awsutil.NewStsSession("cli-console-logs", o.StsCredentialsFile, o.RoleArn, region)
+		awsSession, err = awsutil.NewStsSession("cli-console-logs", o.StsCredentialsFile, o.AWSKey, o.AWSSecretKey, o.AWSSessionToken, o.RoleArn, region)
 		if err != nil {
 			return fmt.Errorf("failed to create STS session: %w", err)
 		}

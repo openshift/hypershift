@@ -37,6 +37,7 @@ type DestroyInfraOptions struct {
 	AWSCredentialsFile  string
 	RoleArn             string
 	StsCredentialsFile  string
+	AWSSessionToken     string
 	AWSKey              string
 	AWSSecretKey        string
 	Name                string
@@ -118,9 +119,9 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	var awsSession *session.Session
-	if o.RoleArn != "" && o.StsCredentialsFile != "" {
+	if o.RoleArn != "" {
 		var err error
-		awsSession, err = awsutil.NewStsSession("cli-destroy-infra", o.StsCredentialsFile, o.RoleArn, o.Region)
+		awsSession, err = awsutil.NewStsSession("cli-destroy-infra", o.StsCredentialsFile, o.AWSKey, o.AWSSecretKey, o.AWSSessionToken, o.RoleArn, o.Region)
 		if err != nil {
 			return fmt.Errorf("failed to create STS session: %w", err)
 		}
