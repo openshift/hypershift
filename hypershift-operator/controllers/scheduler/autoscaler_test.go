@@ -393,13 +393,13 @@ func TestDetermineRequiredNodes(t *testing.T) {
 		},
 		{
 			name:  "Single pending pod",
-			pods:  pods(4, pending(0), scheduled(1, 2, 3)),
+			pods:  pods(4, pending(0), withPodPairLabel("foo", 0), scheduled(1, 2, 3)),
 			nodes: nodes(4),
 			expected: []nodeRequirement{
 				{
 					sizeLabel: "small",
 					count:     1,
-					pairLabel: "pair-0",
+					pairLabel: "foo",
 				},
 			},
 		},
@@ -454,7 +454,7 @@ func TestDetermineRequiredNodes(t *testing.T) {
 			},
 		},
 		{
-			name:  "ignore unpaired pods",
+			name:  "ignore unpaired pods without pair selector",
 			pods:  pods(3, pending(0, 1, 2)),
 			nodes: nodes(4),
 			expected: []nodeRequirement{
