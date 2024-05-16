@@ -381,6 +381,14 @@ func NewStartCommand() *cobra.Command {
 			ComponentImages: componentImages,
 		}
 
+		userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate:          coreReleaseProvider,
+				RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
+			},
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+		}
+
 		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 				Delegate:          coreReleaseProvider,
@@ -404,7 +412,7 @@ func NewStartCommand() *cobra.Command {
 			Client:                                  mgr.GetClient(),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
 			ReleaseProvider:                         cpReleaseProvider,
-			UserReleaseProvider:                     coreReleaseProvider,
+			UserReleaseProvider:                     userReleaseProvider,
 			EnableCIDebugOutput:                     enableCIDebugOutput,
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,
