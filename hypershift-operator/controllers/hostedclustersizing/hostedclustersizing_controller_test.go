@@ -996,7 +996,8 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
+					Labels:      map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -1062,12 +1063,61 @@ func TestSizingController_Reconcile(t *testing.T) {
 			}, requeueAfter: 5 * time.Minute},
 		},
 		{
+			name:   "delay existing scheduled cluster without size for concurrency",
+			config: validCommonConfig,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{
+					hostedClusterWithTransition("first", fakeClock.Now().Add(-1*time.Minute)),
+					hostedClusterWithTransition("second", fakeClock.Now().Add(-2*time.Minute)),
+					hostedClusterWithTransition("third", fakeClock.Now().Add(-3*time.Minute)),
+					hostedClusterWithTransition("fourth", fakeClock.Now().Add(-4*time.Minute)),
+					hostedClusterWithTransition("fifth", fakeClock.Now().Add(-5*time.Minute)),
+				}}, nil
+			},
+			hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+				return true, nil
+			},
+			hostedControlPlaneForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.HostedControlPlane, error) {
+				return &hypershiftv1beta1.HostedControlPlane{
+					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(3)},
+				}, nil
+			},
+			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
+				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{Namespace: ptr.To("ns"), Name: ptr.To("hc")},
+				Status: &hypershiftv1beta1applyconfigurations.HostedClusterStatusApplyConfiguration{
+					Conditions: []metav1applyconfigurations.ConditionApplyConfiguration{
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionPending),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("ConcurrencyLimitReached"),
+							Message:            ptr.To("5 HostedClusters have already transitioned sizes in the last 10m0s, more time must elapse before the next transition."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionRequired),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("small"),
+							Message:            ptr.To("The HostedCluster will transition to a new t-shirt size."),
+						},
+					},
+				},
+			}, requeueAfter: 5 * time.Minute},
+		},
+		{
 			name:   "delay for concurrency, no-op since condition already present",
 			config: validCommonConfig,
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
+					Labels:      map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -1116,7 +1166,8 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
+					Labels:      map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -1187,7 +1238,8 @@ func TestSizingController_Reconcile(t *testing.T) {
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "ns", Name: "hc",
-					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "small"},
+					Labels:      map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "small"},
+					Annotations: map[string]string{hypershiftv1beta1.HostedClusterScheduledAnnotation: "true"},
 				},
 				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
 					Type:               hypershiftv1beta1.ClusterSizeComputed,
@@ -1231,6 +1283,128 @@ func TestSizingController_Reconcile(t *testing.T) {
 							Status:             ptr.To(metav1.ConditionTrue),
 							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
 							Reason:             ptr.To("large"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionPending),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("ClusterSizeTransitioned"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionRequired),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To(hypershiftv1beta1.AsExpectedReason),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+					},
+				},
+			}},
+		},
+		{
+			name:   "transition, don't delay unscheduled cluster for concurrency",
+			config: validCommonConfig,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+					Labels: map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: "large"},
+				},
+				Status: hypershiftv1beta1.HostedClusterStatus{Conditions: []metav1.Condition{{
+					Type:               hypershiftv1beta1.ClusterSizeComputed,
+					Status:             metav1.ConditionTrue,
+					Reason:             "large",
+					Message:            "The HostedCluster has transitioned to a new t-shirt size.",
+					LastTransitionTime: metav1.NewTime(fakeClock.Now().Add(-20 * time.Minute)),
+				}, {
+					Type:               hypershiftv1beta1.ClusterSizeTransitionRequired,
+					Status:             metav1.ConditionTrue,
+					Reason:             "small",
+					Message:            "The HostedCluster will transition to a new t-shirt size.",
+					LastTransitionTime: metav1.NewTime(fakeClock.Now().Add(-15 * time.Minute)),
+				}}},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{
+					hostedClusterWithTransition("first", fakeClock.Now().Add(-1*time.Minute)),
+					hostedClusterWithTransition("second", fakeClock.Now().Add(-2*time.Minute)),
+					hostedClusterWithTransition("third", fakeClock.Now().Add(-3*time.Minute)),
+					hostedClusterWithTransition("fourth", fakeClock.Now().Add(-4*time.Minute)),
+					hostedClusterWithTransition("fifth", fakeClock.Now().Add(-5*time.Minute)),
+				}}, nil
+			},
+			hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+				return true, nil
+			},
+			hostedControlPlaneForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.HostedControlPlane, error) {
+				return &hypershiftv1beta1.HostedControlPlane{
+					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(3)},
+				}, nil
+			},
+			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
+				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{Namespace: ptr.To("ns"), Name: ptr.To("hc")},
+				Status: &hypershiftv1beta1applyconfigurations.HostedClusterStatusApplyConfiguration{
+					Conditions: []metav1applyconfigurations.ConditionApplyConfiguration{
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeComputed),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("small"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionPending),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("ClusterSizeTransitioned"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionRequired),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To(hypershiftv1beta1.AsExpectedReason),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+					},
+				},
+			}},
+		},
+		{
+			name:   "transition, don't delay brand new cluster for concurrency",
+			config: validCommonConfig,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{
+					hostedClusterWithTransition("first", fakeClock.Now().Add(-1*time.Minute)),
+					hostedClusterWithTransition("second", fakeClock.Now().Add(-2*time.Minute)),
+					hostedClusterWithTransition("third", fakeClock.Now().Add(-3*time.Minute)),
+					hostedClusterWithTransition("fourth", fakeClock.Now().Add(-4*time.Minute)),
+					hostedClusterWithTransition("fifth", fakeClock.Now().Add(-5*time.Minute)),
+				}}, nil
+			},
+			hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+				return true, nil
+			},
+			hostedControlPlaneForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.HostedControlPlane, error) {
+				return &hypershiftv1beta1.HostedControlPlane{
+					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(3)},
+				}, nil
+			},
+			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
+				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{Namespace: ptr.To("ns"), Name: ptr.To("hc")},
+				Status: &hypershiftv1beta1applyconfigurations.HostedClusterStatusApplyConfiguration{
+					Conditions: []metav1applyconfigurations.ConditionApplyConfiguration{
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeComputed),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("small"),
 							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
 						},
 						{
