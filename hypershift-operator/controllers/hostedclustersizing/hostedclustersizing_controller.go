@@ -305,7 +305,11 @@ func (r *reconciler) reconcile(
 	// third, we need to know if we're ready to transition the cluster:
 	// - the hosted cluster has limits to how quickly it can transition up and down, and
 	// - the management plane has limits to how many clusters can be transitioning at any time
-	delayStart := r.now()
+	delayStart := time.Time{}
+	if lastTransitionTime != nil {
+		// if we transitioned in the past, we need to enforce the delay from there
+		delayStart = *lastTransitionTime
+	}
 	lastComputedTime, lastComputedSizeClass := previousComputedSizeFor(hostedCluster)
 	if lastComputedTime != nil && lastComputedSizeClass == sizeClass.Name {
 		// we computed that the cluster should transition already; enforce the delay from that point
