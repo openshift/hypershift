@@ -16,8 +16,8 @@ import (
 // HyperShift operator.
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
-var LatestSupportedVersion = semver.MustParse("4.16.0")
-var MinSupportedVersion = semver.MustParse("4.13.0")
+var LatestSupportedVersion = semver.MustParse("4.17.0")
+var MinSupportedVersion = semver.MustParse("4.14.0")
 
 func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 
@@ -28,7 +28,7 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 	defaultMinVersion := MinSupportedVersion
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
-		return semver.MustParse("4.14.0")
+		return semver.MustParse("4.15.0")
 	case hyperv1.IBMCloudPlatform:
 		return semver.MustParse("4.9.0")
 	default:

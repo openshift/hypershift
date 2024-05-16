@@ -91,8 +91,6 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
-			JiraComponent: "HOSTEDCP",
-			Description:   "Root signer for customer break-glass credentials.",
 		},
 		certrotation.CABundleConfigMap{
 			Namespace:     hostedControlPlane.Namespace,
@@ -102,8 +100,6 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
-			JiraComponent: "HOSTEDCP",
-			Description:   "Trust bundle for customer break-glass credentials.",
 		},
 		certrotation.RotatedSelfSignedCertKeySecret{
 			Namespace: hostedControlPlane.Namespace,
@@ -122,8 +118,6 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
-			JiraComponent: "HOSTEDCP",
-			Description:   "Client certificate for customer break-glass credentials.",
 		},
 		eventRecorder,
 		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
@@ -143,8 +137,6 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
-			JiraComponent: "HOSTEDCP",
-			Description:   "Root signer for SRE break-glass credentials.",
 		},
 		certrotation.CABundleConfigMap{
 			Namespace:     hostedControlPlane.Namespace,
@@ -154,8 +146,6 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
-			JiraComponent: "HOSTEDCP",
-			Description:   "Trust bundle for SRE break-glass credentials.",
 		},
 		certrotation.RotatedSelfSignedCertKeySecret{
 			Namespace: hostedControlPlane.Namespace,
@@ -174,8 +164,6 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
-			JiraComponent: "HOSTEDCP",
-			Description:   "Client certificate for SRE break-glass credentials.",
 		},
 		eventRecorder,
 		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),

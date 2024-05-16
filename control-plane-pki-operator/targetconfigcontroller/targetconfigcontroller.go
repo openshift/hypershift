@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/clienthelpers"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resourcesynccontroller"
@@ -102,7 +103,10 @@ func ManageClientCABundle(ctx context.Context, lister corev1listers.ConfigMapLis
 	requiredConfigMap, err := resourcesynccontroller.CombineCABundleConfigMaps(
 		resourcesynccontroller.ResourceLocation{Namespace: owner.Namespace, Name: pkimanifests.TotalKASClientCABundle(owner.Namespace).Name},
 		lister,
-		"HOSTEDCP", "Kubernetes total client CA bundle.",
+		certrotation.AdditionalAnnotations{
+			JiraComponent: "HOSTEDCP",
+			Description:   "Kubernetes total client CA bundle.",
+		},
 		// this bundle is what this operator uses to mint new customer client certs it directly manages
 		resourcesynccontroller.ResourceLocation{Namespace: owner.Namespace, Name: pkimanifests.CustomerSystemAdminSignerCA(owner.Namespace).Name},
 		// this bundle is what this operator uses to mint new SRE client certs it directly manages

@@ -14,6 +14,14 @@ import (
 //
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:path=configs,scope=Cluster
+// +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/513
+// +openshift:file-pattern=operatorOrdering=00
+// +kubebuilder:metadata:annotations="description=Extension for configuring openshift samples operator."
+// +kubebuilder:metadata:annotations="displayName=ConfigsSamples"
 type Config struct {
 	metav1.TypeMeta `json:",inline"`
 
