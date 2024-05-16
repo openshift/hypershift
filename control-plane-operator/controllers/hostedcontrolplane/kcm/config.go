@@ -3,14 +3,17 @@ package kcm
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"path"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
-	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -59,29 +62,20 @@ func generateConfig(serviceServingCA *corev1.ConfigMap) (string, error) {
 	return string(b), nil
 }
 
-func ReconcileKCMServiceServingCA(cm, combinedCA *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(cm)
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	if _, hasKey := cm.Data[ServiceServingCAKey]; !hasKey {
-		cm.Data[ServiceServingCAKey] = combinedCA.Data[certs.CASignerCertMapKey]
-	}
-	return nil
-}
+func ReconcileRecyclerConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+	var result strings.Builder
 
-func ReconcileServiceAccount(sa *corev1.ServiceAccount) error {
-	// nothing to reconcile
-	return nil
-}
-
-func ReconcileRecyclerConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
+
+	data := map[string]string{
+		"rhtoolsImageName": releaseImageProvider.GetImage("tools"),
+	}
+
 	// https://github.com/openshift/cluster-kube-controller-manager-operator/blob/64b4c1ba/bindata/assets/kube-controller-manager/recycler-cm.yaml
-	config.Data[RecyclerPodTemplateKey] = `apiVersion: v1
+	templateContent := `apiVersion: v1
 kind: Pod
 metadata:
   name: recycler-pod
@@ -94,7 +88,7 @@ spec:
   serviceAccountName: pv-recycler-controller
   containers:
   - name: recycler-container
-    image: quay.io/openshift/origin-tools:latest
+    image: {{.rhtoolsImageName}}
     command:
     - "/bin/bash"
     args:
@@ -113,5 +107,18 @@ spec:
   volumes:
   - name: vol
 `
+
+	tmpl, err := template.New("recycler-pod").Parse(templateContent)
+	if err != nil {
+		return fmt.Errorf("failed to parse recycler pod template: %w", err)
+	}
+
+	err = tmpl.Execute(&result, data)
+	if err != nil {
+		return fmt.Errorf("failed to render the recycler pod template: %w", err)
+	}
+
+	config.Data[RecyclerPodTemplateKey] = result.String()
+
 	return nil
 }
