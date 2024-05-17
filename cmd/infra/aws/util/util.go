@@ -20,19 +20,19 @@ type AWSCredentialsOptions struct {
 	AWSCredentialsFile string
 
 	RoleArn            string
-	StsCredentialsFile string
+	STSCredentialsFile string
 }
 
 func (opts *AWSCredentialsOptions) Validate() error {
 	if opts.AWSCredentialsFile != "" {
-		if opts.StsCredentialsFile != "" || opts.RoleArn != "" {
+		if opts.STSCredentialsFile != "" || opts.RoleArn != "" {
 			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
 		}
 
 		return nil
 	}
 
-	if err := util.ValidateRequiredOption("sts-creds", opts.StsCredentialsFile); err != nil {
+	if err := util.ValidateRequiredOption("sts-creds", opts.STSCredentialsFile); err != nil {
 		return err
 	}
 	if err := util.ValidateRequiredOption("role-arn", opts.RoleArn); err != nil {
@@ -44,14 +44,14 @@ func (opts *AWSCredentialsOptions) Validate() error {
 func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
 	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume.")
-	flags.StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role")
+	flags.StringVar(&opts.STSCredentialsFile, "sts-creds", opts.STSCredentialsFile, "Path to STS credentials file to use when assuming the role")
 
-	flags.MarkDeprecated("aws-creds", "please use '--sts-creds; with' --role-arn' instead")
+	flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
 }
 
 func (opts *AWSCredentialsOptions) BindProductFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume. (Required)")
-	flags.StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "STS credentials file to use when assuming the role. (Required)")
+	flags.StringVar(&opts.STSCredentialsFile, "sts-creds", opts.STSCredentialsFile, "STS credentials file to use when assuming the role. (Required)")
 
 	cobra.MarkFlagRequired(flags, "role-arn")
 	cobra.MarkFlagRequired(flags, "sts-creds")
@@ -62,13 +62,13 @@ func (opts *AWSCredentialsOptions) GetSession(agent string, secretData *util.Cre
 		return NewSession(agent, opts.AWSCredentialsFile, "", "", region), nil
 	}
 
-	if opts.StsCredentialsFile != "" {
-		creds, err := ParseSTSCredentialsFile(opts.StsCredentialsFile)
+	if opts.STSCredentialsFile != "" {
+		creds, err := ParseSTSCredentialsFile(opts.STSCredentialsFile)
 		if err != nil {
 			return nil, err
 		}
 
-		return NewStsSession(agent, opts.RoleArn, region, creds)
+		return NewSTSSession(agent, opts.RoleArn, region, creds)
 	}
 
 	if secretData != nil {
@@ -77,7 +77,7 @@ func (opts *AWSCredentialsOptions) GetSession(agent string, secretData *util.Cre
 			secretData.AWSSecretAccessKey,
 			secretData.AWSSessionToken,
 		)
-		return NewStsSession(agent, opts.RoleArn, region, creds)
+		return NewSTSSession(agent, opts.RoleArn, region, creds)
 	}
 
 	return nil, fmt.Errorf("either --aws-creds or --sts-creds or --secret-creds flag must be set")
