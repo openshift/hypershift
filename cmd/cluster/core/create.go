@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
@@ -167,9 +168,7 @@ type KubevirtPlatformCreateOptions struct {
 }
 
 type AWSPlatformOptions struct {
-	AWSCredentialsFile      string
-	RoleArn                 string
-	StsCredentialsFile      string
+	AWSCredentialsOpts      awsutil.AWSCredentialsOptions
 	AdditionalTags          []string
 	IAMJSON                 string
 	InstanceType            string

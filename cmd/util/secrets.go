@@ -27,13 +27,21 @@ func GetSecretWithClient(client client.Client, name string, namespace string) (*
 	return secret, err
 }
 
+type CredentialsSecretData struct {
+	AWSAccessKeyID     string
+	AWSSecretAccessKey string
+	AWSSessionToken    string
+
+	BaseDomain string
+}
+
 // ExtractOptionsFromSecret
 // Returns baseDomain, awsAccessKeyID & awsSecretAccessKey
 // If len(baseDomain) > 0 we override the value found in the secret
-func ExtractOptionsFromSecret(client client.Client, name string, namespace string, baseDomain string) (string, string, string, string, error) {
+func ExtractOptionsFromSecret(client client.Client, name string, namespace string, baseDomain string) (*CredentialsSecretData, error) {
 	secret, err := GetSecretWithClient(client, name, namespace)
 	if err != nil {
-		return baseDomain, "", "", "", err
+		return nil, err
 	}
 
 	if len(baseDomain) == 0 {
@@ -47,18 +55,24 @@ func ExtractOptionsFromSecret(client client.Client, name string, namespace strin
 	awsSessionToken := string(secret.Data["aws_session_token"])
 
 	if len(baseDomain) == 0 {
-		return "", "", "", "", fmt.Errorf("the baseDomain key is invalid, {namespace: %s, secret: %s}", namespace, name)
+		return nil, fmt.Errorf("the baseDomain key is invalid, {namespace: %s, secret: %s}", namespace, name)
 	}
 	if len(awsAccessKeyID) == 0 {
-		return "", "", "", "", fmt.Errorf("the aws_access_key_id key is invalid, {namespace: %s, secret: %s}", namespace, name)
+		return nil, fmt.Errorf("the aws_access_key_id key is invalid, {namespace: %s, secret: %s}", namespace, name)
 	}
 	if len(awsSecretAccessKey) == 0 {
-		return "", "", "", "", fmt.Errorf("the aws_secret_access_key key is invalid, {namespace: %s, secret: %s}", namespace, name)
+		return nil, fmt.Errorf("the aws_secret_access_key key is invalid, {namespace: %s, secret: %s}", namespace, name)
 	}
 	if len(awsSessionToken) == 0 {
-		return "", "", "", "", fmt.Errorf("the aws_session_token key is invalid, {namespace: %s, secret: %s}", namespace, name)
+		return nil, fmt.Errorf("the aws_session_token key is invalid, {namespace: %s, secret: %s}", namespace, name)
 	}
-	return baseDomain, awsAccessKeyID, awsSecretAccessKey, awsSessionToken, nil
+
+	return &CredentialsSecretData{
+		AWSAccessKeyID:     awsAccessKeyID,
+		AWSSecretAccessKey: awsSecretAccessKey,
+		AWSSessionToken:    awsSessionToken,
+		BaseDomain:         baseDomain,
+	}, nil
 }
 
 func GetPullSecret(name string, namespace string) ([]byte, error) {

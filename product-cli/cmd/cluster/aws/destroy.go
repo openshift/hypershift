@@ -16,14 +16,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	}
 
 	opts.AWSPlatform = core.AWSPlatformDestroyOptions{
-		RoleArn:            "",
-		StsCredentialsFile: "",
-		PreserveIAM:        false,
-		Region:             "us-east-1",
+		PreserveIAM: false,
+		Region:      "us-east-1",
 	}
 
-	cmd.Flags().StringVar(&opts.AWSPlatform.RoleArn, "role-arn", opts.AWSPlatform.RoleArn, "The ARN of the role to assume when deleting the cluster (Required).")
-	cmd.Flags().StringVar(&opts.AWSPlatform.StsCredentialsFile, "sts-creds", opts.AWSPlatform.StsCredentialsFile, "STS credentials file to use when assuming the role (Required).")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.PreserveIAM, "preserve-iam", opts.AWSPlatform.PreserveIAM, "If set to true, skip deleting IAM. Otherwise, destroy any default generated IAM along with other infrastructure.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "A HostedCluster's region.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "A HostedCluster's base domain.")
@@ -31,7 +27,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credentials: pull-secret and base-domain. The secret must exist in the supplied \"--namespace\".")
 	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
-	cmd.MarkFlagRequired("role-arn")
+	opts.AWSPlatform.AWSCredentialsOpts.BindProductFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := hypershiftaws.ValidateCredentialInfo(opts)

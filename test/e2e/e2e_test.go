@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awscmdutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
@@ -444,12 +445,14 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
 		NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
 		AWSPlatform: core.AWSPlatformOptions{
-			RootVolumeSize:     64,
-			RootVolumeType:     "gp3",
-			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
-			Region:             o.configurableClusterOptions.Region,
-			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
-			IssuerURL:          o.IssuerURL,
+			RootVolumeSize: 64,
+			RootVolumeType: "gp3",
+			Region:         o.configurableClusterOptions.Region,
+			EndpointAccess: o.configurableClusterOptions.AWSEndpointAccess,
+			IssuerURL:      o.IssuerURL,
+			AWSCredentialsOpts: awscmdutil.AWSCredentialsOptions{
+				AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+			},
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
 			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,

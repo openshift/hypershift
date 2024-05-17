@@ -1,8 +1,10 @@
 package aws
 
 import (
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	"testing"
+
+	"github.com/openshift/hypershift/cmd/cluster/core"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 
 	. "github.com/onsi/gomega"
 )
@@ -16,7 +18,9 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
-					AWSCredentialsFile: "",
+					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+						AWSCredentialsFile: "",
+					},
 				},
 			},
 			expectError: true,
@@ -25,7 +29,9 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
-					AWSCredentialsFile: "asdf",
+					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+						AWSCredentialsFile: "asdf",
+					},
 				},
 			},
 			expectError: false,

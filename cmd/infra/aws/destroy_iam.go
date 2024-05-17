@@ -3,8 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/openshift/hypershift/cmd/util"
 	"strings"
 	"time"
 
@@ -18,18 +16,16 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 type DestroyIAMOptions struct {
 	Region             string
-	AWSCredentialsFile string
-	RoleArn            string
-	StsCredentialsFile string
-	AWSSessionToken    string
-	AWSKey             string
-	AWSSecretKey       string
+	AWSCredentialsOpts awsutil.AWSCredentialsOptions
 	InfraID            string
 	Log                logr.Logger
+
+	CredentialsSecretData *util.CredentialsSecretData
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
@@ -40,24 +36,20 @@ func NewDestroyIAMCommand() *cobra.Command {
 	}
 
 	opts := DestroyIAMOptions{
-		Region:             "us-east-1",
-		AWSCredentialsFile: "",
-		RoleArn:            "",
-		StsCredentialsFile: "",
-		InfraID:            "",
-		Log:                log.Log,
+		Region:  "us-east-1",
+		InfraID: "",
+		Log:     log.Log,
 	}
 
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
-	cmd.Flags().StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume when destroying the cluster.")
-	cmd.Flags().StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
+
+	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
 	cmd.MarkFlagRequired("infra-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := util.ValidateAwsStsCredentialInfo(opts.AWSCredentialsFile, opts.StsCredentialsFile, opts.RoleArn)
+		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
 			return err
 		}
@@ -86,20 +78,13 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
-	var awsSession *session.Session
-	if o.RoleArn != "" {
-		var err error
-		awsSession, err = awsutil.NewStsSession("cli-destroy-iam", o.StsCredentialsFile, o.AWSKey, o.AWSSecretKey, o.AWSSessionToken, o.RoleArn, o.Region)
-		if err != nil {
-			return fmt.Errorf("failed to create STS session: %w", err)
-		}
-	} else {
-		awsSession = awsutil.NewSession("cli-destroy-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-destroy-iam", o.CredentialsSecretData, o.Region)
+	if err != nil {
+		return err
 	}
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
-	var err error
 	err = o.DestroyOIDCResources(ctx, iamClient)
 	if err != nil {
 		return err
