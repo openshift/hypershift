@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"os"
 	"path/filepath"
 	"time"
@@ -24,22 +23,14 @@ import (
 type ConsoleLogOpts struct {
 	Name               string
 	Namespace          string
-	AWSCredentialsFile string
-	RoleArn            string
-	StsCredentialsFile string
-	AWSSessionToken    string
-	AWSKey             string
-	AWSSecretKey       string
+	AWSCredentialsOpts awsutil.AWSCredentialsOptions
 	OutputDir          string
 }
 
 func NewCommand() *cobra.Command {
 
 	opts := &ConsoleLogOpts{
-		Namespace:          "clusters",
-		RoleArn:            "",
-		StsCredentialsFile: "",
-		AWSCredentialsFile: "",
+		Namespace: "clusters",
 	}
 
 	cmd := &cobra.Command{
@@ -50,16 +41,15 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&opts.Namespace, "namespace", "n", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
-	cmd.Flags().StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume when retrieving logs.")
-	cmd.Flags().StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role..")
 	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", opts.OutputDir, "Directory where to place console logs (required)")
+
+	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("output-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := util.ValidateAwsStsCredentialInfo(opts.AWSCredentialsFile, opts.StsCredentialsFile, opts.RoleArn)
+		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
 			return err
 		}
@@ -86,15 +76,10 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	}
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
-	var awsSession *session.Session
-	if o.RoleArn != "" {
-		var err error
-		awsSession, err = awsutil.NewStsSession("cli-console-logs", o.StsCredentialsFile, o.AWSKey, o.AWSSecretKey, o.AWSSessionToken, o.RoleArn, region)
-		if err != nil {
-			return fmt.Errorf("failed to create STS session: %w", err)
-		}
-	} else {
-		awsSession = awsutil.NewSession("cli-console-logs", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+
+	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-console-logs", nil, region)
+	if err != nil {
+		return err
 	}
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)

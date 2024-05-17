@@ -18,18 +18,14 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.AWSPlatform = core.AWSPlatformOptions{
-		RoleArn:            "",
-		StsCredentialsFile: "",
-		Region:             "us-east-1",
-		InstanceType:       "",
-		RootVolumeType:     "gp3",
-		RootVolumeSize:     120,
-		RootVolumeIOPS:     0,
-		EndpointAccess:     string(hyperv1.Public),
+		Region:         "us-east-1",
+		InstanceType:   "",
+		RootVolumeType: "gp3",
+		RootVolumeSize: 120,
+		RootVolumeIOPS: 0,
+		EndpointAccess: string(hyperv1.Public),
 	}
 
-	cmd.Flags().StringVar(&opts.AWSPlatform.RoleArn, "role-arn", opts.AWSPlatform.RoleArn, "The ARN of the role to assume when creating the cluster (Required).")
-	cmd.Flags().StringVar(&opts.AWSPlatform.StsCredentialsFile, "sts-creds", opts.AWSPlatform.StsCredentialsFile, "STS credentials file to use when assuming the role (Required).")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "The region to use for created AWS infrastructure.")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availability zones in which NodePools will be created.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "The instance type for the NodePool machines.")
@@ -45,7 +41,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL.")
 	cmd.PersistentFlags().BoolVar(&opts.AWSPlatform.MultiArch, "multi-arch", opts.AWSPlatform.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
 
-	cmd.MarkFlagRequired("role-arn")
+	opts.AWSPlatform.AWSCredentialsOpts.BindProductFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

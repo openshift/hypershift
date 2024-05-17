@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/errors"
 
@@ -20,21 +21,18 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	}
 
 	opts.AWSPlatform = core.AWSPlatformDestroyOptions{
-		AWSCredentialsFile: "",
-		StsCredentialsFile: "",
-		PreserveIAM:        false,
-		Region:             "us-east-1",
+		PreserveIAM: false,
+		Region:      "us-east-1",
 	}
 
-	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
-	cmd.Flags().StringVar(&opts.AWSPlatform.RoleArn, "role-arn", opts.AWSPlatform.RoleArn, "The ARN of the role to assume when destroying the cluster.")
-	cmd.Flags().StringVar(&opts.AWSPlatform.StsCredentialsFile, "sts-creds", opts.AWSPlatform.StsCredentialsFile, "Path to STS credentials file to use when assuming the role.")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.PreserveIAM, "preserve-iam", opts.AWSPlatform.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Cluster's region; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "Cluster's base domain; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomainPrefix, "base-domain-prefix", opts.AWSPlatform.BaseDomainPrefix, "Cluster's base domain prefix; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
 	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
+
+	opts.AWSPlatform.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := ValidateCredentialInfo(opts)
@@ -63,29 +61,26 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	region := o.AWSPlatform.Region
 
 	// Override the credentialSecret with credentialFile
-	var awsKeyID, awsSecretKey, awsSessionToken string
 	var err error
-	if len(o.AWSPlatform.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
-		_, awsKeyID, awsSecretKey, awsSessionToken, err = util.ExtractOptionsFromSecret(nil, o.CredentialSecretName, o.Namespace, "")
+	var secretData *util.CredentialsSecretData
+	if len(o.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
+		secretData, err = util.ExtractOptionsFromSecret(nil, o.CredentialSecretName, o.Namespace, "")
 		if err != nil {
 			return err
 		}
 	}
+
 	o.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
-		Region:              region,
-		InfraID:             infraID,
-		AWSCredentialsFile:  o.AWSPlatform.AWSCredentialsFile,
-		RoleArn:             o.AWSPlatform.RoleArn,
-		StsCredentialsFile:  o.AWSPlatform.StsCredentialsFile,
-		AWSSessionToken:     awsSessionToken,
-		AWSKey:              awsKeyID,
-		AWSSecretKey:        awsSecretKey,
-		Name:                o.Name,
-		BaseDomain:          baseDomain,
-		BaseDomainPrefix:    baseDomainPrefix,
-		AwsInfraGracePeriod: o.AWSPlatform.AwsInfraGracePeriod,
-		Log:                 o.Log,
+		Region:                region,
+		InfraID:               infraID,
+		AWSCredentialsOpts:    o.AWSPlatform.AWSCredentialsOpts,
+		Name:                  o.Name,
+		BaseDomain:            baseDomain,
+		BaseDomainPrefix:      baseDomainPrefix,
+		AwsInfraGracePeriod:   o.AWSPlatform.AwsInfraGracePeriod,
+		Log:                   o.Log,
+		CredentialsSecretData: secretData,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
@@ -94,15 +89,11 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	if !o.AWSPlatform.PreserveIAM {
 		o.Log.Info("Destroying IAM", "infraID", infraID)
 		destroyOpts := awsinfra.DestroyIAMOptions{
-			Region:             region,
-			AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
-			RoleArn:            o.AWSPlatform.RoleArn,
-			StsCredentialsFile: o.AWSPlatform.StsCredentialsFile,
-			AWSSessionToken:    awsSessionToken,
-			AWSKey:             awsKeyID,
-			AWSSecretKey:       awsSecretKey,
-			InfraID:            infraID,
-			Log:                o.Log,
+			Region:                region,
+			AWSCredentialsOpts:    o.AWSPlatform.AWSCredentialsOpts,
+			InfraID:               infraID,
+			Log:                   o.Log,
+			CredentialsSecretData: secretData,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)
@@ -151,31 +142,21 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 // the credentials secret is not empty, that it can be retrieved.
 func ValidateCredentialInfo(opts *core.DestroyOptions) error {
 	if len(opts.CredentialSecretName) == 0 {
-		if opts.AWSPlatform.AWSCredentialsFile == "" {
-			if err := util.IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
-				return err
-			}
-			if err := util.IsRequiredOption("sts-creds", opts.AWSPlatform.StsCredentialsFile); err != nil {
-				return err
-			}
-		}
-		if opts.AWSPlatform.RoleArn == "" && opts.AWSPlatform.StsCredentialsFile == "" {
-			if err := util.IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
-				return err
-			}
-		}
-		if opts.AWSPlatform.StsCredentialsFile != "" && opts.AWSPlatform.AWSCredentialsFile != "" {
-			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
-		}
-	} else {
-		if err := util.IsRequiredOption("role-arn", opts.AWSPlatform.RoleArn); err != nil {
+		if err := opts.AWSPlatform.AWSCredentialsOpts.Validate(); err != nil {
 			return err
 		}
-		// Check the secret exists now, otherwise stop
-		opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
-		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+		return nil
+	}
+
+	if opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile == "" {
+		if err := util.ValidateRequiredOption("role-arn", opts.AWSPlatform.AWSCredentialsOpts.RoleArn); err != nil {
 			return err
 		}
+	}
+	// Check the secret exists now, otherwise stop
+	opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
+	if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+		return err
 	}
 
 	return nil

@@ -1,20 +1,87 @@
 package util
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/aws/aws-sdk-go/service/sts"
-	"os"
 	"time"
 
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
+
+type AWSCredentialsOptions struct {
+	AWSCredentialsFile string
+
+	RoleArn            string
+	StsCredentialsFile string
+}
+
+func (opts *AWSCredentialsOptions) Validate() error {
+	if opts.AWSCredentialsFile != "" {
+		if opts.StsCredentialsFile != "" || opts.RoleArn != "" {
+			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
+		}
+
+		return nil
+	}
+
+	if err := util.ValidateRequiredOption("sts-creds", opts.StsCredentialsFile); err != nil {
+		return err
+	}
+	if err := util.ValidateRequiredOption("role-arn", opts.RoleArn); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
+	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume.")
+	flags.StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "Path to STS credentials file to use when assuming the role")
+
+	flags.MarkDeprecated("aws-creds", "please use '--sts-creds; with' --role-arn' instead")
+}
+
+func (opts *AWSCredentialsOptions) BindProductFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume. (Required)")
+	flags.StringVar(&opts.StsCredentialsFile, "sts-creds", opts.StsCredentialsFile, "STS credentials file to use when assuming the role. (Required)")
+
+	cobra.MarkFlagRequired(flags, "role-arn")
+	cobra.MarkFlagRequired(flags, "sts-creds")
+}
+
+func (opts *AWSCredentialsOptions) GetSession(agent string, secretData *util.CredentialsSecretData, region string) (*session.Session, error) {
+	if opts.AWSCredentialsFile != "" {
+		return NewSession(agent, opts.AWSCredentialsFile, "", "", region), nil
+	}
+
+	if opts.StsCredentialsFile != "" {
+		creds, err := ParseSTSCredentialsFile(opts.StsCredentialsFile)
+		if err != nil {
+			return nil, err
+		}
+
+		return NewStsSession(agent, opts.RoleArn, region, creds)
+	}
+
+	if secretData != nil {
+		creds := credentials.NewStaticCredentials(
+			secretData.AWSAccessKeyID,
+			secretData.AWSSecretAccessKey,
+			secretData.AWSSessionToken,
+		)
+		return NewStsSession(agent, opts.RoleArn, region, creds)
+	}
+
+	return nil, fmt.Errorf("either --aws-creds or --sts-creds or --secret-creds flag must be set")
+}
 
 func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *session.Session {
 	sessionOpts := session.Options{}
@@ -25,7 +92,7 @@ func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *
 		sessionOpts.Config.Credentials = credentials.NewStaticCredentials(credKey, credSecretKey, "")
 	}
 	if region != "" {
-		sessionOpts.Config.Region = utilpointer.String(region)
+		sessionOpts.Config.Region = ptr.To(region)
 	}
 	awsSession := session.Must(session.NewSessionWithOptions(sessionOpts))
 	awsSession.Handlers.Build.PushBackNamed(request.NamedHandler{
@@ -33,65 +100,6 @@ func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
 	})
 	return awsSession
-}
-
-func NewStsSession(agent, stsCredentialsFile, credKey, credSecretKey, sessionToken, roleArn, region string) (*session.Session, error) {
-	stsSessionOpts := session.Options{}
-
-	if credKey != "" && credSecretKey != "" && sessionToken != "" {
-		stsSessionOpts.Config.Credentials = credentials.NewStaticCredentials(credKey, credSecretKey, sessionToken)
-	}
-
-	var stsCreds struct {
-		Credentials Credentials `json:"Credentials"`
-	}
-
-	if stsCredentialsFile != "" {
-		rawStsCreds, err := os.ReadFile(stsCredentialsFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read sts credentials file: %w", err)
-		}
-		err = json.Unmarshal(rawStsCreds, &stsCreds)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal sts credentials: %w", err)
-		}
-		stsSessionOpts.Config.Credentials = credentials.NewStaticCredentials(stsCreds.Credentials.AccessKeyId, stsCreds.Credentials.SecretAccessKey, stsCreds.Credentials.SessionToken)
-	}
-
-	mySession := session.Must(session.NewSessionWithOptions(stsSessionOpts))
-	stsClient := sts.New(mySession)
-
-	role, err := stsClient.AssumeRole(&sts.AssumeRoleInput{
-		RoleArn:         aws.String(roleArn),
-		RoleSessionName: aws.String(agent),
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	creds := credentials.NewStaticCredentials(
-		*role.Credentials.AccessKeyId,
-		*role.Credentials.SecretAccessKey,
-		*role.Credentials.SessionToken,
-	)
-
-	awsSessionOpts := session.Options{
-		Config: aws.Config{
-			Credentials: creds,
-		},
-	}
-
-	if region != "" {
-		awsSessionOpts.Config.Region = utilpointer.String(region)
-	}
-
-	awsSession := session.Must(session.NewSessionWithOptions(awsSessionOpts))
-	awsSession.Handlers.Build.PushBackNamed(request.NamedHandler{
-		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
-	})
-	return awsSession, nil
 }
 
 // NewAWSRoute53Config generates an AWS config with slightly different Retryer timings
@@ -115,11 +123,4 @@ func NewConfig() *aws.Config {
 		MinThrottleDelay: 5 * time.Second,
 	}
 	return awsConfig
-}
-
-type Credentials struct {
-	AccessKeyId     string `json:"AccessKeyId"`
-	SecretAccessKey string `json:"SecretAccessKey"`
-	SessionToken    string `json:"SessionToken"`
-	Expiration      string `json:"Expiration"`
 }
