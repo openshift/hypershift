@@ -81,7 +81,8 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ValidateCreateCredentialInfo(test.inputOptions)
+			options := test.inputOptions
+			err := ValidateCreateCredentialInfo(options.AWSPlatform.AWSCredentialsOpts, options.CredentialSecretName, options.Namespace, options.PullSecretFile)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
