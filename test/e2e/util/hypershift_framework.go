@@ -284,10 +284,8 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	dumpCluster := newClusterDumper(hc, opts, artifactDir)
 
 	// First, do a dump of the cluster before tearing it down
-	err := dumpCluster(ctx, t, true)
-	if err != nil {
-		t.Errorf("Failed to dump cluster: %v", err)
-	}
+	// Save off any error so that we can continue with the teardown
+	dumpErr := dumpCluster(ctx, t, true)
 
 	if !cleanupPhase {
 		ValidateMetrics(t, ctx, hc, []string{
@@ -305,7 +303,7 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	// the current cluster to help debug teardown lifecycle issues.
 	destroyAttempt := 1
 	t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
-	err = wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := destroyCluster(ctx, t, hc, opts)
 		if err != nil {
 			if strings.Contains(err.Error(), "required inputs are missing") {
@@ -346,6 +344,10 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 		if err != nil {
 			t.Errorf("Failed to dump cluster: %v", err)
 		}
+	}
+
+	if dumpErr != nil {
+		t.Errorf("Failed to dump cluster: %v", dumpErr)
 	}
 }
 
