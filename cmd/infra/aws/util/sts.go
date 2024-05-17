@@ -14,7 +14,7 @@ import (
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 )
 
-func NewStsSession(agent, rolenArn, region string, assumeRoleCreds *credentials.Credentials) (*session.Session, error) {
+func NewSTSSession(agent, rolenArn, region string, assumeRoleCreds *credentials.Credentials) (*session.Session, error) {
 	assumeRoleSession := session.Must(session.NewSession(aws.NewConfig().WithCredentials(assumeRoleCreds)))
 	creds, err := supportawsutil.AssumeRole(assumeRoleSession, agent, rolenArn)
 	if err != nil {
@@ -44,11 +44,11 @@ func ParseSTSCredentialsFile(credentialsFile string) (*credentials.Credentials, 
 		Credentials Credentials `json:"Credentials"`
 	}
 
-	rawStsCreds, err := os.ReadFile(credentialsFile)
+	rawSTSCreds, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read sts credentials file: %w", err)
 	}
-	err = json.Unmarshal(rawStsCreds, &stsCreds)
+	err = json.Unmarshal(rawSTSCreds, &stsCreds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal sts credentials: %w", err)
 	}
