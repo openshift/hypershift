@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
@@ -237,28 +238,16 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 // ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
-func ValidateCreateCredentialInfo(opts *core.CreateOptions) error {
-	if len(opts.CredentialSecretName) == 0 {
-		if err := opts.AWSPlatform.AWSCredentialsOpts.Validate(); err != nil {
-			return err
-		}
-		if err := util.ValidateRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile == "" {
-		if err := util.ValidateRequiredOption("role-arn", opts.AWSPlatform.AWSCredentialsOpts.RoleArn); err != nil {
-			return err
-		}
-	}
-	//Check the secret exists now, otherwise stop.
-	opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
-	if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile string) error {
+	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace); err != nil {
 		return err
 	}
 
+	if len(credentialSecretName) == 0 {
+		if err := util.ValidateRequiredOption("pull-secret", pullSecretFile); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -291,7 +280,7 @@ func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions) err
 
 // validateAWSOptions validates different AWS flag parameters
 func validateAWSOptions(ctx context.Context, opts *core.CreateOptions) error {
-	if err := ValidateCreateCredentialInfo(opts); err != nil {
+	if err := ValidateCreateCredentialInfo(opts.AWSPlatform.AWSCredentialsOpts, opts.CredentialSecretName, opts.Namespace, opts.PullSecretFile); err != nil {
 		return err
 	}
 

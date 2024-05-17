@@ -9,6 +9,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 )
@@ -35,7 +36,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	opts.AWSPlatform.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := ValidateCredentialInfo(opts)
+		err := ValidateCredentialInfo(opts.AWSPlatform.AWSCredentialsOpts, opts.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return err
 		}
@@ -140,22 +141,21 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 // ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds or sts-creds mutually exclusive and are not empty; validates if
 // the credentials secret is not empty, that it can be retrieved.
-func ValidateCredentialInfo(opts *core.DestroyOptions) error {
-	if len(opts.CredentialSecretName) == 0 {
-		if err := opts.AWSPlatform.AWSCredentialsOpts.Validate(); err != nil {
+func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string) error {
+	if len(credentialSecretName) == 0 {
+		if err := opts.Validate(); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	if opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile == "" {
-		if err := util.ValidateRequiredOption("role-arn", opts.AWSPlatform.AWSCredentialsOpts.RoleArn); err != nil {
+	if opts.AWSCredentialsFile == "" {
+		if err := util.ValidateRequiredOption("role-arn", opts.RoleArn); err != nil {
 			return err
 		}
 	}
 	// Check the secret exists now, otherwise stop
-	opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
-	if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+	if _, err := util.GetSecret(credentialSecretName, namespace); err != nil {
 		return err
 	}
 

@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
@@ -42,19 +42,15 @@ func (opts *AWSCredentialsOptions) Validate() error {
 }
 
 func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
-	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume.")
-	flags.StringVar(&opts.STSCredentialsFile, "sts-creds", opts.STSCredentialsFile, "Path to STS credentials file to use when assuming the role")
+	opts.BindProductFlags(flags)
 
+	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
 	flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
 }
 
 func (opts *AWSCredentialsOptions) BindProductFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume. (Required)")
-	flags.StringVar(&opts.STSCredentialsFile, "sts-creds", opts.STSCredentialsFile, "STS credentials file to use when assuming the role. (Required)")
-
-	cobra.MarkFlagRequired(flags, "role-arn")
-	cobra.MarkFlagRequired(flags, "sts-creds")
+	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume.")
+	flags.StringVar(&opts.STSCredentialsFile, "sts-creds", opts.STSCredentialsFile, "Path to the STS credentials file to use when assuming the role. Can be generated with 'aws sts get-session-token --output json'")
 }
 
 func (opts *AWSCredentialsOptions) GetSession(agent string, secretData *util.CredentialsSecretData, region string) (*session.Session, error) {
@@ -80,7 +76,7 @@ func (opts *AWSCredentialsOptions) GetSession(agent string, secretData *util.Cre
 		return NewSTSSession(agent, opts.RoleArn, region, creds)
 	}
 
-	return nil, fmt.Errorf("either --aws-creds or --sts-creds or --secret-creds flag must be set")
+	return nil, errors.New("could not create AWS session, no credentials were given")
 }
 
 func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *session.Session {

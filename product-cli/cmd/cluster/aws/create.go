@@ -51,7 +51,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		err := hypershiftaws.ValidateCreateCredentialInfo(opts)
+		err := hypershiftaws.ValidateCreateCredentialInfo(opts.AWSPlatform.AWSCredentialsOpts, opts.CredentialSecretName, opts.Namespace, opts.PullSecretFile)
 		if err != nil {
 			return err
 		}
