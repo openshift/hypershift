@@ -205,9 +205,9 @@ func TestSizingController_Reconcile(t *testing.T) {
 			},
 			nodePoolsForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.NodePoolList, error) {
 				return &hypershiftv1beta1.NodePoolList{Items: []hypershiftv1beta1.NodePool{
-					{Status: hypershiftv1beta1.NodePoolStatus{Replicas: 10}},
-					{Status: hypershiftv1beta1.NodePoolStatus{Replicas: 3}},
-					{Status: hypershiftv1beta1.NodePoolStatus{Replicas: 17}},
+					{Spec: hypershiftv1beta1.NodePoolSpec{Replicas: ptr.To[int32](10)}},
+					{Spec: hypershiftv1beta1.NodePoolSpec{Replicas: ptr.To[int32](3)}},
+					{Spec: hypershiftv1beta1.NodePoolSpec{Replicas: ptr.To[int32](17)}},
 				}}, nil
 			},
 			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
