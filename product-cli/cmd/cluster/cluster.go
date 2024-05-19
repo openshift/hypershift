@@ -38,6 +38,7 @@ func NewCreateCommands() *cobra.Command {
 		PausedUntil:                    "",
 		OLMCatalogPlacement:            v1beta1.ManagementOLMCatalogPlacement,
 		OLMDisableDefaultSources:       false,
+		NetworkType:                    string(v1beta1.OVNKubernetes),
 	}
 
 	cmd := &cobra.Command{
