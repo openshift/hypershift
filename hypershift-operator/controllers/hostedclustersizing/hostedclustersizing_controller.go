@@ -305,7 +305,11 @@ func (r *reconciler) reconcile(
 	// third, we need to know if we're ready to transition the cluster:
 	// - the hosted cluster has limits to how quickly it can transition up and down, and
 	// - the management plane has limits to how many clusters can be transitioning at any time
-	delayStart := r.now()
+	delayStart := time.Time{}
+	if lastTransitionTime != nil {
+		// if we transitioned in the past, we need to enforce the delay from there
+		delayStart = *lastTransitionTime
+	}
 	lastComputedTime, lastComputedSizeClass := previousComputedSizeFor(hostedCluster)
 	if lastComputedTime != nil && lastComputedSizeClass == sizeClass.Name {
 		// we computed that the cluster should transition already; enforce the delay from that point
@@ -342,30 +346,35 @@ func (r *reconciler) reconcile(
 		}
 	}
 
-	hostedClusters, err := r.listHostedClusters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list hosted clusters when calculating concurrency: %w", err)
-	}
+	// For new clusters being added to the fleet, we have an SLA on creation time and can't afford to delay
+	// the first transition, as it is required for the control plane to schedule. For other clusters, though,
+	// we want to limit the amount of churn happening in order to promote the stability of the management plane.
+	if scheduled := hostedCluster.Annotations[hypershiftv1beta1.HostedClusterScheduledAnnotation]; scheduled == "true" {
+		hostedClusters, err := r.listHostedClusters(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list hosted clusters when calculating concurrency: %w", err)
+		}
 
-	if changes, durationUntilChanges := transitionsWithinSlidingWindow(hostedClusters, config.Spec.Concurrency.SlidingWindow.Duration, r.now()); int32(changes) >= config.Spec.Concurrency.Limit {
-		cfg := applyCfgFor(hostedCluster,
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
-				WithStatus(metav1.ConditionTrue).
-				WithReason("ConcurrencyLimitReached").
-				WithMessage(fmt.Sprintf("%d HostedClusters have already transitioned sizes in the last %s, more time must elapse before the next transition.", changes, config.Spec.Concurrency.SlidingWindow.Duration.String())).
-				WithLastTransitionTime(metav1.NewTime(r.now())),
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
-				WithStatus(metav1.ConditionTrue).
-				WithReason(sizeClass.Name).
-				WithMessage("The HostedCluster will transition to a new t-shirt size.").
-				WithLastTransitionTime(metav1.NewTime(r.now())),
-		)
-		if cfg != nil {
-			return &action{applyCfg: cfg, requeueAfter: durationUntilChanges}, nil
-		} else {
-			return nil, nil
+		if changes, durationUntilChanges := transitionsWithinSlidingWindow(hostedClusters, config.Spec.Concurrency.SlidingWindow.Duration, r.now()); int32(changes) >= config.Spec.Concurrency.Limit {
+			cfg := applyCfgFor(hostedCluster,
+				metav1applyconfigurations.Condition().
+					WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
+					WithStatus(metav1.ConditionTrue).
+					WithReason("ConcurrencyLimitReached").
+					WithMessage(fmt.Sprintf("%d HostedClusters have already transitioned sizes in the last %s, more time must elapse before the next transition.", changes, config.Spec.Concurrency.SlidingWindow.Duration.String())).
+					WithLastTransitionTime(metav1.NewTime(r.now())),
+				metav1applyconfigurations.Condition().
+					WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
+					WithStatus(metav1.ConditionTrue).
+					WithReason(sizeClass.Name).
+					WithMessage("The HostedCluster will transition to a new t-shirt size.").
+					WithLastTransitionTime(metav1.NewTime(r.now())),
+			)
+			if cfg != nil {
+				return &action{applyCfg: cfg, requeueAfter: durationUntilChanges}, nil
+			} else {
+				return nil, nil
+			}
 		}
 	}
 

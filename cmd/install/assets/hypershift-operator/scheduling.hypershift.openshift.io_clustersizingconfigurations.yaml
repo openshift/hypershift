@@ -52,6 +52,7 @@ spec:
                   Transitions will require that request-serving pods be re-scheduled between nodes, so each
                   transition incurs a small user-facing cost as well as a cost to the management cluster. Use
                   the concurrency configuration options to manage how many transitions can be occurring.
+                  These limits do not apply to new clusters entering the fleet.
                   If unset, a sensible default will be provided.
                 properties:
                   limit:
