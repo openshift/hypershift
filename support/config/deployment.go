@@ -348,7 +348,8 @@ func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZon
 	c.setColocation(hcp)
 	// TODO (alberto): pass labels with deployment hash and set this unconditionally so we don't skew setup.
 	if c.Replicas > 1 {
-		c.setMultizoneSpread(multiZoneSpreadLabels)
+		// OpenStack HACK: need a way to conditionally disable this
+		//c.setMultizoneSpread(multiZoneSpreadLabels)
 		c.setNodeSpread(multiZoneSpreadLabels)
 	}
 }
