@@ -15,6 +15,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	credentialsSecretVolumeName = "openstack-credentials"
+)
+
 func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
 	util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
@@ -43,7 +47,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 		},
 	}
 
-	addVolumes(deployment)
+	addVolumes(deployment, hcp)
 
 	if hcp.Spec.Platform.OpenStack.CACertSecret != nil {
 		addCACert(deployment)
@@ -54,11 +58,19 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 	return nil
 }
 
-func addVolumes(deployment *appsv1.Deployment) {
+func addVolumes(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane) {
 	deployment.Spec.Template.Spec.Volumes = append(
 		deployment.Spec.Template.Spec.Volumes,
 		util.BuildVolume(ccmVolumeKubeconfig(), buildCCMVolumeKubeconfig),
 		util.BuildVolume(ccmCloudConfig(), buildCCMCloudConfig),
+		corev1.Volume{
+			Name: credentialsSecretVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: hcp.Spec.Platform.OpenStack.CloudsYamlSecret.Name,
+				},
+			},
+		},
 	)
 }
 
@@ -103,6 +115,11 @@ func buildCCMContainer(controllerManagerImage string) func(c *corev1.Container) 
 			{
 				Name:      ccmCloudConfig().Name,
 				MountPath: "/etc/openstack/config",
+				ReadOnly:  true,
+			},
+			{
+				Name:      credentialsSecretVolumeName,
+				MountPath: "/etc/openstack/credentials",
 				ReadOnly:  true,
 			},
 		}
