@@ -266,19 +266,11 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 		h.Errorf("failed to create dump directory: %v", err)
 	}
 
-	opts.Render = true
-	opts.RenderInto = filepath.Join(dumpDir, "manifests.yaml")
-	h.Logf("Dumping new cluster manifests to %s", opts.RenderInto)
-	if err := createCluster(h.ctx, hc, opts); err != nil {
-		h.Errorf("failed to create cluster, tearing down: %v", err)
-		return hc
-	}
-
 	// Try and create the cluster. If it fails, mark test as failed and return.
 	opts.Render = false
 	opts.RenderInto = ""
 	h.Logf("Creating a new cluster. Options: %v", opts)
-	if err := createCluster(h.ctx, hc, opts); err != nil {
+	if err := createCluster(h.ctx, hc, opts, dumpDir); err != nil {
 		h.Errorf("failed to create cluster, tearing down: %v", err)
 		return hc
 	}

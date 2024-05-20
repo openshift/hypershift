@@ -125,20 +125,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 	if infra == nil {
-		opt := awsinfra.CreateInfraOptions{
-			Region:                opts.AWSPlatform.Region,
-			InfraID:               opts.InfraID,
-			AWSCredentialsOpts:    opts.AWSPlatform.AWSCredentialsOpts,
-			Name:                  opts.Name,
-			BaseDomain:            opts.BaseDomain,
-			BaseDomainPrefix:      opts.BaseDomainPrefix,
-			AdditionalTags:        opts.AWSPlatform.AdditionalTags,
-			Zones:                 opts.AWSPlatform.Zones,
-			EnableProxy:           opts.AWSPlatform.EnableProxy,
-			SSHKeyFile:            opts.SSHKeyFile,
-			SingleNATGateway:      opts.AWSPlatform.SingleNATGateway,
-			CredentialsSecretData: secretData,
-		}
+		opt := CreateInfraOptions(opts)
 		infra, err = opt.CreateInfra(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
@@ -156,18 +143,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to load infra json: %w", err)
 		}
 	} else {
-		opt := awsinfra.CreateIAMOptions{
-			Region:                opts.AWSPlatform.Region,
-			AWSCredentialsOpts:    opts.AWSPlatform.AWSCredentialsOpts,
-			InfraID:               infra.InfraID,
-			IssuerURL:             opts.AWSPlatform.IssuerURL,
-			AdditionalTags:        opts.AWSPlatform.AdditionalTags,
-			PrivateZoneID:         infra.PrivateZoneID,
-			PublicZoneID:          infra.PublicZoneID,
-			LocalZoneID:           infra.LocalZoneID,
-			KMSKeyARN:             opts.AWSPlatform.EtcdKMSKeyARN,
-			CredentialsSecretData: secretData,
-		}
+		opt := CreateIAMOptions(opts, infra)
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
 			return fmt.Errorf("failed to create iam: %w", err)
@@ -232,6 +208,44 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		EndpointAccess:          opts.AWSPlatform.EndpointAccess,
 		ProxyAddress:            infra.ProxyAddr,
 		MultiArch:               opts.AWSPlatform.MultiArch,
+	}
+	return nil
+}
+
+func CreateInfraOptions(opts *core.CreateOptions) awsinfra.CreateInfraOptions {
+	return awsinfra.CreateInfraOptions{
+		Region:             opts.AWSPlatform.Region,
+		InfraID:            opts.InfraID,
+		AWSCredentialsOpts: opts.AWSPlatform.AWSCredentialsOpts,
+		Name:               opts.Name,
+		BaseDomain:         opts.BaseDomain,
+		BaseDomainPrefix:   opts.BaseDomainPrefix,
+		AdditionalTags:     opts.AWSPlatform.AdditionalTags,
+		Zones:              opts.AWSPlatform.Zones,
+		EnableProxy:        opts.AWSPlatform.EnableProxy,
+		SSHKeyFile:         opts.SSHKeyFile,
+		SingleNATGateway:   opts.AWSPlatform.SingleNATGateway,
+	}
+}
+
+func CreateIAMOptions(opts *core.CreateOptions, infra *awsinfra.CreateInfraOutput) awsinfra.CreateIAMOptions {
+	return awsinfra.CreateIAMOptions{
+		Region:             opts.AWSPlatform.Region,
+		AWSCredentialsOpts: opts.AWSPlatform.AWSCredentialsOpts,
+		InfraID:            infra.InfraID,
+		IssuerURL:          opts.AWSPlatform.IssuerURL,
+		AdditionalTags:     opts.AWSPlatform.AdditionalTags,
+		PrivateZoneID:      infra.PrivateZoneID,
+		PublicZoneID:       infra.PublicZoneID,
+		LocalZoneID:        infra.LocalZoneID,
+		KMSKeyARN:          opts.AWSPlatform.EtcdKMSKeyARN,
+	}
+}
+
+// IsRequiredOption returns a cobra style error message when the flag value is empty
+func IsRequiredOption(flag string, value string) error {
+	if len(value) == 0 {
+		return fmt.Errorf("required flag(s) \"%s\" not set", flag)
 	}
 	return nil
 }

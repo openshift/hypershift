@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -47,21 +48,80 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 
 // createCluster calls the correct cluster create CLI function based on the
 // cluster platform.
-func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions) error {
+func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions, outputDir string) error {
+	infraFile := filepath.Join(outputDir, "infrastructure.json")
+	iamFile := filepath.Join(outputDir, "iam.json")
+	manifestsFile := filepath.Join(outputDir, "manifests.yaml")
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		return aws.CreateCluster(ctx, opts)
+		infraOpts := aws.CreateInfraOptions(opts)
+		infraOpts.OutputFile = infraFile
+		infra, err := infraOpts.CreateInfra(ctx, opts.Log)
+		if err != nil {
+			return fmt.Errorf("failed to create infra: %w", err)
+		}
+		if err := infraOpts.Output(infra); err != nil {
+			return fmt.Errorf("failed to write infra: %w", err)
+		}
+
+		client, err := util.GetClient()
+		if err != nil {
+			return err
+		}
+		iamOpts := aws.CreateIAMOptions(opts, infra)
+		iamOpts.OutputFile = iamFile
+		iam, err := iamOpts.CreateIAM(ctx, client)
+		if err != nil {
+			return fmt.Errorf("failed to create IAM: %w", err)
+		}
+		if err := iamOpts.Output(iam); err != nil {
+			return fmt.Errorf("failed to write IAM: %w", err)
+		}
+
+		opts.InfrastructureJSON = infraFile
+		opts.AWSPlatform.IAMJSON = iamFile
+		return renderCreate(ctx, opts, manifestsFile, aws.CreateCluster)
 	case hyperv1.NonePlatform:
-		return none.CreateCluster(ctx, opts)
+		return renderCreate(ctx, opts, manifestsFile, none.CreateCluster)
 	case hyperv1.KubevirtPlatform:
-		return kubevirt.CreateCluster(ctx, opts)
+		return renderCreate(ctx, opts, manifestsFile, kubevirt.CreateCluster)
 	case hyperv1.AzurePlatform:
-		return azure.CreateCluster(ctx, opts)
+		infraOpts, err := azure.CreateInfraOptions(ctx, opts)
+		if err != nil {
+			return fmt.Errorf("failed to create infra options: %w", err)
+		}
+		infraOpts.OutputFile = infraFile
+		if _, err := infraOpts.Run(ctx, opts.Log); err != nil {
+			return fmt.Errorf("failed to create infra: %w", err)
+		}
+
+		opts.InfrastructureJSON = infraFile
+		return renderCreate(ctx, opts, manifestsFile, azure.CreateCluster)
 	case hyperv1.PowerVSPlatform:
-		return powervs.CreateCluster(ctx, opts)
+		infraOpts, infra := powervs.CreateInfraOptions(opts)
+		infraOpts.OutputFile = infraFile
+		if err := infra.SetupInfra(ctx, infraOpts); err != nil {
+			return fmt.Errorf("failed to setup infra: %w", err)
+		}
+		infraOpts.Output(infra)
+
+		opts.InfrastructureJSON = infraFile
+		return renderCreate(ctx, opts, manifestsFile, powervs.CreateCluster)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
+}
+
+func renderCreate(ctx context.Context, opts *core.CreateOptions, outputFile string, create func(context.Context, *core.CreateOptions) error) error {
+	opts.Render = true
+	opts.RenderInto = outputFile
+	if err := create(ctx, opts); err != nil {
+		return fmt.Errorf("failed to render cluster manifests: %w", err)
+	}
+
+	opts.Render = false
+	opts.RenderInto = ""
+	return create(ctx, opts)
 }
 
 // destroyCluster calls the correct cluster destroy CLI function based on the

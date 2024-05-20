@@ -276,23 +276,7 @@ func (options *CreateInfraOptions) Run(ctx context.Context) error {
 	}
 
 	defer func() {
-		out := os.Stdout
-		if len(options.OutputFile) > 0 {
-			var err error
-			out, err = os.Create(options.OutputFile)
-			if err != nil {
-				log(options.InfraID).Error(err, "cannot create output file")
-			}
-			defer out.Close()
-		}
-		outputBytes, err := json.MarshalIndent(infra, "", "  ")
-		if err != nil {
-			log(options.InfraID).WithName(options.InfraID).Error(err, "failed to serialize output infra")
-		}
-		_, err = out.Write(outputBytes)
-		if err != nil {
-			log(options.InfraID).Error(err, "failed to write output infra json")
-		}
+		options.Output(infra)
 	}()
 
 	if err := infra.SetupInfra(ctx, options); err != nil {
@@ -300,6 +284,26 @@ func (options *CreateInfraOptions) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (options *CreateInfraOptions) Output(infra *Infra) {
+	out := os.Stdout
+	if len(options.OutputFile) > 0 {
+		var err error
+		out, err = os.Create(options.OutputFile)
+		if err != nil {
+			log(options.InfraID).Error(err, "cannot create output file")
+		}
+		defer out.Close()
+	}
+	outputBytes, err := json.MarshalIndent(infra, "", "  ")
+	if err != nil {
+		log(options.InfraID).WithName(options.InfraID).Error(err, "failed to serialize output infra")
+	}
+	_, err = out.Write(outputBytes)
+	if err != nil {
+		log(options.InfraID).Error(err, "failed to write output infra json")
+	}
 }
 
 // checkUnsupportedPowerVSZone omitting powervs zones that does not support hypershift infra creation flow
