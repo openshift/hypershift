@@ -18,11 +18,18 @@ func ReconcileCloudConfig(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane
 	}
 	config := string(credentialsSecret.Data[CloudConfigKey]) // TODO(dulek): Missing key handling
 
+	// XXX(mdbooth): Don't hard-code 'openstack' cloud name. It should be in the platform config.
+	config += `
+[Global]
+use-clouds=true
+clouds-file=/etc/openstack/credentials/clouds.yaml
+cloud=openstack`
+
 	// FIXME(dulek): This is specific to CCM, we might want to have 2 versions.
 	// FIXME(dulek): Is it really a good idea to have it here?
 	// FIXME(dulek): How do we make it configurable?
 	if hcp.Spec.Platform.OpenStack.CACertSecret != nil {
-		config += "ca-file = /etc/pki/ca-trust/extracted/pem/ca.pem\n"
+		config += "\nca-file = /etc/pki/ca-trust/extracted/pem/ca.pem\n"
 	}
 
 	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
