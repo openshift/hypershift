@@ -45,23 +45,34 @@ type RegistryClientImageMetadataProvider struct {
 func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	var repo distribution.Repository
-	var ref *reference.DockerImageReference
+	var (
+		repo           distribution.Repository
+		ref            *reference.DockerImageReference
+		parsedImageRef reference.DockerImageReference
+		err            error
+		overrideFound  bool
+	)
 
-	parsedImageRef, err := reference.Parse(imageRef)
+	parsedImageRef, err = reference.Parse(imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
 	}
 
-	// If the image reference contains a digest, immediately look it up in the cache
-	if parsedImageRef.ID != "" {
-		if imageConfigObject, exists := imageMetadataCache.Get(parsedImageRef.ID); exists {
-			return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
-		}
-	}
-
-	// There are no ICSPs/IDMSs to process before trying to get the image repo info
+	// There are no ICSPs/IDMSs to process.
+	// That means the image reference should be pulled from the external registry
 	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+		parsedImageRef, err = reference.Parse(imageRef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+		}
+
+		// If the image reference contains a digest, immediately look it up in the cache
+		if parsedImageRef.ID != "" {
+			if imageConfigObject, exists := imageMetadataCache.Get(parsedImageRef.ID); exists {
+				return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
+			}
+		}
+
 		ref = &parsedImageRef
 		repo, err = getRepository(ctx, *ref, pullSecret)
 		if err != nil {
@@ -72,33 +83,28 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
 	for source, mirrors := range r.OpenShiftImageRegistryOverrides {
 		for _, mirror := range mirrors {
-			ref, err = GetRegistryOverrides(ctx, parsedImageRef, source, mirror)
+			ref, overrideFound, err = GetRegistryOverrides(ctx, parsedImageRef, source, mirror)
 			if err != nil {
 				log.Info(fmt.Sprintf("failed to find registry override for image reference %q with source, %s, mirror %s: %s", imageRef, source, mirror, err.Error()))
-				continue
-			}
-
-			// If the image reference contains a digest, immediately look it up in the cache
-			if ref.ID != "" {
-				if imageConfigObject, exists := imageMetadataCache.Get(ref.ID); exists {
-					return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
-				}
-			}
-
-			repo, err = getRepository(ctx, *ref, pullSecret)
-			if err != nil {
-				log.Info(fmt.Sprintf("failed to create repository client for %s with source, %s, mirror %s: %s", ref.DockerClientDefaults().RegistryURL(), source, mirror, err.Error()))
 				continue
 			}
 			break
 		}
 		// We found a successful source/mirror combo so break continuing any further source/mirror combos
-		if repo != nil {
+		if overrideFound {
 			break
 		}
 	}
 
-	if repo == nil {
+	// If the image reference contains a digest, immediately look it up in the cache
+	if ref.ID != "" {
+		if imageConfigObject, exists := imageMetadataCache.Get(ref.ID); exists {
+			return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
+		}
+	}
+
+	repo, err = getRepository(ctx, *ref, pullSecret)
+	if err != nil || repo == nil {
 		return nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
 	}
 
@@ -155,25 +161,24 @@ func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
 	return hcluster.Spec.Release.Image
 }
 
-func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReference, source string, mirror string) (*reference.DockerImageReference, error) {
+func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReference, source string, mirror string) (*reference.DockerImageReference, bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	sourceRef, err := reference.Parse(source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse source image reference %q: %w", source, err)
+		return nil, false, fmt.Errorf("failed to parse source image reference %q: %w", source, err)
 	}
 
-	if sourceRef.Name == ref.Name {
+	if sourceRef.Namespace == ref.Namespace && sourceRef.Name == ref.Name {
 		log.Info("registry override coincidence found", "original", fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.Name), "mirror", mirror)
 		mirrorRef, err := reference.Parse(mirror)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse mirror image reference %q: %w", mirrorRef.Name, err)
+			return nil, false, fmt.Errorf("failed to parse mirror image reference %q: %w", mirrorRef.Name, err)
 		}
-		return &mirrorRef, nil
+		return &mirrorRef, true, nil
 	}
 
-	log.Info("registry override coincidence not found", "image", ref.Name)
-	return &ref, nil
+	return &ref, false, nil
 }
 
 func GetPayloadImage(ctx context.Context, releaseImageProvider releaseinfo.Provider, hc *hyperv1.HostedCluster, component string, pullSecret []byte) (string, error) {
