@@ -2,7 +2,9 @@ package openstack
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -103,29 +105,43 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 }
 
 func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return errors.Join(
+		a.reconcileCloudsYaml(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.CloudsYamlSecret),
+		a.reconcileCACert(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.CACertSecret),
+	)
+}
+
+func (a OpenStack) reconcileCloudsYaml(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string, clusterNamespace string, cloudsYamlSecret corev1.LocalObjectReference) error {
 	var source corev1.Secret
 
 	// Sync user cloud.conf secret
-	name := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.OpenStack.CloudsYamlSecret.Name}
+	name := client.ObjectKey{Namespace: clusterNamespace, Name: cloudsYamlSecret.Name}
 	if err := c.Get(ctx, name, &source); err != nil {
 		return fmt.Errorf("failed to get secret %s: %w", name, err)
 	}
 
-	clouds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "openstack-credentials"}}
-	if _, err := createOrUpdate(ctx, c, clouds, func() error {
+	clouds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: cloudsYamlSecret.Name}}
+	_, err := createOrUpdate(ctx, c, clouds, func() error {
 		if clouds.Data == nil {
 			clouds.Data = map[string][]byte{}
 		}
 		clouds.Data["clouds.yaml"] = source.Data["clouds.yaml"] // TODO(dulek): Proper missing key handling.
 		clouds.Data["clouds.conf"] = source.Data["clouds.conf"] // TODO(dulek): Could we just generate this from clouds.yaml here?
 		return nil
-	}); err != nil {
-		return err
+	})
+
+	return err
+}
+
+func (a OpenStack) reconcileCACert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string, clusterNamespace string, caCertSecret *corev1.LocalObjectReference) error {
+	if caCertSecret == nil {
+		return nil
 	}
 
-	// Sync user CA certificate secret
+	var source corev1.Secret
+
 	// TODO(dulek): Switch this to a ConfigMap
-	name = client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.OpenStack.CACertSecret.Name}
+	name := client.ObjectKey{Namespace: clusterNamespace, Name: caCertSecret.Name}
 	if err := c.Get(ctx, name, &source); err != nil {
 		return fmt.Errorf("failed to get secret %s: %w", name, err)
 	}

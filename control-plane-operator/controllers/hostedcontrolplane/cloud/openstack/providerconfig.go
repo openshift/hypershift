@@ -21,7 +21,11 @@ func ReconcileCloudConfig(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane
 	// FIXME(dulek): This is specific to CCM, we might want to have 2 versions.
 	// FIXME(dulek): Is it really a good idea to have it here?
 	// FIXME(dulek): How do we make it configurable?
-	config += "ca-file = /etc/pki/ca-trust/extracted/pem/ca.pem\n\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
+	if hcp.Spec.Platform.OpenStack.CACertSecret != nil {
+		config += "ca-file = /etc/pki/ca-trust/extracted/pem/ca.pem\n"
+	}
+
+	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
 
 	secret.Data[CloudConfigKey] = []byte(config)
 	return nil
