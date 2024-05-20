@@ -2589,8 +2589,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
 	case hyperv1.OpenStackPlatform:
-		// TODO(dulek): No magic strings.
-		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "openstack-credentials"}}
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.OpenStack.CloudsYamlSecret.Name}}
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 			return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
 		}
@@ -2602,16 +2601,19 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
 		}
 
-		caConfigMap := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "openstack-ca"}}
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(caConfigMap), caConfigMap); err != nil {
-			return fmt.Errorf("failed to get OpenStack CA certificates: %w", err)
-		}
+		caCertSecret := hcp.Spec.Platform.OpenStack.CACertSecret
+		if caCertSecret != nil {
+			caConfigMap := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: caCertSecret.Name}}
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(caConfigMap), caConfigMap); err != nil {
+				return fmt.Errorf("failed to get OpenStack CA certificates: %w", err)
+			}
 
-		ca := manifests.OpenStackTrustedCA(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, ca, func() error {
-			return openstack.ReconcileTrustedCA(ca, hcp, caConfigMap)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile OpenStack cloud CA: %w", err)
+			ca := manifests.OpenStackTrustedCA(hcp.Namespace)
+			if _, err := createOrUpdate(ctx, r, ca, func() error {
+				return openstack.ReconcileTrustedCA(ca, hcp, caConfigMap)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile OpenStack cloud CA: %w", err)
+			}
 		}
 	}
 	return nil

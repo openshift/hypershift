@@ -1818,8 +1818,8 @@ type AzurePlatformSpec struct {
 
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.
 type OpenStackPlatformSpec struct {
-	CloudsYamlSecret corev1.LocalObjectReference `json:"cloudsYamlSecret"`
-	CACertSecret     corev1.LocalObjectReference `json:"caCertSecret"`
+	CloudsYamlSecret corev1.LocalObjectReference  `json:"cloudsYamlSecret"`
+	CACertSecret     *corev1.LocalObjectReference `json:"caCertSecret,omitempty"`
 }
 
 // Release represents the metadata for an OCP release payload image.

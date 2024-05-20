@@ -45,6 +45,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 
 	addVolumes(deployment)
 
+	if hcp.Spec.Platform.OpenStack.CACertSecret != nil {
+		addCACert(deployment)
+	}
+
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	p.DeploymentConfig.ApplyTo(deployment)
 	return nil
@@ -55,18 +59,21 @@ func addVolumes(deployment *appsv1.Deployment) {
 		deployment.Spec.Template.Spec.Volumes,
 		util.BuildVolume(ccmVolumeKubeconfig(), buildCCMVolumeKubeconfig),
 		util.BuildVolume(ccmCloudConfig(), buildCCMCloudConfig),
-		util.BuildVolume(ccmCloudCA(), buildCCMTrustedCA),
 	)
 }
 
-func podVolumeMounts() util.PodVolumeMounts {
-	return util.PodVolumeMounts{
-		ccmContainer().Name: util.ContainerVolumeMounts{
-			ccmVolumeKubeconfig().Name: "/etc/kubernetes/kubeconfig",
-			ccmCloudConfig().Name:      "/etc/openstack/config",
-			ccmCloudCA().Name:          "/etc/pki/ca-trust/extracted/pem",
-		},
-	}
+func addCACert(deployment *appsv1.Deployment) {
+	deployment.Spec.Template.Spec.Volumes = append(
+		deployment.Spec.Template.Spec.Volumes,
+		util.BuildVolume(ccmCloudCA(), buildCCMTrustedCA),
+	)
+
+	ccmContainer := &deployment.Spec.Template.Spec.Containers[0]
+	ccmContainer.VolumeMounts = append(ccmContainer.VolumeMounts, corev1.VolumeMount{
+		Name:      ccmCloudCA().Name,
+		MountPath: "/etc/pki/ca-trust/extracted/pem",
+		ReadOnly:  true,
+	})
 }
 
 func buildCCMContainer(controllerManagerImage string) func(c *corev1.Container) {
@@ -87,7 +94,18 @@ func buildCCMContainer(controllerManagerImage string) func(c *corev1.Container) 
 			fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
 			"--leader-elect-resource-namespace=openshift-cloud-controller-manager",
 		}
-		c.VolumeMounts = podVolumeMounts().ContainerMounts(c.Name)
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      ccmVolumeKubeconfig().Name,
+				MountPath: "/etc/kubernetes/kubeconfig",
+				ReadOnly:  true,
+			},
+			{
+				Name:      ccmCloudConfig().Name,
+				MountPath: "/etc/openstack/config",
+				ReadOnly:  true,
+			},
+		}
 	}
 }
 
