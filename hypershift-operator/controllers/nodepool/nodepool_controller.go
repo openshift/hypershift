@@ -1641,6 +1641,11 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashSimple(pullSecret))
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
 	}
+	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
+	// We let this change to happen inplace now as the tokenSecret and the mcs config use the whole spec.Config for the comparing hash.
+	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would missmatch forever.
+	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
+
 	return nil
 }
 
