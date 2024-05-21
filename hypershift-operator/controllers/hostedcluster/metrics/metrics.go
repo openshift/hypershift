@@ -7,6 +7,7 @@ import (
 )
 
 var (
+	HasBeenAvailableAnnotation    = "hypershift.openshift.io/HasBeenAvailable"
 	DeletionDurationMetricName    = "hypershift_cluster_deletion_duration_seconds"
 	HostedClusterDeletionDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from HostedCluster having a deletion timestamp to all hypershift finalizers being removed",

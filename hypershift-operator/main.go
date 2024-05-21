@@ -290,25 +290,20 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
-	imageMetaDataProvider := &hyperutil.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
-
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
-		Client:                        mgr.GetClient(),
-		ManagementClusterCapabilities: mgmtClusterCaps,
-		HypershiftOperatorImage:       operatorImage,
-		ReleaseProvider:               releaseProviderWithOpenShiftImageRegistryOverrides,
-		EnableOCPClusterMonitoring:    opts.EnableOCPClusterMonitoring,
-		EnableCIDebugOutput:           opts.EnableCIDebugOutput,
-		ImageMetadataProvider:         imageMetaDataProvider,
-		MetricsSet:                    metricsSet,
-		OperatorNamespace:             opts.Namespace,
-		SREConfigHash:                 sreConfigHash,
-		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
-		MonitoringDashboards:          monitoringDashboards,
+		Client:                          mgr.GetClient(),
+		ManagementClusterCapabilities:   mgmtClusterCaps,
+		HypershiftOperatorImage:         operatorImage,
+		OpenShiftImageRegistryOverrides: opts.RegistryOverrides,
+		EnableOCPClusterMonitoring:      opts.EnableOCPClusterMonitoring,
+		EnableCIDebugOutput:             opts.EnableCIDebugOutput,
+		MetricsSet:                      metricsSet,
+		OperatorNamespace:               opts.Namespace,
+		SREConfigHash:                   sreConfigHash,
+		KubevirtInfraClients:            kvinfra.NewKubevirtInfraClientMap(),
+		MonitoringDashboards:            monitoringDashboards,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

@@ -49,9 +49,11 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 )
 
@@ -970,10 +972,11 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			capabilities.CapabilityIngress,
 			capabilities.CapabilityProxy,
 		),
-		createOrUpdate:        func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ReleaseProvider:       &fakereleaseprovider.FakeReleaseProvider{},
-		ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
-		now:                   metav1.Now,
+		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+			return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+		},
+		now: metav1.Now,
 	}
 
 	r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
@@ -1658,29 +1661,39 @@ func TestValidateReleaseImage(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
 			r := &HostedClusterReconciler{
 				Client: fake.NewClientBuilder().WithObjects(tc.other...).Build(),
-				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-					ImageVersion: map[string]string{
-						"image-4.7.0":  "4.7.0",
-						"image-4.9.0":  "4.9.0",
-						"image-4.10.0": "4.10.0",
-						"image-4.11.0": "4.11.0",
-						"image-4.11.1": "4.11.1",
-						"image-4.12.0": "4.12.0",
-						"image-4.13.0": "4.13.0",
-						"image-4.14.0": "4.14.0",
-					},
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return &fakereleaseprovider.FakeReleaseProvider{
+							ImageVersion: map[string]string{
+								"image-4.7.0":  "4.7.0",
+								"image-4.9.0":  "4.9.0",
+								"image-4.10.0": "4.10.0",
+								"image-4.11.0": "4.11.0",
+								"image-4.11.1": "4.11.1",
+								"image-4.12.0": "4.12.0",
+								"image-4.13.0": "4.13.0",
+								"image-4.14.0": "4.14.0",
+								"image-4.15.0": "4.15.0",
+								"image-4.16.0": "4.16.0",
+							},
+						},
+						&fakeimagemetadataprovider.FakeImageMetadataProvider{
+							Result: &dockerv1client.DockerImageConfig{},
+						},
+						nil
 				},
 			}
 
 			ctx := context.Background()
-			actual := r.validateReleaseImage(ctx, tc.hostedCluster)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			actual := r.validateReleaseImage(ctx, tc.hostedCluster, releaseProvider)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
 			}
 			if tc.expectedNotFoundError {
-				g := NewGomegaWithT(t)
 				g.Expect(errors2.IsNotFound(actual)).To(BeTrue())
 			}
 		})
@@ -1998,17 +2011,27 @@ func TestIsUpgradeable(t *testing.T) {
 		}
 		r := &HostedClusterReconciler{
 			Client: fake.NewClientBuilder().WithObjects(objs...).Build(),
-			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-				ImageVersion: map[string]string{
-					"image-4.12":   "4.12.0",
-					"image-4.12.1": "4.12.1",
-					"image-4.13":   "4.13.0",
-				},
+			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+				return &fakereleaseprovider.FakeReleaseProvider{
+						ImageVersion: map[string]string{
+							"image-4.12":   "4.12.0",
+							"image-4.12.1": "4.12.1",
+							"image-4.13":   "4.14.0",
+						},
+					},
+					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+					nil
 			},
 		}
 
 		t.Run(test.name, func(t *testing.T) {
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc)
+			ctx := context.Background()
+			g := NewGomegaWithT(t)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, releaseProvider)
 			if err != nil {
 				t.Errorf("isUpgradeable() internal err = %v", err)
 			}
@@ -2344,16 +2367,26 @@ func TestIsProgressing(t *testing.T) {
 		}
 		r := &HostedClusterReconciler{
 			Client: fake.NewClientBuilder().WithObjects(objs...).Build(),
-			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-				ImageVersion: map[string]string{
-					"release-1.2": "1.2.0",
-					"release-1.3": "1.3.0",
-				},
+			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+				return &fakereleaseprovider.FakeReleaseProvider{
+						ImageVersion: map[string]string{
+							"release-1.2": "1.2.0",
+							"release-1.3": "1.3.0",
+						},
+					},
+					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+					nil
 			},
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc)
+			ctx := context.Background()
+			g := NewGomegaWithT(t)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, releaseProvider)
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
