@@ -29,7 +29,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -293,12 +295,23 @@ type RequestServingNodeAutoscaler struct {
 
 func (r *RequestServingNodeAutoscaler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
+	tickerChannel := make(chan event.GenericEvent)
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
+		WatchesRawSource(&source.Channel{Source: tickerChannel}, &handler.EnqueueRequestForObject{}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).Named(autoscalerControllerName)
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "ticker", Namespace: placeholderNamespace}}
+			tickerChannel <- event.GenericEvent{Object: pod}
+		}
+	}()
 	return builder.Complete(r)
 }
 
@@ -323,6 +336,7 @@ func (r *RequestServingNodeAutoscaler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling")
 
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, client.InNamespace(placeholderNamespace), client.HasLabels{PlaceholderLabel}); err != nil {
