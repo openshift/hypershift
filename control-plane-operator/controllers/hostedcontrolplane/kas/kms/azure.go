@@ -20,9 +20,11 @@ import (
 const (
 	azureActiveKMSUnixSocketFileName = "azurekmsactive.socket"
 	azureActiveKMSHealthPort         = 8787
+	azureActiveKMSMetricsAddr        = "8095"
 
 	azureBackupKMSUnixSocketFileName = "azurekmsbackup.socket"
 	azureBackupKMSHealthPort         = 8788
+	azureBackupKMSMetricsAddr        = "8096"
 
 	azureKMSCredsFileKey          = "azure.json"
 	azureProviderConfigNamePrefix = "azure"
@@ -121,13 +123,13 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	podSpec.Containers = append(podSpec.Containers,
 		util.BuildContainer(
 			kasContainerAzureKMSActive(),
-			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort)),
+			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr)),
 	)
 	if p.kmsSpec.BackupKey != nil {
 		podSpec.Containers = append(podSpec.Containers,
 			util.BuildContainer(
 				kasContainerAzureKMSBackup(),
-				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort)),
+				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr)),
 		)
 	}
 
@@ -147,7 +149,7 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	return nil
 }
 
-func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey, unixSocketPath string, healthPort int) func(c *corev1.Container) {
+func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey, unixSocketPath string, healthPort int, metricsAddr string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = p.kmsImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
@@ -165,6 +167,7 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 			fmt.Sprintf("--key-version=%s", kmsKey.KeyVersion),
 			fmt.Sprintf("--listen-addr=%s", unixSocketPath),
 			fmt.Sprintf("--healthz-port=%d", healthPort),
+			fmt.Sprintf("--metrics-addr=%s", metricsAddr),
 			"--healthz-path=/healthz",
 			fmt.Sprintf("--config-file-path=%s/%s", azureKMSVolumeMounts.Path(c.Name, kasVolumeAzureKMSCredentials().Name), azureKMSCredsFileKey),
 			"-v=1",
