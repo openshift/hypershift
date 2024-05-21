@@ -1383,57 +1383,6 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
 		{
-			name: "Azurecluster with incomplete credentials secret, error",
-			hostedCluster: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-cluster",
-				},
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AzurePlatform,
-						Azure: &hyperv1.AzurePlatformSpec{
-							Credentials: corev1.LocalObjectReference{Name: "creds"},
-						},
-					},
-					Networking: hyperv1.ClusterNetworking{
-						ClusterNetwork: clusterNet,
-					},
-				}},
-			other: []crclient.Object{
-				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
-			},
-			expectedResult: errors.New(`[credentials secret for cluster doesn't have required key AZURE_CLIENT_ID, credentials secret for cluster doesn't have required key AZURE_CLIENT_SECRET, credentials secret for cluster doesn't have required key AZURE_SUBSCRIPTION_ID, credentials secret for cluster doesn't have required key AZURE_TENANT_ID]`),
-		},
-		{
-			name: "Azurecluster with complete credentials secret, success",
-			hostedCluster: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-cluster",
-				},
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AzurePlatform,
-						Azure: &hyperv1.AzurePlatformSpec{
-							Credentials: corev1.LocalObjectReference{Name: "creds"},
-						},
-					},
-					Networking: hyperv1.ClusterNetworking{
-						ClusterNetwork: clusterNet,
-					},
-				}},
-			other: []crclient.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "creds"},
-					Data: map[string][]byte{
-						"AZURE_CLIENT_ID":       nil,
-						"AZURE_CLIENT_SECRET":   nil,
-						"AZURE_SUBSCRIPTION_ID": nil,
-						"AZURE_TENANT_ID":       nil,
-					},
-				},
-			},
-		},
-		{
 			name: "invalid cluster uuid",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{

@@ -93,6 +93,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -4220,10 +4221,12 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 		return nil
 	}
 
+	// Verify the platform is at least initialized
 	if hc.Spec.Platform.Azure == nil {
 		return errors.New("azurecluster needs .spec.platform.azure to be filled")
 	}
 
+	// Verify the credentials secret contains the data fields we expect
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Namespace: hc.Namespace,
 		Name:      hc.Spec.Platform.Azure.Credentials.Name,
@@ -4237,6 +4240,12 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 		if _, found := credentialsSecret.Data[expectedKey]; !found {
 			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
 		}
+	}
+
+	// Verify the resource group locations match
+	err := azureutil.VerifyResourceGroupLocationsMatch(ctx, hc, credentialsSecret)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
 	return utilerrors.NewAggregate(errs)
