@@ -37,7 +37,7 @@ type ResourceSyncController struct {
 	secretSyncRules syncRules
 
 	// knownNamespaces is the list of namespaces we are watching.
-	knownNamespaces sets.String
+	knownNamespaces sets.Set[string]
 
 	configMapGetter            corev1client.ConfigMapsGetter
 	secretGetter               corev1client.SecretsGetter
@@ -125,7 +125,7 @@ func (c *ResourceSyncController) syncConfigMap(destination ResourceLocation, sou
 	defer c.syncRuleLock.Unlock()
 	c.configMapSyncRules[destination] = syncRuleSource{
 		ResourceLocation:         source,
-		syncedKeys:               sets.NewString(keys...),
+		syncedKeys:               sets.New(keys...),
 		preconditionsFulfilledFn: preconditionsFulfilledFn,
 	}
 
@@ -160,7 +160,7 @@ func (c *ResourceSyncController) syncSecret(destination, source ResourceLocation
 	defer c.syncRuleLock.Unlock()
 	c.secretSyncRules[destination] = syncRuleSource{
 		ResourceLocation:         source,
-		syncedKeys:               sets.NewString(keys...),
+		syncedKeys:               sets.New(keys...),
 		preconditionsFulfilledFn: preconditionsFulfilledFn,
 	}
 

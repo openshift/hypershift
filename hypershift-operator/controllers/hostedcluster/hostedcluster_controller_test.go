@@ -1082,8 +1082,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 
 	r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
-		"v1.0.0",
-		"1.27.0")
+		"v1.2.0",
+		"1.28.0")
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -1696,18 +1696,18 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.15.0",
+							Image: "image-4.16.0",
 						},
 					},
 				},
 			},
-			expectedResult: errors.New(`y-stream downgrade from "4.15.0" to "4.14.0" is not supported`),
+			expectedResult: errors.New(`y-stream downgrade from "4.16.0" to "4.15.0" is not supported`),
 		},
 		{
 			name: "unsupported y-stream upgrade, error",
@@ -1728,18 +1728,18 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
 			},
-			expectedResult: errors.New(`y-stream upgrade from "4.11.0" to "4.14.0" is not for OpenShiftSDN`),
+			expectedResult: errors.New(`y-stream upgrade from "4.12.0" to "4.15.0" is not for OpenShiftSDN`),
 		},
 		{
 			name: "supported y-stream upgrade, success",
@@ -1760,13 +1760,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
@@ -1792,7 +1792,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 			},
@@ -1817,13 +1817,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.14.0",
+							Image: "image-4.15.0",
 						},
 					},
 				},
@@ -1849,13 +1849,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.1",
+							Image: "image-4.12.1",
 						},
 					},
 				},
@@ -1881,13 +1881,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.14.0",
+							Image: "image-4.15.0",
 						},
 					},
 				},
@@ -1918,7 +1918,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 			},
@@ -1943,7 +1943,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 
 					Platform: hyperv1.PlatformSpec{
@@ -1952,7 +1952,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.14.0". Attempting to use: "4.13.0"`),
+			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.15.0". Attempting to use: "4.14.0"`),
 		},
 		{
 			name: "KubeVirt platform supported release, success",
@@ -1973,7 +1973,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 
 					Platform: hyperv1.PlatformSpec{
@@ -1995,15 +1995,15 @@ func TestValidateReleaseImage(t *testing.T) {
 					return &fakereleaseprovider.FakeReleaseProvider{
 							ImageVersion: map[string]string{
 								"image-4.7.0":  "4.7.0",
-								"image-4.9.0":  "4.9.0",
 								"image-4.10.0": "4.10.0",
 								"image-4.11.0": "4.11.0",
-								"image-4.11.1": "4.11.1",
 								"image-4.12.0": "4.12.0",
+								"image-4.12.1": "4.12.1",
 								"image-4.13.0": "4.13.0",
 								"image-4.14.0": "4.14.0",
 								"image-4.15.0": "4.15.0",
 								"image-4.16.0": "4.16.0",
+								"image-4.17.0": "4.17.0",
 							},
 						},
 						&fakeimagemetadataprovider.FakeImageMetadataProvider{
@@ -2156,9 +2156,9 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 }
 
 func TestIsUpgradeable(t *testing.T) {
-	releaseImageFrom := "image-4.12"
-	releaseImageToZstream := "image-4.12.1"
-	releaseImageTo := "image-4.13"
+	releaseImageFrom := "image-4.13"
+	releaseImageToZstream := "image-4.13.1"
+	releaseImageTo := "image-4.14"
 	tests := []struct {
 		name      string
 		hc        *hyperv1.HostedCluster
@@ -2198,7 +2198,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 				},
@@ -2221,7 +2221,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -2255,7 +2255,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -2313,7 +2313,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -2343,9 +2343,9 @@ func TestIsUpgradeable(t *testing.T) {
 			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
 				return &fakereleaseprovider.FakeReleaseProvider{
 						ImageVersion: map[string]string{
-							"image-4.12":   "4.12.0",
-							"image-4.12.1": "4.12.1",
-							"image-4.13":   "4.14.0",
+							"image-4.13":   "4.13.0",
+							"image-4.13.1": "4.13.1",
+							"image-4.14":   "4.15.0",
 						},
 					},
 					&fakeimagemetadataprovider.FakeImageMetadataProvider{

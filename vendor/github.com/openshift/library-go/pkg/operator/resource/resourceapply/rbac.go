@@ -28,14 +28,14 @@ func ApplyClusterRole(ctx context.Context, client rbacclientv1.ClusterRolesGette
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
+	modified := false
 	existingCopy := existing.DeepCopy()
 
-	resourcemerge.EnsureObjectMeta(modified, &existingCopy.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(&modified, &existingCopy.ObjectMeta, required.ObjectMeta)
 	rulesContentSame := equality.Semantic.DeepEqual(existingCopy.Rules, required.Rules)
 	aggregationRuleContentSame := equality.Semantic.DeepEqual(existingCopy.AggregationRule, required.AggregationRule)
 
-	if aggregationRuleContentSame && rulesContentSame && !*modified {
+	if aggregationRuleContentSame && rulesContentSame && !modified {
 		return existingCopy, false, nil
 	}
 
@@ -50,7 +50,7 @@ func ApplyClusterRole(ctx context.Context, client rbacclientv1.ClusterRolesGette
 		existingCopy.Rules = required.Rules
 	}
 
-	if klog.V(4).Enabled() {
+	if klog.V(2).Enabled() {
 		klog.Infof("ClusterRole %q changes: %v", required.Name, JSONPatchNoError(existing, existingCopy))
 	}
 
@@ -74,7 +74,7 @@ func ApplyClusterRoleBinding(ctx context.Context, client rbacclientv1.ClusterRol
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
+	modified := false
 	existingCopy := existing.DeepCopy()
 	requiredCopy := required.DeepCopy()
 
@@ -93,19 +93,19 @@ func ApplyClusterRoleBinding(ctx context.Context, client rbacclientv1.ClusterRol
 		}
 	}
 
-	resourcemerge.EnsureObjectMeta(modified, &existingCopy.ObjectMeta, requiredCopy.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(&modified, &existingCopy.ObjectMeta, requiredCopy.ObjectMeta)
 
 	subjectsAreSame := equality.Semantic.DeepEqual(existingCopy.Subjects, requiredCopy.Subjects)
 	roleRefIsSame := equality.Semantic.DeepEqual(existingCopy.RoleRef, requiredCopy.RoleRef)
 
-	if subjectsAreSame && roleRefIsSame && !*modified {
+	if subjectsAreSame && roleRefIsSame && !modified {
 		return existingCopy, false, nil
 	}
 
 	existingCopy.Subjects = requiredCopy.Subjects
 	existingCopy.RoleRef = requiredCopy.RoleRef
 
-	if klog.V(4).Enabled() {
+	if klog.V(2).Enabled() {
 		klog.Infof("ClusterRoleBinding %q changes: %v", requiredCopy.Name, JSONPatchNoError(existing, existingCopy))
 	}
 
@@ -128,18 +128,18 @@ func ApplyRole(ctx context.Context, client rbacclientv1.RolesGetter, recorder ev
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
+	modified := false
 	existingCopy := existing.DeepCopy()
 
-	resourcemerge.EnsureObjectMeta(modified, &existingCopy.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(&modified, &existingCopy.ObjectMeta, required.ObjectMeta)
 	contentSame := equality.Semantic.DeepEqual(existingCopy.Rules, required.Rules)
-	if contentSame && !*modified {
+	if contentSame && !modified {
 		return existingCopy, false, nil
 	}
 
 	existingCopy.Rules = required.Rules
 
-	if klog.V(4).Enabled() {
+	if klog.V(2).Enabled() {
 		klog.Infof("Role %q changes: %v", required.Namespace+"/"+required.Name, JSONPatchNoError(existing, existingCopy))
 	}
 	actual, err := client.Roles(required.Namespace).Update(ctx, existingCopy, metav1.UpdateOptions{})
@@ -162,7 +162,7 @@ func ApplyRoleBinding(ctx context.Context, client rbacclientv1.RoleBindingsGette
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
+	modified := false
 	existingCopy := existing.DeepCopy()
 	requiredCopy := required.DeepCopy()
 
@@ -181,19 +181,19 @@ func ApplyRoleBinding(ctx context.Context, client rbacclientv1.RoleBindingsGette
 		}
 	}
 
-	resourcemerge.EnsureObjectMeta(modified, &existingCopy.ObjectMeta, requiredCopy.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(&modified, &existingCopy.ObjectMeta, requiredCopy.ObjectMeta)
 
 	subjectsAreSame := equality.Semantic.DeepEqual(existingCopy.Subjects, requiredCopy.Subjects)
 	roleRefIsSame := equality.Semantic.DeepEqual(existingCopy.RoleRef, requiredCopy.RoleRef)
 
-	if subjectsAreSame && roleRefIsSame && !*modified {
+	if subjectsAreSame && roleRefIsSame && !modified {
 		return existingCopy, false, nil
 	}
 
 	existingCopy.Subjects = requiredCopy.Subjects
 	existingCopy.RoleRef = requiredCopy.RoleRef
 
-	if klog.V(4).Enabled() {
+	if klog.V(2).Enabled() {
 		klog.Infof("RoleBinding %q changes: %v", requiredCopy.Namespace+"/"+requiredCopy.Name, JSONPatchNoError(existing, existingCopy))
 	}
 

@@ -415,9 +415,6 @@ github.com/gabriel-vasile/mimetype
 github.com/gabriel-vasile/mimetype/internal/charset
 github.com/gabriel-vasile/mimetype/internal/json
 github.com/gabriel-vasile/mimetype/internal/magic
-# github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
-## explicit
-github.com/ghodss/yaml
 # github.com/go-errors/errors v1.5.1
 ## explicit; go 1.14
 github.com/go-errors/errors
@@ -707,7 +704,14 @@ github.com/opencontainers/go-digest/digestset
 ## explicit; go 1.18
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/openshift/api v0.0.0-20240214165302-89248c87b7fc
+# github.com/opencontainers/runc v1.1.10
+## explicit; go 1.17
+github.com/opencontainers/runc/libcontainer/user
+# github.com/opencontainers/selinux v1.11.0
+## explicit; go 1.19
+github.com/opencontainers/selinux/go-selinux
+github.com/opencontainers/selinux/pkg/pwalkdir
+# github.com/openshift/api v0.0.0-20240405095747-3e50337fcaea
 ## explicit; go 1.21
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -779,8 +783,8 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
-## explicit; go 1.20
+# github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
+## explicit; go 1.21
 github.com/openshift/client-go/config/applyconfigurations/config/v1
 github.com/openshift/client-go/config/applyconfigurations/internal
 github.com/openshift/client-go/config/clientset/versioned/scheme
@@ -826,8 +830,8 @@ github.com/openshift/hypershift/api/scheduling
 github.com/openshift/hypershift/api/scheduling/v1alpha1
 github.com/openshift/hypershift/api/util/configrefs
 github.com/openshift/hypershift/api/util/ipnet
-# github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
-## explicit; go 1.20
+# github.com/openshift/library-go v0.0.0-20240422143640-fad649cbbd63
+## explicit; go 1.21
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
 github.com/openshift/library-go/pkg/certs
 github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphanalysis

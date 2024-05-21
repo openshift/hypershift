@@ -8,7 +8,7 @@ import (
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphapi"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/errors"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 )
@@ -21,7 +21,33 @@ func GatherCertsFromPlatformNamespaces(ctx context.Context, kubeClient kubernete
 	return gatherFilteredCerts(ctx, kubeClient, platformConfigMaps, platformSecrets, options)
 }
 
-var wellKnownPlatformNamespaces = sets.NewString(
+func GatherCertsFromDisk(ctx context.Context, kubeClient kubernetes.Interface, dir string, options ...certGenerationOptions) (*certgraphapi.PKIList, error) {
+	errs := []error{}
+
+	certs, certMetadata, err := gatherSecretsFromDisk(ctx, dir, options)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	caBundles, caBundlesMetadata, err := gatherCABundlesFromDisk(ctx, dir, options)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	pkiList := PKIListFromParts(ctx, nil, certs, caBundles)
+
+	fileMetadata := []certgraphapi.OnDiskLocationWithMetadata{}
+	for _, metadata := range certMetadata {
+		fileMetadata = append(fileMetadata, *metadata)
+	}
+	for _, metadata := range caBundlesMetadata {
+		fileMetadata = append(fileMetadata, *metadata)
+	}
+	pkiList.OnDiskResourceData = deduplicateOnDiskMetadata(certgraphapi.PerOnDiskResourceData{
+		TLSArtifact: fileMetadata,
+	})
+	return pkiList, utilerrors.NewAggregate(errs)
+}
+
+var wellKnownPlatformNamespaces = sets.New(
 	"openshift",
 	"default",
 	"kube-system",
@@ -145,7 +171,7 @@ func gatherFilteredCerts(ctx context.Context, kubeClient kubernetes.Interface, a
 	}
 
 	pkiList := PKIListFromParts(ctx, inClusterResourceData, certs, caBundles)
-	return pkiList, errors.NewAggregate(errs)
+	return pkiList, utilerrors.NewAggregate(errs)
 }
 
 func recordedAnnotationsFrom(metadata metav1.ObjectMeta, annotationsToCollect []string) []certgraphapi.AnnotationValue {
@@ -166,6 +192,7 @@ func recordedAnnotationsFrom(metadata metav1.ObjectMeta, annotationsToCollect []
 
 func PKIListFromParts(ctx context.Context, inClusterResourceData *certgraphapi.PerInClusterResourceData, certs []*certgraphapi.CertKeyPair, caBundles []*certgraphapi.CertificateAuthorityBundle) *certgraphapi.PKIList {
 	certs = deduplicateCertKeyPairs(certs)
+	onDiskResourceData := certgraphapi.PerOnDiskResourceData{}
 	certList := &certgraphapi.CertKeyPairList{}
 	for i := range certs {
 		certList.Items = append(certList.Items, *certs[i])
@@ -177,13 +204,56 @@ func PKIListFromParts(ctx context.Context, inClusterResourceData *certgraphapi.P
 		caBundleList.Items = append(caBundleList.Items, *caBundles[i])
 	}
 
+	onDiskResourceData = deduplicateOnDiskMetadata(onDiskResourceData)
+
 	ret := &certgraphapi.PKIList{
 		CertificateAuthorityBundles: *caBundleList,
 		CertKeyPairs:                *certList,
+		OnDiskResourceData:          onDiskResourceData,
 	}
+
 	if inClusterResourceData != nil {
 		ret.InClusterResourceData = *inClusterResourceData
 	}
 
 	return ret
+}
+
+func MergePKILists(ctx context.Context, first, second *certgraphapi.PKIList) *certgraphapi.PKIList {
+
+	if first == nil {
+		first = &certgraphapi.PKIList{}
+	}
+
+	if second == nil {
+		second = &certgraphapi.PKIList{}
+	}
+
+	certList := &certgraphapi.CertKeyPairList{
+		Items: append(first.CertKeyPairs.Items, second.CertKeyPairs.Items...),
+	}
+	certList = deduplicateCertKeyPairList(certList)
+
+	caBundlesList := &certgraphapi.CertificateAuthorityBundleList{
+		Items: append(first.CertificateAuthorityBundles.Items, second.CertificateAuthorityBundles.Items...),
+	}
+	caBundlesList = deduplicateCABundlesList(caBundlesList)
+
+	inClusterData := certgraphapi.PerInClusterResourceData{}
+	inClusterData.CertKeyPairs = append(inClusterData.CertKeyPairs, first.InClusterResourceData.CertKeyPairs...)
+	inClusterData.CertKeyPairs = append(inClusterData.CertKeyPairs, second.InClusterResourceData.CertKeyPairs...)
+	inClusterData.CertificateAuthorityBundles = append(inClusterData.CertificateAuthorityBundles, first.InClusterResourceData.CertificateAuthorityBundles...)
+	inClusterData.CertificateAuthorityBundles = append(inClusterData.CertificateAuthorityBundles, second.InClusterResourceData.CertificateAuthorityBundles...)
+
+	onDiskResourceData := certgraphapi.PerOnDiskResourceData{
+		TLSArtifact: append(first.OnDiskResourceData.TLSArtifact, second.OnDiskResourceData.TLSArtifact...),
+	}
+	onDiskResourceData = deduplicateOnDiskMetadata(onDiskResourceData)
+
+	return &certgraphapi.PKIList{
+		CertificateAuthorityBundles: *caBundlesList,
+		CertKeyPairs:                *certList,
+		InClusterResourceData:       inClusterData,
+		OnDiskResourceData:          onDiskResourceData,
+	}
 }
