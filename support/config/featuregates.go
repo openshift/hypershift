@@ -13,7 +13,10 @@ func FeatureGates(fg *configv1.FeatureGateSelection) []string {
 		enabled = fg.CustomNoUpgrade.Enabled
 		disabled = fg.CustomNoUpgrade.Disabled
 	} else {
-		fs := configv1.FeatureSets[fg.FeatureSet]
+		fs, err := configv1.FeatureSets(configv1.Hypershift, fg.FeatureSet)
+		if err != nil {
+			return nil
+		}
 		for _, fgDescription := range fs.Enabled {
 			enabled = append(enabled, fgDescription.FeatureGateAttributes.Name)
 		}

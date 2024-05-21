@@ -1,10 +1,12 @@
 package certrotation
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"fmt"
 	"reflect"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -30,11 +32,8 @@ type CABundleConfigMap struct {
 	Name string
 	// Owner is an optional reference to add to the secret that this rotator creates.
 	Owner *metav1.OwnerReference
-	// JiraComponent annotates tls artifacts so that owner could be easily found
-	JiraComponent string
-	// Description is a human-readable one sentence description of certificate purpose
-	Description string
-
+	// AdditionalAnnotations is a collection of annotations set for the secret
+	AdditionalAnnotations AdditionalAnnotations
 	// Plumbing:
 	Informer      corev1informers.ConfigMapInformer
 	Lister        corev1listers.ConfigMapLister
@@ -42,7 +41,7 @@ type CABundleConfigMap struct {
 	EventRecorder events.Recorder
 }
 
-func (c CABundleConfigMap) ensureConfigMapCABundle(ctx context.Context, signingCertKeyPair *crypto.CA) ([]*x509.Certificate, error) {
+func (c CABundleConfigMap) EnsureConfigMapCABundle(ctx context.Context, signingCertKeyPair *crypto.CA) ([]*x509.Certificate, error) {
 	// by this point we have current signing cert/key pair.  We now need to make sure that the ca-bundle configmap has this cert and
 	// doesn't have any expired certs
 	originalCABundleConfigMap, err := c.Lister.ConfigMaps(c.Namespace).Get(c.Name)
@@ -55,8 +54,7 @@ func (c CABundleConfigMap) ensureConfigMapCABundle(ctx context.Context, signingC
 		caBundleConfigMap = &corev1.ConfigMap{ObjectMeta: NewTLSArtifactObjectMeta(
 			c.Name,
 			c.Namespace,
-			c.JiraComponent,
-			c.Description,
+			c.AdditionalAnnotations,
 		)}
 	}
 
@@ -64,9 +62,7 @@ func (c CABundleConfigMap) ensureConfigMapCABundle(ctx context.Context, signingC
 	if c.Owner != nil {
 		needsMetadataUpdate = ensureOwnerReference(&caBundleConfigMap.ObjectMeta, c.Owner)
 	}
-	if len(c.JiraComponent) > 0 || len(c.Description) > 0 {
-		needsMetadataUpdate = EnsureTLSMetadataUpdate(&caBundleConfigMap.ObjectMeta, c.JiraComponent, c.Description) || needsMetadataUpdate
-	}
+	needsMetadataUpdate = c.AdditionalAnnotations.EnsureTLSMetadataUpdate(&caBundleConfigMap.ObjectMeta) || needsMetadataUpdate
 	if needsMetadataUpdate && len(caBundleConfigMap.ResourceVersion) > 0 {
 		_, _, err := resourceapply.ApplyConfigMap(ctx, c.Client, c.EventRecorder, caBundleConfigMap)
 		if err != nil {
@@ -139,6 +135,10 @@ func manageCABundleConfigMap(caBundleConfigMap *corev1.ConfigMap, currentSigner 
 		}
 	}
 
+	// sorting ensures we don't continuously swap the certificates in the bundle, which might cause revision rollouts
+	sort.SliceStable(finalCertificates, func(i, j int) bool {
+		return bytes.Compare(finalCertificates[i].Raw, finalCertificates[j].Raw) < 0
+	})
 	caBytes, err := crypto.EncodeCertificates(finalCertificates...)
 	if err != nil {
 		return nil, err

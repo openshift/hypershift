@@ -14,7 +14,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 )
 
-func CombineCABundleConfigMaps(destinationConfigMap ResourceLocation, lister corev1listers.ConfigMapLister, jiraComponent, description string, inputConfigMaps ...ResourceLocation) (*corev1.ConfigMap, error) {
+func CombineCABundleConfigMaps(destinationConfigMap ResourceLocation, lister corev1listers.ConfigMapLister, additionalAnnotations certrotation.AdditionalAnnotations, inputConfigMaps ...ResourceLocation) (*corev1.ConfigMap, error) {
 	certificates := []*x509.Certificate{}
 	for _, input := range inputConfigMaps {
 		inputConfigMap, err := lister.ConfigMaps(input.Namespace).Get(input.Name)
@@ -62,8 +62,7 @@ func CombineCABundleConfigMaps(destinationConfigMap ResourceLocation, lister cor
 		ObjectMeta: certrotation.NewTLSArtifactObjectMeta(
 			destinationConfigMap.Name,
 			destinationConfigMap.Namespace,
-			jiraComponent,
-			description,
+			additionalAnnotations,
 		),
 		Data: map[string]string{
 			"ca-bundle.crt": string(caBytes),
