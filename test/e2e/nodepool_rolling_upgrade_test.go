@@ -22,6 +22,7 @@ import (
 )
 
 type RollingUpgradeTest struct {
+	DummyInfraSetup
 	ctx        context.Context
 	mgmtClient crclient.Client
 

@@ -23,6 +23,7 @@ import (
 )
 
 type NodePoolAutoRepairTest struct {
+	DummyInfraSetup
 	ctx context.Context
 
 	hostedCluster       *hyperv1.HostedCluster

@@ -27,6 +27,7 @@ const (
 )
 
 type NodePoolUpgradeTest struct {
+	DummyInfraSetup
 	ctx        context.Context
 	mgmtClient crclient.Client
 
