@@ -490,6 +490,7 @@ objects:
             name: credentials
         imagePullSecrets:
         - name: pull-secret
+        priorityClassName: hypershift-operator
         serviceAccountName: external-dns
         volumes:
         - name: credentials

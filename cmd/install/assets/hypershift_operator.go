@@ -209,6 +209,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
+					PriorityClassName:  HypershiftOperatorPriortyClass,
 					ServiceAccountName: o.ServiceAccount.Name,
 					Containers: []corev1.Container{
 						{
