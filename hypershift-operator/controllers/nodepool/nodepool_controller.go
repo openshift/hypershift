@@ -938,7 +938,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 
 		if result, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
-			return r.reconcileMachineHealthCheck(mhc, nodePool, infraID)
+			return r.reconcileMachineHealthCheck(ctx, mhc, nodePool, hcluster, infraID)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
 				client.ObjectKeyFromObject(mhc).String(), err)
@@ -1881,13 +1881,47 @@ func taintsToJSON(taints []hyperv1.Taint) (string, error) {
 	return string(taintsInJSON), nil
 }
 
-func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHealthCheck,
+func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context,
+	mhc *capiv1.MachineHealthCheck,
 	nodePool *hyperv1.NodePool,
+	hc *hyperv1.HostedCluster,
 	CAPIClusterName string) error {
+
+	log := ctrl.LoggerFrom(ctx)
+
 	// Opinionated spec based on
 	// https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
 	// TODO (alberto): possibly expose this config at the nodePool API.
 	maxUnhealthy := intstr.FromInt(2)
+	timeOut := 8 * time.Minute
+
+	maxUnhealthyOverride := nodePool.Annotations[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation]
+	if maxUnhealthyOverride == "" {
+		maxUnhealthyOverride = hc.Annotations[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation]
+	}
+	if maxUnhealthyOverride != "" {
+		maxUnhealthyValue := intstr.Parse(maxUnhealthyOverride)
+		// validate that this is a valid value by getting a scaled value
+		if _, err := intstr.GetScaledValueFromIntOrPercent(&maxUnhealthyValue, 100, true); err != nil {
+			log.Error(err, "Cannot parse max unhealthy override duration", "value", maxUnhealthyOverride)
+		} else {
+			maxUnhealthy = maxUnhealthyValue
+		}
+	}
+
+	timeOutOverride := nodePool.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
+	if timeOutOverride == "" {
+		timeOutOverride = hc.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
+	}
+	if timeOutOverride != "" {
+		timeOutOverrideTime, err := time.ParseDuration(timeOutOverride)
+		if err != nil {
+			log.Error(err, "Cannot parse timeout override duration", "value", timeOutOverride)
+		} else {
+			timeOut = timeOutOverrideTime
+		}
+	}
+
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: CAPIClusterName,
@@ -1901,14 +1935,14 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionFalse,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 			{
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionUnknown,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 		},

@@ -640,6 +640,15 @@ func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx con
 	if sizeConfig.Effects != nil && sizeConfig.Effects.APICriticalPriorityClassName != nil {
 		hc.Annotations[hyperv1.APICriticalPriorityClass] = *sizeConfig.Effects.APICriticalPriorityClassName
 	}
+	if sizeConfig.Effects != nil && sizeConfig.Effects.MachineHealthCheckTimeout != nil {
+		hc.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation] = sizeConfig.Effects.MachineHealthCheckTimeout.Duration.String()
+	} else {
+		// If mhc timeout is configured for any size in the config, remove the annotation
+		// to fallback to the default
+		if configHasMHCTimeout(config) {
+			delete(hc.Annotations, hyperv1.MachineHealthCheckTimeoutAnnotation)
+		}
+	}
 
 	var resourceRequestAnnotations map[string]string
 	if sizeConfig.Effects != nil {
@@ -873,4 +882,13 @@ func resourceRequestsToOverrideAnnotations(requests []schedulingv1alpha1.Resourc
 		annotations[key] = value
 	}
 	return annotations
+}
+
+func configHasMHCTimeout(config *schedulingv1alpha1.ClusterSizingConfiguration) bool {
+	for _, size := range config.Spec.Sizes {
+		if size.Effects != nil && size.Effects.MachineHealthCheckTimeout != nil {
+			return true
+		}
+	}
+	return false
 }

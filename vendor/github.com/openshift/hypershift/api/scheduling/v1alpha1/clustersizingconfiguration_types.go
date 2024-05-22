@@ -132,6 +132,11 @@ type Effects struct {
 	// +kubebuilder:validation:Optional
 	// ResourceRequests allows specifying resource requests for control plane pods.
 	ResourceRequests []ResourceRequest `json:"resourceRequests,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// MachineHealthCheckTimeout specifies an optional timeout for machinehealthchecks created
+	// for HostedClusters with this specific size.
+	MachineHealthCheckTimeout *metav1.Duration `json:"machineHealthCheckTimeout,omitempty"`
 }
 
 // Management configures behaviors of the management plane for a size class.
