@@ -70,6 +70,14 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 			machines:      machines(6),
 			expected:      machineSets(6, withReplicas(1))[4:], // machinesets 4, 5
 		},
+		{
+			name:          "Do not scale down nodes without a size label",
+			hostedCluster: hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=small", hyperv1.NodeSizeLabel)), withHCSizeLabel("small")),
+			machineSets:   machineSets(6, withReplicas(1)),
+			nodes:         nodes(6, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3)),
+			machines:      machines(6),
+			expected:      machineSets(6, withReplicas(1))[2:4], //machinesets 2, 3
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -137,6 +145,22 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 			machineSets: machineSets(8, withReplicas(1)),
 			machines:    machines(8),
 			expected:    machineSets(8, withReplicas(1))[3:4], // machineset 3
+		},
+		{
+			name: "Do not scale down nodes without a size label",
+			node: &(nodes(8, withHC(hostedCluster(), 0, 1, 2, 3, 4, 5),
+				withSizeLabel("small", 0, 1, 6, 7),
+				withSizeLabel("medium", 2, 3),
+				withSizeLabel("", 4, 5),
+				withPairLabel("pair1", 0, 1, 2, 3, 4, 5))[3]), // node 3
+			nodes: nodes(8, withHC(hostedCluster(), 0, 1, 2, 3, 4, 5),
+				withSizeLabel("small", 0, 1, 6, 7),
+				withSizeLabel("medium", 2, 3),
+				withSizeLabel("", 4, 5),
+				withPairLabel("pair1", 0, 1, 2, 3, 4, 5)),
+			machineSets: machineSets(8, withReplicas(1)),
+			machines:    machines(8),
+			expected:    machineSets(8, withReplicas(1))[:4], // machinesets 0, 1, 2, 3
 		},
 	}
 
