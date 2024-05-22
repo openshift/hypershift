@@ -41,7 +41,7 @@ func (k *KMSRootVolumeTest) Setup(t *testing.T) {
 	t.Log("Starting test KMSRootVolumeTest")
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
 		t.Fatalf("failed to retrieve kms key arn")
 	}
@@ -83,7 +83,7 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	instanceID := providerID[strings.LastIndex(providerID, "/")+1:]
 	t.Logf("instanceID: %s", instanceID)
 
-	ec2client := ec2Client(k.clusterOpts.AWSPlatform.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
+	ec2client := ec2Client(k.clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
 	output, err := ec2client.DescribeVolumes(&ec2.DescribeVolumesInput{
 		Filters: []*ec2.Filter{
 			{

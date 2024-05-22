@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
@@ -25,17 +26,15 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.AWSPlatform = core.AWSPlatformOptions{
-		AWSCredentialsFile: "",
-		Region:             "us-east-1",
-		InstanceType:       "",
-		RootVolumeType:     "gp3",
-		RootVolumeSize:     120,
-		RootVolumeIOPS:     0,
-		EndpointAccess:     string(hyperv1.Public),
-		MultiArch:          false,
+		Region:         "us-east-1",
+		InstanceType:   "",
+		RootVolumeType: "gp3",
+		RootVolumeSize: 120,
+		RootVolumeIOPS: 0,
+		EndpointAccess: string(hyperv1.Public),
+		MultiArch:      false,
 	}
 
-	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availability zones in which NodePools will be created")
@@ -48,10 +47,12 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
 	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.EnableProxy, "enable-proxy", opts.AWSPlatform.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
-	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: aws-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
+	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.SingleNATGateway, "single-nat-gateway", opts.AWSPlatform.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	cmd.PersistentFlags().BoolVar(&opts.AWSPlatform.MultiArch, "multi-arch", opts.AWSPlatform.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
+
+	opts.AWSPlatform.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -102,10 +103,10 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 
-	var AWSKey, AWSSecretKey string
+	var secretData *util.CredentialsSecretData
 	if len(opts.CredentialSecretName) > 0 {
 		//The opts.BaseDomain value is returned as-is if the input value len(opts.BaseDomain) > 0
-		opts.BaseDomain, AWSKey, AWSSecretKey, err = util.ExtractOptionsFromSecret(
+		secretData, err = util.ExtractOptionsFromSecret(
 			client,
 			opts.CredentialSecretName,
 			opts.Namespace,
@@ -113,11 +114,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		if err != nil {
 			return err
 		}
-		// Allow the AWS credentials file to override the secret's AWS credentials
-		if len(opts.AWSPlatform.AWSCredentialsFile) > 0 {
-			AWSSecretKey = ""
-			AWSKey = ""
-		}
+
+		opts.BaseDomain = secretData.BaseDomain
 	}
 	if opts.BaseDomain == "" {
 		if infra != nil {
@@ -128,19 +126,18 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 	if infra == nil {
 		opt := awsinfra.CreateInfraOptions{
-			Region:             opts.AWSPlatform.Region,
-			InfraID:            opts.InfraID,
-			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
-			AWSSecretKey:       AWSSecretKey,
-			AWSKey:             AWSKey,
-			Name:               opts.Name,
-			BaseDomain:         opts.BaseDomain,
-			BaseDomainPrefix:   opts.BaseDomainPrefix,
-			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
-			Zones:              opts.AWSPlatform.Zones,
-			EnableProxy:        opts.AWSPlatform.EnableProxy,
-			SSHKeyFile:         opts.SSHKeyFile,
-			SingleNATGateway:   opts.AWSPlatform.SingleNATGateway,
+			Region:                opts.AWSPlatform.Region,
+			InfraID:               opts.InfraID,
+			AWSCredentialsOpts:    opts.AWSPlatform.AWSCredentialsOpts,
+			Name:                  opts.Name,
+			BaseDomain:            opts.BaseDomain,
+			BaseDomainPrefix:      opts.BaseDomainPrefix,
+			AdditionalTags:        opts.AWSPlatform.AdditionalTags,
+			Zones:                 opts.AWSPlatform.Zones,
+			EnableProxy:           opts.AWSPlatform.EnableProxy,
+			SSHKeyFile:            opts.SSHKeyFile,
+			SingleNATGateway:      opts.AWSPlatform.SingleNATGateway,
+			CredentialsSecretData: secretData,
 		}
 		infra, err = opt.CreateInfra(ctx, opts.Log)
 		if err != nil {
@@ -160,17 +157,16 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	} else {
 		opt := awsinfra.CreateIAMOptions{
-			Region:             opts.AWSPlatform.Region,
-			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
-			AWSSecretKey:       AWSSecretKey,
-			AWSKey:             AWSKey,
-			InfraID:            infra.InfraID,
-			IssuerURL:          opts.AWSPlatform.IssuerURL,
-			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
-			PrivateZoneID:      infra.PrivateZoneID,
-			PublicZoneID:       infra.PublicZoneID,
-			LocalZoneID:        infra.LocalZoneID,
-			KMSKeyARN:          opts.AWSPlatform.EtcdKMSKeyARN,
+			Region:                opts.AWSPlatform.Region,
+			AWSCredentialsOpts:    opts.AWSPlatform.AWSCredentialsOpts,
+			InfraID:               infra.InfraID,
+			IssuerURL:             opts.AWSPlatform.IssuerURL,
+			AdditionalTags:        opts.AWSPlatform.AdditionalTags,
+			PrivateZoneID:         infra.PrivateZoneID,
+			PublicZoneID:          infra.PublicZoneID,
+			LocalZoneID:           infra.LocalZoneID,
+			KMSKeyARN:             opts.AWSPlatform.EtcdKMSKeyARN,
+			CredentialsSecretData: secretData,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
@@ -240,32 +236,18 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	return nil
 }
 
-// IsRequiredOption returns a cobra style error message when the flag value is empty
-func IsRequiredOption(flag string, value string) error {
-	if len(value) == 0 {
-		return fmt.Errorf("required flag(s) \"%s\" not set", flag)
-	}
-	return nil
-}
-
 // ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
-func ValidateCreateCredentialInfo(opts *core.CreateOptions) error {
-	if len(opts.CredentialSecretName) == 0 {
-		if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
-			return err
-		}
-		if err := IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
-			return err
-		}
-	} else {
-		//Check the secret exists now, otherwise stop.
-		opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
-		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile string) error {
+	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace); err != nil {
+		return err
+	}
+
+	if len(credentialSecretName) == 0 {
+		if err := util.ValidateRequiredOption("pull-secret", pullSecretFile); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -298,7 +280,7 @@ func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions) err
 
 // validateAWSOptions validates different AWS flag parameters
 func validateAWSOptions(ctx context.Context, opts *core.CreateOptions) error {
-	if err := ValidateCreateCredentialInfo(opts); err != nil {
+	if err := ValidateCreateCredentialInfo(opts.AWSPlatform.AWSCredentialsOpts, opts.CredentialSecretName, opts.Namespace, opts.PullSecretFile); err != nil {
 		return err
 	}
 

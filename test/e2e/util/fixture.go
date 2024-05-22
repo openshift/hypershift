@@ -78,10 +78,10 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	case hyperv1.AWSPlatform:
 		opts.AWSPlatform = core.AWSPlatformDestroyOptions{
 			BaseDomain:         createOpts.BaseDomain,
-			AWSCredentialsFile: createOpts.AWSPlatform.AWSCredentialsFile,
+			AWSCredentialsOpts: createOpts.AWSPlatform.AWSCredentialsOpts,
 			PreserveIAM:        false,
 			Region:             createOpts.AWSPlatform.Region,
-			PostDeleteAction:   validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.AWSCredentialsFile, createOpts.AWSPlatform.Region),
+			PostDeleteAction:   validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, createOpts.AWSPlatform.Region),
 		}
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
@@ -214,7 +214,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
 			var dumpErrors []error
-			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsFile, dumpDir)
+			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsOpts, dumpDir)
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
@@ -222,7 +222,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
-			err = dump.DumpJournals(t, ctx, hc, dumpDir, opts.AWSPlatform.AWSCredentialsFile)
+			err = dump.DumpJournals(t, ctx, hc, dumpDir, opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile)
 			if err != nil {
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}

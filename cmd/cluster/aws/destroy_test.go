@@ -1,8 +1,10 @@
 package aws
 
 import (
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	"testing"
+
+	"github.com/openshift/hypershift/cmd/cluster/core"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 
 	. "github.com/onsi/gomega"
 )
@@ -16,7 +18,9 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
-					AWSCredentialsFile: "",
+					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+						AWSCredentialsFile: "",
+					},
 				},
 			},
 			expectError: true,
@@ -25,7 +29,9 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
-					AWSCredentialsFile: "asdf",
+					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
+						AWSCredentialsFile: "asdf",
+					},
 				},
 			},
 			expectError: false,
@@ -34,7 +40,8 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ValidateCredentialInfo(test.inputOptions)
+			options := test.inputOptions
+			err := ValidateCredentialInfo(options.AWSPlatform.AWSCredentialsOpts, options.CredentialSecretName, options.Namespace)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

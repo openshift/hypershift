@@ -71,7 +71,7 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 	g.Expect(len(awsSpec)).NotTo(BeZero())
 	instanceID := awsSpec[strings.LastIndex(awsSpec, "/")+1:]
 	t.Logf("Terminating AWS instance: %s", instanceID)
-	ec2client := ec2Client(ar.clusterOpts.AWSPlatform.AWSCredentialsFile, ar.clusterOpts.AWSPlatform.Region)
+	ec2client := ec2Client(ar.clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, ar.clusterOpts.AWSPlatform.Region)
 	_, err := ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{aws.String(instanceID)},
 	})
