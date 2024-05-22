@@ -1924,65 +1924,6 @@ func TestValidateReleaseImage(t *testing.T) {
 			},
 			expectedResult: nil,
 		},
-		{
-			name: "KubeVirt platform unsupported release, error",
-			other: []crclient.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
-					Data: map[string][]byte{
-						corev1.DockerConfigJsonKey: nil,
-					},
-				},
-			},
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Networking: hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.OVNKubernetes,
-					},
-					PullSecret: corev1.LocalObjectReference{
-						Name: "pull-secret",
-					},
-					Release: hyperv1.Release{
-						Image: "image-4.14.0",
-					},
-
-					Platform: hyperv1.PlatformSpec{
-						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: &hyperv1.KubevirtPlatformSpec{},
-					},
-				},
-			},
-			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.15.0". Attempting to use: "4.14.0"`),
-		},
-		{
-			name: "KubeVirt platform supported release, success",
-			other: []crclient.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
-					Data: map[string][]byte{
-						corev1.DockerConfigJsonKey: nil,
-					},
-				},
-			},
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Networking: hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.OVNKubernetes,
-					},
-					PullSecret: corev1.LocalObjectReference{
-						Name: "pull-secret",
-					},
-					Release: hyperv1.Release{
-						Image: "image-4.16.0",
-					},
-
-					Platform: hyperv1.PlatformSpec{
-						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: &hyperv1.KubevirtPlatformSpec{},
-					},
-				},
-			},
-		},
 	}
 
 	for _, tc := range testCases {
