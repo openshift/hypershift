@@ -59341,6 +59341,11 @@ objects:
                               $GOMEMLIMIT of the Kube APIServer container
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
+                          machineHealthCheckTimeout:
+                            description: |-
+                              MachineHealthCheckTimeout specifies an optional timeout for machinehealthchecks created
+                              for HostedClusters with this specific size.
+                            type: string
                           resourceRequests:
                             description: ResourceRequests allows specifying resource
                               requests for control plane pods.

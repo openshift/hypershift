@@ -19,6 +19,7 @@ package v1alpha1
 
 import (
 	resource "k8s.io/apimachinery/pkg/api/resource"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EffectsApplyConfiguration represents an declarative configuration of the Effects type for use
@@ -29,6 +30,7 @@ type EffectsApplyConfiguration struct {
 	EtcdPriorityClassName         *string                             `json:"etcdPriorityClassName,omitempty"`
 	APICriticalPriorityClassName  *string                             `json:"APICriticalPriorityClassName,omitempty"`
 	ResourceRequests              []ResourceRequestApplyConfiguration `json:"resourceRequests,omitempty"`
+	MachineHealthCheckTimeout     *v1.Duration                        `json:"machineHealthCheckTimeout,omitempty"`
 }
 
 // EffectsApplyConfiguration constructs an declarative configuration of the Effects type for use with
@@ -79,5 +81,13 @@ func (b *EffectsApplyConfiguration) WithResourceRequests(values ...*ResourceRequ
 		}
 		b.ResourceRequests = append(b.ResourceRequests, *values[i])
 	}
+	return b
+}
+
+// WithMachineHealthCheckTimeout sets the MachineHealthCheckTimeout field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MachineHealthCheckTimeout field is set to the value of the last call.
+func (b *EffectsApplyConfiguration) WithMachineHealthCheckTimeout(value v1.Duration) *EffectsApplyConfiguration {
+	b.MachineHealthCheckTimeout = &value
 	return b
 }

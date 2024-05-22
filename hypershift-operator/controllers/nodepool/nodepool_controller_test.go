@@ -37,6 +37,7 @@ import (
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -3139,6 +3140,170 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(isArchAndPlatformSupported(tc.nodePool)).To(Equal(tc.expect))
+		})
+	}
+}
+
+func TestReconcileMachineHealthCheck(t *testing.T) {
+	hostedcluster := func(opts ...func(client.Object)) *hyperv1.HostedCluster {
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cluster"}}
+		for _, o := range opts {
+			o(hc)
+		}
+		return hc
+	}
+
+	nodepool := func(opts ...func(client.Object)) *hyperv1.NodePool {
+		np := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nodepool"}}
+		np.Spec.ClusterName = "cluster"
+		for _, o := range opts {
+			o(np)
+		}
+		return np
+	}
+
+	defaultMaxUnhealthy := intstr.Parse("2")
+	healthcheck := func(opts ...func(*capiv1.MachineHealthCheck)) *capiv1.MachineHealthCheck {
+		mhc := &capiv1.MachineHealthCheck{ObjectMeta: metav1.ObjectMeta{Namespace: "ns-cluster", Name: "nodepool"}}
+		resName := generateName("cluster", "cluster", "nodepool")
+		mhc.Spec = capiv1.MachineHealthCheckSpec{
+			ClusterName: "cluster",
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					resName: resName,
+				},
+			},
+			UnhealthyConditions: []capiv1.UnhealthyCondition{
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionFalse,
+					Timeout: metav1.Duration{
+						Duration: time.Duration(8 * time.Minute),
+					},
+				},
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionUnknown,
+					Timeout: metav1.Duration{
+						Duration: time.Duration(8 * time.Minute),
+					},
+				},
+			},
+			MaxUnhealthy: &defaultMaxUnhealthy,
+			NodeStartupTimeout: &metav1.Duration{
+				Duration: 20 * time.Minute,
+			},
+		}
+		for _, o := range opts {
+			o(mhc)
+		}
+		return mhc
+	}
+
+	withTimeoutOverride := func(value string) func(client.Object) {
+		return func(o client.Object) {
+			a := o.GetAnnotations()
+			if a == nil {
+				a = map[string]string{}
+			}
+			a[hyperv1.MachineHealthCheckTimeoutAnnotation] = value
+			o.SetAnnotations(a)
+		}
+	}
+
+	withMaxUnhealthyOverride := func(value string) func(client.Object) {
+		return func(o client.Object) {
+			a := o.GetAnnotations()
+			if a == nil {
+				a = map[string]string{}
+			}
+			a[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation] = value
+			o.SetAnnotations(a)
+		}
+	}
+	withMaxUnhealthy := func(value string) func(*capiv1.MachineHealthCheck) {
+		return func(mhc *capiv1.MachineHealthCheck) {
+			maxUnhealthy := intstr.Parse(value)
+			mhc.Spec.MaxUnhealthy = &maxUnhealthy
+		}
+	}
+	withTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
+		return func(mhc *capiv1.MachineHealthCheck) {
+			for i := range mhc.Spec.UnhealthyConditions {
+				mhc.Spec.UnhealthyConditions[i].Timeout = metav1.Duration{Duration: d}
+			}
+		}
+	}
+
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		np       *hyperv1.NodePool
+		expected *capiv1.MachineHealthCheck
+	}{
+		{
+			name:     "defaults",
+			hc:       hostedcluster(),
+			np:       nodepool(),
+			expected: healthcheck(),
+		},
+		{
+			name:     "timeout override in hc",
+			hc:       hostedcluster(withTimeoutOverride("10m")),
+			np:       nodepool(),
+			expected: healthcheck(withTimeout(10 * time.Minute)),
+		},
+		{
+			name:     "timeout override in np",
+			hc:       hostedcluster(),
+			np:       nodepool(withTimeoutOverride("40m")),
+			expected: healthcheck(withTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "timeout override in both, np takes precedence",
+			hc:       hostedcluster(withTimeoutOverride("10m")),
+			np:       nodepool(withTimeoutOverride("40m")),
+			expected: healthcheck(withTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "invalid timeout override, retains default",
+			hc:       hostedcluster(withTimeoutOverride("foo")),
+			np:       nodepool(),
+			expected: healthcheck(),
+		},
+		{
+			name:     "maxunhealthy override in hc",
+			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
+			np:       nodepool(),
+			expected: healthcheck(withMaxUnhealthy("10%")),
+		},
+		{
+			name:     "maxunhealthy override in np",
+			hc:       hostedcluster(),
+			np:       nodepool(withMaxUnhealthyOverride("5")),
+			expected: healthcheck(withMaxUnhealthy("5")),
+		},
+		{
+			name:     "maxunhealthy override in both, np takes precedence",
+			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
+			np:       nodepool(withMaxUnhealthyOverride("5")),
+			expected: healthcheck(withMaxUnhealthy("5")),
+		},
+		{
+			name:     "invalid maxunhealthy override value, default is preserved",
+			hc:       hostedcluster(),
+			np:       nodepool(withMaxUnhealthyOverride("foo")),
+			expected: healthcheck(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &NodePoolReconciler{}
+			mhc := &capiv1.MachineHealthCheck{}
+			r.reconcileMachineHealthCheck(context.Background(), mhc, tt.np, tt.hc, "cluster")
+			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
 		})
 	}
 }
