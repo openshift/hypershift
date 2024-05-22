@@ -45,8 +45,12 @@ pre-commit: all verify test
 
 build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
 
+.PHONY: sync
+sync:
+	$(GO) work sync 
+
 .PHONY: update
-update: api-deps api api-docs deps clients app-sre-saas-template
+update: sync api-deps api api-docs deps clients app-sre-saas-template
 
 .PHONY: verify
 verify: update staticcheck fmt vet
@@ -137,7 +141,7 @@ api-docs: $(GENAPIDOCS)
 
 .PHONY: clients
 clients:
-	hack/update-codegen.sh
+	GO=GO111MODULE=on GOFLAGS=-mod=readonly hack/update-codegen.sh
 
 
 .PHONY: release
@@ -200,16 +204,16 @@ vet:
 .PHONY: deps
 deps:
 	$(GO) mod tidy
-	$(GO) mod vendor
+	$(GO) work vendor
 	$(GO) mod verify
 	$(GO) list -m -mod=readonly -json all > /dev/null
-	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+	(cd hack/tools && $(GO) mod tidy && $(GO) work vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
 
 .PHONY: api-deps
 api-deps:
 	cd api && \
 	  $(GO) mod tidy && \
-	  $(GO) mod vendor && \
+	  $(GO) work vendor && \
 	  $(GO) mod verify && \
 	  $(GO) list -m -mod=readonly -json all > /dev/null
 

@@ -369,10 +369,20 @@ spec:
 
 
                                 ciphers:
+
+
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-ECDSA-AES128-GCM-SHA256
+
+
                                 minTLSVersion: VersionTLS11
                             nullable: true
                             properties:
@@ -418,17 +428,41 @@ spec:
 
 
                                 ciphers:
+
+
                                   - TLS_AES_128_GCM_SHA256
+
+
                                   - TLS_AES_256_GCM_SHA384
+
+
                                   - TLS_CHACHA20_POLY1305_SHA256
+
+
                                   - ECDHE-ECDSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-RSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-ECDSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-RSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-CHACHA20-POLY1305
+
+
                                   - DHE-RSA-AES128-GCM-SHA256
+
+
                                   - DHE-RSA-AES256-GCM-SHA384
+
+
                                 minTLSVersion: VersionTLS12
                             nullable: true
                             type: object
@@ -444,13 +478,18 @@ spec:
 
 
                                 ciphers:
+
+
                                   - TLS_AES_128_GCM_SHA256
+
+
                                   - TLS_AES_256_GCM_SHA384
+
+
                                   - TLS_CHACHA20_POLY1305_SHA256
+
+
                                 minTLSVersion: VersionTLS13
-
-
-                              NOTE: Currently unsupported.
                             nullable: true
                             type: object
                           old:
@@ -465,35 +504,95 @@ spec:
 
 
                                 ciphers:
+
+
                                   - TLS_AES_128_GCM_SHA256
+
+
                                   - TLS_AES_256_GCM_SHA384
+
+
                                   - TLS_CHACHA20_POLY1305_SHA256
+
+
                                   - ECDHE-ECDSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-RSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-ECDSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-RSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-CHACHA20-POLY1305
+
+
                                   - DHE-RSA-AES128-GCM-SHA256
+
+
                                   - DHE-RSA-AES256-GCM-SHA384
+
+
                                   - DHE-RSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-ECDSA-AES128-SHA256
+
+
                                   - ECDHE-RSA-AES128-SHA256
+
+
                                   - ECDHE-ECDSA-AES128-SHA
+
+
                                   - ECDHE-RSA-AES128-SHA
+
+
                                   - ECDHE-ECDSA-AES256-SHA384
+
+
                                   - ECDHE-RSA-AES256-SHA384
+
+
                                   - ECDHE-ECDSA-AES256-SHA
+
+
                                   - ECDHE-RSA-AES256-SHA
+
+
                                   - DHE-RSA-AES128-SHA256
+
+
                                   - DHE-RSA-AES256-SHA256
+
+
                                   - AES128-GCM-SHA256
+
+
                                   - AES256-GCM-SHA384
+
+
                                   - AES128-SHA256
+
+
                                   - AES256-SHA256
+
+
                                   - AES128-SHA
+
+
                                   - AES256-SHA
+
+
                                   - DES-CBC3-SHA
+
+
                                 minTLSVersion: VersionTLS10
                             nullable: true
                             type: object
@@ -934,6 +1033,13 @@ spec:
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
                         type: string
+                        x-kubernetes-validations:
+                        - message: CustomNoUpgrade may not be changed
+                          rule: 'oldSelf == ''CustomNoUpgrade'' ? self == ''CustomNoUpgrade''
+                            : true'
+                        - message: TechPreviewNoUpgrade may not be changed
+                          rule: 'oldSelf == ''TechPreviewNoUpgrade'' ? self == ''TechPreviewNoUpgrade''
+                            : true'
                     type: object
                   image:
                     description: |-
@@ -1422,6 +1528,160 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                            type: object
+                        type: object
+                      networkDiagnostics:
+                        description: |-
+                          networkDiagnostics defines network diagnostics configuration.
+
+
+                          Takes precedence over spec.disableNetworkDiagnostics in network.operator.openshift.io.
+                          If networkDiagnostics is not specified or is empty,
+                          and the spec.disableNetworkDiagnostics flag in network.operator.openshift.io is set to true,
+                          the network diagnostics feature will be disabled.
+                        properties:
+                          mode:
+                            description: |-
+                              mode controls the network diagnostics mode
+
+
+                              When omitted, this means the user has no opinion and the platform is left
+                              to choose reasonable defaults. These defaults are subject to change over time.
+                              The current default is All.
+                            enum:
+                            - ""
+                            - All
+                            - Disabled
+                            type: string
+                          sourcePlacement:
+                            description: |-
+                              sourcePlacement controls the scheduling of network diagnostics source deployment
+
+
+                              See NetworkDiagnosticsSourcePlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is an empty list.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                          targetPlacement:
+                            description: |-
+                              targetPlacement controls the scheduling of network diagnostics target daemonset
+
+
+                              See NetworkDiagnosticsTargetPlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `- operator: "Exists"` which means that all taints are tolerated.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
                             type: object
                         type: object
                       networkType:
@@ -4873,10 +5133,20 @@ spec:
 
 
                                 ciphers:
+
+
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-ECDSA-AES128-GCM-SHA256
+
+
                                 minTLSVersion: VersionTLS11
                             nullable: true
                             properties:
@@ -4922,17 +5192,41 @@ spec:
 
 
                                 ciphers:
+
+
                                   - TLS_AES_128_GCM_SHA256
+
+
                                   - TLS_AES_256_GCM_SHA384
+
+
                                   - TLS_CHACHA20_POLY1305_SHA256
+
+
                                   - ECDHE-ECDSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-RSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-ECDSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-RSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-CHACHA20-POLY1305
+
+
                                   - DHE-RSA-AES128-GCM-SHA256
+
+
                                   - DHE-RSA-AES256-GCM-SHA384
+
+
                                 minTLSVersion: VersionTLS12
                             nullable: true
                             type: object
@@ -4948,13 +5242,18 @@ spec:
 
 
                                 ciphers:
+
+
                                   - TLS_AES_128_GCM_SHA256
+
+
                                   - TLS_AES_256_GCM_SHA384
+
+
                                   - TLS_CHACHA20_POLY1305_SHA256
+
+
                                 minTLSVersion: VersionTLS13
-
-
-                              NOTE: Currently unsupported.
                             nullable: true
                             type: object
                           old:
@@ -4969,35 +5268,95 @@ spec:
 
 
                                 ciphers:
+
+
                                   - TLS_AES_128_GCM_SHA256
+
+
                                   - TLS_AES_256_GCM_SHA384
+
+
                                   - TLS_CHACHA20_POLY1305_SHA256
+
+
                                   - ECDHE-ECDSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-RSA-AES128-GCM-SHA256
+
+
                                   - ECDHE-ECDSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-RSA-AES256-GCM-SHA384
+
+
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-RSA-CHACHA20-POLY1305
+
+
                                   - DHE-RSA-AES128-GCM-SHA256
+
+
                                   - DHE-RSA-AES256-GCM-SHA384
+
+
                                   - DHE-RSA-CHACHA20-POLY1305
+
+
                                   - ECDHE-ECDSA-AES128-SHA256
+
+
                                   - ECDHE-RSA-AES128-SHA256
+
+
                                   - ECDHE-ECDSA-AES128-SHA
+
+
                                   - ECDHE-RSA-AES128-SHA
+
+
                                   - ECDHE-ECDSA-AES256-SHA384
+
+
                                   - ECDHE-RSA-AES256-SHA384
+
+
                                   - ECDHE-ECDSA-AES256-SHA
+
+
                                   - ECDHE-RSA-AES256-SHA
+
+
                                   - DHE-RSA-AES128-SHA256
+
+
                                   - DHE-RSA-AES256-SHA256
+
+
                                   - AES128-GCM-SHA256
+
+
                                   - AES256-GCM-SHA384
+
+
                                   - AES128-SHA256
+
+
                                   - AES256-SHA256
+
+
                                   - AES128-SHA
+
+
                                   - AES256-SHA
+
+
                                   - DES-CBC3-SHA
+
+
                                 minTLSVersion: VersionTLS10
                             nullable: true
                             type: object
@@ -5415,6 +5774,13 @@ spec:
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
                         type: string
+                        x-kubernetes-validations:
+                        - message: CustomNoUpgrade may not be changed
+                          rule: 'oldSelf == ''CustomNoUpgrade'' ? self == ''CustomNoUpgrade''
+                            : true'
+                        - message: TechPreviewNoUpgrade may not be changed
+                          rule: 'oldSelf == ''TechPreviewNoUpgrade'' ? self == ''TechPreviewNoUpgrade''
+                            : true'
                     type: object
                   image:
                     description: |-
@@ -5891,6 +6257,160 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                            type: object
+                        type: object
+                      networkDiagnostics:
+                        description: |-
+                          networkDiagnostics defines network diagnostics configuration.
+
+
+                          Takes precedence over spec.disableNetworkDiagnostics in network.operator.openshift.io.
+                          If networkDiagnostics is not specified or is empty,
+                          and the spec.disableNetworkDiagnostics flag in network.operator.openshift.io is set to true,
+                          the network diagnostics feature will be disabled.
+                        properties:
+                          mode:
+                            description: |-
+                              mode controls the network diagnostics mode
+
+
+                              When omitted, this means the user has no opinion and the platform is left
+                              to choose reasonable defaults. These defaults are subject to change over time.
+                              The current default is All.
+                            enum:
+                            - ""
+                            - All
+                            - Disabled
+                            type: string
+                          sourcePlacement:
+                            description: |-
+                              sourcePlacement controls the scheduling of network diagnostics source deployment
+
+
+                              See NetworkDiagnosticsSourcePlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is an empty list.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                          targetPlacement:
+                            description: |-
+                              targetPlacement controls the scheduling of network diagnostics target daemonset
+
+
+                              See NetworkDiagnosticsTargetPlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `- operator: "Exists"` which means that all taints are tolerated.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
                             type: object
                         type: object
                       networkType:

@@ -46,7 +46,7 @@ require (
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20240131125539-0e319439e65a
-	github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000
+	github.com/openshift/hypershift/api v0.0.0-20240522104800-604a957be25e
 	github.com/openshift/library-go v0.0.0-20240422143640-fad649cbbd63
 	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
@@ -253,10 +253,7 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.17.1 // indirect
 )
 
-replace (
-	github.com/google/cel-go => github.com/google/cel-go v0.17.7
-	github.com/openshift/hypershift/api => ./api
-)
+replace github.com/google/cel-go => github.com/google/cel-go v0.17.7
 
 // These are because of github.com/openshift/cluster-node-tuning-operator@v0.0.0-20240131125539-0e319439e65a
 replace (
