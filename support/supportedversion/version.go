@@ -27,8 +27,6 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 
 	defaultMinVersion := MinSupportedVersion
 	switch hc.Spec.Platform.Type {
-	case hyperv1.KubevirtPlatform:
-		return semver.MustParse("4.15.0")
 	case hyperv1.IBMCloudPlatform:
 		return semver.MustParse("4.9.0")
 	default:
