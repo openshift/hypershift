@@ -208,10 +208,12 @@ func nodeMachineSetsToScaleDown(node *corev1.Node, machineSets []machinev1beta1.
 	pairLabel := node.Labels[OSDFleetManagerPairedNodesLabel]
 	if pairLabel != "" {
 		nodesToScaleDown = filterNodes(nodes, func(n *corev1.Node) bool {
-			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel
+			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && n.Labels[hyperv1.NodeSizeLabel] != ""
 		})
 	} else {
-		nodesToScaleDown = []corev1.Node{*node}
+		if node.Labels[hyperv1.NodeSizeLabel] != "" {
+			nodesToScaleDown = []corev1.Node{*node}
+		}
 	}
 	var result []machinev1beta1.MachineSet
 	for _, n := range nodesToScaleDown {
@@ -248,7 +250,7 @@ func hostedClusterMachineSetsToScaleDown(ctx context.Context, hostedCluster *hyp
 	if len(nodesWithClusterLabel) > 0 {
 		pairLabel := nodesWithClusterLabel[0].Labels[OSDFleetManagerPairedNodesLabel]
 		clusterNodes = filterNodes(nodes, func(n *corev1.Node) bool {
-			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel
+			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && n.Labels[hyperv1.NodeSizeLabel] != ""
 		})
 	}
 
