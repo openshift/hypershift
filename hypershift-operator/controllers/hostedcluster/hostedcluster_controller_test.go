@@ -28,9 +28,11 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"go.uber.org/zap/zapcore"
 	appsv1 "k8s.io/api/apps/v1"
@@ -144,7 +146,10 @@ func TestHasBeenAvailable(t *testing.T) {
 				CertRotationScale:             24 * time.Hour,
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
-				now:                           func() metav1.Time { return reconcilerNow },
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+				},
+				now: func() metav1.Time { return reconcilerNow },
 			}
 
 			ctx := context.Background()
@@ -261,7 +266,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster)
+			err := reconcileHostedControlPlane(updated, &test.Cluster, true)
 			if err != nil {
 				t.Error(err)
 			}
@@ -393,7 +398,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -451,7 +456,7 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 			g := NewGomegaWithT(t)
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
@@ -1032,6 +1037,16 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				},
 			},
 		},
+		&configv1.Infrastructure{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "cluster",
+			},
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{
+					Type: configv1.AWSPlatformType,
+				},
+			},
+		},
 	}
 	for _, cluster := range hostedClusters {
 		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
@@ -1059,15 +1074,16 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			capabilities.CapabilityIngress,
 			capabilities.CapabilityProxy,
 		),
-		createOrUpdate:        func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ReleaseProvider:       &fakereleaseprovider.FakeReleaseProvider{},
-		ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
-		now:                   metav1.Now,
+		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+			return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+		},
+		now: metav1.Now,
 	}
 
 	r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
-		"v1.0.0",
-		"1.27.0")
+		"v1.2.0",
+		"1.28.0")
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -1680,18 +1696,18 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.15.0",
+							Image: "image-4.16.0",
 						},
 					},
 				},
 			},
-			expectedResult: errors.New(`y-stream downgrade from "4.15.0" to "4.14.0" is not supported`),
+			expectedResult: errors.New(`y-stream downgrade from "4.16.0" to "4.15.0" is not supported`),
 		},
 		{
 			name: "unsupported y-stream upgrade, error",
@@ -1712,18 +1728,18 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
 			},
-			expectedResult: errors.New(`y-stream upgrade from "4.11.0" to "4.14.0" is not for OpenShiftSDN`),
+			expectedResult: errors.New(`y-stream upgrade from "4.12.0" to "4.15.0" is not for OpenShiftSDN`),
 		},
 		{
 			name: "supported y-stream upgrade, success",
@@ -1744,13 +1760,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
@@ -1776,7 +1792,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 			},
@@ -1801,13 +1817,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.14.0",
+							Image: "image-4.15.0",
 						},
 					},
 				},
@@ -1833,13 +1849,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.1",
+							Image: "image-4.12.1",
 						},
 					},
 				},
@@ -1865,13 +1881,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.14.0",
+							Image: "image-4.15.0",
 						},
 					},
 				},
@@ -1902,101 +1918,50 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 			},
 			expectedResult: nil,
 		},
-		{
-			name: "KubeVirt platform unsupported release, error",
-			other: []crclient.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
-					Data: map[string][]byte{
-						corev1.DockerConfigJsonKey: nil,
-					},
-				},
-			},
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Networking: hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.OVNKubernetes,
-					},
-					PullSecret: corev1.LocalObjectReference{
-						Name: "pull-secret",
-					},
-					Release: hyperv1.Release{
-						Image: "image-4.13.0",
-					},
-
-					Platform: hyperv1.PlatformSpec{
-						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: &hyperv1.KubevirtPlatformSpec{},
-					},
-				},
-			},
-			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.14.0". Attempting to use: "4.13.0"`),
-		},
-		{
-			name: "KubeVirt platform supported release, success",
-			other: []crclient.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
-					Data: map[string][]byte{
-						corev1.DockerConfigJsonKey: nil,
-					},
-				},
-			},
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Networking: hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.OVNKubernetes,
-					},
-					PullSecret: corev1.LocalObjectReference{
-						Name: "pull-secret",
-					},
-					Release: hyperv1.Release{
-						Image: "image-4.15.0",
-					},
-
-					Platform: hyperv1.PlatformSpec{
-						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: &hyperv1.KubevirtPlatformSpec{},
-					},
-				},
-			},
-		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
 			r := &HostedClusterReconciler{
 				CertRotationScale: 24 * time.Hour,
 				Client:            fake.NewClientBuilder().WithObjects(tc.other...).Build(),
-				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-					ImageVersion: map[string]string{
-						"image-4.7.0":  "4.7.0",
-						"image-4.9.0":  "4.9.0",
-						"image-4.10.0": "4.10.0",
-						"image-4.11.0": "4.11.0",
-						"image-4.11.1": "4.11.1",
-						"image-4.12.0": "4.12.0",
-						"image-4.13.0": "4.13.0",
-						"image-4.14.0": "4.14.0",
-						"image-4.15.0": "4.15.0",
-						"image-4.16.0": "4.16.0",
-					},
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return &fakereleaseprovider.FakeReleaseProvider{
+							ImageVersion: map[string]string{
+								"image-4.7.0":  "4.7.0",
+								"image-4.10.0": "4.10.0",
+								"image-4.11.0": "4.11.0",
+								"image-4.12.0": "4.12.0",
+								"image-4.12.1": "4.12.1",
+								"image-4.13.0": "4.13.0",
+								"image-4.14.0": "4.14.0",
+								"image-4.15.0": "4.15.0",
+								"image-4.16.0": "4.16.0",
+								"image-4.17.0": "4.17.0",
+							},
+						},
+						&fakeimagemetadataprovider.FakeImageMetadataProvider{
+							Result: &dockerv1client.DockerImageConfig{},
+						},
+						nil
 				},
 			}
 
 			ctx := context.Background()
-			actual := r.validateReleaseImage(ctx, tc.hostedCluster)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			actual := r.validateReleaseImage(ctx, tc.hostedCluster, releaseProvider)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
 			}
 			if tc.expectedNotFoundError {
-				g := NewGomegaWithT(t)
 				g.Expect(errors2.IsNotFound(actual)).To(BeTrue())
 			}
 		})
@@ -2132,9 +2097,9 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 }
 
 func TestIsUpgradeable(t *testing.T) {
-	releaseImageFrom := "image-4.12"
-	releaseImageToZstream := "image-4.12.1"
-	releaseImageTo := "image-4.13"
+	releaseImageFrom := "image-4.13"
+	releaseImageToZstream := "image-4.13.1"
+	releaseImageTo := "image-4.14"
 	tests := []struct {
 		name      string
 		hc        *hyperv1.HostedCluster
@@ -2174,7 +2139,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 				},
@@ -2197,7 +2162,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -2231,7 +2196,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -2289,7 +2254,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
 							Image:   releaseImageFrom,
-							Version: "4.12.0",
+							Version: "4.13.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -2316,17 +2281,27 @@ func TestIsUpgradeable(t *testing.T) {
 		r := &HostedClusterReconciler{
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
-			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-				ImageVersion: map[string]string{
-					"image-4.12":   "4.12.0",
-					"image-4.12.1": "4.12.1",
-					"image-4.13":   "4.14.0",
-				},
+			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+				return &fakereleaseprovider.FakeReleaseProvider{
+						ImageVersion: map[string]string{
+							"image-4.13":   "4.13.0",
+							"image-4.13.1": "4.13.1",
+							"image-4.14":   "4.15.0",
+						},
+					},
+					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+					nil
 			},
 		}
 
 		t.Run(test.name, func(t *testing.T) {
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc)
+			ctx := context.Background()
+			g := NewGomegaWithT(t)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, releaseProvider)
 			if err != nil {
 				t.Errorf("isUpgrading() internal err = %v", err)
 			}
@@ -2664,16 +2639,26 @@ func TestIsProgressing(t *testing.T) {
 		r := &HostedClusterReconciler{
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
-			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-				ImageVersion: map[string]string{
-					"release-1.2": "1.2.0",
-					"release-1.3": "1.3.0",
-				},
+			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+				return &fakereleaseprovider.FakeReleaseProvider{
+						ImageVersion: map[string]string{
+							"release-1.2": "1.2.0",
+							"release-1.3": "1.3.0",
+						},
+					},
+					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+					nil
 			},
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc)
+			ctx := context.Background()
+			g := NewGomegaWithT(t)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, releaseProvider)
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
@@ -3503,6 +3488,17 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			testCase.objects = append(testCase.objects, testCase.hc)
+			infra := &configv1.Infrastructure{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.KubevirtPlatformType,
+					},
+				},
+			}
+			testCase.objects = append(testCase.objects, infra)
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(testCase.objects...).
@@ -3518,10 +3514,11 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					capabilities.CapabilityIngress,
 					capabilities.CapabilityProxy,
 				),
-				createOrUpdate:        func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-				ReleaseProvider:       &fakereleaseprovider.FakeReleaseProvider{},
-				ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
-				now:                   metav1.Now,
+				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+				},
+				now: metav1.Now,
 			}
 
 			if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hc.Namespace, Name: testCase.hc.Name}}); err != nil {

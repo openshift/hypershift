@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagestreamv1 "github.com/openshift/api/image/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
@@ -15,6 +16,14 @@ import (
 
 type CapabiltyChecker interface {
 	Has(capabilities ...CapabilityType) bool
+}
+
+type MockCapabilityChecker struct {
+	MockHas func(capabilities ...CapabilityType) bool
+}
+
+func (m *MockCapabilityChecker) Has(capabilities ...CapabilityType) bool {
+	return m.MockHas(capabilities...)
 }
 
 type CapabilityType int
@@ -56,6 +65,10 @@ const (
 
 	// CapabilityIDMS indicates if the cluster supports ImageDigestMirrorSet CRDs
 	CapabilityIDMS
+
+	// CapabilityImageStream indicates if the cluster supports ImageStream
+	// image.openshift.io
+	CapabilityImageStream
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -189,6 +202,15 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasIDMSCap {
 		discoveredCapabilities[CapabilityIDMS] = struct{}{}
+	}
+
+	// check for ImageStream capability
+	hasImageStreamCap, err := isAPIResourceRegistered(client, imagestreamv1.GroupVersion, "imagestream")
+	if err != nil {
+		return nil, err
+	}
+	if hasImageStreamCap {
+		discoveredCapabilities[CapabilityImageStream] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil

@@ -209,6 +209,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
+					PriorityClassName:  HypershiftOperatorPriortyClass,
 					ServiceAccountName: o.ServiceAccount.Name,
 					Containers: []corev1.Container{
 						{
@@ -996,6 +997,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{
 					"events",
 					"configmaps",
+					"configmaps/finalizers",
 					"persistentvolumeclaims",
 					"pods",
 					"pods/log",
@@ -1062,6 +1064,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				APIGroups: []string{"agent-install.openshift.io"},
 				Resources: []string{"agents"},
 				Verbs:     []string{rbacv1.VerbAll},
+			},
+			{ // This allows hypershift operator to grant RBAC permissions for kubevirt-csi to create/delete volumesnapshots.
+				APIGroups: []string{"snapshot.storage.k8s.io"},
+				Resources: []string{"volumesnapshots"},
+				Verbs:     []string{"get", "create", "delete"},
 			},
 			{
 				APIGroups: []string{"extensions.hive.openshift.io"},
@@ -1809,5 +1816,34 @@ func (o HyperShiftPullSecret) Build() *corev1.Secret {
 			".dockerconfigjson": o.PullSecretBytes,
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
+	}
+}
+
+type KubeSystemRoleBinding struct {
+	Namespace string
+}
+
+func (o KubeSystemRoleBinding) Build() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "RoleBinding",
+			APIVersion: "rbac.authorization.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "authentication-reader-for-authenticated-users",
+			Namespace: o.Namespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "extension-apiserver-authentication-reader",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:     "Group",
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     "system:authenticated",
+			},
+		},
 	}
 }

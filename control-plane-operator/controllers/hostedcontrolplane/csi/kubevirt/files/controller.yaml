@@ -110,6 +110,25 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+        - name: csi-snapshotter
+          args:
+          - "--v=5"
+          - "--csi-address=/csi/csi.sock"
+          - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+          - "--timeout=3m"
+          image: quay.io/openshift/origin-csi-external-snapshotter:latest
+          imagePullPolicy: IfNotPresent
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /csi
+            name: socket-dir
+          - name: tenantcluster
+            mountPath: "/var/run/secrets/tenantcluster"
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
       volumes:
         - name: socket-dir
           emptyDir: {}

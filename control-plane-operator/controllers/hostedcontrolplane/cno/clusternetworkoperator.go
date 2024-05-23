@@ -30,7 +30,10 @@ import (
 	utilpointer "k8s.io/utils/pointer"
 )
 
-const operatorName = "cluster-network-operator"
+const (
+	operatorName          = "cluster-network-operator"
+	konnectivityProxyName = "konnectivity-proxy"
+)
 
 type Images struct {
 	NetworkOperator              string
@@ -62,6 +65,8 @@ type Params struct {
 	ReleaseVersion          string
 	AvailabilityProberImage string
 	HostedClusterName       string
+	CAConfigMap             string
+	CAConfigMapKey          string
 	APIServerAddress        string
 	APIServerPort           int32
 	TokenAudience           string
@@ -110,6 +115,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		TokenAudience:           hcp.Spec.IssuerURL,
 		SbDbPubStrategy:         util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb),
 		DefaultIngressDomain:    defaultIngressDomain,
+		CAConfigMap:             "root-ca",
+		CAConfigMapKey:          "ca.crt",
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
@@ -299,15 +306,29 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 
 	cnoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("10Mi"),
+			corev1.ResourceMemory: resource.MustParse("100Mi"),
 			corev1.ResourceCPU:    resource.MustParse("10m"),
 		},
 	}
-	// preserve existing resource requirements
+	// preserve existing resource requirements for the CNO container
 	mainContainer := util.FindContainer(operatorName, dep.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
 		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
 			cnoResources = mainContainer.Resources
+		}
+	}
+
+	kProxyResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements for the konnectivity-proxy container
+	kProxyContainer := util.FindContainer(konnectivityProxyName, dep.Spec.Template.Spec.Containers)
+	if kProxyContainer != nil {
+		if len(kProxyContainer.Resources.Requests) > 0 || len(kProxyContainer.Resources.Limits) > 0 {
+			kProxyResources = kProxyContainer.Resources
 		}
 	}
 
@@ -484,6 +505,8 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		Env: append(cnoEnv, []corev1.EnvVar{
 			{Name: "HYPERSHIFT", Value: "true"},
 			{Name: "HOSTED_CLUSTER_NAME", Value: params.HostedClusterName},
+			{Name: "CA_CONFIG_MAP", Value: params.CAConfigMap},
+			{Name: "CA_CONFIG_MAP_KEY", Value: params.CAConfigMapKey},
 			{Name: "TOKEN_AUDIENCE", Value: params.TokenAudience},
 
 			{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
@@ -529,13 +552,10 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
 			{Name: "OPENSHIFT_RELEASE_IMAGE", Value: params.DeploymentConfig.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]},
 		}...),
-		Name:            operatorName,
-		Image:           params.Images.NetworkOperator,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("100Mi"),
-		}},
+		Name:                     operatorName,
+		Image:                    params.Images.NetworkOperator,
+		ImagePullPolicy:          corev1.PullIfNotPresent,
+		Resources:                cnoResources,
 		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
@@ -544,15 +564,15 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	},
 		{
 			// CNO uses konnectivity-proxy to perform proxy readiness checks through the hosted cluster's network
-			Name:    "konnectivity-proxy",
+			Name:    konnectivityProxyName,
 			Image:   params.Images.Socks5Proxy,
-			Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true"},
+			Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--disable-resolver"},
 			Args:    []string{"run"},
 			Env: []corev1.EnvVar{{
 				Name:  "KUBECONFIG",
 				Value: "/etc/kubernetes/kubeconfig",
 			}},
-			Resources: cnoResources,
+			Resources: kProxyResources,
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "hosted-etc-kube", MountPath: "/etc/kubernetes"},
 				{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},

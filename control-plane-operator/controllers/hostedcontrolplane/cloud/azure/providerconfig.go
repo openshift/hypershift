@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
+
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -15,11 +17,16 @@ const (
 
 // ReconcileCloudConfig reconciles as expected by Nodes Kubelet.
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	if err != nil {
+		return err
+	}
+
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
 	}
+
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -30,7 +37,11 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane,
 
 // ReconcileCloudConfigWithCredentials reconciles as expected by KAS/KCM.
 func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	if err != nil {
+		return err
+	}
+
 	cfg.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
 	cfg.AADClientSecret = string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
 	cfg.UseManagedIdentityExtension = false
@@ -39,6 +50,7 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
 	}
+
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
@@ -46,18 +58,34 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 	return nil
 }
 
-func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) AzureConfig {
-	return AzureConfig{
+func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) (AzureConfig, error) {
+	subnetName, err := azureutil.GetSubnetNameFromSubnetID(hcp.Spec.Platform.Azure.SubnetID)
+	if err != nil {
+		return AzureConfig{}, fmt.Errorf("failed to determine subnet name from SubnetID: %w", err)
+	}
+
+	securityGroupName, securityGroupResourceGroup, err := azureutil.GetNameAndResourceGroupFromNetworkSecurityGroupID(hcp.Spec.Platform.Azure.SecurityGroupID)
+	if err != nil {
+		return AzureConfig{}, fmt.Errorf("failed to determine security group name from SecurityGroupID: %w", err)
+	}
+
+	vnetName, vnetResourceGroup, err := azureutil.GetVnetNameAndResourceGroupFromVnetID(hcp.Spec.Platform.Azure.VnetID)
+	if err != nil {
+		return AzureConfig{}, fmt.Errorf("failed to determine vnet name from VnetID: %w", err)
+	}
+
+	azureConfig := AzureConfig{
 		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
 		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
 		UseManagedIdentityExtension:  true,
 		SubscriptionID:               hcp.Spec.Platform.Azure.SubscriptionID,
 		ResourceGroup:                hcp.Spec.Platform.Azure.ResourceGroupName,
 		Location:                     hcp.Spec.Platform.Azure.Location,
-		VnetName:                     hcp.Spec.Platform.Azure.VnetName,
-		VnetResourceGroup:            hcp.Spec.Platform.Azure.ResourceGroupName,
-		SubnetName:                   hcp.Spec.Platform.Azure.SubnetName,
-		SecurityGroupName:            hcp.Spec.Platform.Azure.SecurityGroupName,
+		VnetName:                     vnetName,
+		VnetResourceGroup:            vnetResourceGroup,
+		SubnetName:                   subnetName,
+		SecurityGroupName:            securityGroupName,
+		SecurityGroupResourceGroup:   securityGroupResourceGroup,
 		LoadBalancerName:             hcp.Spec.InfraID,
 		CloudProviderBackoff:         true,
 		CloudProviderBackoffDuration: 6,
@@ -65,6 +93,8 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		LoadBalancerSku:              "standard",
 		DisableOutboundSNAT:          true,
 	}
+
+	return azureConfig, nil
 }
 
 // AzureConfig was originally a copy of the relevant subset of the upstream type
@@ -85,6 +115,7 @@ type AzureConfig struct {
 	VnetResourceGroup            string `json:"vnetResourceGroup"`
 	SubnetName                   string `json:"subnetName"`
 	SecurityGroupName            string `json:"securityGroupName"`
+	SecurityGroupResourceGroup   string `json:"securityGroupResourceGroup"`
 	RouteTableName               string `json:"routeTableName"`
 	CloudProviderBackoff         bool   `json:"cloudProviderBackoff"`
 	CloudProviderBackoffDuration int    `json:"cloudProviderBackoffDuration"`

@@ -12,7 +12,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
-	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"
 )
 
@@ -92,13 +91,11 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 }
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	infraID := opts.InfraID
-	if len(infraID) == 0 {
-		infraID = infraid.New(opts.Name)
-	}
-
 	// Load or create infrastructure for the cluster
 	var infra *powervsinfra.Infra
+
+	opts.Arch = hyperv1.ArchitecturePPC64LE
+
 	if len(opts.InfrastructureJSON) > 0 {
 		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
@@ -128,7 +125,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Namespace:              opts.Namespace,
 			BaseDomain:             opts.BaseDomain,
 			ResourceGroup:          opts.PowerVSPlatform.ResourceGroup,
-			InfraID:                infraID,
+			InfraID:                opts.InfraID,
 			OutputFile:             opts.InfrastructureJSON,
 			Region:                 opts.PowerVSPlatform.Region,
 			Zone:                   opts.PowerVSPlatform.Zone,
@@ -143,7 +140,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			TransitGateway:         opts.PowerVSPlatform.TransitGateway,
 		}
 		infra = &powervsinfra.Infra{
-			ID:            infraID,
+			ID:            opts.InfraID,
 			BaseDomain:    opts.BaseDomain,
 			ResourceGroup: opts.PowerVSPlatform.ResourceGroup,
 			Region:        opts.PowerVSPlatform.Region,

@@ -81,24 +81,21 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 	if mainContainer != nil {
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
-
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels(),
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: konnectivityAgentLabels(),
+	}
+	deployment.Spec.Template = corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: konnectivityAgentLabels(),
 		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels(),
+		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: pointer.Bool(false),
+			Containers: []corev1.Container{
+				util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.Bool(false),
-				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeAgentCerts),
-					util.BuildVolume(konnectivitySignerCA(), buildKonnectivitySignerCAkonnectivitySignerCAVolume),
-				},
+			Volumes: []corev1.Volume{
+				util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeAgentCerts),
+				util.BuildVolume(konnectivitySignerCA(), buildKonnectivitySignerCAkonnectivitySignerCAVolume),
 			},
 		},
 	}

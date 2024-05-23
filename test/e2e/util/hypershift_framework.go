@@ -51,7 +51,7 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 
 func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
 	// create a hypershift cluster for the test
-	hostedCluster := h.createHostedCluster(opts, platform, artifactDir, serviceAccountSigningKey)
+	hostedCluster := h.createHostedCluster(opts, platform, serviceAccountSigningKey)
 
 	// if cluster creation failed, immediately try and clean up.
 	if h.Failed() {
@@ -83,7 +83,7 @@ func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.Plat
 		})
 	}
 
-	h.after(hostedCluster, opts, platform)
+	h.after(hostedCluster, platform)
 
 	if h.Failed() {
 		h.summarizeHCConditions(hostedCluster, opts)
@@ -104,7 +104,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *core
 }
 
 // runs after each test.
-func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, opts *core.CreateOptions, platform hyperv1.PlatformType) {
+func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hyperv1.PlatformType) {
 	if h.Failed() {
 		// skip if Main failed
 		return
@@ -136,12 +136,12 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *co
 
 	// t.Run() is not supported in cleanup phase
 	if cleanupPhase {
-		h.teardownHostedCluster(context.Background(), hostedCluster, opts, artifactDir)
+		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir, cleanupPhase)
 		return
 	}
 
 	h.Run("Teardown", func(t *testing.T) {
-		h.teardownHostedCluster(context.Background(), hostedCluster, opts, artifactDir)
+		teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir, cleanupPhase)
 	})
 }
 
@@ -178,7 +178,7 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 	})
 }
 
-func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) *hyperv1.HostedCluster {
+func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform hyperv1.PlatformType, serviceAccountSigningKey []byte) *hyperv1.HostedCluster {
 	h.Logf("createHostedCluster()")
 
 	g := NewWithT(h.T)
@@ -277,35 +277,34 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 	return hc
 }
 
-// NOTE: teardownHostedCluster shouldn't include any subtests
-// as it is called during the cleanup phase where t.Run() is not supported.
-func (h *hypershiftTest) teardownHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) {
+// NOTE: teardownHostedCluster shouldn't start any subtests with t.Run() when cleanupPhase=True, this is not a supported operation and will fail immediately
+func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, client crclient.Client, opts *core.CreateOptions, artifactDir string, cleanupPhase bool) {
 	// TODO (Mulham): dumpCluster() uses testName to construc dumpDir, since we removed sub tests from this function
 	// we should pass dumpDir to the dumpCluster() as <artifactDir>/<testName>_<suffix>
 	dumpCluster := newClusterDumper(hc, opts, artifactDir)
 
 	// First, do a dump of the cluster before tearing it down
-	err := dumpCluster(ctx, h.T, true)
-	if err != nil {
-		h.Errorf("Failed to dump cluster: %v", err)
-	}
+	// Save off any error so that we can continue with the teardown
+	dumpErr := dumpCluster(ctx, t, true)
 
-	ValidateMetrics(h.T, ctx, hc, []string{
-		hcmetrics.SilenceAlertsMetricName,
-		hcmetrics.LimitedSupportEnabledMetricName,
-		hcmetrics.ProxyMetricName,
-		hcmetrics.InvalidAwsCredsMetricName,
-		HypershiftOperatorInfoName,
-		npmetrics.SizeMetricName,
-		npmetrics.AvailableReplicasMetricName,
-	}, true)
+	if !cleanupPhase {
+		ValidateMetrics(t, ctx, hc, []string{
+			hcmetrics.SilenceAlertsMetricName,
+			hcmetrics.LimitedSupportEnabledMetricName,
+			hcmetrics.ProxyMetricName,
+			hcmetrics.InvalidAwsCredsMetricName,
+			HypershiftOperatorInfoName,
+			npmetrics.SizeMetricName,
+			npmetrics.AvailableReplicasMetricName,
+		}, true)
+	}
 
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
 	destroyAttempt := 1
-	h.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
-	err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-		err := destroyCluster(ctx, h.T, hc, opts)
+	t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+		err := destroyCluster(ctx, t, hc, opts)
 		if err != nil {
 			if strings.Contains(err.Error(), "required inputs are missing") {
 				return false, err
@@ -313,20 +312,20 @@ func (h *hypershiftTest) teardownHostedCluster(ctx context.Context, hc *hyperv1.
 			if strings.Contains(err.Error(), "NoCredentialProviders") {
 				return false, err
 			}
-			h.Logf("Failed to destroy cluster, will retry: %v", err)
-			err := dumpCluster(ctx, h.T, false)
+			t.Logf("Failed to destroy cluster, will retry: %v", err)
+			err := dumpCluster(ctx, t, false)
 			if err != nil {
-				h.Logf("Failed to dump cluster during destroy; this is nonfatal: %v", err)
+				t.Logf("Failed to dump cluster during destroy; this is nonfatal: %v", err)
 			}
 			destroyAttempt++
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 	if err != nil {
-		h.Errorf("Failed to destroy cluster: %v", err)
+		t.Errorf("Failed to destroy cluster: %v", err)
 	} else {
-		h.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+		t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
 	}
 
 	// Finally, delete the test namespace containing the HostedCluster/NodePool
@@ -338,13 +337,17 @@ func (h *hypershiftTest) teardownHostedCluster(ctx context.Context, hc *hyperv1.
 	// complete and then dump resources to help debug.
 	deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
-	err = DeleteNamespace(h.T, deleteTimeout, h.client, hc.Namespace)
+	err = DeleteNamespace(t, deleteTimeout, client, hc.Namespace)
 	if err != nil {
-		h.Errorf("Failed to delete test namespace: %v", err)
-		err := dumpCluster(ctx, h.T, false)
+		t.Errorf("Failed to delete test namespace: %v", err)
+		err := dumpCluster(ctx, t, false)
 		if err != nil {
-			h.Errorf("Failed to dump cluster: %v", err)
+			t.Errorf("Failed to dump cluster: %v", err)
 		}
+	}
+
+	if dumpErr != nil {
+		t.Errorf("Failed to dump cluster: %v", dumpErr)
 	}
 }
 

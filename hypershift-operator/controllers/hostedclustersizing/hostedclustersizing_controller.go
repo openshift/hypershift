@@ -14,6 +14,8 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -26,8 +28,6 @@ import (
 )
 
 const (
-	HostedClusterSizeLabel = "hypershift.openshift.io/hosted-cluster-size"
-
 	hccoReportsNodeCountLabel = "io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count"
 )
 
@@ -129,6 +129,9 @@ func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 
 	hostedCluster, err := r.getHostedCluster(ctx, request.NamespacedName)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, err
 	}
 
@@ -192,13 +195,13 @@ func (r *reconciler) reconcile(
 	}
 
 	lastTransitionTime, lastSizeClass := previousTransitionFor(hostedCluster)
-	currentSizeClass, sizeClassLabelPresent := hostedCluster.ObjectMeta.Labels[HostedClusterSizeLabel]
+	currentSizeClass, sizeClassLabelPresent := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
 	if lastTransitionTime != nil && !sizeClassLabelPresent || currentSizeClass != lastSizeClass {
 		// we can't update both the status and the labels in one call, so when we have updated status but
 		// have not yet updated the labels, we just need to do that first
 		return &action{
 			applyCfg: hypershiftv1beta1applyconfigurations.HostedCluster(hostedCluster.Name, hostedCluster.Namespace).
-				WithLabels(map[string]string{HostedClusterSizeLabel: lastSizeClass}),
+				WithLabels(map[string]string{hypershiftv1beta1.HostedClusterSizeLabel: lastSizeClass}),
 		}, nil
 	}
 
@@ -215,6 +218,12 @@ func (r *reconciler) reconcile(
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine if HCCO reports node count: %w", err)
 	}
+
+	// Determine if the Kube API Server is available to determine if we can trust the node count from nodepool.status.replicas
+	// If the Kube API Server is not available, we cannot trust the node count from nodepool.status.replicas
+	// Ref: kubernetes-sigs/cluster-api#10195
+	kasAvailableCondition := meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hypershiftv1beta1.KubeAPIServerAvailable))
+	kasAvailable := kasAvailableCondition != nil && kasAvailableCondition.Status == metav1.ConditionTrue
 
 	// first, we figure out the node count for the hosted cluster
 	var nodeCount uint32
@@ -234,7 +243,18 @@ func (r *reconciler) reconcile(
 		}
 
 		for _, nodePool := range nodePools.Items {
-			nodeCount += uint32(nodePool.Status.Replicas)
+			var replicas uint32
+			// If autoscaling, the replicas should be returned from status
+			if nodePool.Spec.AutoScaling != nil {
+				// If the Kube API Server is not available, and we already have a size label, skip processing
+				if !kasAvailable && sizeClassLabelPresent {
+					return nil, nil
+				}
+				replicas = uint32(nodePool.Status.Replicas)
+			} else if nodePool.Spec.Replicas != nil {
+				replicas = uint32(*nodePool.Spec.Replicas)
+			}
+			nodeCount += replicas
 		}
 	}
 
@@ -285,7 +305,11 @@ func (r *reconciler) reconcile(
 	// third, we need to know if we're ready to transition the cluster:
 	// - the hosted cluster has limits to how quickly it can transition up and down, and
 	// - the management plane has limits to how many clusters can be transitioning at any time
-	delayStart := r.now()
+	delayStart := time.Time{}
+	if lastTransitionTime != nil {
+		// if we transitioned in the past, we need to enforce the delay from there
+		delayStart = *lastTransitionTime
+	}
 	lastComputedTime, lastComputedSizeClass := previousComputedSizeFor(hostedCluster)
 	if lastComputedTime != nil && lastComputedSizeClass == sizeClass.Name {
 		// we computed that the cluster should transition already; enforce the delay from that point
@@ -322,30 +346,35 @@ func (r *reconciler) reconcile(
 		}
 	}
 
-	hostedClusters, err := r.listHostedClusters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list hosted clusters when calculating concurrency: %w", err)
-	}
+	// For new clusters being added to the fleet, we have an SLA on creation time and can't afford to delay
+	// the first transition, as it is required for the control plane to schedule. For other clusters, though,
+	// we want to limit the amount of churn happening in order to promote the stability of the management plane.
+	if scheduled := hostedCluster.Annotations[hypershiftv1beta1.HostedClusterScheduledAnnotation]; scheduled == "true" {
+		hostedClusters, err := r.listHostedClusters(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list hosted clusters when calculating concurrency: %w", err)
+		}
 
-	if changes, durationUntilChanges := transitionsWithinSlidingWindow(hostedClusters, config.Spec.Concurrency.SlidingWindow.Duration, r.now()); int32(changes) >= config.Spec.Concurrency.Limit {
-		cfg := applyCfgFor(hostedCluster,
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
-				WithStatus(metav1.ConditionTrue).
-				WithReason("ConcurrencyLimitReached").
-				WithMessage(fmt.Sprintf("%d HostedClusters have already transitioned sizes in the last %s, more time must elapse before the next transition.", changes, config.Spec.Concurrency.SlidingWindow.Duration.String())).
-				WithLastTransitionTime(metav1.NewTime(r.now())),
-			metav1applyconfigurations.Condition().
-				WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
-				WithStatus(metav1.ConditionTrue).
-				WithReason(sizeClass.Name).
-				WithMessage("The HostedCluster will transition to a new t-shirt size.").
-				WithLastTransitionTime(metav1.NewTime(r.now())),
-		)
-		if cfg != nil {
-			return &action{applyCfg: cfg, requeueAfter: durationUntilChanges}, nil
-		} else {
-			return nil, nil
+		if changes, durationUntilChanges := transitionsWithinSlidingWindow(hostedClusters, config.Spec.Concurrency.SlidingWindow.Duration, r.now()); int32(changes) >= config.Spec.Concurrency.Limit {
+			cfg := applyCfgFor(hostedCluster,
+				metav1applyconfigurations.Condition().
+					WithType(hypershiftv1beta1.ClusterSizeTransitionPending).
+					WithStatus(metav1.ConditionTrue).
+					WithReason("ConcurrencyLimitReached").
+					WithMessage(fmt.Sprintf("%d HostedClusters have already transitioned sizes in the last %s, more time must elapse before the next transition.", changes, config.Spec.Concurrency.SlidingWindow.Duration.String())).
+					WithLastTransitionTime(metav1.NewTime(r.now())),
+				metav1applyconfigurations.Condition().
+					WithType(hypershiftv1beta1.ClusterSizeTransitionRequired).
+					WithStatus(metav1.ConditionTrue).
+					WithReason(sizeClass.Name).
+					WithMessage("The HostedCluster will transition to a new t-shirt size.").
+					WithLastTransitionTime(metav1.NewTime(r.now())),
+			)
+			if cfg != nil {
+				return &action{applyCfg: cfg, requeueAfter: durationUntilChanges}, nil
+			} else {
+				return nil, nil
+			}
 		}
 	}
 

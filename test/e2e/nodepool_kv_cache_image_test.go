@@ -23,6 +23,7 @@ import (
 )
 
 type KubeVirtCacheTest struct {
+	DummyInfraSetup
 	ctx           context.Context
 	client        crclient.Client
 	hostedCluster *hyperv1.HostedCluster

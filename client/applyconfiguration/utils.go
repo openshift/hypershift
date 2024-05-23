@@ -78,6 +78,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.AWSRolesRefApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSServiceEndpoint"):
 		return &applyconfigurationhypershiftv1alpha1.AWSServiceEndpointApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureKMSKey"):
+		return &applyconfigurationhypershiftv1alpha1.AzureKMSKeyApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &applyconfigurationhypershiftv1alpha1.AzureKMSSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):
@@ -154,6 +156,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.KubevirtStorageDriverSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtVolume"):
 		return &applyconfigurationhypershiftv1alpha1.KubevirtVolumeApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtVolumeSnapshotClassMapping"):
+		return &applyconfigurationhypershiftv1alpha1.KubevirtVolumeSnapshotClassMappingApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("LoadBalancerPublishingStrategy"):
 		return &applyconfigurationhypershiftv1alpha1.LoadBalancerPublishingStrategyApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):
@@ -250,6 +254,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSServiceEndpoint"):
 		return &hypershiftv1beta1.AWSServiceEndpointApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
+		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &hypershiftv1beta1.AzureKMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):
@@ -334,6 +340,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.KubevirtStorageDriverSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubevirtVolume"):
 		return &hypershiftv1beta1.KubevirtVolumeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KubevirtVolumeSnapshotClassMapping"):
+		return &hypershiftv1beta1.KubevirtVolumeSnapshotClassMappingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("LoadBalancerPublishingStrategy"):
 		return &hypershiftv1beta1.LoadBalancerPublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):
@@ -412,6 +420,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationschedulingv1alpha1.ManagementApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("NodeCountCriteria"):
 		return &applyconfigurationschedulingv1alpha1.NodeCountCriteriaApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ResourceRequest"):
+		return &applyconfigurationschedulingv1alpha1.ResourceRequestApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("SizeConfiguration"):
 		return &applyconfigurationschedulingv1alpha1.SizeConfigurationApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("TransitionDelayConfiguration"):

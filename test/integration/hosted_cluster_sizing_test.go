@@ -13,7 +13,6 @@ import (
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	schedulingv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/test/integration/framework"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -236,14 +235,14 @@ func waitForHostedClusterToHaveSize(t *testing.T, ctx context.Context, client hy
 			{conditionType: hypershiftv1beta1.ClusterSizeTransitionRequired, status: metav1.ConditionFalse, reason: hypershiftv1beta1.AsExpectedReason},
 		},
 		func(hostedCluster *hypershiftv1beta1.HostedCluster) (done bool, reason string, err error) {
-			label, present := hostedCluster.ObjectMeta.Labels[hostedclustersizing.HostedClusterSizeLabel]
+			label, present := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
 			if !present {
-				return false, fmt.Sprintf("hostedCluster.metadata.labels[%s] missing", hostedclustersizing.HostedClusterSizeLabel), nil
+				return false, fmt.Sprintf("hostedCluster.metadata.labels[%s] missing", hypershiftv1beta1.HostedClusterSizeLabel), nil
 			}
 			if label != size {
-				return false, fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s, wanted %s", hostedclustersizing.HostedClusterSizeLabel, label, size), nil
+				return false, fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s, wanted %s", hypershiftv1beta1.HostedClusterSizeLabel, label, size), nil
 			}
-			return true, fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s", hostedclustersizing.HostedClusterSizeLabel, label), nil
+			return true, fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s", hypershiftv1beta1.HostedClusterSizeLabel, label), nil
 		},
 	)
 }

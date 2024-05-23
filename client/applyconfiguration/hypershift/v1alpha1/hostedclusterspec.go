@@ -18,8 +18,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	v1 "github.com/openshift/api/config/v1"
 	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // HostedClusterSpecApplyConfiguration represents an declarative configuration of the HostedClusterSpec type for use
@@ -28,6 +29,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	Release                          *ReleaseApplyConfiguration                           `json:"release,omitempty"`
 	ControlPlaneRelease              *ReleaseApplyConfiguration                           `json:"controlPlaneRelease,omitempty"`
 	ClusterID                        *string                                              `json:"clusterID,omitempty"`
+	UpdateService                    *v1.URL                                              `json:"updateService,omitempty"`
 	Channel                          *string                                              `json:"channel,omitempty"`
 	InfraID                          *string                                              `json:"infraID,omitempty"`
 	Platform                         *PlatformSpecApplyConfiguration                      `json:"platform,omitempty"`
@@ -38,14 +40,14 @@ type HostedClusterSpecApplyConfiguration struct {
 	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
 	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
 	Services                         []ServicePublishingStrategyMappingApplyConfiguration `json:"services,omitempty"`
-	PullSecret                       *v1.LocalObjectReference                             `json:"pullSecret,omitempty"`
-	SSHKey                           *v1.LocalObjectReference                             `json:"sshKey,omitempty"`
+	PullSecret                       *corev1.LocalObjectReference                         `json:"pullSecret,omitempty"`
+	SSHKey                           *corev1.LocalObjectReference                         `json:"sshKey,omitempty"`
 	IssuerURL                        *string                                              `json:"issuerURL,omitempty"`
-	ServiceAccountSigningKey         *v1.LocalObjectReference                             `json:"serviceAccountSigningKey,omitempty"`
+	ServiceAccountSigningKey         *corev1.LocalObjectReference                         `json:"serviceAccountSigningKey,omitempty"`
 	Configuration                    *ClusterConfigurationApplyConfiguration              `json:"configuration,omitempty"`
-	AuditWebhook                     *v1.LocalObjectReference                             `json:"auditWebhook,omitempty"`
+	AuditWebhook                     *corev1.LocalObjectReference                         `json:"auditWebhook,omitempty"`
 	ImageContentSources              []ImageContentSourceApplyConfiguration               `json:"imageContentSources,omitempty"`
-	AdditionalTrustBundle            *v1.LocalObjectReference                             `json:"additionalTrustBundle,omitempty"`
+	AdditionalTrustBundle            *corev1.LocalObjectReference                         `json:"additionalTrustBundle,omitempty"`
 	SecretEncryption                 *SecretEncryptionSpecApplyConfiguration              `json:"secretEncryption,omitempty"`
 	FIPS                             *bool                                                `json:"fips,omitempty"`
 	PausedUntil                      *string                                              `json:"pausedUntil,omitempty"`
@@ -80,6 +82,14 @@ func (b *HostedClusterSpecApplyConfiguration) WithControlPlaneRelease(value *Rel
 // If called multiple times, the ClusterID field is set to the value of the last call.
 func (b *HostedClusterSpecApplyConfiguration) WithClusterID(value string) *HostedClusterSpecApplyConfiguration {
 	b.ClusterID = &value
+	return b
+}
+
+// WithUpdateService sets the UpdateService field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the UpdateService field is set to the value of the last call.
+func (b *HostedClusterSpecApplyConfiguration) WithUpdateService(value v1.URL) *HostedClusterSpecApplyConfiguration {
+	b.UpdateService = &value
 	return b
 }
 
@@ -171,7 +181,7 @@ func (b *HostedClusterSpecApplyConfiguration) WithServices(values ...*ServicePub
 // WithPullSecret sets the PullSecret field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the PullSecret field is set to the value of the last call.
-func (b *HostedClusterSpecApplyConfiguration) WithPullSecret(value v1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
+func (b *HostedClusterSpecApplyConfiguration) WithPullSecret(value corev1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
 	b.PullSecret = &value
 	return b
 }
@@ -179,7 +189,7 @@ func (b *HostedClusterSpecApplyConfiguration) WithPullSecret(value v1.LocalObjec
 // WithSSHKey sets the SSHKey field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the SSHKey field is set to the value of the last call.
-func (b *HostedClusterSpecApplyConfiguration) WithSSHKey(value v1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
+func (b *HostedClusterSpecApplyConfiguration) WithSSHKey(value corev1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
 	b.SSHKey = &value
 	return b
 }
@@ -195,7 +205,7 @@ func (b *HostedClusterSpecApplyConfiguration) WithIssuerURL(value string) *Hoste
 // WithServiceAccountSigningKey sets the ServiceAccountSigningKey field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ServiceAccountSigningKey field is set to the value of the last call.
-func (b *HostedClusterSpecApplyConfiguration) WithServiceAccountSigningKey(value v1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
+func (b *HostedClusterSpecApplyConfiguration) WithServiceAccountSigningKey(value corev1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
 	b.ServiceAccountSigningKey = &value
 	return b
 }
@@ -211,7 +221,7 @@ func (b *HostedClusterSpecApplyConfiguration) WithConfiguration(value *ClusterCo
 // WithAuditWebhook sets the AuditWebhook field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the AuditWebhook field is set to the value of the last call.
-func (b *HostedClusterSpecApplyConfiguration) WithAuditWebhook(value v1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
+func (b *HostedClusterSpecApplyConfiguration) WithAuditWebhook(value corev1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
 	b.AuditWebhook = &value
 	return b
 }
@@ -232,7 +242,7 @@ func (b *HostedClusterSpecApplyConfiguration) WithImageContentSources(values ...
 // WithAdditionalTrustBundle sets the AdditionalTrustBundle field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the AdditionalTrustBundle field is set to the value of the last call.
-func (b *HostedClusterSpecApplyConfiguration) WithAdditionalTrustBundle(value v1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
+func (b *HostedClusterSpecApplyConfiguration) WithAdditionalTrustBundle(value corev1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
 	b.AdditionalTrustBundle = &value
 	return b
 }

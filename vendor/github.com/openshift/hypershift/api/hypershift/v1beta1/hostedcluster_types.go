@@ -78,11 +78,13 @@ const (
 	// PortierisImageAnnotation is an annotation that allows the specification of the portieries component
 	// (performs container image verification).
 	PortierisImageAnnotation = "hypershift.openshift.io/portieris-image"
-	// Configure ingress controller with endpoint publishing strategy as Private.
+	// PrivateIngressControllerAnnotation is an annotation that configures ingress controller with endpoint publishing strategy as Private.
 	// This overrides any opinionated strategy set by platform in ReconcileDefaultIngressController.
 	// It's used by IBM cloud to support ingress endpoint publishing strategy scope
 	// NOTE: We'll expose this in the API if the use case gets generalised.
 	PrivateIngressControllerAnnotation = "hypershift.openshift.io/private-ingress-controller"
+	// IngressControllerLoadBalancerScope is an annotation that allows the specification of the LoadBalancer scope for ingress controller.
+	IngressControllerLoadBalancerScope = "hypershift.openshift.io/ingress-controller-load-balancer-scope"
 
 	// CertifiedOperatorsCatalogImageAnnotation, CommunityOperatorsCatalogImageAnnotation, RedHatMarketplaceCatalogImageAnnotation and RedHatOperatorsCatalogImageAnnotation
 	// are annotations that can be used to override the address of the images used for the OLM catalogs if in the `management` OLMCatalogPlacement mode.
@@ -246,7 +248,7 @@ const (
 	// See https://github.com/openshift/enhancements/blob/master/enhancements/authentication/pod-security-admission.md
 	PodSecurityAdmissionLabelOverrideAnnotation = "hypershift.openshift.io/pod-security-admission-label-override"
 
-	//DisableMonitoringServices introduces an option to disable monitor services IBM Cloud do not use.
+	// DisableMonitoringServices introduces an option to disable monitor services IBM Cloud do not use.
 	DisableMonitoringServices = "hypershift.openshift.io/disable-monitoring-services"
 
 	// JSONPatchAnnotation allow modifying the kubevirt VM template using jsonpatch
@@ -265,11 +267,35 @@ const (
 	// in the AWS platform.
 	AWSLoadBalancerSubnetsAnnotation = "hypershift.openshift.io/aws-load-balancer-subnets"
 
+	// DisableClusterAutoscalerAnnotation allows disabling the cluster autoscaler for a hosted cluster.
+	// This annotation is only set by the hypershift-operator on HosterControlPlanes.
+	// It is not set by the end-user.
+	DisableClusterAutoscalerAnnotation = "hypershift.openshift.io/disable-cluster-autoscaler"
+
 	// AroHCP represents the ARO HCP managed service offering
 	AroHCP = "ARO-HCP"
 
-	//RosaHCP represents the ROSA HCP managed service offering
+	// RosaHCP represents the ROSA HCP managed service offering
 	RosaHCP = "ROSA-HCP"
+
+	// HostedClusterSizeLabel is a label on HostedClusters indicating a size based on the number of nodes.
+	HostedClusterSizeLabel = "hypershift.openshift.io/hosted-cluster-size"
+
+	// NodeSizeLabel is a label on nodes used to match cluster size to a node size.
+	NodeSizeLabel = "hypershift.openshift.io/cluster-size"
+
+	// ManagementPlatformAnnotation specifies the infrastructure platform of the underlying management cluster
+	ManagementPlatformAnnotation = "hypershift.openshift.io/management-platform"
+
+	// MachineHealthCheckTimeoutAnnotation allows overriding the default machine health check timeout for
+	// nodepools. The annotation can be set in either the HostedCluster or the NodePool. If set on both, the
+	// one on the NodePool takes precedence. The value is a go duration string with a number and a unit (ie. 8m, 1h, etc)
+	MachineHealthCheckTimeoutAnnotation = "hypershift.openshift.io/machine-health-check-timeout"
+
+	// MachineHealthCheckMaxUnhealthyAnnotation allows overriding the max unhealthy value of the machine
+	// health check created for a NodePool. The annotation can be set in either the HostedCluster or the NodePool.
+	// If set on both, the one on the NodePool takes precedence. The value can be a number or a percentage value.
+	MachineHealthCheckMaxUnhealthyAnnotation = "hypershift.openshift.io/machine-health-check-max-unhealthy"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -303,6 +329,12 @@ type HostedClusterSpec struct {
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
 
+	// updateService may be used to specify the preferred upstream update service.
+	// By default it will use the appropriate update service for the cluster and region.
+	//
+	// +optional
+	UpdateService configv1.URL `json:"updateService,omitempty"`
+
 	// channel is an identifier for explicitly requesting that a non-default
 	// set of updates be applied to this cluster. The default channel will be
 	// contain stable updates that are appropriate for production clusters.
@@ -325,10 +357,10 @@ type HostedClusterSpec struct {
 	Platform PlatformSpec `json:"platform"`
 
 	// ControllerAvailabilityPolicy specifies the availability policy applied to
-	// critical control plane components. The default value is SingleReplica.
+	// critical control plane components. The default value is HighlyAvailable.
 	//
 	// +optional
-	// +kubebuilder:default:="SingleReplica"
+	// +kubebuilder:default:="HighlyAvailable"
 	// +immutable
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
@@ -967,15 +999,34 @@ type KubevirtManualStorageDriverConfig struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
 	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
+
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassMapping is immutable"
+	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMapping `json:"volumeSnapshotClassMapping,omitempty"`
 }
 
 type KubevirtStorageClassMapping struct {
+	// Group contains which group this mapping belongs to.
+	Group string `json:"group,omitempty"`
 	// InfraStorageClassName is the name of the infra cluster storage class that
-	// will be exposed into the guest.
+	// will be exposed to the guest.
 	InfraStorageClassName string `json:"infraStorageClassName"`
 	// GuestStorageClassName is the name that the corresponding storageclass will
 	// be called within the guest cluster
 	GuestStorageClassName string `json:"guestStorageClassName"`
+}
+
+type KubevirtVolumeSnapshotClassMapping struct {
+	// Group contains which group this mapping belongs to.
+	Group string `json:"group,omitempty"`
+	// InfraStorageClassName is the name of the infra cluster volume snapshot class that
+	// will be exposed to the guest.
+	InfraVolumeSnapshotClassName string `json:"infraVolumeSnapshotClassName"`
+	// GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+	// be called within the guest cluster
+	GuestVolumeSnapshotClassName string `json:"guestVolumeSnapshotClassName"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -1655,20 +1706,100 @@ type AWSServiceEndpoint struct {
 	URL string `json:"url"`
 }
 
+// AzurePlatformSpec specifies configuration for clusters running on Azure. Generally, the HyperShift API assumes bring
+// your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
+// would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
+// fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
 type AzurePlatformSpec struct {
+	// Credentials is the object containing existing Azure credentials needed for creating and managing cloud
+	// infrastructure resources.
+	//
+	// +kubebuilder:validation:Required
+	// +required
 	Credentials corev1.LocalObjectReference `json:"credentials"`
-	// The cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
-	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud
+
+	// Cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
+	//
+	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud;AzureStackCloud
 	// +kubebuilder:default="AzurePublicCloud"
-	Cloud             string `json:"cloud,omitempty"`
-	Location          string `json:"location"`
+	Cloud string `json:"cloud,omitempty"`
+
+	// Location is the Azure region in where all the cloud infrastructure resources will be created.
+	//
+	// Example: eastus
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Location is immutable"
+	// +immutable
+	// +required
+	Location string `json:"location"`
+
+	// ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+	// Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.
+	//
+	// In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
+	//
+	// Resource group naming requirements can be found here: https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/.
+	//
+	//Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+	//          ResourceGroupName is <resourceGroupName>.
+	//
+	// +kubebuilder:default:=default
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ResourceGroupName is immutable"
+	// +immutable
+	// +required
 	ResourceGroupName string `json:"resourceGroup"`
-	VnetName          string `json:"vnetName"`
-	VnetID            string `json:"vnetID"`
-	SubnetName        string `json:"subnetName"`
-	SubscriptionID    string `json:"subscriptionID"`
-	MachineIdentityID string `json:"machineIdentityID"`
-	SecurityGroupName string `json:"securityGroupName"`
+
+	// VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+	// other than the one specified in ResourceGroupName, but it must exist under the same subscription as
+	// SubscriptionID.
+	//
+	// In ARO HCP, this will be the ID of the customer provided VNET.
+	//
+	// Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="VnetID is immutable"
+	// +immutable
+	// +required
+	VnetID string `json:"vnetID,omitempty"`
+
+	// SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
+	// subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
+	// same subscription as SubscriptionID.
+	//
+	// In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	SubnetID string `json:"subnetID"`
+
+	// SubscriptionID is a unique identifier for an Azure subscription used to manage resources.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SubscriptionID is immutable"
+	// +immutable
+	// +required
+	SubscriptionID string `json:"subscriptionID"`
+
+	// MachineIdentityID is used as the user-assigned identity to be assigned to the VMs
+	//
+	// +optional
+	MachineIdentityID string `json:"machineIdentityID,omitempty"`
+
+	// SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
+	// configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
+	// expected to exist under the same subscription as SubscriptionID.
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SecurityGroupID is immutable"
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +required
+	SecurityGroupID string `json:"securityGroupID,omitempty"`
 }
 
 // Release represents the metadata for an OCP release payload image.
@@ -1900,9 +2031,17 @@ type KMSSpec struct {
 
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
 type AzureKMSSpec struct {
-	// Location contains the Azure region
+	// ActiveKey defines the active key used to encrypt new secrets
+	//
+	// +kubebuilder:validation:Required
+	ActiveKey AzureKMSKey `json:"activeKey"`
+	// BackupKey defines the old key during the rotation process so previously created
+	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
 	// +optional
-	Location string `json:"location"`
+	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
+}
+
+type AzureKMSKey struct {
 	// KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
 	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`

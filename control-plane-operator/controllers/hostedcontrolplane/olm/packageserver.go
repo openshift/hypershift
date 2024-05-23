@@ -27,9 +27,16 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements
-	mainContainer := util.FindContainer(packageServerName, deployment.Spec.Template.Spec.Containers)
+	packageserverResources := corev1.ResourceRequirements{}
+	mainContainer := util.FindContainer(packageServerName, packageServerDeployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
-		dc.SetContainerResourcesIfPresent(mainContainer)
+		packageserverResources = mainContainer.Resources
+	}
+	mainContainer = util.FindContainer(packageServerName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			packageserverResources = mainContainer.Resources
+		}
 	}
 
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
@@ -37,6 +44,7 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 		switch container.Name {
 		case packageServerName:
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
+			deployment.Spec.Template.Spec.Containers[i].Resources = packageserverResources
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent

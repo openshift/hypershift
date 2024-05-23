@@ -3,6 +3,7 @@ package kubevirt
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"gopkg.in/yaml.v2"
+	"k8s.io/utils/pointer"
 )
 
 const (
@@ -24,6 +25,9 @@ type LoadBalancerConfig struct {
 	Enabled bool `yaml:"enabled"`
 	// CreationPollInterval determines how many seconds to wait for the load balancer creation
 	CreationPollInterval int `yaml:"creationPollInterval"`
+	// Selectorless delegate endpointslices creation on third party by
+	// skipping service selector creation
+	Selectorless *bool `yaml:"selectorless,omitempty"`
 }
 
 type InstancesV2Config struct {
@@ -44,7 +48,8 @@ func (c *CloudConfig) serialize() (string, error) {
 func cloudConfig(hcp *hyperv1.HostedControlPlane, namespace string, kubeconfigPath string) CloudConfig {
 	return CloudConfig{
 		LoadBalancer: LoadBalancerConfig{
-			Enabled: true,
+			Enabled:      true,
+			Selectorless: pointer.Bool(true),
 		},
 		InstancesV2: InstancesV2Config{
 			Enabled:              true,

@@ -56,7 +56,10 @@ nav:
   - how-to/per-hostedcluster-dashboard.md
   - how-to/metrics-sets.md
   - how-to/troubleshooting-general.md
-  - how-to/etcd-recovery.md
+  - 'Disaster Recovery':
+    - how-to/disaster-recovery/index.md
+    - how-to/disaster-recovery/backup-and-restore-oadp.md
+    - how-to/disaster-recovery/etcd-recovery.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
@@ -81,6 +84,7 @@ nav:
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
     - how-to/azure/create-azure-cluster-with-options.md
+    - how-to/azure/create-azure-cluster_on_aks.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md

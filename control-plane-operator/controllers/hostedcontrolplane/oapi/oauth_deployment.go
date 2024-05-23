@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -94,27 +95,6 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		AutomountServiceAccountToken: pointer.Bool(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(p)),
-			{
-				Name:            "audit-logs",
-				Image:           p.Image,
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Command: []string{
-					"/usr/bin/tail",
-					"-c+1",
-					"-F",
-					fmt.Sprintf("%s/%s", oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name), "audit.log"),
-				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("5m"),
-						corev1.ResourceMemory: resource.MustParse("10Mi"),
-					},
-				},
-				VolumeMounts: []corev1.VolumeMount{{
-					Name:      oauthVolumeWorkLogs().Name,
-					MountPath: oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name),
-				}},
-			},
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
@@ -126,6 +106,30 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 			util.BuildVolume(oauthVolumeEtcdClientCert(), buildOAuthVolumeEtcdClientCert),
 			util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 		},
+	}
+
+	if auditConfig.Data[auditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "audit-logs",
+			Image:           p.Image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"/usr/bin/tail",
+				"-c+1",
+				"-F",
+				fmt.Sprintf("%s/%s", oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name), "audit.log"),
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("5m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{{
+				Name:      oauthVolumeWorkLogs().Name,
+				MountPath: oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name),
+			}},
+		})
 	}
 
 	if p.AuditWebhookRef != nil {
@@ -159,8 +163,8 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 			fmt.Sprintf("--api-audiences=%s", p.ServiceAccountIssuerURL),
 			fmt.Sprintf("--audit-log-path=%s", cpath(oauthVolumeWorkLogs().Name, "audit.log")),
 			"--audit-log-format=json",
-			"--audit-log-maxsize=100",
-			"--audit-log-maxbackup=10",
+			"--audit-log-maxsize=10",
+			"--audit-log-maxbackup=1",
 			fmt.Sprintf("--etcd-cafile=%s", cpath(oauthVolumeEtcdClientCA().Name, certs.CASignerCertMapKey)),
 			fmt.Sprintf("--etcd-keyfile=%s", cpath(oauthVolumeEtcdClientCert().Name, pki.EtcdClientKeyKey)),
 			fmt.Sprintf("--etcd-certfile=%s", cpath(oauthVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey)),

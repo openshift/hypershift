@@ -37,6 +37,7 @@ import (
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -2491,10 +2492,11 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 	g.Expect(capiv1.AddToScheme(s)).To(Succeed())
 
 	for _, tc := range []struct {
-		name               string
-		machinesGenerator  func() []client.Object
-		expectedAllMachine *testCondition
-		expectedAllNodes   *testCondition
+		name                  string
+		machinesGenerator     func() []client.Object
+		expectedAllMachine    *testCondition
+		expectedAllNodes      *testCondition
+		expectedCIDRCollision *testCondition
 	}{
 		{
 			name:              "no cluster-api machines",
@@ -2951,6 +2953,77 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				Messages: []string{"13 of 15 machines are not ready", endOfMessage},
 			},
 		},
+		{
+			name: "machine cidr collision",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+							Addresses: capiv1.MachineAddresses{
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "10.10.10.5",
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node2",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+							Addresses: capiv1.MachineAddresses{
+								{
+									Type:    capiv1.MachineInternalIP,
+									Address: "10.10.10.6",
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedCIDRCollision: &testCondition{
+				Status: corev1.ConditionTrue,
+				Reason: hyperv1.InvalidConfigurationReason,
+				Messages: []string{
+					"machine [node1] with ip [10.10.10.5] collides with cluster-network cidr [10.10.10.0/14]",
+					"machine [node2] with ip [10.10.10.6] collides with cluster-network cidr [10.10.10.0/14]",
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(tt *testing.T) {
 			gg := NewWithT(tt)
@@ -2965,7 +3038,20 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				},
 			}
 
-			gg.Expect(r.setMachineAndNodeConditions(context.Background(), np)).To(Succeed())
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{
+								CIDR: *ipnet.MustParseCIDR("10.10.10.0/14"),
+							},
+						},
+					},
+				},
+			}
+
+			gg.Expect(r.setMachineAndNodeConditions(context.Background(), np, hc)).To(Succeed())
 
 			cond := FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolAllMachinesReadyConditionType)
 			gg.Expect(cond).ToNot(BeNil())
@@ -2974,6 +3060,15 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			cond = FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
 			gg.Expect(cond).ToNot(BeNil())
 			tc.expectedAllNodes.Compare(gg, cond)
+
+			cond = FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolClusterNetworkCIDRConflictType)
+			if tc.expectedCIDRCollision == nil {
+				gg.Expect(cond).To(BeNil())
+			} else {
+				gg.Expect(cond).ToNot(BeNil())
+				tc.expectedCIDRCollision.Compare(gg, cond)
+			}
+
 		})
 	}
 }
@@ -2983,4 +3078,232 @@ func newKVInfraMapMock(objects []client.Object) kvinfra.KubevirtInfraClientMap {
 		fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
 		"",
 		"")
+}
+
+func TestIsArchAndPlatformSupported(t *testing.T) {
+	testCases := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+		expect   bool
+	}{
+		{
+			name: "supported arch and platform used",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					Arch: hyperv1.ArchitectureAMD64,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "supported platform with multiple arch - amd64",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AgentPlatform,
+					},
+					Arch: hyperv1.ArchitectureAMD64,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "supported platform with multiple arch - ppc64le",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AgentPlatform,
+					},
+					Arch: hyperv1.ArchitecturePPC64LE,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "unsupported arch and platform used",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					Arch: hyperv1.ArchitecturePPC64LE,
+				},
+			},
+			expect: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isArchAndPlatformSupported(tc.nodePool)).To(Equal(tc.expect))
+		})
+	}
+}
+
+func TestReconcileMachineHealthCheck(t *testing.T) {
+	hostedcluster := func(opts ...func(client.Object)) *hyperv1.HostedCluster {
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cluster"}}
+		for _, o := range opts {
+			o(hc)
+		}
+		return hc
+	}
+
+	nodepool := func(opts ...func(client.Object)) *hyperv1.NodePool {
+		np := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nodepool"}}
+		np.Spec.ClusterName = "cluster"
+		for _, o := range opts {
+			o(np)
+		}
+		return np
+	}
+
+	defaultMaxUnhealthy := intstr.Parse("2")
+	healthcheck := func(opts ...func(*capiv1.MachineHealthCheck)) *capiv1.MachineHealthCheck {
+		mhc := &capiv1.MachineHealthCheck{ObjectMeta: metav1.ObjectMeta{Namespace: "ns-cluster", Name: "nodepool"}}
+		resName := generateName("cluster", "cluster", "nodepool")
+		mhc.Spec = capiv1.MachineHealthCheckSpec{
+			ClusterName: "cluster",
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					resName: resName,
+				},
+			},
+			UnhealthyConditions: []capiv1.UnhealthyCondition{
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionFalse,
+					Timeout: metav1.Duration{
+						Duration: time.Duration(8 * time.Minute),
+					},
+				},
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionUnknown,
+					Timeout: metav1.Duration{
+						Duration: time.Duration(8 * time.Minute),
+					},
+				},
+			},
+			MaxUnhealthy: &defaultMaxUnhealthy,
+			NodeStartupTimeout: &metav1.Duration{
+				Duration: 20 * time.Minute,
+			},
+		}
+		for _, o := range opts {
+			o(mhc)
+		}
+		return mhc
+	}
+
+	withTimeoutOverride := func(value string) func(client.Object) {
+		return func(o client.Object) {
+			a := o.GetAnnotations()
+			if a == nil {
+				a = map[string]string{}
+			}
+			a[hyperv1.MachineHealthCheckTimeoutAnnotation] = value
+			o.SetAnnotations(a)
+		}
+	}
+
+	withMaxUnhealthyOverride := func(value string) func(client.Object) {
+		return func(o client.Object) {
+			a := o.GetAnnotations()
+			if a == nil {
+				a = map[string]string{}
+			}
+			a[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation] = value
+			o.SetAnnotations(a)
+		}
+	}
+	withMaxUnhealthy := func(value string) func(*capiv1.MachineHealthCheck) {
+		return func(mhc *capiv1.MachineHealthCheck) {
+			maxUnhealthy := intstr.Parse(value)
+			mhc.Spec.MaxUnhealthy = &maxUnhealthy
+		}
+	}
+	withTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
+		return func(mhc *capiv1.MachineHealthCheck) {
+			for i := range mhc.Spec.UnhealthyConditions {
+				mhc.Spec.UnhealthyConditions[i].Timeout = metav1.Duration{Duration: d}
+			}
+		}
+	}
+
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		np       *hyperv1.NodePool
+		expected *capiv1.MachineHealthCheck
+	}{
+		{
+			name:     "defaults",
+			hc:       hostedcluster(),
+			np:       nodepool(),
+			expected: healthcheck(),
+		},
+		{
+			name:     "timeout override in hc",
+			hc:       hostedcluster(withTimeoutOverride("10m")),
+			np:       nodepool(),
+			expected: healthcheck(withTimeout(10 * time.Minute)),
+		},
+		{
+			name:     "timeout override in np",
+			hc:       hostedcluster(),
+			np:       nodepool(withTimeoutOverride("40m")),
+			expected: healthcheck(withTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "timeout override in both, np takes precedence",
+			hc:       hostedcluster(withTimeoutOverride("10m")),
+			np:       nodepool(withTimeoutOverride("40m")),
+			expected: healthcheck(withTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "invalid timeout override, retains default",
+			hc:       hostedcluster(withTimeoutOverride("foo")),
+			np:       nodepool(),
+			expected: healthcheck(),
+		},
+		{
+			name:     "maxunhealthy override in hc",
+			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
+			np:       nodepool(),
+			expected: healthcheck(withMaxUnhealthy("10%")),
+		},
+		{
+			name:     "maxunhealthy override in np",
+			hc:       hostedcluster(),
+			np:       nodepool(withMaxUnhealthyOverride("5")),
+			expected: healthcheck(withMaxUnhealthy("5")),
+		},
+		{
+			name:     "maxunhealthy override in both, np takes precedence",
+			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
+			np:       nodepool(withMaxUnhealthyOverride("5")),
+			expected: healthcheck(withMaxUnhealthy("5")),
+		},
+		{
+			name:     "invalid maxunhealthy override value, default is preserved",
+			hc:       hostedcluster(),
+			np:       nodepool(withMaxUnhealthyOverride("foo")),
+			expected: healthcheck(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &NodePoolReconciler{}
+			mhc := &capiv1.MachineHealthCheck{}
+			r.reconcileMachineHealthCheck(context.Background(), mhc, tt.np, tt.hc, "cluster")
+			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
+		})
+	}
 }

@@ -24,9 +24,7 @@ import (
 
 type CreateIAMOptions struct {
 	Region                          string
-	AWSCredentialsFile              string
-	AWSKey                          string
-	AWSSecretKey                    string
+	AWSCredentialsOpts              awsutil.AWSCredentialsOptions
 	OIDCStorageProviderS3BucketName string
 	OIDCStorageProviderS3Region     string
 	PublicZoneID                    string
@@ -37,6 +35,8 @@ type CreateIAMOptions struct {
 	OutputFile                      string
 	KMSKeyARN                       string
 	AdditionalTags                  []string
+
+	CredentialsSecretData *util.CredentialsSecretData
 
 	additionalIAMTags []*iam.Tag
 }
@@ -59,12 +59,10 @@ func NewCreateIAMCommand() *cobra.Command {
 	}
 
 	opts := CreateIAMOptions{
-		Region:             "us-east-1",
-		AWSCredentialsFile: "",
-		InfraID:            "",
+		Region:  "us-east-1",
+		InfraID: "",
 	}
 
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "The name of the bucket in which the OIDC discovery document is stored")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "The region of the bucket in which the OIDC discovery document is stored")
@@ -77,7 +75,8 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
-	cmd.MarkFlagRequired("aws-creds")
+	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("public-zone-id")
 	cmd.MarkFlagRequired("private-zone-id")
@@ -86,6 +85,10 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("oidc-bucket-region")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := opts.AWSCredentialsOpts.Validate()
+		if err != nil {
+			return err
+		}
 		client, err := util.GetClient()
 		if err != nil {
 			log.Log.Error(err, "failed to create client")
@@ -155,7 +158,11 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 
-	awsSession := awsutil.NewSession("cli-create-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-create-iam", o.CredentialsSecretData, o.Region)
+	if err != nil {
+		return nil, err
+	}
+
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 

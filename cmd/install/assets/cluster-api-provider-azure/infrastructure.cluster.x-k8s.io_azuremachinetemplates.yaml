@@ -124,6 +124,11 @@ spec:
                         description: AllocatePublicIP allows the ability to create
                           dynamic public ips for machines where this value is true.
                         type: boolean
+                      capacityReservationGroupID:
+                        description: |-
+                          CapacityReservationGroupID specifies the capacity reservation group resource id that should be
+                          used for allocating the virtual machine.
+                        type: string
                       dataDisks:
                         description: DataDisk specifies the parameters that are used
                           to add one or more data disks to the machine

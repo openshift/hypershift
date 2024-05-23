@@ -27,18 +27,18 @@ func ApplyPodDisruptionBudget(ctx context.Context, client policyclientv1.PodDisr
 		return nil, false, err
 	}
 
-	modified := resourcemerge.BoolPtr(false)
+	modified := false
 	existingCopy := existing.DeepCopy()
 
-	resourcemerge.EnsureObjectMeta(modified, &existingCopy.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(&modified, &existingCopy.ObjectMeta, required.ObjectMeta)
 	contentSame := equality.Semantic.DeepEqual(existingCopy.Spec, required.Spec)
-	if contentSame && !*modified {
+	if contentSame && !modified {
 		return existingCopy, false, nil
 	}
 
 	existingCopy.Spec = required.Spec
 
-	if klog.V(4).Enabled() {
+	if klog.V(2).Enabled() {
 		klog.Infof("PodDisruptionBudget %q changes: %v", required.Name, JSONPatchNoError(existing, existingCopy))
 	}
 

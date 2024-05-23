@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -23,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -37,6 +38,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -45,6 +47,7 @@ import (
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
@@ -123,7 +126,7 @@ func eventHandler() handler.EventHandler {
 		})
 }
 
-func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
+func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
 	if err := imageregistryv1.Install(opts.Manager.GetScheme()); err != nil {
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
@@ -203,7 +206,6 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
 		&operatorv1.IngressController{},
-		&imageregistryv1.Config{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(source.Kind(opts.Manager.GetCache(), r), eventHandler()); err != nil {
@@ -320,6 +322,33 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
 	}
+	if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
+		log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
+		ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
+		if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
+			if ocmConfigMap.Data == nil {
+				// CPO has not created the configmap yet, wait for create
+				// This should not happen as we are started by the CPO after the configmap should be created
+				return nil
+			}
+			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+			if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+				err := util.DeserializeResource(configStr, config, api.Scheme)
+				if err != nil {
+					return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+				}
+			}
+			config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+			configStr, err := util.SerializeResource(config, api.Scheme)
+			if err != nil {
+				return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
+			}
+			ocmConfigMap.Data[ocm.ConfigKey] = configStr
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
+		}
+	}
 
 	log.Info("reconciling ingress controller")
 	if err := r.reconcileIngressController(ctx, hcp); err != nil {
@@ -327,7 +356,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling oauth client secrets")
-	if err := r.reconcileOAuthClientSecrets(ctx, hcp); err != nil {
+	if err := r.reconcileAuthOIDC(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
@@ -878,7 +907,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
-		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.AWSNLBScope)
+		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope)
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
@@ -955,33 +984,64 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileOAuthClientSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 	if !util.HCPOAuthEnabled(hcp) &&
-		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
-		len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
-		for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
-			var src corev1.Secret
-			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
+
+		// Copy issuer CA configmap into openshift-config namespace
+		provider := hcp.Spec.Configuration.Authentication.OIDCProviders[0]
+		if provider.Issuer.CertificateAuthority.Name != "" {
+			name := provider.Issuer.CertificateAuthority.Name
+			var src corev1.ConfigMap
+			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: name}, &src)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
-				continue
-			}
-			dest := corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      oidcClient.ClientSecret.Name,
-					Namespace: "openshift-config",
-				},
-			}
-			_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
-				if dest.Data == nil {
-					dest.Data = map[string][]byte{}
+				errs = append(errs, fmt.Errorf("failed to get issuer CA configmap %s: %w", name, err))
+			} else {
+				dest := corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      name,
+						Namespace: "openshift-config",
+					},
 				}
-				dest.Data["clientSecret"] = src.Data["clientSecret"]
-				return nil
-			})
-			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+					if dest.Data == nil {
+						dest.Data = map[string]string{}
+					}
+					dest.Data["ca-bundle.crt"] = src.Data["ca-bundle.crt"]
+					return nil
+				})
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile issuer CA configmap %s: %w", dest.Name, err))
+				}
+			}
+		}
+
+		// Copy OIDCClient Secrets into openshift-config namespace
+		if len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
+			for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
+				var src corev1.Secret
+				err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+					continue
+				}
+				dest := corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      oidcClient.ClientSecret.Name,
+						Namespace: "openshift-config",
+					},
+				}
+				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+					if dest.Data == nil {
+						dest.Data = map[string][]byte{}
+					}
+					dest.Data["clientSecret"] = src.Data["clientSecret"]
+					return nil
+				})
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+				}
 			}
 		}
 	}
@@ -1042,7 +1102,7 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 
 	agentDaemonset := manifests.KonnectivityAgentDaemonSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, agentDaemonset, func() error {
-		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p.DeploymentConfig, p.Image, p.ExternalAddress, p.ExternalPort, hcp.Spec.Platform.Type, proxy.Status)
+		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p.DeploymentConfig, p.Image, p.ExternalAddress, p.ExternalPort, hcp.Spec.Platform, proxy.Status)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err))
@@ -1056,7 +1116,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
-		clusterVersion.Spec.Upstream = ""
+		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel
 		clusterVersion.Spec.DesiredUpdate = nil
 		return nil
@@ -1649,7 +1709,7 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 			Name:                    "pod-identity-webhook.amazonaws.com",
 			ClientConfig: admissionregistrationv1.WebhookClientConfig{
 				CABundle: []byte(r.rootCA),
-				URL:      pointer.String("https://127.0.0.1:4443/mutate"),
+				URL:      ptr.To("https://127.0.0.1:4443/mutate"),
 			},
 			FailurePolicy: &ignoreFailurePolicy,
 			Rules: []admissionregistrationv1.RuleWithOperations{{
@@ -1855,8 +1915,8 @@ func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebho
 				Service: &admissionregistrationv1.ServiceReference{
 					Namespace: "default",
 					Name:      "xxx-invalid-service-xxx",
-					Path:      pointer.String("/validate"),
-					Port:      pointer.Int32(443),
+					Path:      ptr.To("/validate"),
+					Port:      ptr.To[int32](443),
 				},
 			},
 			FailurePolicy: &failurePolicy,
@@ -1893,7 +1953,7 @@ func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebho
 			},
 			MatchPolicy:       &equivalentMatch,
 			SideEffects:       &sideEffectClass,
-			TimeoutSeconds:    pointer.Int32(30),
+			TimeoutSeconds:    ptr.To[int32](30),
 			NamespaceSelector: &metav1.LabelSelector{},
 			ObjectSelector:    &metav1.LabelSelector{},
 		},
@@ -1934,7 +1994,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	for i := range routerPods.Items {
 		rp := &routerPods.Items[i]
 		log.Info("Force deleting", "pod", client.ObjectKeyFromObject(rp).String())
-		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)}); err != nil {
+		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to force delete %s", client.ObjectKeyFromObject(rp).String()))
 		}
 	}
@@ -2116,7 +2176,7 @@ func cleanupResources(ctx context.Context, c client.Client, list client.ObjectLi
 				log.Info("Deleting resource", "type", fmt.Sprintf("%T", obj), "name", client.ObjectKeyFromObject(obj).String())
 				var deleteErr error
 				if force {
-					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})
+					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)})
 				} else {
 					deleteErr = c.Delete(ctx, obj)
 				}
@@ -2358,6 +2418,7 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: "/etc/kubernetes",
+									Type: ptr.To(corev1.HostPathUnset),
 								},
 							},
 						},

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -216,14 +217,18 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	if azureCluster.Annotations == nil {
 		azureCluster.Annotations = map[string]string{}
 	}
-
 	azureCluster.Annotations[capiv1.ManagedByAnnotation] = "external"
+
+	vnetName, vnetResourceGroup, err := azureutil.GetVnetNameAndResourceGroupFromVnetID(hcluster.Spec.Platform.Azure.VnetID)
+	if err != nil {
+		return err
+	}
 
 	azureCluster.Spec.Location = hcluster.Spec.Platform.Azure.Location
 	azureCluster.Spec.ResourceGroup = hcluster.Spec.Platform.Azure.ResourceGroupName
 	azureCluster.Spec.NetworkSpec.Vnet.ID = hcluster.Spec.Platform.Azure.VnetID
-	azureCluster.Spec.NetworkSpec.Vnet.Name = hcluster.Spec.Platform.Azure.VnetName
-	azureCluster.Spec.NetworkSpec.Vnet.ResourceGroup = hcluster.Spec.Platform.Azure.ResourceGroupName
+	azureCluster.Spec.NetworkSpec.Vnet.Name = vnetName
+	azureCluster.Spec.NetworkSpec.Vnet.ResourceGroup = vnetResourceGroup
 	azureCluster.Spec.SubscriptionID = hcluster.Spec.Platform.Azure.SubscriptionID
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB = &capiazure.LoadBalancerSpec{}
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB.Name = hcluster.Spec.InfraID

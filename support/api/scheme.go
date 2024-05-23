@@ -6,6 +6,7 @@ import (
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	oauthv1 "github.com/openshift/api/oauth/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -98,4 +99,5 @@ func init() {
 	capiazure.AddToScheme(Scheme)
 	agentv1.AddToScheme(Scheme)
 	capipowervs.AddToScheme(Scheme)
+	machinev1beta1.AddToScheme(Scheme)
 }

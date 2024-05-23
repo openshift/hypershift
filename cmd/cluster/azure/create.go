@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
-	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/spf13/cobra"
@@ -29,7 +28,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AzurePlatform.Location = "eastus"
 	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
 	opts.AzurePlatform.DiskSizeGB = 120
-	opts.AzurePlatform.SubnetName = "default"
 
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
@@ -38,12 +36,13 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().Int32Var(&opts.AzurePlatform.DiskSizeGB, "root-disk-size", opts.AzurePlatform.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
 	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availability-zones", opts.AzurePlatform.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.VnetID, "vnet-id", opts.AzurePlatform.VnetID, "An existing VNET ID.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskEncryptionSetID, "disk-encryption-set-id", opts.AzurePlatform.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
-	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroup, "network-security-group", opts.AzurePlatform.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network created for HostedCluster.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroupID, "network-security-group-id", opts.AzurePlatform.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	cmd.Flags().StringToStringVarP(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", "t", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
-	cmd.Flags().StringVar(&opts.AzurePlatform.SubnetName, "subnet-name", opts.AzurePlatform.SubnetName, "The subnet name where the VMs will be placed.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.SubnetID, "subnet-id", opts.AzurePlatform.SubnetID, "The subnet ID where the VMs will be placed.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -90,22 +89,18 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
 
-		infraID := opts.InfraID
-		if len(infraID) == 0 {
-			infraID = infraid.New(opts.Name)
-		}
-
 		infra, err = (&azureinfra.CreateInfraOptions{
-			Name:                 opts.Name,
-			Location:             opts.AzurePlatform.Location,
-			InfraID:              infraID,
-			CredentialsFile:      opts.AzurePlatform.CredentialsFile,
-			BaseDomain:           opts.BaseDomain,
-			RHCOSImage:           rhcosImage,
-			ResourceGroupName:    opts.AzurePlatform.ResourceGroupName,
-			NetworkSecurityGroup: opts.AzurePlatform.NetworkSecurityGroup,
-			ResourceGroupTags:    opts.AzurePlatform.ResourceGroupTags,
-			SubnetName:           opts.AzurePlatform.SubnetName,
+			Name:                   opts.Name,
+			Location:               opts.AzurePlatform.Location,
+			InfraID:                opts.InfraID,
+			CredentialsFile:        opts.AzurePlatform.CredentialsFile,
+			BaseDomain:             opts.BaseDomain,
+			RHCOSImage:             rhcosImage,
+			VnetID:                 opts.AzurePlatform.VnetID,
+			ResourceGroupName:      opts.AzurePlatform.ResourceGroupName,
+			NetworkSecurityGroupID: opts.AzurePlatform.NetworkSecurityGroupID,
+			ResourceGroupTags:      opts.AzurePlatform.ResourceGroupTags,
+			SubnetID:               opts.AzurePlatform.SubnetID,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
@@ -120,13 +115,12 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
 		Location:               infra.Location,
 		ResourceGroupName:      infra.ResourceGroupName,
-		VnetName:               infra.VnetName,
 		VnetID:                 infra.VNetID,
-		SubnetName:             infra.SubnetName,
+		SubnetID:               infra.SubnetID,
 		BootImageID:            infra.BootImageID,
 		MachineIdentityID:      infra.MachineIdentityID,
 		InstanceType:           opts.AzurePlatform.InstanceType,
-		SecurityGroupName:      infra.SecurityGroupName,
+		SecurityGroupID:        infra.SecurityGroupID,
 		DiskSizeGB:             opts.AzurePlatform.DiskSizeGB,
 		AvailabilityZones:      opts.AzurePlatform.AvailabilityZones,
 		DiskEncryptionSetID:    opts.AzurePlatform.DiskEncryptionSetID,
@@ -194,7 +188,7 @@ func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecret
 // validateFlags validates the core create option flags passed in by the user
 func validateFlags(cmd *cobra.Command, _ []string) error {
 	// Check if the network security group is set and the resource group is not
-	nsg, err := cmd.Flags().GetString("network-security-group")
+	nsg, err := cmd.Flags().GetString("network-security-group-id")
 	if err != nil {
 		return err
 	}
@@ -204,7 +198,7 @@ func validateFlags(cmd *cobra.Command, _ []string) error {
 	}
 
 	if nsg != "" && rg == "" {
-		return fmt.Errorf("flag --resource-group-name is required when using --network-security-group")
+		return fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
 	// Validate a resource group is provided when using the disk encryption set id flag

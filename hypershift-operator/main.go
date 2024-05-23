@@ -287,7 +287,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
 	var imageRegistryOverrides map[string][]string
 	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
-		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS))
+		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS), mgmtClusterCaps.Has(capabilities.CapabilityICSP))
 		if err != nil {
 			return fmt.Errorf("failed to populate image registry overrides: %w", err)
 		}
@@ -320,10 +320,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Client:                                  mgr.GetClient(),
 		ManagementClusterCapabilities:           mgmtClusterCaps,
 		HypershiftOperatorImage:                 operatorImage,
-		ReleaseProvider:                         releaseProviderWithOpenShiftImageRegistryOverrides,
+		OpenShiftImageRegistryOverrides:         opts.RegistryOverrides,
 		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
-		ImageMetadataProvider:                   imageMetaDataProvider,
 		MetricsSet:                              metricsSet,
 		OperatorNamespace:                       opts.Namespace,
 		SREConfigHash:                           sreConfigHash,
@@ -440,22 +439,40 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	// Start controllers to manage dedicated request serving isolation
 	if opts.EnableDedicatedRequestServingIsolation {
-		nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
-			Client: mgr.GetClient(),
-		}
-		if err := nodeReaper.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
-		}
-		hcScheduler := scheduler.DedicatedServingComponentScheduler{
-			Client: mgr.GetClient(),
-		}
-		if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
-			return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
-		}
+		// Use the new scheduler if we support size tagging on hosted clusters
 		if enableSizeTagging {
+			hcScheduler := scheduler.DedicatedServingComponentSchedulerAndSizer{}
+			if err := hcScheduler.SetupWithManager(ctx, mgr, createOrUpdate); err != nil {
+				return fmt.Errorf("unable to create dedicated serving component scheduler/resizer controller: %w", err)
+			}
 			placeholderScheduler := scheduler.PlaceholderScheduler{}
 			if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
 				return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
+			}
+			autoScaler := scheduler.RequestServingNodeAutoscaler{}
+			if err := autoScaler.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create autoscaler controller: %w", err)
+			}
+			deScaler := scheduler.MachineSetDescaler{}
+			if err := deScaler.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create machine set descaler controller: %w", err)
+			}
+			nonRequestServingNodeAutoscaler := scheduler.NonRequestServingNodeAutoscaler{}
+			if err := nonRequestServingNodeAutoscaler.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create non request serving node autoscaler controller: %w", err)
+			}
+		} else {
+			nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+				Client: mgr.GetClient(),
+			}
+			if err := nodeReaper.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
+			}
+			hcScheduler := scheduler.DedicatedServingComponentScheduler{
+				Client: mgr.GetClient(),
+			}
+			if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
+				return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
 			}
 		}
 	} else {

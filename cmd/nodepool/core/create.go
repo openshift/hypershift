@@ -24,6 +24,7 @@ type CreateNodePoolOptions struct {
 	Render          bool
 	NodeUpgradeType hyperv1.UpgradeType
 	Arch            string
+	AutoRepair      bool
 }
 
 type PlatformOptions interface {
@@ -104,6 +105,7 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 		Spec: hyperv1.NodePoolSpec{
 			Management: hyperv1.NodePoolManagement{
 				UpgradeType: o.NodeUpgradeType,
+				AutoRepair:  o.AutoRepair,
 			},
 			ClusterName: o.ClusterName,
 			Replicas:    &o.NodeCount,

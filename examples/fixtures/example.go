@@ -328,12 +328,38 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					// not be encountered here. This check is left here as a safety measure.
 					panic(fmt.Sprintf("invalid KubeVirt infra storage class mapping [%s]", mapping))
 				}
+				guestName, groupName := parseTenantClassString(split[1])
 				newMap := hyperv1.KubevirtStorageClassMapping{
 					InfraStorageClassName: split[0],
-					GuestStorageClassName: split[1],
+					GuestStorageClassName: guestName,
+					Group:                 groupName,
 				}
 				platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping =
 					append(platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping, newMap)
+			}
+		}
+		if len(o.Kubevirt.InfraVolumeSnapshotClassMappings) > 0 {
+			if platformSpec.Kubevirt.StorageDriver == nil {
+				platformSpec.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{
+					Type:   hyperv1.ManualKubevirtStorageDriverConfigType,
+					Manual: &hyperv1.KubevirtManualStorageDriverConfig{},
+				}
+			}
+			for _, mapping := range o.Kubevirt.InfraVolumeSnapshotClassMappings {
+				split := strings.Split(mapping, "/")
+				if len(split) != 2 {
+					// This is sanity checked by the hypershift cli as well, so this error should
+					// not be encountered here. This check is left here as a safety measure.
+					panic(fmt.Sprintf("invalid KubeVirt infra volume snapshot class mapping [%s]", mapping))
+				}
+				guestName, groupName := parseTenantClassString(split[1])
+				newMap := hyperv1.KubevirtVolumeSnapshotClassMapping{
+					InfraVolumeSnapshotClassName: split[0],
+					GuestVolumeSnapshotClassName: guestName,
+					Group:                        groupName,
+				}
+				platformSpec.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping =
+					append(platformSpec.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping, newMap)
 			}
 		}
 	case o.Azure != nil:
@@ -361,12 +387,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Credentials:       corev1.LocalObjectReference{Name: credentialSecret.Name},
 				Location:          o.Azure.Location,
 				ResourceGroupName: o.Azure.ResourceGroupName,
-				VnetName:          o.Azure.VnetName,
 				VnetID:            o.Azure.VnetID,
-				SubnetName:        o.Azure.SubnetName,
+				SubnetID:          o.Azure.SubnetID,
 				SubscriptionID:    o.Azure.Creds.SubscriptionID,
 				MachineIdentityID: o.Azure.MachineIdentityID,
-				SecurityGroupName: o.Azure.SecurityGroupName,
+				SecurityGroupID:   o.Azure.SecurityGroupID,
 			},
 		}
 
@@ -376,10 +401,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				KMS: &hyperv1.KMSSpec{
 					Provider: hyperv1.AZURE,
 					Azure: &hyperv1.AzureKMSSpec{
-						Location:     o.Azure.Location,
-						KeyVaultName: o.Azure.EncryptionKey.KeyVaultName,
-						KeyName:      o.Azure.EncryptionKey.KeyName,
-						KeyVersion:   o.Azure.EncryptionKey.KeyVersion,
+						ActiveKey: hyperv1.AzureKMSKey{
+							KeyVaultName: o.Azure.EncryptionKey.KeyVaultName,
+							KeyName:      o.Azure.EncryptionKey.KeyName,
+							KeyVersion:   o.Azure.EncryptionKey.KeyVersion,
+						},
 					},
 				},
 			}
@@ -695,7 +721,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					DiskEncryptionSetID:    o.Azure.DiskEncryptionSetID,
 					EnableEphemeralOSDisk:  o.Azure.EnableEphemeralOSDisk,
 					DiskStorageAccountType: o.Azure.DiskStorageAccountType,
-					SubnetName:             o.Azure.SubnetName,
+					SubnetID:               o.Azure.SubnetID,
 				}
 				nodePools = append(nodePools, nodePool)
 			}
@@ -712,7 +738,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				DiskEncryptionSetID:    o.Azure.DiskEncryptionSetID,
 				EnableEphemeralOSDisk:  o.Azure.EnableEphemeralOSDisk,
 				DiskStorageAccountType: o.Azure.DiskStorageAccountType,
-				SubnetName:             o.Azure.SubnetName,
+				SubnetID:               o.Azure.SubnetID,
 			}
 			nodePools = append(nodePools, nodePool)
 		}

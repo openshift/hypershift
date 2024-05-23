@@ -17,12 +17,17 @@ limitations under the License.
 
 package v1alpha1
 
+import (
+	resource "k8s.io/apimachinery/pkg/api/resource"
+)
+
 // ClusterSizingConfigurationSpecApplyConfiguration represents an declarative configuration of the ClusterSizingConfigurationSpec type for use
 // with apply.
 type ClusterSizingConfigurationSpecApplyConfiguration struct {
-	Sizes           []SizeConfigurationApplyConfiguration           `json:"sizes,omitempty"`
-	Concurrency     *ConcurrencyConfigurationApplyConfiguration     `json:"concurrency,omitempty"`
-	TransitionDelay *TransitionDelayConfigurationApplyConfiguration `json:"transitionDelay,omitempty"`
+	Sizes                               []SizeConfigurationApplyConfiguration           `json:"sizes,omitempty"`
+	Concurrency                         *ConcurrencyConfigurationApplyConfiguration     `json:"concurrency,omitempty"`
+	TransitionDelay                     *TransitionDelayConfigurationApplyConfiguration `json:"transitionDelay,omitempty"`
+	NonRequestServingNodesBufferPerZone *resource.Quantity                              `json:"nonRequestServingNodesBufferPerZone,omitempty"`
 }
 
 // ClusterSizingConfigurationSpecApplyConfiguration constructs an declarative configuration of the ClusterSizingConfigurationSpec type for use with
@@ -57,5 +62,13 @@ func (b *ClusterSizingConfigurationSpecApplyConfiguration) WithConcurrency(value
 // If called multiple times, the TransitionDelay field is set to the value of the last call.
 func (b *ClusterSizingConfigurationSpecApplyConfiguration) WithTransitionDelay(value *TransitionDelayConfigurationApplyConfiguration) *ClusterSizingConfigurationSpecApplyConfiguration {
 	b.TransitionDelay = value
+	return b
+}
+
+// WithNonRequestServingNodesBufferPerZone sets the NonRequestServingNodesBufferPerZone field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NonRequestServingNodesBufferPerZone field is set to the value of the last call.
+func (b *ClusterSizingConfigurationSpecApplyConfiguration) WithNonRequestServingNodesBufferPerZone(value resource.Quantity) *ClusterSizingConfigurationSpecApplyConfiguration {
+	b.NonRequestServingNodesBufferPerZone = &value
 	return b
 }

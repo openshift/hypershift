@@ -52,6 +52,7 @@ spec:
                   Transitions will require that request-serving pods be re-scheduled between nodes, so each
                   transition incurs a small user-facing cost as well as a cost to the management cluster. Use
                   the concurrency configuration options to manage how many transitions can be occurring.
+                  These limits do not apply to new clusters entering the fleet.
                   If unset, a sensible default will be provided.
                 properties:
                   limit:
@@ -68,6 +69,15 @@ spec:
                     pattern: ^([0-9]+(\.[0-9]+)?(s|m|h))+$
                     type: string
                 type: object
+              nonRequestServingNodesBufferPerZone:
+                anyOf:
+                - type: integer
+                - type: string
+                description: |-
+                  NonRequestServingNodesBufferPerZone is the number of extra nodes to allocate for non request serving
+                  workloads per zone.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
               sizes:
                 description: |-
                   Sizes holds the different t-shirt size classes into which guest clusters will be sorted.
@@ -126,19 +136,61 @@ spec:
                             of the Kube APIServer container
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
-                        kasMemoryRequest:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          description: KASMemoryRequest is the amount of memory to
-                            request for the Kube APIServer pod
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
+                        machineHealthCheckTimeout:
+                          description: |-
+                            MachineHealthCheckTimeout specifies an optional timeout for machinehealthchecks created
+                            for HostedClusters with this specific size.
+                          type: string
+                        resourceRequests:
+                          description: ResourceRequests allows specifying resource
+                            requests for control plane pods.
+                          items:
+                            properties:
+                              containerName:
+                                description: ContainerName is the name of the container
+                                  to which the resource request applies.
+                                type: string
+                              cpu:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                description: CPU is the amount of CPU to request for
+                                  the container.
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              deploymentName:
+                                description: DeploymentName is the name of the deployment
+                                  to which the resource request applies.
+                                type: string
+                              memory:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                description: Memory is the amount of memory to request
+                                  for the container.
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                            required:
+                            - containerName
+                            - deploymentName
+                            type: object
+                          type: array
                       type: object
                     management:
                       description: Management configures the management aspects of
                         this size class on the management plane.
                       properties:
+                        nonRequestServingNodesPerZone:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            NonRequestServingNodesPerZone is the number of nodes to allocate for non request serving workloads
+                            per HostedCluster. This will likely be a fraction of a node (ie. 0.2) to allow 5 HostedClusters in
+                            a single node. The total number of nodes needed per HostedCluster is this number multiplied by 3
+                            (number of zones).
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
                         placeholders:
                           description: |-
                             Placeholders configures the number of dummy workloads that will be scheduled irrespective of

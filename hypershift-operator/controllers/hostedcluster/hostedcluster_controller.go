@@ -66,6 +66,7 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -95,6 +96,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/metrics"
@@ -149,8 +151,7 @@ type HostedClusterReconciler struct {
 	// 2) The OCP version being deployed is the latest version supported by Hypershift
 	HypershiftOperatorImage string
 
-	// ReleaseProvider looks up the OCP version for the release images in HostedClusters
-	ReleaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	OpenShiftImageRegistryOverrides map[string]string
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
@@ -169,12 +170,12 @@ type HostedClusterReconciler struct {
 	OIDCStorageProviderS3BucketName string
 	S3Client                        s3iface.S3API
 
-	ImageMetadataProvider hyperutil.ImageMetadataProvider
-
 	MetricsSet    metrics.MetricsSet
 	SREConfigHash string
 
 	OperatorNamespace string
+
+	ReconcileMetadataProviders func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error)
 
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
 	now                  func() metav1.Time
@@ -203,14 +204,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// ignitionserver manifests packages. Since we're receiving watch events across
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
-	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}).
+	bldr := ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		builder.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())))
+		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
 	}
 
 	// Set based on SCC capability
@@ -218,7 +219,9 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
-	return builder.Complete(r)
+	r.ReconcileMetadataProviders = r.ReconcileMetadataProvidersImpl
+
+	return bldr.Complete(r)
 }
 
 // managedResources are all the resources that are managed as childresources for a HostedCluster
@@ -332,6 +335,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	return res, err
+}
+
+func (r *HostedClusterReconciler) ReconcileMetadataProvidersImpl(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+	releaseProvider, imageMetadataProvider, err := globalconfig.RenconcileMgmtImageRegistryOverrides(ctx, r.ManagementClusterCapabilities, r.Client, imgOverrides)
+
+	return releaseProvider, imageMetadataProvider, err
 }
 
 func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
@@ -529,12 +538,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Part zero: fix up conversion
 	originalSpec := hcluster.Spec.DeepCopy()
 
-	createOrUpdate := r.createOrUpdate(req)
-
-	if err = r.reconcileCLISecrets(ctx, createOrUpdate, hcluster); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile the CLI secrets: %w", err)
-	}
-
 	// Reconcile converted AWS roles.
 	if hcluster.Spec.Platform.AWS != nil {
 		if err := r.dereferenceAWSRoles(ctx, &hcluster.Spec.Platform.AWS.RolesRef, hcluster.Namespace); err != nil {
@@ -551,6 +554,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = arn
 		}
 	}
+
+	createOrUpdate := r.createOrUpdate(req)
 
 	// Reconcile platform defaults
 	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
@@ -576,6 +581,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			hcluster.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
 		}
+	}
+
+	// Reconcile the ICSP/IDMS from the management cluster
+	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.OpenShiftImageRegistryOverrides)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Set kubeadminPassword status
@@ -984,7 +995,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Type:               string(hyperv1.ValidReleaseImage),
 				ObservedGeneration: hcluster.Generation,
 			}
-			err := r.validateReleaseImage(ctx, hcluster)
+			err := r.validateReleaseImage(ctx, hcluster, releaseProvider)
 			if err != nil {
 				condition.Status = metav1.ConditionFalse
 				condition.Message = err.Error()
@@ -1003,7 +1014,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	releaseImage, err := r.lookupReleaseImage(ctx, hcluster)
+	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -1065,6 +1076,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	if err = r.reconcileCLISecrets(ctx, createOrUpdate, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile the CLI secrets: %w", err)
+	}
+
 	// Set the infraID as Tag on all created AWS
 	if err := r.reconcileAWSResourceTags(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
@@ -1110,11 +1125,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if !ok {
 		return ctrl.Result{}, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	controlPlaneOperatorImage, err := GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
-	controlPlaneOperatorImageLabels, err := GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, r.ImageMetadataProvider)
+	controlPlaneOperatorImageLabels, err := GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 	}
@@ -1173,7 +1188,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
 	}
 
-	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
+	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1483,9 +1498,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the HostedControlPlane
+	isAutoscalingNeeded, err := r.isAutoscalingNeeded(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine if autoscaler is needed: %w", err)
+	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster)
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -1623,7 +1642,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Disable machine management components if enabled
 	if _, exists := hcluster.Annotations[hyperv1.DisableMachineManagement]; !exists {
 		// Reconcile the CAPI manager components
-		err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp, pullSecretBytes)
+		err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp, pullSecretBytes, &releaseProvider)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 		}
@@ -1636,7 +1655,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Get release image version
 	var releaseImageVersion semver.Version
-	releaseInfo, err := r.lookupReleaseImage(ctx, hcluster)
+	releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -1650,14 +1669,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// TODO (alberto): drop this after dropping < 4.11 support.
 	if !controlPlaneOperatorManagesMachineAutoscaler {
 		// Reconcile the autoscaler.
-		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion)
+		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion, releaseProvider)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 		}
 	}
 	if !controlPlaneOperatorManagesMachineApprover {
 		// Reconcile the machine approver.
-		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion); err != nil {
+		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion, releaseProvider); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 		}
 	}
@@ -1678,7 +1697,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists, r.CertRotationScale)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists, r.CertRotationScale, releaseImageVersion, releaseProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -1693,7 +1712,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
-		releaseInfo, err := r.lookupReleaseImage(ctx, hcluster)
+		releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 		}
@@ -1705,8 +1724,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hcp,
 			defaultIngressDomain,
 			ignitionServerHasHealthzHandler,
-			r.ReleaseProvider.GetRegistryOverrides(),
-			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+			releaseProvider.GetRegistryOverrides(),
+			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 			config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
 		); err != nil {
@@ -1753,7 +1772,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool) error {
 	hcp.Annotations = map[string]string{
 		HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
@@ -1771,6 +1790,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperutil.DebugDeploymentsAnnotation,
 		hyperv1.DisableProfilingAnnotation,
 		hyperv1.PrivateIngressControllerAnnotation,
+		hyperv1.IngressControllerLoadBalancerScope,
 		hyperv1.CleanupCloudResourcesAnnotation,
 		hyperv1.ControlPlanePriorityClass,
 		hyperv1.APICriticalPriorityClass,
@@ -1787,6 +1807,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
 		hyperv1.AWSLoadBalancerSubnetsAnnotation,
+		hyperv1.ManagementPlatformAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -1803,6 +1824,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	// Set the DisableClusterAutoscalerAnnotation if autoscaling is not needed
+	if !isAutoscalingNeeded {
+		hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation] = "true"
+	}
+
 	if hcp.Labels == nil {
 		hcp.Labels = make(map[string]string)
 	}
@@ -1814,6 +1840,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	hcp.Spec.UpdateService = hcluster.Spec.UpdateService
 	hcp.Spec.Channel = hcluster.Spec.Channel
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 	if hcluster.Spec.ControlPlaneRelease != nil {
@@ -1882,7 +1909,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 }
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, pullSecretBytes []byte) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, pullSecretBytes []byte, releaseProvider *releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -1972,7 +1999,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	// Reconcile CAPI manager deployment
 	var capiImage string
 	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
-		version, err := hyperutil.GetPayloadVersion(ctx, r.ReleaseProvider, hcluster, pullSecretBytes)
+		version, err := hyperutil.GetPayloadVersion(ctx, *releaseProvider, hcluster, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup payload version: %w", err)
 		}
@@ -1985,7 +2012,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 	}
 	if capiImage == "" {
-		if capiImage, err = hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamCAPI, pullSecretBytes); err != nil {
+		if capiImage, err = hyperutil.GetPayloadImage(ctx, *releaseProvider, hcluster, ImageStreamCAPI, pullSecretBytes); err != nil {
 			return fmt.Errorf("failed to retrieve capi image: %w", err)
 		}
 	}
@@ -2059,7 +2086,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool, certRotationScale time.Duration) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2074,9 +2101,14 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	// Reconcile operator role
+	// hostNetwork is required for CPO <= 4.13
+	needsHostNetwork := false
+	if hcluster.Spec.Platform.Type != hyperv1.IBMCloudPlatform && releaseVersion.Major == 4 && releaseVersion.Minor <= 13 {
+		needsHostNetwork = true
+	}
 	controlPlaneOperatorRole := controlplaneoperator.OperatorRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorRole, func() error {
-		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess)
+		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess, needsHostNetwork)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator role: %w", err)
@@ -2092,7 +2124,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) && releaseVersion.Major == 4 && releaseVersion.Minor <= 14 {
 		// Reconcile operator role - for ingress
 		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRole, func() error {
@@ -2143,8 +2175,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			r.SetDefaultSecurityContext,
 			controlPlaneOperatorServiceAccount,
 			r.EnableCIDebugOutput,
-			hyperutil.ConvertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()),
-			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+			hyperutil.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
+			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 			defaultIngressDomain,
 			cpoHasUtilities,
 			r.MetricsSet,
@@ -2273,8 +2305,8 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 // reconcileAutoscaler orchestrates reconciliation of autoscaler components using
 // both the HostedCluster and the HostedControlPlane which the autoscaler takes
 // inputs from.
-func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
-	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
+func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
+	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, releaseProvider, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
 	}
@@ -2297,7 +2329,7 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to retrieve cli created secrets")
+		return fmt.Errorf("failed to retrieve cli created secrets: %v", err)
 	}
 
 	ownerRef := config.OwnerRefFrom(hcluster)
@@ -2307,7 +2339,7 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("failed to set secret's owner reference")
+			return fmt.Errorf("failed to set '%s' secret's owner reference: %v", secret.Name, err)
 		}
 		if res == controllerutil.OperationResultUpdated {
 			log.Info("added owner reference of the Hosted cluster, to the secret", "secret", secret.Name)
@@ -2579,14 +2611,6 @@ func reconcileControlPlaneOperatorDeployment(
 			},
 		)
 	}
-	if envImage := os.Getenv(images.AWSEncryptionProviderEnvVar); len(envImage) > 0 {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  images.AWSEncryptionProviderEnvVar,
-				Value: envImage,
-			},
-		)
-	}
 	if len(defaultIngressDomain) > 0 {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
@@ -2719,7 +2743,7 @@ func reconcileControlPlaneOperatorDeployment(
 	return nil
 }
 
-func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool) error {
+func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool, hostNetwork bool) error {
 	role.Rules = []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"hypershift.openshift.io"},
@@ -2776,6 +2800,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 			Resources: []string{
 				"events",
 				"configmaps",
+				"configmaps/finalizers",
 				"persistentvolumeclaims",
 				"pods",
 				"pods/log",
@@ -2870,6 +2895,19 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"update",
 			},
 		},
+		{
+			APIGroups: []string{
+				"snapshot.storage.k8s.io",
+			},
+			Resources: []string{
+				"volumesnapshots",
+			},
+			Verbs: []string{
+				"get",
+				"create",
+				"delete",
+			},
+		},
 	}
 	if enableCVOManagementClusterMetricsAccess {
 		role.Rules = append(role.Rules,
@@ -2879,6 +2917,16 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				Verbs:     []string{"get"},
 			})
 	}
+	if hostNetwork {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups:     []string{"security.openshift.io"},
+				ResourceNames: []string{"hostnetwork"},
+				Resources:     []string{"securitycontextconstraints"},
+				Verbs:         []string{"use"},
+			})
+	}
+
 	return nil
 }
 
@@ -3360,6 +3408,13 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 		return hcp.Status.VersionStatus
 	}
 
+	// The following code is legacy support to preserve
+	// compatability with older HostedControlPlane controllers, which
+	// may not be populating hcp.Status.VersionStatus.
+	//
+	// It is also used before the HostedControlPlane is created to bootstrap
+	// the ClusterVersionStatus.
+
 	releaseImage := hyperutil.HCControlPlaneReleaseImage(hcluster)
 
 	// If there's no history, rebuild it from scratch.
@@ -3382,9 +3437,20 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// Assume the previous status is still current.
 	version := hcluster.Status.Version.DeepCopy()
 
-	// The following code is legacy support to preserve
-	// compatability with older HostedControlPlane controllers, which
-	// may not be populating hcp.Status.VersionStatus.
+	// If a new rollout is needed, update the desired version and prepend a new
+	// partial history entry to unblock rollouts.
+	if releaseImage != hcluster.Status.Version.Desired.Image {
+		version.Desired.Image = releaseImage
+		version.ObservedGeneration = hcluster.Generation
+		// TODO: leaky
+		version.History = append([]configv1.UpdateHistory{
+			{
+				State:       configv1.PartialUpdate,
+				Image:       releaseImage,
+				StartedTime: metav1.NewTime(clock.Now()),
+			},
+		}, version.History...)
+	}
 
 	// If the hosted control plane doesn't exist, there's no way to assess the
 	// rollout so return early.
@@ -3411,22 +3477,6 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	if hcp.Status.LastReleaseImageTransitionTime != nil {
 		//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 		version.History[0].CompletionTime = hcp.Status.LastReleaseImageTransitionTime.DeepCopy()
-	}
-
-	// If a new rollout is needed, update the desired version and prepend a new
-	// partial history entry to unblock rollouts.
-	rolloutNeeded := releaseImage != hcluster.Status.Version.Desired.Image
-	if rolloutNeeded {
-		version.Desired.Image = releaseImage
-		version.ObservedGeneration = hcluster.Generation
-		// TODO: leaky
-		version.History = append([]configv1.UpdateHistory{
-			{
-				State:       configv1.PartialUpdate,
-				Image:       releaseImage,
-				StartedTime: metav1.NewTime(clock.Now()),
-			},
-		}, version.History...)
 	}
 
 	return version
@@ -3850,8 +3900,8 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
-	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
+func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
+	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, releaseProvider, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for machine approver: %w", err)
 	}
@@ -3938,7 +3988,7 @@ func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, 
 	return errs
 }
 
-func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
 	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
 		return nil
 	}
@@ -3951,7 +4001,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
 
-	releaseInfo, err := r.lookupReleaseImage(ctx, hc)
+	releaseInfo, err := r.lookupReleaseImage(ctx, hc, releaseProvider)
 	if err != nil {
 		return fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -3962,7 +4012,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 
 	var currentVersion *semver.Version
 	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != hyperutil.HCControlPlaneReleaseImage(hc) {
-		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
+		releaseInfo, err := releaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
 		}
@@ -4640,7 +4690,7 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	return nil
 }
 
-func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hcluster *hyperv1.HostedCluster) (*releaseinfo.ReleaseImage, error) {
+func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) (*releaseinfo.ReleaseImage, error) {
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
@@ -4649,7 +4699,20 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	if !ok {
 		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	return r.ReleaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
+	return releaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
+}
+
+func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
+	nodePools, err := listNodePools(ctx, r.Client, hcluster.Namespace, hcluster.Name)
+	if err != nil {
+		return false, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", hcluster.Name, err)
+	}
+	for _, nodePool := range nodePools {
+		if nodePool.Spec.AutoScaling != nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // isUpgrading returns
@@ -4927,6 +4990,24 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 					Name: etcdEncSec.Name,
 				},
 			},
+		}
+	}
+
+	// Reconcile management infrastructure annotation
+	if _, exists := hc.Annotations[hyperv1.ManagementPlatformAnnotation]; !exists {
+		if hc.Annotations == nil {
+			hc.Annotations = map[string]string{}
+		}
+		mgmtInfraKey := client.ObjectKey{Name: "cluster"}
+		mgmtInfra := &configv1.Infrastructure{}
+
+		if err := r.Get(ctx, mgmtInfraKey, mgmtInfra); err != nil {
+			return fmt.Errorf("failed to get infrastructure.config.openshift.io status: %w", err)
+		}
+		mgmtPlatformType := mgmtInfra.Status.PlatformStatus.Type
+		hc.Annotations[hyperv1.ManagementPlatformAnnotation] = string(mgmtPlatformType)
+		if err := r.Client.Update(ctx, hc); err != nil {
+			return fmt.Errorf("failed to update hostedcluster %s annotation: %w", hc.Name, err)
 		}
 	}
 

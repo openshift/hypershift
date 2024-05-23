@@ -166,6 +166,12 @@ type HostedClusterSpec struct {
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
 
+	// updateService may be used to specify the preferred upstream update service.
+	// By default it will use the appropriate update service for the cluster and region.
+	//
+	// +optional
+	UpdateService configv1.URL `json:"updateService,omitempty"`
+
 	// channel is an identifier for explicitly requesting that a non-default
 	// set of updates be applied to this cluster. The default channel will be
 	// contain stable updates that are appropriate for production clusters.
@@ -188,10 +194,10 @@ type HostedClusterSpec struct {
 	Platform PlatformSpec `json:"platform"`
 
 	// ControllerAvailabilityPolicy specifies the availability policy applied to
-	// critical control plane components. The default value is SingleReplica.
+	// critical control plane components. The default value is HighlyAvailable.
 	//
 	// +optional
-	// +kubebuilder:default:="SingleReplica"
+	// +kubebuilder:default:="HighlyAvailable"
 	// +immutable
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
@@ -824,15 +830,34 @@ type KubevirtManualStorageDriverConfig struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
 	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
+
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassMapping is immutable"
+	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMapping `json:"volumeSnapshotClassMapping,omitempty"`
 }
 
 type KubevirtStorageClassMapping struct {
+	// Group contains which group this mapping belongs to.
+	Group string `json:"group,omitempty"`
 	// InfraStorageClassName is the name of the infra cluster storage class that
-	// will be exposed into the guest.
+	// will be exposed to the guest.
 	InfraStorageClassName string `json:"infraStorageClassName"`
 	// GuestStorageClassName is the name that the corresponding storageclass will
 	// be called within the guest cluster
 	GuestStorageClassName string `json:"guestStorageClassName"`
+}
+
+type KubevirtVolumeSnapshotClassMapping struct {
+	// Group contains which group this mapping belongs to.
+	Group string `json:"group,omitempty"`
+	// InfraStorageClassName is the name of the infra cluster volume snapshot class that
+	// will be exposed to the guest.
+	InfraVolumeSnapshotClassName string `json:"infraVolumeSnapshotClassName"`
+	// GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+	// be called within the guest cluster
+	GuestVolumeSnapshotClassName string `json:"guestVolumeSnapshotClassName"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -1540,12 +1565,11 @@ type AzurePlatformSpec struct {
 	Cloud             string `json:"cloud,omitempty"`
 	Location          string `json:"location"`
 	ResourceGroupName string `json:"resourceGroup"`
-	VnetName          string `json:"vnetName"`
 	VnetID            string `json:"vnetID"`
-	SubnetName        string `json:"subnetName"`
+	SubnetID          string `json:"subnetID"`
 	SubscriptionID    string `json:"subscriptionID"`
 	MachineIdentityID string `json:"machineIdentityID"`
-	SecurityGroupName string `json:"securityGroupName"`
+	SecurityGroupID   string `json:"securityGroupID"`
 }
 
 // Release represents the metadata for an OCP release payload image.
@@ -1777,9 +1801,17 @@ type KMSSpec struct {
 
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
 type AzureKMSSpec struct {
-	// Location contains the Azure region
+	// ActiveKey defines the active key used to encrypt new secrets
+	//
+	// +kubebuilder:validation:Required
+	ActiveKey AzureKMSKey `json:"activeKey"`
+	// BackupKey defines the old key during the rotation process so previously created
+	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
 	// +optional
-	Location string `json:"location"`
+	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
+}
+
+type AzureKMSKey struct {
 	// KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
 	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`

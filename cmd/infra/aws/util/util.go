@@ -1,18 +1,85 @@
 package util
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/spf13/pflag"
 )
 
-func NewSession(agent string, credentialsFile string, credKey string, credSecretKey string, region string) *session.Session {
+type AWSCredentialsOptions struct {
+	AWSCredentialsFile string
+
+	RoleArn            string
+	STSCredentialsFile string
+}
+
+func (opts *AWSCredentialsOptions) Validate() error {
+	if opts.AWSCredentialsFile != "" {
+		if opts.STSCredentialsFile != "" || opts.RoleArn != "" {
+			return fmt.Errorf("only one of 'aws-creds' or 'role-arn' and 'sts-creds' can be provided")
+		}
+
+		return nil
+	}
+
+	if err := util.ValidateRequiredOption("sts-creds", opts.STSCredentialsFile); err != nil {
+		return err
+	}
+	if err := util.ValidateRequiredOption("role-arn", opts.RoleArn); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
+	opts.BindProductFlags(flags)
+
+	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
+	flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
+}
+
+func (opts *AWSCredentialsOptions) BindProductFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume.")
+	flags.StringVar(&opts.STSCredentialsFile, "sts-creds", opts.STSCredentialsFile, "Path to the STS credentials file to use when assuming the role. Can be generated with 'aws sts get-session-token --output json'")
+}
+
+func (opts *AWSCredentialsOptions) GetSession(agent string, secretData *util.CredentialsSecretData, region string) (*session.Session, error) {
+	if opts.AWSCredentialsFile != "" {
+		return NewSession(agent, opts.AWSCredentialsFile, "", "", region), nil
+	}
+
+	if opts.STSCredentialsFile != "" {
+		creds, err := ParseSTSCredentialsFile(opts.STSCredentialsFile)
+		if err != nil {
+			return nil, err
+		}
+
+		return NewSTSSession(agent, opts.RoleArn, region, creds)
+	}
+
+	if secretData != nil {
+		creds := credentials.NewStaticCredentials(
+			secretData.AWSAccessKeyID,
+			secretData.AWSSecretAccessKey,
+			secretData.AWSSessionToken,
+		)
+		return NewSTSSession(agent, opts.RoleArn, region, creds)
+	}
+
+	return nil, errors.New("could not create AWS session, no credentials were given")
+}
+
+func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *session.Session {
 	sessionOpts := session.Options{}
 	if credentialsFile != "" {
 		sessionOpts.SharedConfigFiles = append(sessionOpts.SharedConfigFiles, credentialsFile)
@@ -21,7 +88,7 @@ func NewSession(agent string, credentialsFile string, credKey string, credSecret
 		sessionOpts.Config.Credentials = credentials.NewStaticCredentials(credKey, credSecretKey, "")
 	}
 	if region != "" {
-		sessionOpts.Config.Region = utilpointer.String(region)
+		sessionOpts.Config.Region = ptr.To(region)
 	}
 	awsSession := session.Must(session.NewSessionWithOptions(sessionOpts))
 	awsSession.Handlers.Build.PushBackNamed(request.NamedHandler{

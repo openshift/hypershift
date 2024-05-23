@@ -212,6 +212,21 @@ immutable.</p>
 </tr>
 <tr>
 <td>
+<code>updateService</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.URL
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>updateService may be used to specify the preferred upstream update service.
+By default it will use the appropriate update service for the cluster and region.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>channel</code></br>
 <em>
 string
@@ -264,7 +279,7 @@ AvailabilityPolicy
 <td>
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is SingleReplica.</p>
+critical control plane components. The default value is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>
@@ -734,6 +749,7 @@ JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
 KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
+ClusterImagePolicy
 ImageContentSourcePolicy
 or
 ImageDigestMirrorSet</p>
@@ -811,12 +827,12 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </td>
 <td>
 <p>TuningConfig is a list of references to ConfigMaps containing serialized
-Tuned resources to define the tuning configuration to be applied to
+Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>The PerformanceProfile API is defined here:
 <a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
-<p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
+<p>Each ConfigMap must have a single key named &ldquo;tuning&rdquo; whose value is the
 JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
 </td>
 </tr>
@@ -832,7 +848,7 @@ string
 <p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
 NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
-TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
+TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
 </tr>
 </table>
@@ -2206,13 +2222,12 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
-###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
+###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.KMSSpec">KMSSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
 </p>
 <p>
-<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
 </p>
 <table>
 <thead>
@@ -2222,18 +2237,6 @@ toleration of full disruption of the component.</p>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td>
-<code>location</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Location contains the Azure region</p>
-</td>
-</tr>
 <tr>
 <td>
 <code>keyVaultName</code></br>
@@ -2271,6 +2274,52 @@ string
 </tr>
 </tbody>
 </table>
+###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KMSSpec">KMSSpec</a>)
+</p>
+<p>
+<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>activeKey</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKey">
+AzureKMSKey
+</a>
+</em>
+</td>
+<td>
+<p>ActiveKey defines the active key used to encrypt new secrets</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>backupKey</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKey">
+AzureKMSKey
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>BackupKey defines the old key during the rotation process so previously created
+secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureNodePoolPlatform { #hypershift.openshift.io/v1beta1.AzureNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -2294,6 +2343,7 @@ string
 </em>
 </td>
 <td>
+<p>VMSize is the Azure VM instance type to use for the nodes being created in the nodepool.</p>
 </td>
 </tr>
 <tr>
@@ -2305,8 +2355,11 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
-subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd</p>
+<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
+is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
+The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
+Hosted Cluster specification respectively, hcluster.Spec.Platform.Azure.SubscriptionID and
+hcluster.Spec.Platform.Azure.ResourceGroupName.</p>
 </td>
 </tr>
 <tr>
@@ -2349,8 +2402,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>AvailabilityZone of the nodepool. Must not be specified for clusters
-in a location that does not support AvailabilityZone.</p>
+<p>AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+for clusters in a location that does not support AvailabilityZone.</p>
 </td>
 </tr>
 <tr>
@@ -2362,7 +2415,10 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.</p>
+<p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.</p>
 </td>
 </tr>
 <tr>
@@ -2374,18 +2430,21 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>EnableEphemeralOSDisk enables ephemeral OS disk</p>
+<p>EnableEphemeralOSDisk is a flag when set to true, will enable ephemeral OS disk.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>subnetName</code></br>
+<code>subnetID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>SubnetName is the name of the subnet to place the Nodes into</p>
+<p>SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+hcluster.Spec.Platform.Azure.SubscriptionID.</p>
 </td>
 </tr>
 </tbody>
@@ -2396,6 +2455,10 @@ string
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
+<p>AzurePlatformSpec specifies configuration for clusters running on Azure. Generally, the HyperShift API assumes bring
+your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
+would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
+fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.</p>
 </p>
 <table>
 <thead>
@@ -2415,6 +2478,8 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
+<p>Credentials is the object containing existing Azure credentials needed for creating and managing cloud
+infrastructure resources.</p>
 </td>
 </tr>
 <tr>
@@ -2425,7 +2490,7 @@ string
 </em>
 </td>
 <td>
-<p>The cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
+<p>Cloud is the cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
 </td>
 </tr>
 <tr>
@@ -2436,6 +2501,8 @@ string
 </em>
 </td>
 <td>
+<p>Location is the Azure region in where all the cloud infrastructure resources will be created.</p>
+<p>Example: eastus</p>
 </td>
 </tr>
 <tr>
@@ -2446,16 +2513,12 @@ string
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>vnetName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
+<p>ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.</p>
+<p>In ARO HCP, this will be the managed resource group where customer cloud resources will be created.</p>
+<p>Resource group naming requirements can be found here: <a href="https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/">https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/</a>.</p>
+<p>Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+ResourceGroupName is <resourceGroupName>.</p>
 </td>
 </tr>
 <tr>
@@ -2466,16 +2529,25 @@ string
 </em>
 </td>
 <td>
+<p>VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+other than the one specified in ResourceGroupName, but it must exist under the same subscription as
+SubscriptionID.</p>
+<p>In ARO HCP, this will be the ID of the customer provided VNET.</p>
+<p>Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName></p>
 </td>
 </tr>
 <tr>
 <td>
-<code>subnetName</code></br>
+<code>subnetID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<p>SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
+subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
+same subscription as SubscriptionID.</p>
+<p>In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.</p>
 </td>
 </tr>
 <tr>
@@ -2486,6 +2558,7 @@ string
 </em>
 </td>
 <td>
+<p>SubscriptionID is a unique identifier for an Azure subscription used to manage resources.</p>
 </td>
 </tr>
 <tr>
@@ -2496,16 +2569,21 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>MachineIdentityID is used as the user-assigned identity to be assigned to the VMs</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>securityGroupName</code></br>
+<code>securityGroupID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<p>SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
+configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
+expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
 </tbody>
@@ -3528,6 +3606,21 @@ immutable.</p>
 </tr>
 <tr>
 <td>
+<code>updateService</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.URL
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>updateService may be used to specify the preferred upstream update service.
+By default it will use the appropriate update service for the cluster and region.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>channel</code></br>
 <em>
 string
@@ -3580,7 +3673,7 @@ AvailabilityPolicy
 <td>
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is SingleReplica.</p>
+critical control plane components. The default value is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>
@@ -4042,6 +4135,21 @@ string
 <p>ControlPlaneReleaseImage specifies the desired OCP release payload for
 control plane components running on the management cluster.
 If not defined, ReleaseImage is used</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>updateService</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.URL
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>updateService may be used to specify the preferred upstream update service.
+By default it will use the appropriate update service for the cluster and region.</p>
 </td>
 </tr>
 <tr>
@@ -5307,6 +5415,19 @@ Guest Cluster.</p>
 storageclass will be present for the corresponding guest clusters storageclass.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>volumeSnapshotClassMapping</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtVolumeSnapshotClassMapping">
+[]KubevirtVolumeSnapshotClassMapping
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtNetwork { #hypershift.openshift.io/v1beta1.KubevirtNetwork }
@@ -5735,6 +5856,17 @@ KubevirtCachingStrategy
 <tbody>
 <tr>
 <td>
+<code>group</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Group contains which group this mapping belongs to.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infraStorageClassName</code></br>
 <em>
 string
@@ -5742,7 +5874,7 @@ string
 </td>
 <td>
 <p>InfraStorageClassName is the name of the infra cluster storage class that
-will be exposed into the guest.</p>
+will be exposed to the guest.</p>
 </td>
 </tr>
 <tr>
@@ -5877,6 +6009,58 @@ KubevirtPersistentVolume
 <p>Persistent volume type means the VM&rsquo;s storage is backed by a PVC
 VMs that use persistent volumes can survive disruption events like restart and eviction
 This is the default type used when no storage type is defined.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtVolumeSnapshotClassMapping { #hypershift.openshift.io/v1beta1.KubevirtVolumeSnapshotClassMapping }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig">KubevirtManualStorageDriverConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>group</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Group contains which group this mapping belongs to.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraVolumeSnapshotClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InfraStorageClassName is the name of the infra cluster volume snapshot class that
+will be exposed to the guest.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVolumeSnapshotClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+be called within the guest cluster</p>
 </td>
 </tr>
 </tbody>
@@ -6612,6 +6796,7 @@ JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
 KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
+ClusterImagePolicy
 ImageContentSourcePolicy
 or
 ImageDigestMirrorSet</p>
@@ -6689,12 +6874,12 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </td>
 <td>
 <p>TuningConfig is a list of references to ConfigMaps containing serialized
-Tuned resources to define the tuning configuration to be applied to
+Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>The PerformanceProfile API is defined here:
 <a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
-<p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
+<p>Each ConfigMap must have a single key named &ldquo;tuning&rdquo; whose value is the
 JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
 </td>
 </tr>
@@ -6710,7 +6895,7 @@ string
 <p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
 NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
-TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
+TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
 </tr>
 </tbody>

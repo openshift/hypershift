@@ -126,7 +126,7 @@ hypershift create cluster azure \
 --release-image <release_image> \
 --node-pool-replicas <number_of_replicas> \
 --enable-ephemeral-disk true \
---instance-type Standard_DS2_v2 \
+--instance-type Standard_DS4_v2 \
 --disk-storage-account-type Standard_LRS
 ```
 
@@ -138,7 +138,7 @@ hypershift create nodepool azure \
 --node-count <number_of_replicas> \
 --release-image <release_image> \
 --enable-ephemeral-disk true \
---instance-type Standard_DS2_v2 \
+--instance-type Standard_DS4_v2 \
 --disk-storage-account-type Standard_LRS
 ```
 

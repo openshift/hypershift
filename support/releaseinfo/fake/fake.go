@@ -28,7 +28,7 @@ type FakeReleaseProvider struct {
 func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 	releaseImage := &releaseinfo.ReleaseImage{
 		ImageStream: &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{Name: "4.14.0"},
+			ObjectMeta: metav1.ObjectMeta{Name: "4.15.0"},
 			Spec: imagev1.ImageStreamSpec{
 				Tags: []imagev1.TagReference{
 					{

@@ -171,6 +171,7 @@ objects:
     resources:
     - events
     - configmaps
+    - configmaps/finalizers
     - persistentvolumeclaims
     - pods
     - pods/log
@@ -260,6 +261,14 @@ objects:
     - agents
     verbs:
     - '*'
+  - apiGroups:
+    - snapshot.storage.k8s.io
+    resources:
+    - volumesnapshots
+    verbs:
+    - get
+    - create
+    - delete
   - apiGroups:
     - extensions.hive.openshift.io
     resources:
@@ -481,6 +490,7 @@ objects:
             name: credentials
         imagePullSecrets:
         - name: pull-secret
+        priorityClassName: hypershift-operator
         serviceAccountName: external-dns
         volumes:
         - name: credentials
@@ -787,6 +797,12 @@ objects:
         record: platform:hypershift_hostedclusters:max
       - expr: max by(platform) (hypershift_nodepools)
         record: platform:hypershift_nodepools:max
+      - expr: sum by(cluster_name, exported_namespace) (max by(name, exported_namespace,
+          platform, cluster_name) (hypershift_nodepools_size))
+        record: cluster_name:hypershift_nodepools_size:sum
+      - expr: sum by(cluster_name, exported_namespace) (max by(name, exported_namespace,
+          platform, cluster_name) (hypershift_nodepools_available_replicas))
+        record: cluster_name:hypershift_nodepools_available_replicas:sum
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -1881,6 +1897,28 @@ objects:
                       ClusterClassVariable defines a variable which can
                       be configured in the Cluster topology and used in patches.
                     properties:
+                      metadata:
+                        description: |-
+                          Metadata is the metadata of a variable.
+                          It can be used to add additional data for higher level tools to
+                          a ClusterClassVariable.
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              Annotations is an unstructured key value map that can be used to store and
+                              retrieve arbitrary metadata.
+                              They are not queryable.
+                            type: object
+                          labels:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              Map of string keys and values that can be used to organize and categorize
+                              (scope and select) variables.
+                            type: object
+                        type: object
                       name:
                         description: Name of the variable.
                         type: string
@@ -2718,6 +2756,28 @@ objects:
                                 This will be `inline` for variables defined in the ClusterClass or the name of a patch defined in the ClusterClass
                                 for variables discovered from a DiscoverVariables runtime extensions.
                               type: string
+                            metadata:
+                              description: |-
+                                Metadata is the metadata of a variable.
+                                It can be used to add additional data for higher level tools to
+                                a ClusterClassVariable.
+                              properties:
+                                annotations:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Annotations is an unstructured key value map that can be used to store and
+                                    retrieve arbitrary metadata.
+                                    They are not queryable.
+                                  type: object
+                                labels:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to organize and categorize
+                                    (scope and select) variables.
+                                  type: object
+                              type: object
                             required:
                               description: |-
                                 Required specifies if the variable is required.
@@ -5832,11 +5892,25 @@ objects:
                   format: int32
                   type: integer
                 replicas:
-                  default: 1
                   description: |-
                     Replicas is the number of desired replicas.
                     This is a pointer to distinguish between explicit zero and unspecified.
-                    Defaults to 1.
+
+
+                    Defaults to:
+                    * if the Kubernetes autoscaler min size and max size annotations are set:
+                      - if it's a new MachineSet, use min size
+                      - if the replicas field of the old MachineSet is < min size, use min size
+                      - if the replicas field of the old MachineSet is > max size, use max size
+                      - if the replicas field of the old MachineSet is in the (min size, max size) range, keep the value from the oldMS
+                    * otherwise use 1
+                    Note: Defaulting will be run whenever the replicas field is not set:
+                    * A new MachineSet is created with replicas not set.
+                    * On an existing MachineSet the replicas field was first set and is now unset.
+                    Those cases are especially relevant for the following Kubernetes autoscaler use cases:
+                    * A new MachineSet is created and replicas should be managed by the autoscaler
+                    * An existing MachineSet which initially wasn't controlled by the autoscaler
+                      should be later controlled by the autoscaler
                   format: int32
                   type: integer
                 selector:
@@ -8747,6 +8821,62 @@ objects:
                           AdditionalListenerSpec defines the desired state of an
                           additional listener on an AWS load balancer.
                         properties:
+                          healthCheck:
+                            description: HealthCheck sets the optional custom health
+                              check configuration to the API target group.
+                            properties:
+                              intervalSeconds:
+                                description: |-
+                                  The approximate amount of time, in seconds, between health checks of an individual
+                                  target.
+                                format: int64
+                                maximum: 300
+                                minimum: 5
+                                type: integer
+                              path:
+                                description: |-
+                                  The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                  otherwise the path will be ignored.
+                                type: string
+                              port:
+                                description: |-
+                                  The port the load balancer uses when performing health checks for additional target groups. When
+                                  not specified this value will be set for the same of listener port.
+                                type: string
+                              protocol:
+                                description: |-
+                                  The protocol to use to health check connect with the target. When not specified the Protocol
+                                  will be the same of the listener.
+                                enum:
+                                - TCP
+                                - HTTP
+                                - HTTPS
+                                type: string
+                              thresholdCount:
+                                description: |-
+                                  The number of consecutive health check successes required before considering
+                                  a target healthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                              timeoutSeconds:
+                                description: |-
+                                  The amount of time, in seconds, during which no response from a target means
+                                  a failed health check.
+                                format: int64
+                                maximum: 120
+                                minimum: 2
+                                type: integer
+                              unhealthyThresholdCount:
+                                description: |-
+                                  The number of consecutive health check failures required before considering
+                                  a target unhealthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                            type: object
                           port:
                             description: Port sets the port for the additional listener.
                             format: int64
@@ -8793,6 +8923,43 @@ objects:
                         DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                         file of each instance. This is by default, false.
                       type: boolean
+                    healthCheck:
+                      description: HealthCheck sets custom health check configuration
+                        to the API target group.
+                      properties:
+                        intervalSeconds:
+                          description: |-
+                            The approximate amount of time, in seconds, between health checks of an individual
+                            target.
+                          format: int64
+                          maximum: 300
+                          minimum: 5
+                          type: integer
+                        thresholdCount:
+                          description: |-
+                            The number of consecutive health check successes required before considering
+                            a target healthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                        timeoutSeconds:
+                          description: |-
+                            The amount of time, in seconds, during which no response from a target means
+                            a failed health check.
+                          format: int64
+                          maximum: 120
+                          minimum: 2
+                          type: integer
+                        unhealthyThresholdCount:
+                          description: |-
+                            The number of consecutive health check failures required before considering
+                            a target unhealthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                      type: object
                     healthCheckProtocol:
                       description: |-
                         HealthCheckProtocol sets the protocol type for ELB health check target
@@ -9128,6 +9295,15 @@ objects:
                               NatGatewayID is the NAT gateway id associated with the subnet.
                               Ignored unless the subnet is managed by the provider, in which case this is set on the public subnet where the NAT gateway resides. It is then used to determine routes for private subnets in the same AZ as the public subnet.
                             type: string
+                          parentZoneName:
+                            description: |-
+                              ParentZoneName is the zone name where the current subnet's zone is tied when
+                              the zone is a Local Zone.
+
+
+                              The subnets in Local Zone or Wavelength Zone locations consume the ParentZoneName
+                              to select the correct private route table to egress traffic to the internet.
+                            type: string
                           resourceID:
                             description: |-
                               ResourceID is the subnet identifier from AWS, READ ONLY.
@@ -9143,6 +9319,42 @@ objects:
                             description: Tags is a collection of tags describing the
                               resource.
                             type: object
+                          zoneType:
+                            description: |-
+                              ZoneType defines the type of the zone where the subnet is created.
+
+
+                              The valid values are availability-zone, local-zone, and wavelength-zone.
+
+
+                              Subnet with zone type availability-zone (regular) is always selected to create cluster
+                              resources, like Load Balancers, NAT Gateways, Contol Plane nodes, etc.
+
+
+                              Subnet with zone type local-zone or wavelength-zone is not eligible to automatically create
+                              regular cluster resources.
+
+
+                              The public subnet in availability-zone or local-zone is associated with regular public
+                              route table with default route entry to a Internet Gateway.
+
+
+                              The public subnet in wavelength-zone is associated with a carrier public
+                              route table with default route entry to a Carrier Gateway.
+
+
+                              The private subnet in the availability-zone is associated with a private route table with
+                              the default route entry to a NAT Gateway created in that zone.
+
+
+                              The private subnet in the local-zone or wavelength-zone is associated with a private route table with
+                              the default route entry re-using the NAT Gateway in the Region (preferred from the
+                              parent zone, the zone type availability-zone in the region, or first table available).
+                            enum:
+                            - availability-zone
+                            - local-zone
+                            - wavelength-zone
+                            type: string
                         required:
                         - id
                         type: object
@@ -9174,6 +9386,14 @@ objects:
                             default subnets. Defaults to 3
                           minimum: 1
                           type: integer
+                        carrierGatewayId:
+                          description: |-
+                            CarrierGatewayID is the id of the internet gateway associated with the VPC,
+                            for carrier network (Wavelength Zones).
+                          type: string
+                          x-kubernetes-validations:
+                          - message: Carrier Gateway ID must start with 'cagw-'
+                            rule: self.startsWith('cagw-')
                         cidrBlock:
                           description: |-
                             CidrBlock is the CIDR block to be used when the provider creates a managed VPC.
@@ -9296,6 +9516,10 @@ objects:
                     (https://coreos.github.io/ignition/) for bootstrapping (requires
                     BootstrapFormatIgnition feature flag to be enabled).
                   properties:
+                    bestEffortDeleteObjects:
+                      description: BestEffortDeleteObjects defines whether access/permission
+                        errors during object deletion should be ignored.
+                      type: boolean
                     controlPlaneIAMInstanceProfile:
                       description: |-
                         ControlPlaneIAMInstanceProfile is a name of the IAMInstanceProfile, which will be allowed
@@ -9345,6 +9569,62 @@ objects:
                           AdditionalListenerSpec defines the desired state of an
                           additional listener on an AWS load balancer.
                         properties:
+                          healthCheck:
+                            description: HealthCheck sets the optional custom health
+                              check configuration to the API target group.
+                            properties:
+                              intervalSeconds:
+                                description: |-
+                                  The approximate amount of time, in seconds, between health checks of an individual
+                                  target.
+                                format: int64
+                                maximum: 300
+                                minimum: 5
+                                type: integer
+                              path:
+                                description: |-
+                                  The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                  otherwise the path will be ignored.
+                                type: string
+                              port:
+                                description: |-
+                                  The port the load balancer uses when performing health checks for additional target groups. When
+                                  not specified this value will be set for the same of listener port.
+                                type: string
+                              protocol:
+                                description: |-
+                                  The protocol to use to health check connect with the target. When not specified the Protocol
+                                  will be the same of the listener.
+                                enum:
+                                - TCP
+                                - HTTP
+                                - HTTPS
+                                type: string
+                              thresholdCount:
+                                description: |-
+                                  The number of consecutive health check successes required before considering
+                                  a target healthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                              timeoutSeconds:
+                                description: |-
+                                  The amount of time, in seconds, during which no response from a target means
+                                  a failed health check.
+                                format: int64
+                                maximum: 120
+                                minimum: 2
+                                type: integer
+                              unhealthyThresholdCount:
+                                description: |-
+                                  The number of consecutive health check failures required before considering
+                                  a target unhealthy.
+                                format: int64
+                                maximum: 10
+                                minimum: 2
+                                type: integer
+                            type: object
                           port:
                             description: Port sets the port for the additional listener.
                             format: int64
@@ -9391,6 +9671,43 @@ objects:
                         DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                         file of each instance. This is by default, false.
                       type: boolean
+                    healthCheck:
+                      description: HealthCheck sets custom health check configuration
+                        to the API target group.
+                      properties:
+                        intervalSeconds:
+                          description: |-
+                            The approximate amount of time, in seconds, between health checks of an individual
+                            target.
+                          format: int64
+                          maximum: 300
+                          minimum: 5
+                          type: integer
+                        thresholdCount:
+                          description: |-
+                            The number of consecutive health check successes required before considering
+                            a target healthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                        timeoutSeconds:
+                          description: |-
+                            The amount of time, in seconds, during which no response from a target means
+                            a failed health check.
+                          format: int64
+                          maximum: 120
+                          minimum: 2
+                          type: integer
+                        unhealthyThresholdCount:
+                          description: |-
+                            The number of consecutive health check failures required before considering
+                            a target unhealthy.
+                          format: int64
+                          maximum: 10
+                          minimum: 2
+                          type: integer
+                      type: object
                     healthCheckProtocol:
                       description: |-
                         HealthCheckProtocol sets the protocol type for ELB health check target
@@ -9695,6 +10012,15 @@ objects:
                       description: PlacementGroupName specifies the name of the placement
                         group in which to launch the instance.
                       type: string
+                    placementGroupPartition:
+                      description: |-
+                        PlacementGroupPartition is the partition number within the placement group in which to launch the instance.
+                        This value is only valid if the placement group, referred in `PlacementGroupName`, was created with
+                        strategy set to partition.
+                      format: int64
+                      maximum: 7
+                      minimum: 1
+                      type: integer
                     privateDnsName:
                       description: PrivateDNSName is the options for the instance
                         hostname.
@@ -9719,6 +10045,10 @@ objects:
                     privateIp:
                       description: The private IPv4 address assigned to the instance.
                       type: string
+                    publicIPOnLaunch:
+                      description: PublicIPOnLaunch is the option to associate a public
+                        IP on instance launch
+                      type: boolean
                     publicIp:
                       description: The public IPv4 address assigned to the instance,
                         if applicable.
@@ -9939,6 +10269,7 @@ objects:
                                   name:
                                     description: Name of the TargetGroup. Must be
                                       unique over the same group of listeners.
+                                    maxLength: 32
                                     type: string
                                   port:
                                     description: Port is the exposed port
@@ -9972,6 +10303,9 @@ objects:
                                         format: int64
                                         type: integer
                                       timeoutSeconds:
+                                        format: int64
+                                        type: integer
+                                      unhealthyThresholdCount:
                                         format: int64
                                         type: integer
                                     type: object
@@ -10155,6 +10489,7 @@ objects:
                                   name:
                                     description: Name of the TargetGroup. Must be
                                       unique over the same group of listeners.
+                                    maxLength: 32
                                     type: string
                                   port:
                                     description: Port is the exposed port
@@ -10188,6 +10523,9 @@ objects:
                                         format: int64
                                         type: integer
                                       timeoutSeconds:
+                                        format: int64
+                                        type: integer
+                                      unhealthyThresholdCount:
                                         format: int64
                                         type: integer
                                     type: object
@@ -10705,6 +11043,8 @@ objects:
               description: AWSClusterTemplateSpec defines the desired state of AWSClusterTemplate.
               properties:
                 template:
+                  description: AWSClusterTemplateResource defines the desired state
+                    of AWSClusterTemplate.
                   properties:
                     metadata:
                       description: |-
@@ -11133,6 +11473,8 @@ objects:
               description: AWSClusterTemplateSpec defines the desired state of AWSClusterTemplate.
               properties:
                 template:
+                  description: AWSClusterTemplateResource defines the desired state
+                    of AWSClusterTemplateResource.
                   properties:
                     metadata:
                       description: |-
@@ -11231,6 +11573,63 @@ objects:
                                   AdditionalListenerSpec defines the desired state of an
                                   additional listener on an AWS load balancer.
                                 properties:
+                                  healthCheck:
+                                    description: HealthCheck sets the optional custom
+                                      health check configuration to the API target
+                                      group.
+                                    properties:
+                                      intervalSeconds:
+                                        description: |-
+                                          The approximate amount of time, in seconds, between health checks of an individual
+                                          target.
+                                        format: int64
+                                        maximum: 300
+                                        minimum: 5
+                                        type: integer
+                                      path:
+                                        description: |-
+                                          The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                          otherwise the path will be ignored.
+                                        type: string
+                                      port:
+                                        description: |-
+                                          The port the load balancer uses when performing health checks for additional target groups. When
+                                          not specified this value will be set for the same of listener port.
+                                        type: string
+                                      protocol:
+                                        description: |-
+                                          The protocol to use to health check connect with the target. When not specified the Protocol
+                                          will be the same of the listener.
+                                        enum:
+                                        - TCP
+                                        - HTTP
+                                        - HTTPS
+                                        type: string
+                                      thresholdCount:
+                                        description: |-
+                                          The number of consecutive health check successes required before considering
+                                          a target healthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                      timeoutSeconds:
+                                        description: |-
+                                          The amount of time, in seconds, during which no response from a target means
+                                          a failed health check.
+                                        format: int64
+                                        maximum: 120
+                                        minimum: 2
+                                        type: integer
+                                      unhealthyThresholdCount:
+                                        description: |-
+                                          The number of consecutive health check failures required before considering
+                                          a target unhealthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                    type: object
                                   port:
                                     description: Port sets the port for the additional
                                       listener.
@@ -11278,6 +11677,43 @@ objects:
                                 DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                                 file of each instance. This is by default, false.
                               type: boolean
+                            healthCheck:
+                              description: HealthCheck sets custom health check configuration
+                                to the API target group.
+                              properties:
+                                intervalSeconds:
+                                  description: |-
+                                    The approximate amount of time, in seconds, between health checks of an individual
+                                    target.
+                                  format: int64
+                                  maximum: 300
+                                  minimum: 5
+                                  type: integer
+                                thresholdCount:
+                                  description: |-
+                                    The number of consecutive health check successes required before considering
+                                    a target healthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                                timeoutSeconds:
+                                  description: |-
+                                    The amount of time, in seconds, during which no response from a target means
+                                    a failed health check.
+                                  format: int64
+                                  maximum: 120
+                                  minimum: 2
+                                  type: integer
+                                unhealthyThresholdCount:
+                                  description: |-
+                                    The number of consecutive health check failures required before considering
+                                    a target unhealthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                              type: object
                             healthCheckProtocol:
                               description: |-
                                 HealthCheckProtocol sets the protocol type for ELB health check target
@@ -11619,6 +12055,15 @@ objects:
                                       NatGatewayID is the NAT gateway id associated with the subnet.
                                       Ignored unless the subnet is managed by the provider, in which case this is set on the public subnet where the NAT gateway resides. It is then used to determine routes for private subnets in the same AZ as the public subnet.
                                     type: string
+                                  parentZoneName:
+                                    description: |-
+                                      ParentZoneName is the zone name where the current subnet's zone is tied when
+                                      the zone is a Local Zone.
+
+
+                                      The subnets in Local Zone or Wavelength Zone locations consume the ParentZoneName
+                                      to select the correct private route table to egress traffic to the internet.
+                                    type: string
                                   resourceID:
                                     description: |-
                                       ResourceID is the subnet identifier from AWS, READ ONLY.
@@ -11634,6 +12079,42 @@ objects:
                                     description: Tags is a collection of tags describing
                                       the resource.
                                     type: object
+                                  zoneType:
+                                    description: |-
+                                      ZoneType defines the type of the zone where the subnet is created.
+
+
+                                      The valid values are availability-zone, local-zone, and wavelength-zone.
+
+
+                                      Subnet with zone type availability-zone (regular) is always selected to create cluster
+                                      resources, like Load Balancers, NAT Gateways, Contol Plane nodes, etc.
+
+
+                                      Subnet with zone type local-zone or wavelength-zone is not eligible to automatically create
+                                      regular cluster resources.
+
+
+                                      The public subnet in availability-zone or local-zone is associated with regular public
+                                      route table with default route entry to a Internet Gateway.
+
+
+                                      The public subnet in wavelength-zone is associated with a carrier public
+                                      route table with default route entry to a Carrier Gateway.
+
+
+                                      The private subnet in the availability-zone is associated with a private route table with
+                                      the default route entry to a NAT Gateway created in that zone.
+
+
+                                      The private subnet in the local-zone or wavelength-zone is associated with a private route table with
+                                      the default route entry re-using the NAT Gateway in the Region (preferred from the
+                                      parent zone, the zone type availability-zone in the region, or first table available).
+                                    enum:
+                                    - availability-zone
+                                    - local-zone
+                                    - wavelength-zone
+                                    type: string
                                 required:
                                 - id
                                 type: object
@@ -11665,6 +12146,14 @@ objects:
                                     default subnets. Defaults to 3
                                   minimum: 1
                                   type: integer
+                                carrierGatewayId:
+                                  description: |-
+                                    CarrierGatewayID is the id of the internet gateway associated with the VPC,
+                                    for carrier network (Wavelength Zones).
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: Carrier Gateway ID must start with 'cagw-'
+                                    rule: self.startsWith('cagw-')
                                 cidrBlock:
                                   description: |-
                                     CidrBlock is the CIDR block to be used when the provider creates a managed VPC.
@@ -11788,6 +12277,11 @@ objects:
                             (https://coreos.github.io/ignition/) for bootstrapping (requires
                             BootstrapFormatIgnition feature flag to be enabled).
                           properties:
+                            bestEffortDeleteObjects:
+                              description: BestEffortDeleteObjects defines whether
+                                access/permission errors during object deletion should
+                                be ignored.
+                              type: boolean
                             controlPlaneIAMInstanceProfile:
                               description: |-
                                 ControlPlaneIAMInstanceProfile is a name of the IAMInstanceProfile, which will be allowed
@@ -11837,6 +12331,63 @@ objects:
                                   AdditionalListenerSpec defines the desired state of an
                                   additional listener on an AWS load balancer.
                                 properties:
+                                  healthCheck:
+                                    description: HealthCheck sets the optional custom
+                                      health check configuration to the API target
+                                      group.
+                                    properties:
+                                      intervalSeconds:
+                                        description: |-
+                                          The approximate amount of time, in seconds, between health checks of an individual
+                                          target.
+                                        format: int64
+                                        maximum: 300
+                                        minimum: 5
+                                        type: integer
+                                      path:
+                                        description: |-
+                                          The destination for health checks on the targets when using the protocol HTTP or HTTPS,
+                                          otherwise the path will be ignored.
+                                        type: string
+                                      port:
+                                        description: |-
+                                          The port the load balancer uses when performing health checks for additional target groups. When
+                                          not specified this value will be set for the same of listener port.
+                                        type: string
+                                      protocol:
+                                        description: |-
+                                          The protocol to use to health check connect with the target. When not specified the Protocol
+                                          will be the same of the listener.
+                                        enum:
+                                        - TCP
+                                        - HTTP
+                                        - HTTPS
+                                        type: string
+                                      thresholdCount:
+                                        description: |-
+                                          The number of consecutive health check successes required before considering
+                                          a target healthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                      timeoutSeconds:
+                                        description: |-
+                                          The amount of time, in seconds, during which no response from a target means
+                                          a failed health check.
+                                        format: int64
+                                        maximum: 120
+                                        minimum: 2
+                                        type: integer
+                                      unhealthyThresholdCount:
+                                        description: |-
+                                          The number of consecutive health check failures required before considering
+                                          a target unhealthy.
+                                        format: int64
+                                        maximum: 10
+                                        minimum: 2
+                                        type: integer
+                                    type: object
                                   port:
                                     description: Port sets the port for the additional
                                       listener.
@@ -11884,6 +12435,43 @@ objects:
                                 DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                                 file of each instance. This is by default, false.
                               type: boolean
+                            healthCheck:
+                              description: HealthCheck sets custom health check configuration
+                                to the API target group.
+                              properties:
+                                intervalSeconds:
+                                  description: |-
+                                    The approximate amount of time, in seconds, between health checks of an individual
+                                    target.
+                                  format: int64
+                                  maximum: 300
+                                  minimum: 5
+                                  type: integer
+                                thresholdCount:
+                                  description: |-
+                                    The number of consecutive health check successes required before considering
+                                    a target healthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                                timeoutSeconds:
+                                  description: |-
+                                    The amount of time, in seconds, during which no response from a target means
+                                    a failed health check.
+                                  format: int64
+                                  maximum: 120
+                                  minimum: 2
+                                  type: integer
+                                unhealthyThresholdCount:
+                                  description: |-
+                                    The number of consecutive health check failures required before considering
+                                    a target unhealthy.
+                                  format: int64
+                                  maximum: 10
+                                  minimum: 2
+                                  type: integer
+                              type: object
                             healthCheckProtocol:
                               description: |-
                                 HealthCheckProtocol sets the protocol type for ELB health check target
@@ -14270,6 +14858,47 @@ objects:
                   description: Ignition defined options related to the bootstrapping
                     systems where Ignition is used.
                   properties:
+                    proxy:
+                      description: |-
+                        Proxy defines proxy settings for Ignition.
+                        Only valid for Ignition versions 3.1 and above.
+                      properties:
+                        httpProxy:
+                          description: |-
+                            HTTPProxy is the HTTP proxy to use for Ignition.
+                            A single URL that specifies the proxy server to use for HTTP and HTTPS requests,
+                            unless overridden by the HTTPSProxy or NoProxy options.
+                          type: string
+                        httpsProxy:
+                          description: |-
+                            HTTPSProxy is the HTTPS proxy to use for Ignition.
+                            A single URL that specifies the proxy server to use for HTTPS requests,
+                            unless overridden by the NoProxy option.
+                          type: string
+                        noProxy:
+                          description: |-
+                            NoProxy is the list of domains to not proxy for Ignition.
+                            Specifies a list of strings to hosts that should be excluded from proxying.
+
+
+                            Each value is represented by:
+                            - An IP address prefix (1.2.3.4)
+                            - An IP address prefix in CIDR notation (1.2.3.4/8)
+                            - A domain name
+                              - A domain name matches that name and all subdomains
+                              - A domain name with a leading . matches subdomains only
+                            - A special DNS label (*), indicates that no proxying should be done
+
+
+                            An IP address prefix and domain name can also include a literal port number (1.2.3.4:80).
+                          items:
+                            description: IgnitionNoProxy defines the list of domains
+                              to not proxy for Ignition.
+                            maxLength: 2048
+                            type: string
+                          maxItems: 64
+                          type: array
+                      type: object
                     storageType:
                       default: ClusterObjectStore
                       description: |-
@@ -14294,6 +14923,24 @@ objects:
                       - ClusterObjectStore
                       - UnencryptedUserData
                       type: string
+                    tls:
+                      description: |-
+                        TLS defines TLS settings for Ignition.
+                        Only valid for Ignition versions 3.1 and above.
+                      properties:
+                        certificateAuthorities:
+                          description: |-
+                            CASources defines the list of certificate authorities to use for Ignition.
+                            The value is the certificate bundle (in PEM format). The bundle can contain multiple concatenated certificates.
+                            Supported schemes are http, https, tftp, s3, arn, gs, and `data` (RFC 2397) URL scheme.
+                          items:
+                            description: IgnitionCASource defines the source of the
+                              certificate authority to use for Ignition.
+                            maxLength: 65536
+                            type: string
+                          maxItems: 64
+                          type: array
+                      type: object
                     version:
                       default: "2.3"
                       description: Version defines which version of Ignition will
@@ -14463,6 +15110,15 @@ objects:
                   description: PlacementGroupName specifies the name of the placement
                     group in which to launch the instance.
                   type: string
+                placementGroupPartition:
+                  description: |-
+                    PlacementGroupPartition is the partition number within the placement group in which to launch the instance.
+                    This value is only valid if the placement group, referred in `PlacementGroupName`, was created with
+                    strategy set to partition.
+                  format: int64
+                  maximum: 7
+                  minimum: 1
+                  type: integer
                 privateDnsName:
                   description: PrivateDNSName is the options for the instance hostname.
                   properties:
@@ -15338,6 +15994,47 @@ objects:
                           description: Ignition defined options related to the bootstrapping
                             systems where Ignition is used.
                           properties:
+                            proxy:
+                              description: |-
+                                Proxy defines proxy settings for Ignition.
+                                Only valid for Ignition versions 3.1 and above.
+                              properties:
+                                httpProxy:
+                                  description: |-
+                                    HTTPProxy is the HTTP proxy to use for Ignition.
+                                    A single URL that specifies the proxy server to use for HTTP and HTTPS requests,
+                                    unless overridden by the HTTPSProxy or NoProxy options.
+                                  type: string
+                                httpsProxy:
+                                  description: |-
+                                    HTTPSProxy is the HTTPS proxy to use for Ignition.
+                                    A single URL that specifies the proxy server to use for HTTPS requests,
+                                    unless overridden by the NoProxy option.
+                                  type: string
+                                noProxy:
+                                  description: |-
+                                    NoProxy is the list of domains to not proxy for Ignition.
+                                    Specifies a list of strings to hosts that should be excluded from proxying.
+
+
+                                    Each value is represented by:
+                                    - An IP address prefix (1.2.3.4)
+                                    - An IP address prefix in CIDR notation (1.2.3.4/8)
+                                    - A domain name
+                                      - A domain name matches that name and all subdomains
+                                      - A domain name with a leading . matches subdomains only
+                                    - A special DNS label (*), indicates that no proxying should be done
+
+
+                                    An IP address prefix and domain name can also include a literal port number (1.2.3.4:80).
+                                  items:
+                                    description: IgnitionNoProxy defines the list
+                                      of domains to not proxy for Ignition.
+                                    maxLength: 2048
+                                    type: string
+                                  maxItems: 64
+                                  type: array
+                              type: object
                             storageType:
                               default: ClusterObjectStore
                               description: |-
@@ -15362,6 +16059,24 @@ objects:
                               - ClusterObjectStore
                               - UnencryptedUserData
                               type: string
+                            tls:
+                              description: |-
+                                TLS defines TLS settings for Ignition.
+                                Only valid for Ignition versions 3.1 and above.
+                              properties:
+                                certificateAuthorities:
+                                  description: |-
+                                    CASources defines the list of certificate authorities to use for Ignition.
+                                    The value is the certificate bundle (in PEM format). The bundle can contain multiple concatenated certificates.
+                                    Supported schemes are http, https, tftp, s3, arn, gs, and `data` (RFC 2397) URL scheme.
+                                  items:
+                                    description: IgnitionCASource defines the source
+                                      of the certificate authority to use for Ignition.
+                                    maxLength: 65536
+                                    type: string
+                                  maxItems: 64
+                                  type: array
+                              type: object
                             version:
                               default: "2.3"
                               description: Version defines which version of Ignition
@@ -15533,6 +16248,15 @@ objects:
                           description: PlacementGroupName specifies the name of the
                             placement group in which to launch the instance.
                           type: string
+                        placementGroupPartition:
+                          description: |-
+                            PlacementGroupPartition is the partition number within the placement group in which to launch the instance.
+                            This value is only valid if the placement group, referred in `PlacementGroupName`, was created with
+                            strategy set to partition.
+                          format: int64
+                          maximum: 7
+                          minimum: 1
+                          type: integer
                         privateDnsName:
                           description: PrivateDNSName is the options for the instance
                             hostname.
@@ -16940,6 +17664,7 @@ objects:
       name: v1beta2
       schema:
         openAPIV3Schema:
+          description: ROSACluster is the Schema for the ROSAClusters API.
           properties:
             apiVersion:
               description: |-
@@ -16959,6 +17684,7 @@ objects:
             metadata:
               type: object
             spec:
+              description: ROSAClusterSpec defines the desired state of ROSACluster.
               properties:
                 controlPlaneEndpoint:
                   description: ControlPlaneEndpoint represents the endpoint used to
@@ -16977,7 +17703,7 @@ objects:
                   type: object
               type: object
             status:
-              description: ROSAClusterStatus defines the observed state of ROSACluster
+              description: ROSAClusterStatus defines the observed state of ROSACluster.
               properties:
                 failureDomains:
                   additionalProperties:
@@ -17069,6 +17795,19 @@ objects:
             spec:
               description: RosaMachinePoolSpec defines the desired state of RosaMachinePool.
               properties:
+                additionalSecurityGroups:
+                  description: |-
+                    AdditionalSecurityGroups is an optional set of security groups to associate
+                    with all node instances of the machine pool.
+                  items:
+                    type: string
+                  type: array
+                additionalTags:
+                  additionalProperties:
+                    type: string
+                  description: AdditionalTags are user-defined tags to be added on
+                    the underlying EC2 instances associated with this machine pool.
+                  type: object
                 autoRepair:
                   default: false
                   description: |-
@@ -17100,6 +17839,16 @@ objects:
                     type: string
                   description: Labels specifies labels for the Kubernetes node objects
                   type: object
+                nodeDrainGracePeriod:
+                  description: |-
+                    NodeDrainGracePeriod is grace period for how long Pod Disruption Budget-protected workloads will be
+                    respected during upgrades. After this grace period, any workloads protected by Pod Disruption
+                    Budgets that have not been successfully drained from a node will be forcibly evicted.
+
+
+                    Valid values are from 0 to 1 week(10080m|168h) .
+                    0 or empty value means that the MachinePool can be drained without any time limitation.
+                  type: string
                 nodePoolName:
                   description: |-
                     NodePoolName specifies the name of the nodepool in Rosa
@@ -17118,15 +17867,50 @@ objects:
                   type: array
                 subnet:
                   type: string
+                  x-kubernetes-validations:
+                  - message: subnet is immutable
+                    rule: self == oldSelf
+                taints:
+                  description: Taints specifies the taints to apply to the nodes of
+                    the machine pool
+                  items:
+                    description: RosaTaint represents a taint to be applied to a node.
+                    properties:
+                      effect:
+                        description: |-
+                          The effect of the taint on pods that do not tolerate the taint.
+                          Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                        enum:
+                        - NoSchedule
+                        - PreferNoSchedule
+                        - NoExecute
+                        type: string
+                      key:
+                        description: The taint key to be applied to a node.
+                        type: string
+                      value:
+                        description: The taint value corresponding to the taint key.
+                        pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                        type: string
+                    required:
+                    - effect
+                    - key
+                    type: object
+                  type: array
+                tuningConfigs:
+                  description: |-
+                    TuningConfigs specifies the names of the tuning configs to be applied to this MachinePool.
+                    Tuning configs must already exist.
+                  items:
+                    type: string
+                  type: array
                 version:
                   description: |-
-                    Version specifies the penshift version of the nodes associated with this machinepool.
+                    Version specifies the OpenShift version of the nodes associated with this machinepool.
                     ROSAControlPlane version is used if not set.
                   type: string
-                  x-kubernetes-validations:
-                  - message: version must be a valid semantic version
-                    rule: self.matches('^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$')
               required:
+              - instanceType
               - nodePoolName
               type: object
             status:
@@ -17237,7 +18021,7 @@ objects:
     scope: Namespaced
     versions:
     - additionalPrinterColumns:
-      - description: Type of Azure Identity
+      - description: Type of AzureClusterIdentity
         jsonPath: .spec.type
         name: Type
         type: string
@@ -17761,6 +18545,7 @@ objects:
                               - node
                               - control-plane
                               - bastion
+                              - all
                               type: string
                             routeTable:
                               description: RouteTable defines the route table that
@@ -18510,6 +19295,7 @@ objects:
                             - node
                             - control-plane
                             - bastion
+                            - all
                             type: string
                           routeTable:
                             description: RouteTable defines the route table that should
@@ -19120,6 +19906,7 @@ objects:
                                       - node
                                       - control-plane
                                       - bastion
+                                      - all
                                       type: string
                                     securityGroup:
                                       description: SecurityGroup defines the NSG (network
@@ -19620,6 +20407,7 @@ objects:
                                     - node
                                     - control-plane
                                     - bastion
+                                    - all
                                     type: string
                                   securityGroup:
                                     description: SecurityGroup defines the NSG (network
@@ -19898,8 +20686,16 @@ objects:
     scope: Namespaced
     versions:
     - additionalPrinterColumns:
+      - description: Cluster to which this AzureMachine belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        priority: 1
+        type: string
       - jsonPath: .status.conditions[?(@.type=='Ready')].status
         name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+        name: Severity
         type: string
       - jsonPath: .status.conditions[?(@.type=='Ready')].reason
         name: Reason
@@ -19911,11 +20707,6 @@ objects:
       - description: Azure VM provisioning state
         jsonPath: .status.vmState
         name: State
-        type: string
-      - description: Cluster to which this AzureMachine belongs
-        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
-        name: Cluster
-        priority: 1
         type: string
       - description: Machine object to which this AzureMachine belongs
         jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name
@@ -19988,6 +20779,11 @@ objects:
                   description: AllocatePublicIP allows the ability to create dynamic
                     public ips for machines where this value is true.
                   type: boolean
+                capacityReservationGroupID:
+                  description: |-
+                    CapacityReservationGroupID specifies the capacity reservation group resource id that should be
+                    used for allocating the virtual machine.
+                  type: string
                 dataDisks:
                   description: DataDisk specifies the parameters that are used to
                     add one or more data disks to the machine
@@ -20869,6 +21665,11 @@ objects:
                           description: AllocatePublicIP allows the ability to create
                             dynamic public ips for machines where this value is true.
                           type: boolean
+                        capacityReservationGroupID:
+                          description: |-
+                            CapacityReservationGroupID specifies the capacity reservation group resource id that should be
+                            used for allocating the virtual machine.
+                          type: string
                         dataDisks:
                           description: DataDisk specifies the parameters that are
                             used to add one or more data disks to the machine
@@ -21501,7 +22302,19 @@ objects:
       singular: azuremanagedcluster
     scope: Namespaced
     versions:
-    - name: v1beta1
+    - additionalPrinterColumns:
+      - description: Cluster to which this AzureManagedCluster belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - jsonPath: .status.ready
+        name: Ready
+        type: string
+      - description: Time duration since creation of this AzureManagedCluster
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: AzureManagedCluster is the Schema for the azuremanagedclusters
@@ -21531,6 +22344,8 @@ objects:
                   description: |-
                     ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
                     Immutable, populated by the AKS API at create.
+                    Because this field is programmatically set by CAPZ after resource creation, we define it as +optional
+                    in the API schema to permit resource admission.
                   properties:
                     host:
                       description: The hostname on which the API server is serving.
@@ -21653,7 +22468,29 @@ objects:
       singular: azuremanagedcontrolplane
     scope: Namespaced
     versions:
-    - name: v1beta1
+    - additionalPrinterColumns:
+      - description: Cluster to which this AzureManagedControlPlane belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+        name: Severity
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+        name: Reason
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].message
+        name: Message
+        priority: 1
+        type: string
+      - description: Time duration since creation of this AzureManagedControlPlane
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: AzureManagedControlPlane is the Schema for the azuremanagedcontrolplanes
@@ -21748,9 +22585,29 @@ objects:
                     privateDNSZone:
                       description: PrivateDNSZone enables private dns zone mode for
                         private cluster.
+                      type: string
+                  type: object
+                asoManagedClusterPatches:
+                  description: |-
+                    ASOManagedClusterPatches defines JSON merge patches to be applied to the generated ASO ManagedCluster resource.
+                    WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                    otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                    operation is possible.
+                  items:
+                    type: string
+                  type: array
+                autoUpgradeProfile:
+                  description: AutoUpgradeProfile defines the auto upgrade configuration.
+                  properties:
+                    upgradeChannel:
+                      description: UpgradeChannel determines the type of upgrade channel
+                        for automatically upgrading the cluster.
                       enum:
-                      - System
-                      - None
+                      - node-image
+                      - none
+                      - patch
+                      - rapid
+                      - stable
                       type: string
                   type: object
                 autoscalerProfile:
@@ -21913,6 +22770,114 @@ objects:
                     It must be within the Kubernetes service address range specified in serviceCidr.
                     Immutable.
                   type: string
+                enablePreviewFeatures:
+                  description: EnablePreviewFeatures enables preview features for
+                    the cluster.
+                  type: boolean
+                extensions:
+                  description: Extensions is a list of AKS extensions to be installed
+                    on the cluster.
+                  items:
+                    description: |-
+                      AKSExtension represents the configuration for an AKS cluster extension.
+                      See also [AKS doc].
+
+
+                      [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/cluster-extensions
+                    properties:
+                      aksAssignedIdentityType:
+                        description: AKSAssignedIdentityType is the type of the AKS
+                          assigned identity.
+                        enum:
+                        - SystemAssigned
+                        - UserAssigned
+                        type: string
+                      autoUpgradeMinorVersion:
+                        default: true
+                        description: AutoUpgradeMinorVersion is a flag to note if
+                          this extension participates in auto upgrade of minor version,
+                          or not.
+                        type: boolean
+                      configurationSettings:
+                        additionalProperties:
+                          type: string
+                        description: ConfigurationSettings are the name-value pairs
+                          for configuring this extension.
+                        type: object
+                      extensionType:
+                        description: |-
+                          ExtensionType is the type of the Extension of which this resource is an instance.
+                          It must be one of the Extension Types registered with Microsoft.KubernetesConfiguration by the Extension publisher.
+                        type: string
+                      identity:
+                        description: Identity is the identity type of the Extension
+                          resource in an AKS cluster.
+                        enum:
+                        - SystemAssigned
+                        type: string
+                      name:
+                        description: Name is the name of the extension.
+                        type: string
+                      plan:
+                        description: Plan is the plan of the extension.
+                        properties:
+                          name:
+                            description: Name is the user-defined name of the 3rd
+                              Party Artifact that is being procured.
+                            type: string
+                          product:
+                            description: Product is the name of the 3rd Party artifact
+                              that is being procured.
+                            type: string
+                          promotionCode:
+                            description: PromotionCode is a publisher-provided promotion
+                              code as provisioned in Data Market for the said product/artifact.
+                            type: string
+                          publisher:
+                            description: Publisher is the name of the publisher of
+                              the 3rd Party Artifact that is being bought.
+                            type: string
+                          version:
+                            description: Version is the version of the plan.
+                            type: string
+                        type: object
+                      releaseTrain:
+                        description: |-
+                          ReleaseTrain is the release train this extension participates in for auto-upgrade (e.g. Stable, Preview, etc.)
+                          This is only used if autoUpgradeMinorVersion is ‘true’.
+                        type: string
+                      scope:
+                        description: Scope is the scope at which this extension is
+                          enabled.
+                        properties:
+                          releaseNamespace:
+                            description: |-
+                              ReleaseNamespace is the namespace where the extension Release must be placed, for a Cluster-scoped extension.
+                              Required for Cluster-scoped extensions.
+                            type: string
+                          scopeType:
+                            description: ScopeType is the scope of the extension.
+                              It can be either Cluster or Namespace, but not both.
+                            enum:
+                            - Cluster
+                            - Namespace
+                            type: string
+                          targetNamespace:
+                            description: |-
+                              TargetNamespace is the namespace where the extension will be created for a Namespace-scoped extension.
+                              Required for Namespace-scoped extensions.
+                            type: string
+                        required:
+                        - scopeType
+                        type: object
+                      version:
+                        description: Version is the version of the extension.
+                        type: string
+                    required:
+                    - extensionType
+                    - name
+                    type: object
+                  type: array
                 fleetsMember:
                   description: |-
                     FleetsMember is the spec for the fleet this cluster is a member of.
@@ -22079,6 +23044,13 @@ objects:
                     For the AzureManagedControlPlaneTemplate, this field is used
                     only to fulfill the CAPI contract.
                   type: object
+                networkDataplane:
+                  description: NetworkDataplane is the dataplane used for building
+                    the Kubernetes network.
+                  enum:
+                  - azure
+                  - cilium
+                  type: string
                 networkPlugin:
                   description: NetworkPlugin used for building Kubernetes network.
                   enum:
@@ -22098,6 +23070,7 @@ objects:
                   enum:
                   - azure
                   - calico
+                  - cilium
                   type: string
                 nodeResourceGroupName:
                   description: |-
@@ -22127,6 +23100,89 @@ objects:
                     ResourceGroupName is the name of the Azure resource group for this AKS Cluster.
                     Immutable.
                   type: string
+                securityProfile:
+                  description: SecurityProfile defines the security profile for cluster.
+                  properties:
+                    azureKeyVaultKms:
+                      description: AzureKeyVaultKms defines Azure Key Vault Management
+                        Services Profile for the security profile.
+                      properties:
+                        enabled:
+                          description: Enabled enables the Azure Key Vault key management
+                            service. The default is false.
+                          type: boolean
+                        keyID:
+                          description: |-
+                            KeyID defines the Identifier of Azure Key Vault key.
+                            When Azure Key Vault key management service is enabled, this field is required and must be a valid key identifier.
+                          type: string
+                        keyVaultNetworkAccess:
+                          default: Public
+                          description: |-
+                            KeyVaultNetworkAccess defines the network access of key vault.
+                            The possible values are Public and Private.
+                            Public means the key vault allows public access from all networks.
+                            Private means the key vault disables public access and enables private link. The default value is Public.
+                          type: string
+                        keyVaultResourceID:
+                          description: KeyVaultResourceID is the Resource ID of key
+                            vault. When keyVaultNetworkAccess is Private, this field
+                            is required and must be a valid resource ID.
+                          type: string
+                      required:
+                      - enabled
+                      - keyID
+                      type: object
+                    defender:
+                      description: Defender settings for the security profile.
+                      properties:
+                        logAnalyticsWorkspaceResourceID:
+                          description: |-
+                            LogAnalyticsWorkspaceResourceID is the ID of the Log Analytics workspace that has to be associated with Microsoft Defender.
+                            When Microsoft Defender is enabled, this field is required and must be a valid workspace resource ID.
+                          type: string
+                        securityMonitoring:
+                          description: SecurityMonitoring profile defines the Microsoft
+                            Defender threat detection for Cloud settings for the security
+                            profile.
+                          properties:
+                            enabled:
+                              description: Enabled enables Defender threat detection
+                              type: boolean
+                          required:
+                          - enabled
+                          type: object
+                      required:
+                      - logAnalyticsWorkspaceResourceID
+                      - securityMonitoring
+                      type: object
+                    imageCleaner:
+                      description: ImageCleaner settings for the security profile.
+                      properties:
+                        enabled:
+                          description: Enabled enables the Image Cleaner on AKS cluster.
+                          type: boolean
+                        intervalHours:
+                          description: IntervalHours defines Image Cleaner scanning
+                            interval in hours. Default value is 24 hours.
+                          maximum: 2160
+                          minimum: 24
+                          type: integer
+                      required:
+                      - enabled
+                      type: object
+                    workloadIdentity:
+                      description: Workloadidentity enables Kubernetes applications
+                        to access Azure cloud resources securely with Azure AD. Ensure
+                        to enable OIDC issuer while enabling Workload Identity
+                      properties:
+                        enabled:
+                          description: Enabled enables the workload identity.
+                          type: boolean
+                      required:
+                      - enabled
+                      type: object
+                  type: object
                 sku:
                   description: SKU is the SKU of the AKS to be provisioned.
                   properties:
@@ -22161,6 +23217,7 @@ objects:
                     cidrBlock:
                       type: string
                     name:
+                      description: Name is the name of the virtual network.
                       type: string
                     resourceGroup:
                       description: ResourceGroup is the name of the Azure resource
@@ -22293,6 +23350,11 @@ objects:
               description: AzureManagedControlPlaneStatus defines the observed state
                 of AzureManagedControlPlane.
               properties:
+                autoUpgradeVersion:
+                  description: AutoUpgradeVersion is the Kubernetes version populated
+                    after auto-upgrade based on the upgrade channel.
+                  minLength: 2
+                  type: string
                 conditions:
                   description: Conditions defines current service state of the AzureManagedControlPlane.
                   items:
@@ -22538,9 +23600,30 @@ objects:
                             privateDNSZone:
                               description: PrivateDNSZone enables private dns zone
                                 mode for private cluster.
+                              type: string
+                          type: object
+                        asoManagedClusterPatches:
+                          description: |-
+                            ASOManagedClusterPatches defines JSON merge patches to be applied to the generated ASO ManagedCluster resource.
+                            WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                            otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                            operation is possible.
+                          items:
+                            type: string
+                          type: array
+                        autoUpgradeProfile:
+                          description: AutoUpgradeProfile defines the auto upgrade
+                            configuration.
+                          properties:
+                            upgradeChannel:
+                              description: UpgradeChannel determines the type of upgrade
+                                channel for automatically upgrading the cluster.
                               enum:
-                              - System
-                              - None
+                              - node-image
+                              - none
+                              - patch
+                              - rapid
+                              - stable
                               type: string
                           type: object
                         autoscalerProfile:
@@ -22688,6 +23771,116 @@ objects:
                             It must be within the Kubernetes service address range specified in serviceCidr.
                             Immutable.
                           type: string
+                        enablePreviewFeatures:
+                          description: EnablePreviewFeatures enables preview features
+                            for the cluster.
+                          type: boolean
+                        extensions:
+                          description: Extensions is a list of AKS extensions to be
+                            installed on the cluster.
+                          items:
+                            description: |-
+                              AKSExtension represents the configuration for an AKS cluster extension.
+                              See also [AKS doc].
+
+
+                              [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/cluster-extensions
+                            properties:
+                              aksAssignedIdentityType:
+                                description: AKSAssignedIdentityType is the type of
+                                  the AKS assigned identity.
+                                enum:
+                                - SystemAssigned
+                                - UserAssigned
+                                type: string
+                              autoUpgradeMinorVersion:
+                                default: true
+                                description: AutoUpgradeMinorVersion is a flag to
+                                  note if this extension participates in auto upgrade
+                                  of minor version, or not.
+                                type: boolean
+                              configurationSettings:
+                                additionalProperties:
+                                  type: string
+                                description: ConfigurationSettings are the name-value
+                                  pairs for configuring this extension.
+                                type: object
+                              extensionType:
+                                description: |-
+                                  ExtensionType is the type of the Extension of which this resource is an instance.
+                                  It must be one of the Extension Types registered with Microsoft.KubernetesConfiguration by the Extension publisher.
+                                type: string
+                              identity:
+                                description: Identity is the identity type of the
+                                  Extension resource in an AKS cluster.
+                                enum:
+                                - SystemAssigned
+                                type: string
+                              name:
+                                description: Name is the name of the extension.
+                                type: string
+                              plan:
+                                description: Plan is the plan of the extension.
+                                properties:
+                                  name:
+                                    description: Name is the user-defined name of
+                                      the 3rd Party Artifact that is being procured.
+                                    type: string
+                                  product:
+                                    description: Product is the name of the 3rd Party
+                                      artifact that is being procured.
+                                    type: string
+                                  promotionCode:
+                                    description: PromotionCode is a publisher-provided
+                                      promotion code as provisioned in Data Market
+                                      for the said product/artifact.
+                                    type: string
+                                  publisher:
+                                    description: Publisher is the name of the publisher
+                                      of the 3rd Party Artifact that is being bought.
+                                    type: string
+                                  version:
+                                    description: Version is the version of the plan.
+                                    type: string
+                                type: object
+                              releaseTrain:
+                                description: |-
+                                  ReleaseTrain is the release train this extension participates in for auto-upgrade (e.g. Stable, Preview, etc.)
+                                  This is only used if autoUpgradeMinorVersion is ‘true’.
+                                type: string
+                              scope:
+                                description: Scope is the scope at which this extension
+                                  is enabled.
+                                properties:
+                                  releaseNamespace:
+                                    description: |-
+                                      ReleaseNamespace is the namespace where the extension Release must be placed, for a Cluster-scoped extension.
+                                      Required for Cluster-scoped extensions.
+                                    type: string
+                                  scopeType:
+                                    description: ScopeType is the scope of the extension.
+                                      It can be either Cluster or Namespace, but not
+                                      both.
+                                    enum:
+                                    - Cluster
+                                    - Namespace
+                                    type: string
+                                  targetNamespace:
+                                    description: |-
+                                      TargetNamespace is the namespace where the extension will be created for a Namespace-scoped extension.
+                                      Required for Namespace-scoped extensions.
+                                    type: string
+                                required:
+                                - scopeType
+                                type: object
+                              version:
+                                description: Version is the version of the extension.
+                                type: string
+                            required:
+                            - extensionType
+                            - name
+                            type: object
+                          type: array
                         fleetsMember:
                           description: |-
                             FleetsMember is the spec for the fleet this cluster is a member of.
@@ -22854,6 +24047,13 @@ objects:
                             For the AzureManagedControlPlaneTemplate, this field is used
                             only to fulfill the CAPI contract.
                           type: object
+                        networkDataplane:
+                          description: NetworkDataplane is the dataplane used for
+                            building the Kubernetes network.
+                          enum:
+                          - azure
+                          - cilium
+                          type: string
                         networkPlugin:
                           description: NetworkPlugin used for building Kubernetes
                             network.
@@ -22875,6 +24075,7 @@ objects:
                           enum:
                           - azure
                           - calico
+                          - cilium
                           type: string
                         oidcIssuerProfile:
                           description: OIDCIssuerProfile is the OIDC issuer profile
@@ -22892,6 +24093,101 @@ objects:
                           - userAssignedNATGateway
                           - userDefinedRouting
                           type: string
+                        resourceGroupName:
+                          description: |-
+                            ResourceGroupName is the name of the Azure resource group for this AKS Cluster.
+                            Immutable.
+                          type: string
+                        securityProfile:
+                          description: SecurityProfile defines the security profile
+                            for cluster.
+                          properties:
+                            azureKeyVaultKms:
+                              description: AzureKeyVaultKms defines Azure Key Vault
+                                Management Services Profile for the security profile.
+                              properties:
+                                enabled:
+                                  description: Enabled enables the Azure Key Vault
+                                    key management service. The default is false.
+                                  type: boolean
+                                keyID:
+                                  description: |-
+                                    KeyID defines the Identifier of Azure Key Vault key.
+                                    When Azure Key Vault key management service is enabled, this field is required and must be a valid key identifier.
+                                  type: string
+                                keyVaultNetworkAccess:
+                                  default: Public
+                                  description: |-
+                                    KeyVaultNetworkAccess defines the network access of key vault.
+                                    The possible values are Public and Private.
+                                    Public means the key vault allows public access from all networks.
+                                    Private means the key vault disables public access and enables private link. The default value is Public.
+                                  type: string
+                                keyVaultResourceID:
+                                  description: KeyVaultResourceID is the Resource
+                                    ID of key vault. When keyVaultNetworkAccess is
+                                    Private, this field is required and must be a
+                                    valid resource ID.
+                                  type: string
+                              required:
+                              - enabled
+                              - keyID
+                              type: object
+                            defender:
+                              description: Defender settings for the security profile.
+                              properties:
+                                logAnalyticsWorkspaceResourceID:
+                                  description: |-
+                                    LogAnalyticsWorkspaceResourceID is the ID of the Log Analytics workspace that has to be associated with Microsoft Defender.
+                                    When Microsoft Defender is enabled, this field is required and must be a valid workspace resource ID.
+                                  type: string
+                                securityMonitoring:
+                                  description: SecurityMonitoring profile defines
+                                    the Microsoft Defender threat detection for Cloud
+                                    settings for the security profile.
+                                  properties:
+                                    enabled:
+                                      description: Enabled enables Defender threat
+                                        detection
+                                      type: boolean
+                                  required:
+                                  - enabled
+                                  type: object
+                              required:
+                              - logAnalyticsWorkspaceResourceID
+                              - securityMonitoring
+                              type: object
+                            imageCleaner:
+                              description: ImageCleaner settings for the security
+                                profile.
+                              properties:
+                                enabled:
+                                  description: Enabled enables the Image Cleaner on
+                                    AKS cluster.
+                                  type: boolean
+                                intervalHours:
+                                  description: IntervalHours defines Image Cleaner
+                                    scanning interval in hours. Default value is 24
+                                    hours.
+                                  maximum: 2160
+                                  minimum: 24
+                                  type: integer
+                              required:
+                              - enabled
+                              type: object
+                            workloadIdentity:
+                              description: Workloadidentity enables Kubernetes applications
+                                to access Azure cloud resources securely with Azure
+                                AD. Ensure to enable OIDC issuer while enabling Workload
+                                Identity
+                              properties:
+                                enabled:
+                                  description: Enabled enables the workload identity.
+                                  type: boolean
+                              required:
+                              - enabled
+                              type: object
+                          type: object
                         sku:
                           description: SKU is the SKU of the AKS to be provisioned.
                           properties:
@@ -22921,6 +24217,7 @@ objects:
                             cidrBlock:
                               type: string
                             name:
+                              description: Name is the name of the virtual network.
                               type: string
                             resourceGroup:
                               description: ResourceGroup is the name of the Azure
@@ -23050,6 +24347,7 @@ objects:
                       required:
                       - identityRef
                       - location
+                      - resourceGroupName
                       - version
                       type: object
                   required:
@@ -23088,6 +24386,27 @@ objects:
     scope: Namespaced
     versions:
     - additionalPrinterColumns:
+      - description: Cluster to which this AzureManagedMachinePool belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].severity
+        name: Severity
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+        name: Reason
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].message
+        name: Message
+        priority: 1
+        type: string
+      - description: Time duration since creation of this AzureManagedMachinePool
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
       - jsonPath: .spec.mode
         name: Mode
         type: string
@@ -23125,6 +24444,15 @@ objects:
                     AdditionalTags is an optional set of tags to add to Azure resources managed by the
                     Azure provider, in addition to the ones added by default.
                   type: object
+                asoManagedClustersAgentPoolPatches:
+                  description: |-
+                    ASOManagedClustersAgentPoolPatches defines JSON merge patches to be applied to the generated ASO ManagedClustersAgentPool resource.
+                    WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                    otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                    operation is possible.
+                  items:
+                    type: string
+                  type: array
                 availabilityZones:
                   description: |-
                     AvailabilityZones - Availability zones for nodes. Must use VirtualMachineScaleSets AgentPoolType.
@@ -23852,6 +25180,15 @@ objects:
                             AdditionalTags is an optional set of tags to add to Azure resources managed by the
                             Azure provider, in addition to the ones added by default.
                           type: object
+                        asoManagedClustersAgentPoolPatches:
+                          description: |-
+                            ASOManagedClustersAgentPoolPatches defines JSON merge patches to be applied to the generated ASO ManagedClustersAgentPool resource.
+                            WARNING: This is meant to be used sparingly to enable features for development and testing that are not
+                            otherwise represented in the CAPZ API. Misconfiguration that conflicts with CAPZ's normal mode of
+                            operation is possible.
+                          items:
+                            type: string
+                          type: array
                         availabilityZones:
                           description: |-
                             AvailabilityZones - Availability zones for nodes. Must use VirtualMachineScaleSets AgentPoolType.
@@ -39980,10 +41317,10 @@ objects:
                   - image
                   type: object
                 controllerAvailabilityPolicy:
-                  default: SingleReplica
+                  default: HighlyAvailable
                   description: |-
                     ControllerAvailabilityPolicy specifies the availability policy applied to
-                    critical control plane components. The default value is SingleReplica.
+                    critical control plane components. The default value is HighlyAvailable.
                   type: string
                 dns:
                   description: DNS specifies DNS configuration for the cluster.
@@ -40816,26 +42153,23 @@ objects:
                           type: string
                         resourceGroup:
                           type: string
-                        securityGroupName:
+                        securityGroupID:
                           type: string
-                        subnetName:
+                        subnetID:
                           type: string
                         subscriptionID:
                           type: string
                         vnetID:
-                          type: string
-                        vnetName:
                           type: string
                       required:
                       - credentials
                       - location
                       - machineIdentityID
                       - resourceGroup
-                      - securityGroupName
-                      - subnetName
+                      - securityGroupID
+                      - subnetID
                       - subscriptionID
                       - vnetID
-                      - vnetName
                       type: object
                     ibmcloud:
                       description: IBMCloud defines IBMCloud specific settings for
@@ -40948,6 +42282,10 @@ objects:
                                     storageclass will be present for the corresponding guest clusters storageclass.
                                   items:
                                     properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
                                       guestStorageClassName:
                                         description: |-
                                           GuestStorageClassName is the name that the corresponding storageclass will
@@ -40956,7 +42294,7 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
                                     required:
                                     - guestStorageClassName
@@ -40965,6 +42303,31 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:
@@ -41340,27 +42703,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
@@ -41581,6 +42972,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - networking
               - platform
@@ -44391,10 +45787,10 @@ objects:
                   - image
                   type: object
                 controllerAvailabilityPolicy:
-                  default: SingleReplica
+                  default: HighlyAvailable
                   description: |-
                     ControllerAvailabilityPolicy specifies the availability policy applied to
-                    critical control plane components. The default value is SingleReplica.
+                    critical control plane components. The default value is HighlyAvailable.
                   type: string
                 dns:
                   description: DNS specifies DNS configuration for the cluster.
@@ -45120,18 +46516,19 @@ objects:
                       properties:
                         cloud:
                           default: AzurePublicCloud
-                          description: 'The cloud environment identifier, valid values
-                            could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
+                          description: 'Cloud is the cloud environment identifier,
+                            valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
                           enum:
                           - AzurePublicCloud
                           - AzureUSGovernmentCloud
                           - AzureChinaCloud
                           - AzureGermanCloud
+                          - AzureStackCloud
                           type: string
                         credentials:
                           description: |-
-                            LocalObjectReference contains enough information to let you locate the
-                            referenced object inside the same namespace.
+                            Credentials is the object containing existing Azure credentials needed for creating and managing cloud
+                            infrastructure resources.
                           properties:
                             name:
                               description: |-
@@ -45142,31 +46539,88 @@ objects:
                           type: object
                           x-kubernetes-map-type: atomic
                         location:
+                          description: |-
+                            Location is the Azure region in where all the cloud infrastructure resources will be created.
+
+
+                            Example: eastus
                           type: string
+                          x-kubernetes-validations:
+                          - message: Location is immutable
+                            rule: self == oldSelf
                         machineIdentityID:
+                          description: MachineIdentityID is used as the user-assigned
+                            identity to be assigned to the VMs
                           type: string
                         resourceGroup:
+                          default: default
+                          description: |-
+                            ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+                            Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.
+
+
+                            In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
+
+
+                            Resource group naming requirements can be found here: https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/.
+
+
+                            Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+                                     ResourceGroupName is <resourceGroupName>.
+                          pattern: ^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$
                           type: string
-                        securityGroupName:
+                          x-kubernetes-validations:
+                          - message: ResourceGroupName is immutable
+                            rule: self == oldSelf
+                        securityGroupID:
+                          description: |-
+                            SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
+                            configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
+                            expected to exist under the same subscription as SubscriptionID.
                           type: string
-                        subnetName:
+                          x-kubernetes-validations:
+                          - message: SecurityGroupID is immutable
+                            rule: self == oldSelf
+                        subnetID:
+                          description: |-
+                            SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
+                            subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
+                            same subscription as SubscriptionID.
+
+
+                            In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubnetID is immutable
+                            rule: self == oldSelf
                         subscriptionID:
+                          description: SubscriptionID is a unique identifier for an
+                            Azure subscription used to manage resources.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubscriptionID is immutable
+                            rule: self == oldSelf
                         vnetID:
+                          description: |-
+                            VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+                            other than the one specified in ResourceGroupName, but it must exist under the same subscription as
+                            SubscriptionID.
+
+
+                            In ARO HCP, this will be the ID of the customer provided VNET.
+
+
+                            Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
                           type: string
-                        vnetName:
-                          type: string
+                          x-kubernetes-validations:
+                          - message: VnetID is immutable
+                            rule: self == oldSelf
                       required:
                       - credentials
                       - location
-                      - machineIdentityID
                       - resourceGroup
-                      - securityGroupName
-                      - subnetName
+                      - subnetID
                       - subscriptionID
-                      - vnetID
-                      - vnetName
                       type: object
                     ibmcloud:
                       description: IBMCloud defines IBMCloud specific settings for
@@ -45279,6 +46733,10 @@ objects:
                                     storageclass will be present for the corresponding guest clusters storageclass.
                                   items:
                                     properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
                                       guestStorageClassName:
                                         description: |-
                                           GuestStorageClassName is the name that the corresponding storageclass will
@@ -45287,7 +46745,7 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
                                     required:
                                     - guestStorageClassName
@@ -45296,6 +46754,31 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:
@@ -45654,27 +47137,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
@@ -45895,6 +47406,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - networking
               - platform
@@ -49618,26 +51134,23 @@ objects:
                           type: string
                         resourceGroup:
                           type: string
-                        securityGroupName:
+                        securityGroupID:
                           type: string
-                        subnetName:
+                        subnetID:
                           type: string
                         subscriptionID:
                           type: string
                         vnetID:
-                          type: string
-                        vnetName:
                           type: string
                       required:
                       - credentials
                       - location
                       - machineIdentityID
                       - resourceGroup
-                      - securityGroupName
-                      - subnetName
+                      - securityGroupID
+                      - subnetID
                       - subscriptionID
                       - vnetID
-                      - vnetName
                       type: object
                     ibmcloud:
                       description: IBMCloud defines IBMCloud specific settings for
@@ -49750,6 +51263,10 @@ objects:
                                     storageclass will be present for the corresponding guest clusters storageclass.
                                   items:
                                     properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
                                       guestStorageClassName:
                                         description: |-
                                           GuestStorageClassName is the name that the corresponding storageclass will
@@ -49758,7 +51275,7 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
                                     required:
                                     - guestStorageClassName
@@ -49767,6 +51284,31 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:
@@ -50133,27 +51675,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
@@ -50373,6 +51943,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - dns
               - etcd
@@ -53905,18 +55480,19 @@ objects:
                       properties:
                         cloud:
                           default: AzurePublicCloud
-                          description: 'The cloud environment identifier, valid values
-                            could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
+                          description: 'Cloud is the cloud environment identifier,
+                            valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
                           enum:
                           - AzurePublicCloud
                           - AzureUSGovernmentCloud
                           - AzureChinaCloud
                           - AzureGermanCloud
+                          - AzureStackCloud
                           type: string
                         credentials:
                           description: |-
-                            LocalObjectReference contains enough information to let you locate the
-                            referenced object inside the same namespace.
+                            Credentials is the object containing existing Azure credentials needed for creating and managing cloud
+                            infrastructure resources.
                           properties:
                             name:
                               description: |-
@@ -53927,31 +55503,88 @@ objects:
                           type: object
                           x-kubernetes-map-type: atomic
                         location:
+                          description: |-
+                            Location is the Azure region in where all the cloud infrastructure resources will be created.
+
+
+                            Example: eastus
                           type: string
+                          x-kubernetes-validations:
+                          - message: Location is immutable
+                            rule: self == oldSelf
                         machineIdentityID:
+                          description: MachineIdentityID is used as the user-assigned
+                            identity to be assigned to the VMs
                           type: string
                         resourceGroup:
+                          default: default
+                          description: |-
+                            ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+                            Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.
+
+
+                            In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
+
+
+                            Resource group naming requirements can be found here: https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/.
+
+
+                            Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+                                     ResourceGroupName is <resourceGroupName>.
+                          pattern: ^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$
                           type: string
-                        securityGroupName:
+                          x-kubernetes-validations:
+                          - message: ResourceGroupName is immutable
+                            rule: self == oldSelf
+                        securityGroupID:
+                          description: |-
+                            SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
+                            configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
+                            expected to exist under the same subscription as SubscriptionID.
                           type: string
-                        subnetName:
+                          x-kubernetes-validations:
+                          - message: SecurityGroupID is immutable
+                            rule: self == oldSelf
+                        subnetID:
+                          description: |-
+                            SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
+                            subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
+                            same subscription as SubscriptionID.
+
+
+                            In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubnetID is immutable
+                            rule: self == oldSelf
                         subscriptionID:
+                          description: SubscriptionID is a unique identifier for an
+                            Azure subscription used to manage resources.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubscriptionID is immutable
+                            rule: self == oldSelf
                         vnetID:
+                          description: |-
+                            VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+                            other than the one specified in ResourceGroupName, but it must exist under the same subscription as
+                            SubscriptionID.
+
+
+                            In ARO HCP, this will be the ID of the customer provided VNET.
+
+
+                            Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
                           type: string
-                        vnetName:
-                          type: string
+                          x-kubernetes-validations:
+                          - message: VnetID is immutable
+                            rule: self == oldSelf
                       required:
                       - credentials
                       - location
-                      - machineIdentityID
                       - resourceGroup
-                      - securityGroupName
-                      - subnetName
+                      - subnetID
                       - subscriptionID
-                      - vnetID
-                      - vnetName
                       type: object
                     ibmcloud:
                       description: IBMCloud defines IBMCloud specific settings for
@@ -54064,6 +55697,10 @@ objects:
                                     storageclass will be present for the corresponding guest clusters storageclass.
                                   items:
                                     properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
                                       guestStorageClassName:
                                         description: |-
                                           GuestStorageClassName is the name that the corresponding storageclass will
@@ -54072,7 +55709,7 @@ objects:
                                       infraStorageClassName:
                                         description: |-
                                           InfraStorageClassName is the name of the infra cluster storage class that
-                                          will be exposed into the guest.
+                                          will be exposed to the guest.
                                         type: string
                                     required:
                                     - guestStorageClassName
@@ -54081,6 +55718,31 @@ objects:
                                   type: array
                                   x-kubernetes-validations:
                                   - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                                volumeSnapshotClassMapping:
+                                  items:
+                                    properties:
+                                      group:
+                                        description: Group contains which group this
+                                          mapping belongs to.
+                                        type: string
+                                      guestVolumeSnapshotClassName:
+                                        description: |-
+                                          GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                          be called within the guest cluster
+                                        type: string
+                                      infraVolumeSnapshotClassName:
+                                        description: |-
+                                          InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                          will be exposed to the guest.
+                                        type: string
+                                    required:
+                                    - guestVolumeSnapshotClassName
+                                    - infraVolumeSnapshotClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: volumeSnapshotClassMapping is immutable
                                     rule: self == oldSelf
                               type: object
                               x-kubernetes-validations:
@@ -54425,27 +56087,55 @@ objects:
                             of the Azure KMS Secret Encryption provider using Azure
                             key vault
                           properties:
-                            keyName:
-                              description: KeyName is the name of the keyvault key
-                                used for encrypt/decrypt
-                              type: string
-                            keyVaultName:
+                            activeKey:
+                              description: ActiveKey defines the active key used to
+                                encrypt new secrets
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
+                            backupKey:
                               description: |-
-                                KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-                                `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-                              type: string
-                            keyVersion:
-                              description: KeyVersion contains the version of the
-                                key to use
-                              type: string
-                            location:
-                              description: Location contains the Azure region
-                              type: string
+                                BackupKey defines the old key during the rotation process so previously created
+                                secrets can continue to be decrypted until they are all re-encrypted with the active key.
+                              properties:
+                                keyName:
+                                  description: KeyName is the name of the keyvault
+                                    key used for encrypt/decrypt
+                                  type: string
+                                keyVaultName:
+                                  description: |-
+                                    KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                    Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                    `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion contains the version of
+                                    the key to use
+                                  type: string
+                              required:
+                              - keyName
+                              - keyVaultName
+                              - keyVersion
+                              type: object
                           required:
-                          - keyName
-                          - keyVaultName
-                          - keyVersion
+                          - activeKey
                           type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
@@ -54660,6 +56350,11 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
+                updateService:
+                  description: |-
+                    updateService may be used to specify the preferred upstream update service.
+                    By default it will use the appropriate update service for the cluster and region.
+                  type: string
               required:
               - dns
               - etcd
@@ -55868,7 +57563,7 @@ objects:
                             ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
                             subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
                           type: string
-                        subnetName:
+                        subnetID:
                           default: default
                           description: SubnetName is the name of the subnet to place
                             the Nodes into
@@ -55876,7 +57571,7 @@ objects:
                         vmsize:
                           type: string
                       required:
-                      - subnetName
+                      - subnetID
                       - vmsize
                       type: object
                     ibmcloud:
@@ -56455,11 +58150,11 @@ objects:
                     NodePool (currently only supported on AWS)\nNOTE: This is set
                     as optional to prevent validation from failing due to a limitation
                     on client side validation with open API machinery:\n\thttps://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215\nTODO
-                    Add ppc64le and s390x to enum validation once the architectures
-                    are supported"
+                    Add s390x to enum validation once the architecture is supported"
                   enum:
                   - arm64
                   - amd64
+                  - ppc64le
                   type: string
                   x-kubernetes-validations:
                   - message: Arch is immutable
@@ -56512,6 +58207,7 @@ objects:
                     KubeletConfig
                     ContainerRuntimeConfig
                     MachineConfig
+                    ClusterImagePolicy
                     ImageContentSourcePolicy
                     or
                     ImageDigestMirrorSet
@@ -56921,12 +58617,15 @@ objects:
                       properties:
                         availabilityZone:
                           description: |-
-                            AvailabilityZone of the nodepool. Must not be specified for clusters
-                            in a location that does not support AvailabilityZone.
+                            AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+                            for clusters in a location that does not support AvailabilityZone.
                           type: string
                         diskEncryptionSetID:
-                          description: DiskEncryptionSetID is the ID of the DiskEncryptionSet
-                            resource to use to encrypt the OS disks for the VMs.
+                          description: |-
+                            DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+                            needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+                            DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+                            listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.
                           type: string
                         diskSizeGB:
                           default: 30
@@ -56955,23 +58654,33 @@ objects:
                           - UltraSSD_LRS
                           type: string
                         enableEphemeralOSDisk:
-                          description: EnableEphemeralOSDisk enables ephemeral OS
-                            disk
+                          description: EnableEphemeralOSDisk is a flag when set to
+                            true, will enable ephemeral OS disk.
                           type: boolean
                         imageID:
                           description: |-
-                            ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
-                            subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
+                            ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
+                            is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
+                            The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
+                            Hosted Cluster specification respectively, hcluster.Spec.Platform.Azure.SubscriptionID and
+                            hcluster.Spec.Platform.Azure.ResourceGroupName.
                           type: string
-                        subnetName:
-                          default: default
-                          description: SubnetName is the name of the subnet to place
-                            the Nodes into
+                        subnetID:
+                          description: |-
+                            SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+                            different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+                            in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+                            hcluster.Spec.Platform.Azure.SubscriptionID.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubnetID is immutable
+                            rule: self == oldSelf
                         vmsize:
+                          description: VMSize is the Azure VM instance type to use
+                            for the nodes being created in the nodepool.
                           type: string
                       required:
-                      - subnetName
+                      - subnetID
                       - vmsize
                       type: object
                     ibmcloud:
@@ -57321,7 +59030,7 @@ objects:
                 tuningConfig:
                   description: |-
                     TuningConfig is a list of references to ConfigMaps containing serialized
-                    Tuned resources to define the tuning configuration to be applied to
+                    Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
                     nodes in the NodePool. The Tuned API is defined here:
 
 
@@ -57332,7 +59041,7 @@ objects:
                     https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2
 
 
-                    Each ConfigMap must have a single key named "tuned" whose value is the
+                    Each ConfigMap must have a single key named "tuning" whose value is the
                     JSON or YAML of a serialized Tuned or PerformanceProfile.
                   items:
                     description: |-
@@ -57548,6 +59257,7 @@ objects:
                     Transitions will require that request-serving pods be re-scheduled between nodes, so each
                     transition incurs a small user-facing cost as well as a cost to the management cluster. Use
                     the concurrency configuration options to manage how many transitions can be occurring.
+                    These limits do not apply to new clusters entering the fleet.
                     If unset, a sensible default will be provided.
                   properties:
                     limit:
@@ -57564,6 +59274,15 @@ objects:
                       pattern: ^([0-9]+(\.[0-9]+)?(s|m|h))+$
                       type: string
                   type: object
+                nonRequestServingNodesBufferPerZone:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  description: |-
+                    NonRequestServingNodesBufferPerZone is the number of extra nodes to allocate for non request serving
+                    workloads per zone.
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
                 sizes:
                   description: |-
                     Sizes holds the different t-shirt size classes into which guest clusters will be sorted.
@@ -57622,19 +59341,61 @@ objects:
                               $GOMEMLIMIT of the Kube APIServer container
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
-                          kasMemoryRequest:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            description: KASMemoryRequest is the amount of memory
-                              to request for the Kube APIServer pod
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
+                          machineHealthCheckTimeout:
+                            description: |-
+                              MachineHealthCheckTimeout specifies an optional timeout for machinehealthchecks created
+                              for HostedClusters with this specific size.
+                            type: string
+                          resourceRequests:
+                            description: ResourceRequests allows specifying resource
+                              requests for control plane pods.
+                            items:
+                              properties:
+                                containerName:
+                                  description: ContainerName is the name of the container
+                                    to which the resource request applies.
+                                  type: string
+                                cpu:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: CPU is the amount of CPU to request
+                                    for the container.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                deploymentName:
+                                  description: DeploymentName is the name of the deployment
+                                    to which the resource request applies.
+                                  type: string
+                                memory:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: Memory is the amount of memory to request
+                                    for the container.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                              required:
+                              - containerName
+                              - deploymentName
+                              type: object
+                            type: array
                         type: object
                       management:
                         description: Management configures the management aspects
                           of this size class on the management plane.
                         properties:
+                          nonRequestServingNodesPerZone:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              NonRequestServingNodesPerZone is the number of nodes to allocate for non request serving workloads
+                              per HostedCluster. This will likely be a fraction of a node (ie. 0.2) to allow 5 HostedClusters in
+                              a single node. The total number of nodes needed per HostedCluster is this number multiplied by 3
+                              (number of zones).
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
                           placeholders:
                             description: |-
                               Placeholders configures the number of dummy workloads that will be scheduled irrespective of

@@ -53,13 +53,12 @@ func TestGenerateRouterConfig(t *testing.T) {
 	oauthInternal := namedRoute(manifests.OauthServerInternalRoute(testNS), withHost("oauth-internal.example.com"), withSvc("openshift-oauth"))
 	oauthExternalPrivate := namedRoute(manifests.OauthServerExternalPrivateRoute(testNS), withHost("oauth-private.example.com"), withSvc("openshift-oauth"))
 	oauthExternalPublic := namedRoute(manifests.OauthServerExternalPublicRoute(testNS), withHost("oauth-public.example.com"), withSvc("openshift-oauth"))
-	ovnKube := route(manifests.OVNKubeSBDBRoute("").Name, withHost("ovnkube-sbdb.example.com"), withSvc("ovnkube-master-external"), withPort(3000))
 	metricsForwarder := route(manifests.MetricsForwarderRoute("").Name, withHost("metrics-forwarder.example.com"), withSvc("metrics-forwarder"), withPort(4000))
 	kasPublic := namedRoute(manifests.KubeAPIServerExternalPublicRoute(testNS), withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver"))
 	kasPrivate := namedRoute(manifests.KubeAPIServerExternalPrivateRoute(testNS), withSvc("kube-apiserver-private.example.com"), withSvc("kube-apiserver"))
 
 	routeList := &routev1.RouteList{
-		Items: []routev1.Route{*ignition, *konnectivity, *oauthInternal, *oauthExternalPrivate, *oauthExternalPublic, *ovnKube, *metricsForwarder, *kasPublic, *kasPrivate},
+		Items: []routev1.Route{*ignition, *konnectivity, *oauthInternal, *oauthExternalPrivate, *oauthExternalPublic, *metricsForwarder, *kasPublic, *kasPrivate},
 	}
 
 	svcsNameToIP := make(map[string]string)

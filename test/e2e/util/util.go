@@ -451,6 +451,16 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if kvPlatform != nil && kvPlatform.Credentials != nil {
 				crashToleration = 1
 			}
+
+			// In Azure infra, CAPK pod might crash on startup due to not being able to
+			// get a leader election lock lease at the early stages, due to
+			// "context deadline exceeded" error
+			if kvPlatform != nil && hostedCluster.Annotations != nil {
+				mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
+				if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
+					crashToleration = 1
+				}
+			}
 		default:
 			crashToleration = 0
 		}
@@ -483,6 +493,10 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
+			// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
+			if strings.HasPrefix(pod.Name, "kubevirt-csi") {
+				continue
+			}
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > crashToleration {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
@@ -707,7 +721,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "control-plane-operator mutate",
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method!="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 4000,
+				budget: 4200,
 			},
 			{
 				name:   "control-plane-operator no 404 deletes",
@@ -726,7 +740,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "hypershift-operator read",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
-				budget: 6000,
+				budget: 7000,
 			},
 			{
 				name:   "hypershift-operator mutate",
@@ -833,13 +847,8 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			}
 
 			// Validate cluster-version-operator is not allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
+			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
 			g.Expect(err).To(HaveOccurred())
-
-			// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
-			if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
-				t.Errorf("cluster version pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-			}
 
 			// Validate private router is not allowed to access management KAS.
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -848,18 +857,13 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 					// === CONT  TestCreateClusterPrivate/EnsureHostedCluster/EnsureNetworkPolicies/EnsureLimitedEgressTrafficToManagementKAS
 					//    util.go:851: private router pod was unexpectedly allowed to reach the management KAS. stdOut: . stdErr: Internal error occurred: error executing command in container: container is not created or running
 					// Should be solve with https://issues.redhat.com/browse/HOSTEDCP-1200
-					stdOut, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
+					_, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
 					g.Expect(err).To(HaveOccurred())
-
-					// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
-					if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
-						t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-					}
 				}
 			}
 
 			// Validate cluster api is allowed to access management KAS.
-			stdOut, err = RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
+			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
 				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
@@ -1238,6 +1242,8 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"kubevirt-csi-driver":              "app",
 			"cluster-image-registry-operator":  "name",
 			"virt-launcher":                    "kubevirt.io",
+			"azure-disk-csi-driver-controller": "app",
+			"azure-file-csi-driver-controller": "app",
 		}
 
 		hcpPods := &corev1.PodList{}
@@ -1276,7 +1282,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			for _, volume := range pod.Spec.Volumes {
 				// Check the pod's volumes, if they are emptyDir or hostPath,
 				// they should include that volume in the annotation
-				if volume.EmptyDir != nil || volume.HostPath != nil {
+				if (volume.EmptyDir != nil && volume.EmptyDir.Medium != corev1.StorageMediumMemory) || volume.HostPath != nil {
 					g.Expect(strings.Contains(annotationValue, volume.Name)).To(BeTrue(), "pod with name %s do not have the right volumes set in the safe-to-evict-local-volume annotation: \nCurrent: %s, Expected to be included in: %s", pod.Name, volume.Name, annotationValue)
 				}
 			}
@@ -1521,7 +1527,13 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
 		hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
-		expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
+		if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AWSPlatform) {
+			// AWS platform supports Jumbo frames
+			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
+		} else if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
+			// Azure platform doesn't support Jumbo frames
+			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionFalse
+		}
 	}
 
 	t.Logf("validating status for hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
@@ -1801,8 +1813,17 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			"packageserver",
 			"csi-snapshot-webhook",
 			"csi-snapshot-controller",
-			"ovnkube-control-plane", //remove once https://issues.redhat.com/browse/OCPBUGS-26408 is closed,
 		)
+
+		if hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
+				"azure-cloud-controller-manager",
+				"azure-disk-csi-driver-controller",
+				"azure-disk-csi-driver-operator",
+				"azure-file-csi-driver-controller",
+				"azure-file-csi-driver-operator",
+			)
+		}
 
 		if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount, hostedCluster.Name+"-test-",

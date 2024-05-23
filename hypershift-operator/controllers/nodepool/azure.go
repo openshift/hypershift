@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
+	"github.com/openshift/hypershift/support/azureutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
@@ -26,6 +27,12 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 			return nil, fmt.Errorf("failed to generate a SSH key: %w", err)
 		}
 	}
+
+	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine subnet name for Azure machine: %w", err)
+	}
+
 	azureMachineTemplate := &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
 		VMSize: nodePool.Spec.Platform.Azure.VMSize,
 		Image:  &capiazure.Image{ID: utilpointer.String(bootImage(hcluster, nodePool))},
@@ -36,7 +43,7 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 			},
 		},
 		NetworkInterfaces: []capiazure.NetworkInterface{{
-			SubnetName: nodePool.Spec.Platform.Azure.SubnetName,
+			SubnetName: subnetName,
 		}},
 		Identity:               capiazure.VMIdentityUserAssigned,
 		UserAssignedIdentities: []capiazure.UserAssignedIdentity{{ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID}},

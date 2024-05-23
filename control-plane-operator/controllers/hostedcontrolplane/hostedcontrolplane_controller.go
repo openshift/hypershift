@@ -166,6 +166,7 @@ type HostedControlPlaneReconciler struct {
 
 	Log                                     logr.Logger
 	ReleaseProvider                         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	UserReleaseProvider                     releaseinfo.Provider
 	createOrUpdate                          func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
 	EnableCIDebugOutput                     bool
 	OperateOnReleaseImage                   string
@@ -810,8 +811,9 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			port = config.KASSVCIBMCloudPort
 		}
-		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
-			// If Azure we get the SVC handling the LB.
+		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
+			hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
+			// If Azure or Kubevirt on Azure we get the SVC handling the LB.
 			// TODO(alberto): remove this hack when having proper traffic management for Azure.
 			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 			port = config.KASSVCLBAzurePort
@@ -919,7 +921,8 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return err
 	}
-	userReleaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
+	userReleaseImage, err := r.UserReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return fmt.Errorf("failed to get lookup release image: %w", err)
 	}
@@ -1486,8 +1489,9 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		kasSVCPort = config.KASSVCIBMCloudPort
 	}
-	if serviceStrategy.Type == hyperv1.LoadBalancer && hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
-		// For Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
+	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
+		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
+		// For Azure or Kubevirt on Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
 		// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
 		// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
 		kasSVCPort = config.KASSVCLBAzurePort
@@ -1499,7 +1503,8 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
 
-	if serviceStrategy.Type == hyperv1.LoadBalancer && hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
+		hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform && hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
 		// Create the svc clusterIP for Azure on config.KASSVCPort as expected by internal consumers.
 		kasSVC := manifests.KubeAPIServerService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, kasSVC, func() error {
@@ -1912,8 +1917,9 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		kasSVCLBPort = config.KASSVCIBMCloudPort
 	}
-	if serviceStrategy.Type == hyperv1.LoadBalancer && hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
-		// If Azure we get the SVC handling the LB.
+	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
+		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
+		// If Azure or Kubevirt on Azure we get the SVC handling the LB.
 		// TODO(alberto): remove this hack when having proper traffic management for Azure.
 		kasSVCLBPort = config.KASSVCLBAzurePort
 		svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
@@ -2390,21 +2396,147 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
 	}
 
+	// For the Multus Admission Controller, Network Node Identity, and OVN Control Plane Metrics Serving Certs:
+	//   We want to remove the secret if there was an existing one created by service-ca; otherwise, it will cause
+	//   issues in cases where you are upgrading an older CPO prior to us adding the feature to reconcile the serving
+	//   cert secret ourselves.
+
+	// Multus Admission Controller Serving Cert
+	multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
+		}
+	}
+
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
+		multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
+
+		err = removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret)
+		if err != nil {
+			return err
+		}
+
+		if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
+			return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+		}
+	}
+
+	// Network Node Identity Serving Cert
+	networkNodeIdentityService := manifests.NetworkNodeIdentityService(hcp.Namespace)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(networkNodeIdentityService), networkNodeIdentityService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve network-node-identity service: %w", err)
+		}
+	}
+
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(networkNodeIdentityService); !hasServiceCAAnnotation {
+		networkNodeIdentityServingCertSecret := manifests.NetworkNodeIdentityControllerServingCert(hcp.Namespace)
+
+		err = removeServiceCASecret(ctx, r.Client, networkNodeIdentityServingCertSecret)
+		if err != nil {
+			return err
+		}
+
+		if _, err = createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
+			return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile network node identity serving cert: %w", err)
+		}
+	}
+
+	// OVN Control Plane Metrics Serving Cert
+	ovnControlPlaneService := manifests.OVNKubernetesControlPlaneService(hcp.Namespace)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(ovnControlPlaneService), ovnControlPlaneService); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to retrieve ovn-kubernetes-control-plane service: %w", err)
+		}
+	}
+
+	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(ovnControlPlaneService); !hasServiceCAAnnotation {
+		ovnControlPlaneMetricsServingCertSecret := manifests.OVNControlPlaneMetricsServingCert(hcp.Namespace)
+
+		err = removeServiceCASecret(ctx, r.Client, ovnControlPlaneMetricsServingCertSecret)
+		if err != nil {
+			return err
+		}
+
+		if _, err = createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
+			return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OVN control plane serving cert: %w", err)
+		}
+	}
+
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
-		igntionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, igntionServerCert, func() error {
-			return pki.ReconcileIgnitionServerCertSecret(igntionServerCert, rootCASecret, p.OwnerRef)
+		ignitionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ignitionServerCert, func() error {
+			return pki.ReconcileIgnitionServerCertSecret(ignitionServerCert, rootCASecret, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition server cert: %w", err)
 		}
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+	// Platform specific certs
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
 		awsPodIdentityWebhookServingCert := manifests.AWSPodIdentityWebhookServingCert(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, awsPodIdentityWebhookServingCert, func() error {
 			return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
+		}
+	case hyperv1.AzurePlatform:
+		azureDiskCsiDriverControllerMetricsService := manifests.AzureDiskCsiDriverControllerMetricsService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), azureDiskCsiDriverControllerMetricsService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve azure-disk-csi-driver-controller-metrics service: %w", err)
+			}
+		}
+
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureDiskCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+			azureDiskCsiDriverControllerMetricsServingCert := manifests.AzureDiskCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+			err = removeServiceCASecret(ctx, r.Client, azureDiskCsiDriverControllerMetricsServingCert)
+			if err != nil {
+				return err
+			}
+
+			if _, err = createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
+				return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
+			}
+		}
+
+		azureFileCsiDriverControllerMetricsService := manifests.AzureFileCsiDriverControllerMetricsService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(azureFileCsiDriverControllerMetricsService), azureFileCsiDriverControllerMetricsService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve azure-file-csi-driver-controller-metrics service: %w", err)
+			}
+		}
+
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(azureFileCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+			azureFileCsiDriverControllerMetricsServingCert := manifests.AzureFileCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+			err = removeServiceCASecret(ctx, r.Client, azureFileCsiDriverControllerMetricsServingCert)
+			if err != nil {
+				return err
+			}
+
+			if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
+				return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile azure file csi driver controller metrics serving cert: %w", err)
+			}
 		}
 	}
 
@@ -2894,7 +3026,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 
 	recyclerConfig := manifests.RecyclerConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, recyclerConfig, func() error {
-		return kcm.ReconcileRecyclerConfig(recyclerConfig, p.OwnerRef)
+		return kcm.ReconcileRecyclerConfig(recyclerConfig, p.OwnerRef, releaseImageProvider)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm recycler config: %w", err)
 	}
@@ -3258,7 +3390,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
@@ -3306,6 +3438,21 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	networkNodeIdentityDeployment := manifests.NetworkNodeIdentityDeployment(hcp.Namespace)
 	if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, p.DeploymentConfig); err != nil {
 		return fmt.Errorf("failed to restart network node identity: %w", err)
+	}
+
+	// Clean up ovnkube-sbdb Route if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.OVNKubeSBDBRoute(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-sbdb route: %w", err)
+	}
+
+	// Clean up ovnkube-master-external Service if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterExternalService(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-master-external service: %w", err)
+	}
+
+	// Clean up ovnkube-master-internal Service if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterInternalService(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-master-internal service: %w", err)
 	}
 
 	return nil
@@ -3498,7 +3645,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 				}
-			} else {
+			} else if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
 				if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
 					return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
 				}
@@ -3911,7 +4058,16 @@ func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, se
 			return fmt.Errorf("failed to get service: %w", err)
 		}
 	} else {
-		_, ok := service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
+		_, ok := service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"]
+		if ok {
+			delete(service.Annotations, "service.alpha.openshift.io/serving-cert-secret-name")
+			err := c.Update(ctx, service)
+			if err != nil {
+				return fmt.Errorf("failed to update service: %w", err)
+			}
+		}
+
+		_, ok = service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
 		if ok {
 			delete(service.Annotations, "service.beta.openshift.io/serving-cert-secret-name")
 			err := c.Update(ctx, service)
@@ -3921,12 +4077,39 @@ func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, se
 		}
 	}
 
+	err := removeServiceCASecret(ctx, c, secret)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func doesServiceHaveServiceCAAnnotation(service *corev1.Service) bool {
+	_, ok := service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"]
+	if ok {
+		return true
+	}
+
+	_, ok = service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
+	return ok
+}
+
+func removeServiceCASecret(ctx context.Context, c client.Client, secret *corev1.Secret) error {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(secret), secret); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get secret: %w", err)
 		}
 	} else {
-		_, ok := secret.Annotations["service.beta.openshift.io/originating-service-name"]
+		_, ok := secret.Annotations["service.alpha.openshift.io/originating-service-name"]
+		if ok {
+			_, err := util.DeleteIfNeeded(ctx, c, secret)
+			if err != nil {
+				return fmt.Errorf("failed to delete secret generated by service-ca: %w", err)
+			}
+		}
+
+		_, ok = secret.Annotations["service.beta.openshift.io/originating-service-name"]
 		if ok {
 			_, err := util.DeleteIfNeeded(ctx, c, secret)
 			if err != nil {
@@ -4828,15 +5011,28 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 
 func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
-		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.StatusUnknownReason, "Azure KMS is not configured")
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            "Azure KMS is not configured",
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.StatusUnknownReason,
-			fmt.Sprintf("failed to get azure credentials secret: %v", err))
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            fmt.Sprintf("failed to get azure credentials secret: %v", err),
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return
 	}
 
@@ -4858,7 +5054,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		return
 	}
 
-	vaultURL := fmt.Sprintf("https://%s.%s", azureKmsSpec.KeyVaultName, azureEnv.KeyVaultDNSSuffix)
+	vaultURL := fmt.Sprintf("https://%s.%s", azureKmsSpec.ActiveKey.KeyVaultName, azureEnv.KeyVaultDNSSuffix)
 	keysClient, err := azkeys.NewClient(vaultURL, cred, nil)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.AzureErrorReason,
@@ -4878,12 +5074,12 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
 		Value:     []byte("text"),
 	}
-	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.KeyName, azureKmsSpec.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
+	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
 		condition = metav1.Condition{
 			Type:               string(hyperv1.ValidAzureKMSConfig),
 			ObservedGeneration: hcp.Generation,
 			Status:             metav1.ConditionFalse,
-			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s/%s): %v", azureKmsSpec.KeyName, azureKmsSpec.KeyVersion, err),
+			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s/%s): %v", azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, err),
 			Reason:             hyperv1.AzureErrorReason,
 		}
 	}

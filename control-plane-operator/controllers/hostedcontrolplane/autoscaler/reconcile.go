@@ -43,6 +43,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	}
 
 	args := []string{
+		"--expander=priority,least-waste",
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
@@ -98,7 +99,6 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selector,
 		},
@@ -206,7 +206,11 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 
-	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	replicas := k8sutilspointer.Int(1)
+	if _, exists := hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation]; exists {
+		replicas = k8sutilspointer.Int(0)
+	}
+	deploymentConfig.SetDefaults(hcp, nil, replicas)
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 

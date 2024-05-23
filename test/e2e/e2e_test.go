@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awscmdutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
@@ -93,7 +94,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
-	flag.StringVar(&globalOpts.configurableClusterOptions.NetworkType, "network-type", "", "The network type to use. If unset, will default based on the OCP version.")
+	flag.StringVar(&globalOpts.configurableClusterOptions.NetworkType, "network-type", string(hyperv1.OVNKubernetes), "The network type to use. If unset, will default based on the OCP version.")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSResourceGroup, "e2e.powervs-resource-group", "", "IBM Cloud Resource group")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSRegion, "e2e.powervs-region", "us-south", "IBM Cloud region. Default is us-south")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
@@ -115,6 +116,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ManagementClusterNamespace, "e2e.management-cluster-namespace", "", "Namespace of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementClusterName, "e2e.management-cluster-name", "", "Name of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.BoolVar(&globalOpts.DisablePKIReconciliation, "e2e.disable-pki-reconciliation", false, "If set, TestUpgradeControlPlane will upgrade the control plane without reconciling the pki components")
+	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
 
 	flag.Parse()
 
@@ -425,6 +427,7 @@ type configurableClusterOptions struct {
 	PowerVSTransitGatewayLocation string
 	PowerVSTransitGateway         string
 	EtcdStorageClass              string
+	Annotations                   stringMapVar
 }
 
 var nextAWSZoneIndex = 0
@@ -442,12 +445,14 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
 		NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
 		AWSPlatform: core.AWSPlatformOptions{
-			RootVolumeSize:     64,
-			RootVolumeType:     "gp3",
-			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
-			Region:             o.configurableClusterOptions.Region,
-			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
-			IssuerURL:          o.IssuerURL,
+			RootVolumeSize: 64,
+			RootVolumeType: "gp3",
+			Region:         o.configurableClusterOptions.Region,
+			EndpointAccess: o.configurableClusterOptions.AWSEndpointAccess,
+			IssuerURL:      o.IssuerURL,
+			AWSCredentialsOpts: awscmdutil.AWSCredentialsOptions{
+				AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+			},
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
 			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
@@ -492,9 +497,11 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
 	}
 
-	// Arch is only currently valid for aws platform
-	if o.Platform == hyperv1.AWSPlatform {
-		createOption.Arch = "amd64"
+	switch o.Platform {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
+		createOption.Arch = hyperv1.ArchitectureAMD64
+	case hyperv1.PowerVSPlatform:
+		createOption.Arch = hyperv1.ArchitecturePPC64LE
 	}
 
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
@@ -520,6 +527,12 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		createOption.GenerateSSH = true
 	} else {
 		createOption.SSHKeyFile = o.configurableClusterOptions.SSHKeyFile
+	}
+
+	if o.configurableClusterOptions.Annotations != nil {
+		for k, v := range o.configurableClusterOptions.Annotations {
+			createOption.Annotations = append(createOption.Annotations, fmt.Sprintf("%s=%s", k, v))
+		}
 	}
 
 	return createOption
@@ -607,3 +620,24 @@ type stringSliceVar []string
 
 func (s *stringSliceVar) String() string     { return strings.Join(*s, ",") }
 func (s *stringSliceVar) Set(v string) error { *s = append(*s, strings.Split(v, ",")...); return nil }
+
+type stringMapVar map[string]string
+
+func (s *stringMapVar) String() string {
+	if *s == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", *s)
+}
+
+func (s *stringMapVar) Set(value string) error {
+	split := strings.Split(value, "=")
+	if len(split) != 2 {
+		return fmt.Errorf("invalid argument: %s", value)
+	}
+	if *s == nil {
+		*s = map[string]string{}
+	}
+	map[string]string(*s)[split[0]] = split[1]
+	return nil
+}

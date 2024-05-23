@@ -1,3 +1,57 @@
+# Storage Overview
+
+Configuring storage for KubeVirt Hosted Control Planes falls within three
+categories, each of which have differing requirements.
+
+**ETCD Storage**
+
+ETCD requires usage of high performance persistent storage on the management
+cluster hosting the ETCD pods. Due to the performance requirements, usage of a
+local storage csi driver such as [LVM Storage](https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html) is prefered.
+When a guest cluster is created in HighAvailability mode, ETCD is replicated
+in pods across three separate management cluster nodes. This replication
+ensures data resiliency even when a local storage csi driver is in use.
+
+More information about ETCD storage configuration can be found in the
+[ETCD Storage Configuration](#etcd storage configuration) section.
+
+**Node Root Volume Storage**
+
+In a KubeVirt Hosted Control Plane, the worker nodes are hosted in KubeVirt VMs.
+It is recommended to use a csi driver capable of providing ReadWriteMany
+access mode and Block volume mode for the VM root volume storage. This allows
+the KubeVirt VMs to live migrate and remain available even when the underlying
+infra cluster nodes are disrupted. Ceph is an example of a csi driver that
+would meet these requirements.
+
+More information about configuring root volume storage can be found in the
+[KubeVirt VM Root Volume Configuration](#kubevirt vm root volume configuration) section.
+
+**KubeVirt CSI Storage**
+
+The KubeVirt CSI driver allows storage classes present on the infra cluster (the cluster the KubeVirt VMs run
+on)
+to be mapped directly to storage classes within the KubeVirt guest cluster.
+This lets the guest cluster utilize the same storage that is available on the
+infra cluster.
+
+It is recommended to use an underlying infra storage class capable of
+ReadWriteMany access mode and Block volume mode for KubeVirt CSI. This allows
+KubeVirt CSI to pass storage to the VMs in a way that still allows for the VMs
+to live migrate and be portable across infra nodes.
+
+Below is a chart that outlines the current features of KubeVirt CSI as they map
+to the infra cluster's storage class.
+
+| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           | 
+|-----------------------|------------------------------------|-----------------------------------------------------------------------------|
+| RWX Block             | RWO (Block/Filesystem) RWX (Block) | Supported                 |                                                 |
+| RWO Block             | RWO (Block/Filesystem)             | Not Supported             |                                                 |
+| RWO Filesystem        | RWO (Block/Filesystem)             | Not Supported             | suboptimal guest block volume mode performance. |
+
+More information about configuring KubeVirt CSI can be found in the
+[KubeVirt CSI StorageClass Mapping](#kubevirt csi storageclass mapping) section.
+
 # Configuring Storage
 
 By default, if no advanced configuration is provided, the default storageclass
@@ -44,6 +98,89 @@ mapping that was configured during cluster creation.
 
     KubeVirt CSI only supports mapping an infrastructure storage class that is
     capable of `ReadWriteMany` (RWX) access.
+
+## KubeVirt CSI VolumeSnapshotClass Mapping
+
+KubeVirt CSI permits infra VolumeSnapshotClasses to be exposed to the guest
+cluster. Since VolumeSnapshotClasses are tied to a particular provisioner the
+mapping between VolumeSnapshotClasses and StorageClasses needs to expressed to
+hypershift during guest cluster creation. using the `hcp` cli tool and the 
+`--infra-volumesnapshot-class-mapping` cli argument.
+
+Below is an example of a simple setup with a single infra storage class and a
+single matching volume snapshot class in the infra cluster being mapped to a
+single storage class and single volume snapshot class in the guest cluster.
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+
+hcp create cluster kubevirt \
+--name $CLUSTER_NAME \
+--node-pool-replicas $WORKER_COUNT \
+--pull-secret $PULL_SECRET \
+--memory $MEM \
+--cores $CPU \
+--infra-storage-class-mapping=infra-sc1/guest-sc1 \
+--infra-volumesnapshot-class-mapping=infra-vsc1/guest-vsc1
+```
+
+If you omit the `--infra-storage-class-mapping` and the 
+`--infra-volumesnapshot-class-mapping`. The system will use the default 
+storage class and the default volume snapshot class in the infra cluster. If 
+the default is not set, then the snapshot functionality will not work and the
+snapshot request will never reach ready state. This is because it not possible
+to create a correct snapshot in the infra cluster.
+
+A more complex setup could contain multiple storage classes with multiple
+volume snapshot classes. In particular in this setup one volume snapshot class
+is only compatible with certain storage classes but not all. So we have infra
+storage class a and b, and infra snapshot volume class a and b. Only the a's
+are compatible with each other and only the b's are compatible with each other.
+
+To properly group them together use the 'group' option of the
+`--infra-volumesnapshot-class-mapping` and `group` option of the
+`--infra-storage-class-mapping`.
+Below is an example of this setup
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+
+hcp create cluster kubevirt \
+--name $CLUSTER_NAME \
+--node-pool-replicas $WORKER_COUNT \
+--pull-secret $PULL_SECRET \
+--memory $MEM \
+--cores $CPU \
+--infra-storage-class-mapping=infra-sca/guest-sca,group=a \
+--infra-storage-class-mapping=infra-scb/guest-scb,group=b \
+--infra-storage-class-mapping=infra-scc/guest-scc,group=a \
+--infra-volumesnapshot-class-mapping=infra-vsca/guest-vsca,group=a \
+--infra-volumesnapshot-class-mapping=infra-vscb/guest-vscb,group=b
+```
+
+Since both storage class `infra-sca` and volume snapshot class `infra-vsca`
+are in the same group, this indicates to KubeVirt CSI that they are 
+compatible and be used to create snapshots of volumes from storage class
+`guest-sca` using the guest volume snapshot class `guest-vsca`. The same
+is true with with the `b` grouping as well. Since `infra-scc` is also in
+the `a` group, creating snapshots of volumes from storage class `guest-scc`
+will use the same volume snapshot class in the infra cluster as making a
+snapshot of volumes that use storage class `guest-sca`
+
+!!! note
+
+   KubeVirt CSI passes snapshot requests to the underlying infra. This means
+   that snapshots will only work for compatible volumes. Please ensure the 
+   proper mapping is configured before attempting to create a snapshot in the
+   guest cluster.
 
 ## KubeVirt VM Root Volume Configuration
 

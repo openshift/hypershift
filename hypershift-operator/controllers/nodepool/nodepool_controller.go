@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	coreerrors "errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"sort"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
+	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
@@ -61,6 +63,7 @@ import (
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -139,18 +142,18 @@ var (
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.NodePool{}).
+		For(&hyperv1.NodePool{}, builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
-		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
-		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&capiaws.AWSMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&agentv1.AgentMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&capiazure.AzureMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiaws.AWSMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&agentv1.AgentMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiazure.AzureMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
-		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -468,7 +471,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Validate modifying CPU arch support for platform
-	if (nodePool.Spec.Arch != "amd64") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform) {
+	if !isArchAndPlatformSupported(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidArchPlatform,
 			Status:             corev1.ConditionFalse,
@@ -734,7 +737,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	// Set AllMachinesReadyCondition.
 	// Get all Machines for NodePool.
-	err = r.setMachineAndNodeConditions(ctx, nodePool)
+	err = r.setMachineAndNodeConditions(ctx, nodePool, hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -935,7 +938,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 
 		if result, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
-			return r.reconcileMachineHealthCheck(mhc, nodePool, infraID)
+			return r.reconcileMachineHealthCheck(ctx, mhc, nodePool, hcluster, infraID)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
 				client.ObjectKeyFromObject(mhc).String(), err)
@@ -968,8 +971,33 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	return ctrl.Result{}, nil
 }
 
+func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
+	supported := false
+
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitectureARM64 {
+			supported = true
+		}
+	case hyperv1.AzurePlatform, hyperv1.KubevirtPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 {
+			supported = true
+		}
+	case hyperv1.AgentPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE {
+			supported = true
+		}
+	case hyperv1.PowerVSPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE {
+			supported = true
+		}
+	}
+
+	return supported
+}
+
 // setMachineAndNodeConditions sets the nodePool's AllMachinesReady and AllNodesHealthy conditions.
-func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool) error {
+func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) error {
 	// Get all Machines for NodePool.
 	machines, err := r.getMachinesForNodePool(ctx, nodePool)
 	if err != nil {
@@ -986,6 +1014,8 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 	r.setAllMachinesReadyCondition(nodePool, machines)
 
 	r.setAllNodesHealthyCondition(nodePool, machines)
+
+	r.setCIDRConflictCondition(nodePool, machines, hc)
 
 	return nil
 }
@@ -1094,6 +1124,62 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+}
+
+func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hc *hyperv1.HostedCluster) error {
+	maxMessageLength := 256
+
+	if len(machines) < 1 || len(hc.Spec.Networking.ClusterNetwork) < 1 {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolClusterNetworkCIDRConflictType)
+		return nil
+	}
+
+	clusterNetworkStr := hc.Spec.Networking.ClusterNetwork[0].CIDR.String()
+	clusterNetwork, err := netip.ParsePrefix(clusterNetworkStr)
+	if err != nil {
+		return err
+	}
+
+	messages := []string{}
+	for _, machine := range machines {
+		for _, addr := range machine.Status.Addresses {
+			if addr.Type != capiv1.MachineExternalIP && addr.Type != capiv1.MachineInternalIP {
+				continue
+			}
+			ipaddr, err := netip.ParseAddr(addr.Address)
+			if err != nil {
+				return err
+			}
+			if clusterNetwork.Contains(ipaddr) {
+				messages = append(messages, fmt.Sprintf("machine [%s] with ip [%s] collides with cluster-network cidr [%s]", machine.Name, addr.Address, clusterNetworkStr))
+			}
+		}
+	}
+
+	if len(messages) > 0 {
+		message := ""
+		for _, entry := range messages {
+
+			if len(message) == 0 {
+				message = entry
+			} else if len(entry)+len(message) < maxMessageLength {
+				message = message + ", " + entry
+			} else {
+				message = message + ", too many similar errors..."
+			}
+		}
+
+		cidrConflictCondition := &hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolClusterNetworkCIDRConflictType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.InvalidConfigurationReason,
+			Message:            message,
+			ObservedGeneration: nodePool.Generation,
+		}
+		SetStatusCondition(&nodePool.Status.Conditions, *cidrConflictCondition)
+	}
+
+	return nil
 }
 
 func (r *NodePoolReconciler) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
@@ -1555,6 +1641,11 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashSimple(pullSecret))
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
 	}
+	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
+	// We let this change to happen inplace now as the tokenSecret and the mcs config use the whole spec.Config for the comparing hash.
+	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would missmatch forever.
+	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
+
 	return nil
 }
 
@@ -1790,13 +1881,47 @@ func taintsToJSON(taints []hyperv1.Taint) (string, error) {
 	return string(taintsInJSON), nil
 }
 
-func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHealthCheck,
+func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context,
+	mhc *capiv1.MachineHealthCheck,
 	nodePool *hyperv1.NodePool,
+	hc *hyperv1.HostedCluster,
 	CAPIClusterName string) error {
+
+	log := ctrl.LoggerFrom(ctx)
+
 	// Opinionated spec based on
 	// https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
 	// TODO (alberto): possibly expose this config at the nodePool API.
 	maxUnhealthy := intstr.FromInt(2)
+	timeOut := 8 * time.Minute
+
+	maxUnhealthyOverride := nodePool.Annotations[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation]
+	if maxUnhealthyOverride == "" {
+		maxUnhealthyOverride = hc.Annotations[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation]
+	}
+	if maxUnhealthyOverride != "" {
+		maxUnhealthyValue := intstr.Parse(maxUnhealthyOverride)
+		// validate that this is a valid value by getting a scaled value
+		if _, err := intstr.GetScaledValueFromIntOrPercent(&maxUnhealthyValue, 100, true); err != nil {
+			log.Error(err, "Cannot parse max unhealthy override duration", "value", maxUnhealthyOverride)
+		} else {
+			maxUnhealthy = maxUnhealthyValue
+		}
+	}
+
+	timeOutOverride := nodePool.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
+	if timeOutOverride == "" {
+		timeOutOverride = hc.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
+	}
+	if timeOutOverride != "" {
+		timeOutOverrideTime, err := time.ParseDuration(timeOutOverride)
+		if err != nil {
+			log.Error(err, "Cannot parse timeout override duration", "value", timeOutOverride)
+		} else {
+			timeOut = timeOutOverrideTime
+		}
+	}
+
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: CAPIClusterName,
@@ -1810,14 +1935,14 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionFalse,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 			{
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionUnknown,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 		},
@@ -2139,6 +2264,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	_ = mcfgv1.Install(scheme)
 	_ = v1alpha1.Install(scheme)
 	_ = configv1.Install(scheme)
+	_ = configv1alpha1.Install(scheme)
 
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
@@ -2159,6 +2285,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		}
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *configv1.ImageDigestMirrorSet:
+	case *configv1alpha1.ClusterImagePolicy:
 	case *mcfgv1.KubeletConfig:
 		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{

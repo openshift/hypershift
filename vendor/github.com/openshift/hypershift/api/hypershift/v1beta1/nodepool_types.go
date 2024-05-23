@@ -126,6 +126,7 @@ type NodePoolSpec struct {
 	// KubeletConfig
 	// ContainerRuntimeConfig
 	// MachineConfig
+	// ClusterImagePolicy
 	// ImageContentSourcePolicy
 	// or
 	// ImageDigestMirrorSet
@@ -159,7 +160,7 @@ type NodePoolSpec struct {
 	PausedUntil *string `json:"pausedUntil,omitempty"`
 
 	// TuningConfig is a list of references to ConfigMaps containing serialized
-	// Tuned resources to define the tuning configuration to be applied to
+	// Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 	// nodes in the NodePool. The Tuned API is defined here:
 	//
 	// https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go
@@ -167,7 +168,7 @@ type NodePoolSpec struct {
 	// The PerformanceProfile API is defined here:
 	// https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2
 	//
-	// Each ConfigMap must have a single key named "tuned" whose value is the
+	// Each ConfigMap must have a single key named "tuning" whose value is the
 	// JSON or YAML of a serialized Tuned or PerformanceProfile.
 	// +kubebuilder:validation:Optional
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
@@ -175,10 +176,10 @@ type NodePoolSpec struct {
 	// Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
 	// NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 	//	https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
-	// TODO Add ppc64le and s390x to enum validation once the architectures are supported
+	// TODO Add s390x to enum validation once the architecture is supported
 	//
 	// +kubebuilder:default:=amd64
-	// +kubebuilder:validation:Enum=arm64;amd64
+	// +kubebuilder:validation:Enum=arm64;amd64;ppc64le
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
@@ -862,11 +863,21 @@ type AgentNodePoolPlatform struct {
 }
 
 type AzureNodePoolPlatform struct {
+	// VMSize is the Azure VM instance type to use for the nodes being created in the nodepool.
+	//
+	// +kubebuilder:validation:Required
+	// +required
 	VMSize string `json:"vmsize"`
-	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
-	// subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
+
+	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
+	// is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
+	// The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
+	// Hosted Cluster specification respectively, hcluster.Spec.Platform.Azure.SubscriptionID and
+	// hcluster.Spec.Platform.Azure.ResourceGroupName.
+	//
 	// +optional
 	ImageID string `json:"imageID,omitempty"`
+
 	// DiskSizeGB is the size in GB to assign to the OS disk
 	// CAPZ default is 30GB, https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599
 	//
@@ -874,6 +885,7 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
+
 	// DiskStorageAccountType is the disk storage account type to use. Valid values are:
 	// * Standard_LRS: HDD
 	// * StandardSSD_LRS: Standard SSD
@@ -887,21 +899,36 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Enum=Standard_LRS;StandardSSD_LRS;Premium_LRS;UltraSSD_LRS
 	// +optional
 	DiskStorageAccountType string `json:"diskStorageAccountType,omitempty"`
-	// AvailabilityZone of the nodepool. Must not be specified for clusters
-	// in a location that does not support AvailabilityZone.
+
+	// AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+	// for clusters in a location that does not support AvailabilityZone.
+	//
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
-	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
+
+	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+	// needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+	// DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+	// listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.
+	//
 	// +optional
 	DiskEncryptionSetID string `json:"diskEncryptionSetID,omitempty"`
-	// EnableEphemeralOSDisk enables ephemeral OS disk
+
+	// EnableEphemeralOSDisk is a flag when set to true, will enable ephemeral OS disk.
+	//
 	// +optional
 	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
-	// SubnetName is the name of the subnet to place the Nodes into
+
+	// SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+	// different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+	// in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+	// hcluster.Spec.Platform.Azure.SubscriptionID.
 	//
-	// +kubebuilder:default:=default
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
-	SubnetName string `json:"subnetName"`
+	// +immutable
+	// +required
+	SubnetID string `json:"subnetID"`
 }
 
 // We define our own condition type since metav1.Condition has validation

@@ -23,15 +23,15 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/infraid"
 	hyperutil "github.com/openshift/hypershift/support/util"
 )
 
@@ -146,28 +146,29 @@ type NonePlatformCreateOptions struct {
 }
 
 type KubevirtPlatformCreateOptions struct {
-	ServicePublishingStrategy  string
-	APIServerAddress           string
-	Memory                     string
-	Cores                      uint32
-	ContainerDiskImage         string
-	RootVolumeSize             uint32
-	RootVolumeStorageClass     string
-	RootVolumeAccessModes      string
-	RootVolumeVolumeMode       string
-	InfraKubeConfigFile        string
-	InfraNamespace             string
-	CacheStrategyType          string
-	InfraStorageClassMappings  []string
-	NetworkInterfaceMultiQueue string
-	QoSClass                   string
-	AdditionalNetworks         []string
-	AttachDefaultNetwork       *bool
-	VmNodeSelector             map[string]string
+	ServicePublishingStrategy        string
+	APIServerAddress                 string
+	Memory                           string
+	Cores                            uint32
+	ContainerDiskImage               string
+	RootVolumeSize                   uint32
+	RootVolumeStorageClass           string
+	RootVolumeAccessModes            string
+	RootVolumeVolumeMode             string
+	InfraKubeConfigFile              string
+	InfraNamespace                   string
+	CacheStrategyType                string
+	InfraStorageClassMappings        []string
+	InfraVolumeSnapshotClassMappings []string
+	NetworkInterfaceMultiQueue       string
+	QoSClass                         string
+	AdditionalNetworks               []string
+	AttachDefaultNetwork             *bool
+	VmNodeSelector                   map[string]string
 }
 
 type AWSPlatformOptions struct {
-	AWSCredentialsFile      string
+	AWSCredentialsOpts      awsutil.AWSCredentialsOptions
 	AdditionalTags          []string
 	IAMJSON                 string
 	InstanceType            string
@@ -195,12 +196,13 @@ type AzurePlatformOptions struct {
 	DiskSizeGB             int32
 	AvailabilityZones      []string
 	ResourceGroupName      string
+	VnetID                 string
 	DiskEncryptionSetID    string
-	NetworkSecurityGroup   string
+	NetworkSecurityGroupID string
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
-	SubnetName             string
+	SubnetID               string
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
@@ -211,10 +213,6 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}
 		opts.ReleaseImage = defaultVersion.PullSpec
-	}
-
-	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, os.ReadFile); err != nil {
-		return nil, fmt.Errorf("failed to default network: %w", err)
 	}
 
 	annotations := map[string]string{}
@@ -325,6 +323,10 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		operatorHub = &configv1.OperatorHubSpec{
 			DisableAllDefaultSources: true,
 		}
+	}
+
+	if len(opts.InfraID) == 0 {
+		opts.InfraID = infraid.New(opts.Name)
 	}
 
 	return &apifixtures.ExampleOptions{
@@ -496,7 +498,8 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 	}
 
 	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
-	if !opts.AWSPlatform.MultiArch && !opts.Render {
+	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
+	if !opts.AWSPlatform.MultiArch && !opts.Render && opts.Arch != hyperv1.ArchitecturePPC64LE {
 		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
 		if err != nil {
 			return err
@@ -505,6 +508,16 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 		if err = hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, opts.Arch); err != nil {
 			opts.Log.Info(fmt.Sprintf("WARNING: %v", err))
 		}
+	}
+
+	// Validate arch is only hyperv1.ArchitectureAMD64 or hyperv1.ArchitectureARM64 or hyperv1.ArchitecturePPC64LE
+	arch := strings.ToLower(opts.Arch)
+	switch arch {
+	case hyperv1.ArchitectureAMD64:
+	case hyperv1.ArchitectureARM64:
+	case hyperv1.ArchitecturePPC64LE:
+	default:
+		return fmt.Errorf("specified arch is not supported: %s", opts.Arch)
 	}
 
 	return nil
@@ -539,54 +552,4 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 
 	// Otherwise, apply the objects
 	return apply(ctx, opts.Log, exampleOptions, opts.Wait, opts.BeforeApply)
-}
-
-func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvider releaseinfo.Provider, readFile func(string) ([]byte, error)) error {
-	if opts.NetworkType != "" {
-		return nil
-	} else if opts.ReleaseImage == "" {
-		opts.NetworkType = string(hyperv1.OVNKubernetes)
-		return nil
-	}
-
-	version, err := getReleaseSemanticVersion(ctx, opts, releaseProvider, readFile)
-	if err != nil {
-		return fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)
-	}
-	if version.Minor > 10 {
-		opts.NetworkType = string(hyperv1.OVNKubernetes)
-	} else {
-		opts.NetworkType = string(hyperv1.OpenShiftSDN)
-	}
-
-	return nil
-}
-
-func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions, provider releaseinfo.Provider, readFile func(string) ([]byte, error)) (*semver.Version, error) {
-	var pullSecretBytes []byte
-	var err error
-	if len(opts.CredentialSecretName) > 0 {
-		pullSecretBytes, err = util.GetPullSecret(opts.CredentialSecretName, opts.Namespace)
-		if err != nil {
-			return nil, err
-		}
-	}
-	// overrides secret if set
-	if len(opts.PullSecretFile) > 0 {
-		pullSecretBytes, err = readFile(opts.PullSecretFile)
-		if err != nil {
-			return nil, fmt.Errorf("cannot read pull secret file %s: %w", opts.PullSecretFile, err)
-		}
-
-	}
-
-	releaseImage, err := provider.Lookup(ctx, opts.ReleaseImage, pullSecretBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get version information from %s: %w", opts.ReleaseImage, err)
-	}
-	semanticVersion, err := semver.Parse(releaseImage.Version())
-	if err != nil {
-		return nil, err
-	}
-	return &semanticVersion, nil
 }

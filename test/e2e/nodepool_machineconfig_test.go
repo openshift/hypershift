@@ -33,6 +33,7 @@ import (
 )
 
 type NodePoolMachineconfigRolloutTest struct {
+	DummyInfraSetup
 	ctx        context.Context
 	mgmtClient crclient.Client
 

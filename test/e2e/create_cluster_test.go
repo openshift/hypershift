@@ -119,7 +119,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
 		t.Fatal("failed to retrieve kms key arn")
 	}
@@ -161,6 +161,9 @@ func TestNoneCreateCluster(t *testing.T) {
 
 // TestCreateClusterProxy implements a test that creates a cluster behind a proxy with the code under test.
 func TestCreateClusterProxy(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
 	t.Parallel()
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -177,6 +180,9 @@ func TestCreateClusterProxy(t *testing.T) {
 // Validations requiring guest cluster client are dropped here since the kas is not accessible when private.
 // In the future we might want to leverage https://issues.redhat.com/browse/HOSTEDCP-697 to access guest cluster.
 func TestCreateClusterPrivate(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
@@ -197,6 +203,9 @@ func TestCreateClusterPrivate(t *testing.T) {
 func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)
+		if globalOpts.Platform != hyperv1.AWSPlatform {
+			t.Skip("test only supported on platform AWS")
+		}
 
 		err := e2eutil.UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
@@ -210,6 +219,10 @@ func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, 
 func testSwitchFromPublicToPrivate(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)
+		if globalOpts.Platform != hyperv1.AWSPlatform {
+			t.Skip("test only supported on platform AWS")
+		}
+
 		err := e2eutil.UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
 		})

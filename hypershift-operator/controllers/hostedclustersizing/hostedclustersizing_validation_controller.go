@@ -10,6 +10,7 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	schedulingv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,12 +35,12 @@ func (r *validator) Reconcile(ctx context.Context, request reconcile.Request) (r
 	}
 
 	cfg := schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration(request.Name)
-	if validationErr := validateIntervals(config.Spec.Sizes); validationErr != nil {
+	if validationErr := validateSizeConfigurations(config.Spec.Sizes); validationErr != nil {
 		cfg.WithStatus(schedulingv1alpha1applyconfigurations.ClusterSizingConfigurationStatus().WithConditions(
 			metav1applyconfigurations.Condition().
 				WithType(schedulingv1alpha1.ClusterSizingConfigurationValidType).
 				WithStatus(metav1.ConditionFalse).
-				WithReason("SizeIntervalsInvalid").
+				WithReason("SizeConfigurationInvalid").
 				WithMessage(validationErr.Error()).
 				WithLastTransitionTime(metav1.NewTime(time.Now())),
 		))
@@ -56,6 +57,13 @@ func (r *validator) Reconcile(ctx context.Context, request reconcile.Request) (r
 
 	_, err := r.client.SchedulingV1alpha1().ClusterSizingConfigurations().ApplyStatus(ctx, cfg, metav1.ApplyOptions{FieldManager: ValidatingControllerName})
 	return reconcile.Result{}, err
+}
+
+func validateSizeConfigurations(sizes []schedulingv1alpha1.SizeConfiguration) error {
+	var errs []error
+	errs = append(errs, validateIntervals(sizes))
+	errs = append(errs, validateNonRequestServingSizeConfig(sizes))
+	return utilerrors.NewAggregate(errs)
 }
 
 func validateIntervals(sizes []schedulingv1alpha1.SizeConfiguration) error {
@@ -79,6 +87,22 @@ func validateIntervals(sizes []schedulingv1alpha1.SizeConfiguration) error {
 	}
 	if !starts.Equal(ends) {
 		return errors.New("a non-overlapping set of size configurations that cover all whole numbers is required, e.g. {(0,10),(11,100),(101,+inf)}")
+	}
+	return nil
+}
+
+func validateNonRequestServingSizeConfig(sizes []schedulingv1alpha1.SizeConfiguration) error {
+	nilCount := 0
+	setCount := 0
+	for _, size := range sizes {
+		if size.Management == nil || size.Management.NonRequestServingNodesPerZone == nil {
+			nilCount++
+		} else {
+			setCount++
+		}
+	}
+	if nilCount > 0 && setCount > 0 {
+		return errors.New("all size configurations must have either all or none of the NonRequestServingNodesPerZone field set")
 	}
 	return nil
 }
