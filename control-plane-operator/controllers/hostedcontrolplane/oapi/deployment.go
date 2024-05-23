@@ -163,11 +163,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 			Name:            "audit-logs",
 			Image:           image,
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command: []string{
-				"/usr/bin/tail",
-				"-c+1",
-				"-F",
-				fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log"),
+			Command:         []string{"/bin/bash"},
+			Args: []string{
+				"-c",
+				kas.RenderAuditLogScript(fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log")),
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
