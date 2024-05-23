@@ -62,7 +62,7 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 	securityGroupID := aws.StringValue(securityGroup.GroupId)
 	sgUserID := aws.StringValue(securityGroup.OwnerId)
 	egressPermissions := awsutil.DefaultWorkerSGEgressRules()
-	ingressPermissions := awsutil.DefaultWorkerSGIngressRules(DefaultCIDRBlock, securityGroupID, sgUserID)
+	ingressPermissions := awsutil.DefaultWorkerSGIngressRules([]string{DefaultCIDRBlock}, securityGroupID, sgUserID)
 
 	var egressToAuthorize []*ec2.IpPermission
 	var ingressToAuthorize []*ec2.IpPermission
