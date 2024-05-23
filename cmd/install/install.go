@@ -594,7 +594,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 
 	trustedCABundle := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "hypershift",
+			Namespace: operatorNamespace.Name,
 			Name:      "openshift-config-managed-trusted-ca-bundle",
 			Labels: map[string]string{
 				"config.openshift.io/inject-trusted-cabundle": "true",
