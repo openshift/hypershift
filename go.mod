@@ -41,13 +41,13 @@ require (
 	github.com/onsi/gomega v1.33.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/openshift/api v0.0.0-20240214165302-89248c87b7fc
-	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
+	github.com/openshift/api v0.0.0-20240405095747-3e50337fcaea
+	github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20240131125539-0e319439e65a
 	github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000
-	github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
+	github.com/openshift/library-go v0.0.0-20240422143640-fad649cbbd63
 	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
@@ -132,7 +132,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
-	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.21.5 // indirect
@@ -188,6 +187,8 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
+	github.com/opencontainers/runc v1.1.10 // indirect
+	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
 	github.com/openshift/machine-config-operator v0.0.1-0.20230807154212-886c5c3fc7a9 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
