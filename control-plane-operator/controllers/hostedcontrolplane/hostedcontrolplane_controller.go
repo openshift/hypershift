@@ -4099,7 +4099,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 	originalHCP := hcp.DeepCopy()
 	var condition *metav1.Condition
-	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC, hcp.Spec.Platform.AWS.ResourceTags)
+	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp)
 	if creationErr != nil {
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
@@ -4146,10 +4146,16 @@ func awsSecurityGroupName(infraID string) string {
 	return fmt.Sprintf("%s-default-sg", infraID)
 }
 
-func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, infraID, vpcID string, additionalTags []hyperv1.AWSResourceTag) (string, error) {
+func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, hcp *hyperv1.HostedControlPlane) (string, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
-	// Determine VPC cidr
+	var (
+		vpcID          = hcp.Spec.Platform.AWS.CloudProviderConfig.VPC
+		infraID        = hcp.Spec.InfraID
+		additionalTags = hcp.Spec.Platform.AWS.ResourceTags
+	)
+
+	// Validate VPC exists
 	vpcResult, err := ec2Client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
 		VpcIds: []*string{awssdk.String(vpcID)},
 	})
@@ -4160,7 +4166,18 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	if len(vpcResult.Vpcs) == 0 {
 		return "", fmt.Errorf("vpc %s not found", vpcID)
 	}
-	vpcCIDR := awssdk.StringValue(vpcResult.Vpcs[0].CidrBlock)
+
+	// Validate the hostedcontrolplane defines a machine CIDR
+	if len(hcp.Spec.Networking.MachineNetwork) == 0 {
+		logger.Error(errors.New("hostedcontrolplane.spec.networking.machineNetwork length is 0"), "failed to extract machine CIDR while creating default security group")
+		return "", errors.New("hostedcontrolplane.spec.networking.machineNetwork length is 0")
+	}
+	machineCIDRs := make([]string, len(hcp.Spec.Networking.MachineNetwork))
+	for i, mNet := range hcp.Spec.Networking.MachineNetwork {
+		machineCIDRs[i] = mNet.CIDR.String()
+	}
+
+	// Search for an existing default worker security group and create one if not found
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
 		logger.Error(err, "Failed to list security groups")
@@ -4232,7 +4249,7 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		sg = describeSGResult.SecurityGroups[0]
 		logger.Info("Created security group", "id", sgID)
 	}
-	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(vpcCIDR, sgID, awssdk.StringValue(sg.OwnerId))
+	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(machineCIDRs, sgID, awssdk.StringValue(sg.OwnerId))
 	_, err = ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       awssdk.String(sgID),
 		IpPermissions: ingressPermissions,
