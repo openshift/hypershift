@@ -4167,10 +4167,9 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		return "", fmt.Errorf("vpc %s not found", vpcID)
 	}
 
-	// Validate the hostedcontrolplane defines a machine CIDR
 	if len(hcp.Spec.Networking.MachineNetwork) == 0 {
-		logger.Error(errors.New("hostedcontrolplane.spec.networking.machineNetwork length is 0"), "failed to extract machine CIDR while creating default security group")
-		return "", errors.New("hostedcontrolplane.spec.networking.machineNetwork length is 0")
+		// Should never happen
+		return "", errors.New("failed to extract machine CIDR while creating default security group: hostedcontrolplane.spec.networking.machineNetwork length is 0")
 	}
 	machineCIDRs := make([]string, len(hcp.Spec.Networking.MachineNetwork))
 	for i, mNet := range hcp.Spec.Networking.MachineNetwork {
@@ -4180,7 +4179,6 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	// Search for an existing default worker security group and create one if not found
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
-		logger.Error(err, "Failed to list security groups")
 		return "", fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
 	}
 	sgID := ""
@@ -4226,7 +4224,6 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			},
 		})
 		if err != nil {
-			logger.Error(err, "Failed to create security group")
 			return "", fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
 		}
 		sgID = awssdk.StringValue(createSGResult.GroupId)
@@ -4236,13 +4233,11 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			GroupIds: []*string{awssdk.String(sgID)},
 		}
 		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
-			logger.Error(err, "Failed to wait for security group to exist")
 			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
 		}
 
 		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
 		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
-			logger.Error(err, "Failed to fetch security group", "sgID", sgID)
 			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
 		}
 
@@ -4256,7 +4251,6 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	})
 	if err != nil {
 		if awsErrorCode(err) != "InvalidPermission.Duplicate" {
-			logger.Error(err, "Failed to set security group ingress rules")
 			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
 		}
 		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
