@@ -33,6 +33,7 @@ type AzurePlatformSpecApplyConfiguration struct {
 	SubscriptionID    *string                  `json:"subscriptionID,omitempty"`
 	MachineIdentityID *string                  `json:"machineIdentityID,omitempty"`
 	SecurityGroupID   *string                  `json:"securityGroupID,omitempty"`
+	MultiArch         *bool                    `json:"multiArch,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs an declarative configuration of the AzurePlatformSpec type for use with
@@ -110,5 +111,13 @@ func (b *AzurePlatformSpecApplyConfiguration) WithMachineIdentityID(value string
 // If called multiple times, the SecurityGroupID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithSecurityGroupID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.SecurityGroupID = &value
+	return b
+}
+
+// WithMultiArch sets the MultiArch field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MultiArch field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithMultiArch(value bool) *AzurePlatformSpecApplyConfiguration {
+	b.MultiArch = &value
 	return b
 }

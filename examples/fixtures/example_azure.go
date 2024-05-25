@@ -18,6 +18,7 @@ type ExampleAzureOptions struct {
 	EnableEphemeralOSDisk  bool
 	DiskStorageAccountType string
 	EncryptionKey          *AzureEncryptionKey
+	MultiArch              bool
 }
 
 type AzureEncryptionKey struct {

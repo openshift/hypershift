@@ -120,7 +120,7 @@ func TestValidateMultiArchRelease(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := validateMultiArchRelease(context.Background(), test.inputOptions)
+			err := core.ValidateMultiArchRelease(context.Background(), test.inputOptions)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

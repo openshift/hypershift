@@ -25,9 +25,12 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		PersistentPreRunE: validateFlags,
 	}
 
-	opts.AzurePlatform.Location = "eastus"
-	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
-	opts.AzurePlatform.DiskSizeGB = 120
+	opts.AzurePlatform = core.AzurePlatformOptions{
+		Location:     "eastus",
+		InstanceType: "Standard_D4s_v4",
+		DiskSizeGB:   120,
+		MultiArch:    false,
+	}
 
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
@@ -43,6 +46,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	cmd.Flags().StringToStringVarP(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", "t", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	cmd.Flags().StringVar(&opts.AzurePlatform.SubnetID, "subnet-id", opts.AzurePlatform.SubnetID, "The subnet ID where the VMs will be placed.")
+	cmd.PersistentFlags().BoolVar(&opts.AzurePlatform.MultiArch, "multi-arch", opts.AzurePlatform.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -55,7 +59,12 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		err := core.ValidateMultiArchRelease(ctx, opts)
+		if err != nil {
+			return err
+		}
+
+		if err = CreateCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -126,6 +135,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		DiskEncryptionSetID:    opts.AzurePlatform.DiskEncryptionSetID,
 		EnableEphemeralOSDisk:  opts.AzurePlatform.EnableEphemeralOSDisk,
 		DiskStorageAccountType: opts.AzurePlatform.DiskStorageAccountType,
+		MultiArch:              opts.AzurePlatform.MultiArch,
 	}
 
 	if opts.AzurePlatform.EncryptionKeyID != "" {

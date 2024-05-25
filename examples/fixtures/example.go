@@ -392,6 +392,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				SubscriptionID:    o.Azure.Creds.SubscriptionID,
 				MachineIdentityID: o.Azure.MachineIdentityID,
 				SecurityGroupID:   o.Azure.SecurityGroupID,
+				MultiArch:         o.Azure.MultiArch,
 			},
 		}
 

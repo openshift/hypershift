@@ -4024,7 +4024,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	// Validate release image is multi-arch
-	if hc.Spec.Platform.Type == hyperv1.AWSPlatform && hc.Spec.Platform.AWS.MultiArch {
+	if (hc.Spec.Platform.Type == hyperv1.AWSPlatform && hc.Spec.Platform.AWS.MultiArch) || (hc.Spec.Platform.Type == hyperv1.AzurePlatform && hc.Spec.Platform.Azure.MultiArch) {
 		isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to determine if release image multi-arch: %w", err)
