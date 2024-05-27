@@ -527,6 +527,7 @@ func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI) (string
 	oidcOutput, err := iamClient.CreateOpenIDConnectProvider(&iam.CreateOpenIDConnectProviderInput{
 		ClientIDList: []*string{
 			aws.String("openshift"),
+			aws.String("sts.amazonaws.com"),
 		},
 		// The AWS console mentions that this will be ignored for S3 buckets but creation fails if we don't
 		// pass a thumbprint.
