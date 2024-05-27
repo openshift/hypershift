@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift
 
-go 1.21
+go 1.22.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
@@ -29,7 +29,7 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/evanphx/json-patch/v5 v5.9.0
 	github.com/go-jose/go-jose/v3 v3.0.3
-	github.com/go-logr/logr v1.4.1
+	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.6.0
@@ -41,7 +41,7 @@ require (
 	github.com/onsi/gomega v1.33.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/openshift/api v0.0.0-20240405095747-3e50337fcaea
+	github.com/openshift/api v0.0.0-20240524162738-d899f8877d22
 	github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
@@ -73,9 +73,9 @@ require (
 	google.golang.org/grpc v1.63.2
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.29.3
+	k8s.io/api v0.30.1
 	k8s.io/apiextensions-apiserver v0.29.3
-	k8s.io/apimachinery v0.29.3
+	k8s.io/apimachinery v0.30.1
 	k8s.io/apiserver v0.29.3
 	k8s.io/cli-runtime v0.29.3
 	k8s.io/client-go v0.29.3
