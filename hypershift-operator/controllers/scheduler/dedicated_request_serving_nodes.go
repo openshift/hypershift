@@ -127,7 +127,7 @@ func (r *DedicatedServingComponentScheduler) SetupWithManager(mgr ctrl.Manager, 
 		For(&hyperv1.HostedCluster{}, builder.WithPredicates(util.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
-			MaxConcurrentReconciles: 10,
+			MaxConcurrentReconciles: 1,
 		}).Named("DedicatedServingComponentScheduler")
 	return builder.Complete(r)
 }
@@ -277,7 +277,7 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		node.Labels[HostedClusterNameLabel] = hcluster.Name
 		node.Labels[HostedClusterNamespaceLabel] = hcluster.Namespace
 
-		if err := r.Patch(ctx, node, client.MergeFrom(originalNode)); err != nil {
+		if err := r.Patch(ctx, node, client.MergeFromWithOptions(originalNode, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update labels and taints on node %s: %w", node.Name, err)
 		}
 		log.Info("Node tainted and labeled for hosted cluster", "node", node.Name)
@@ -321,7 +321,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) SetupWithManager(ctx contex
 		For(&hyperv1.HostedCluster{}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
-			MaxConcurrentReconciles: 10,
+			MaxConcurrentReconciles: 1,
 		}).
 		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			node := obj.(*corev1.Node)
@@ -603,7 +603,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensureHostedClusterLabelAnd
 	node.Labels[HostedClusterNameLabel] = hc.Name
 	node.Labels[HostedClusterNamespaceLabel] = hc.Namespace
 
-	if err := r.Patch(ctx, node, client.MergeFrom(original)); err != nil {
+	if err := r.Patch(ctx, node, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update labels and taints on node %s: %w", node.Name, err)
 	}
 	return nil
