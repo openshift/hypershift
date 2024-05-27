@@ -27,19 +27,20 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 type DestroyInfraOptions struct {
 	Region              string
 	InfraID             string
-	AWSCredentialsFile  string
-	AWSKey              string
-	AWSSecretKey        string
+	AWSCredentialsOpts  awsutil.AWSCredentialsOptions
 	Name                string
 	BaseDomain          string
 	BaseDomainPrefix    string
 	AwsInfraGracePeriod time.Duration
 	Log                 logr.Logger
+
+	CredentialsSecretData *util.CredentialsSecretData
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -56,18 +57,22 @@ func NewDestroyCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. se 'none' for an empty prefix")
 	cmd.Flags().DurationVar(&opts.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
+	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+
 	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("base-domain")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := opts.AWSCredentialsOpts.Validate()
+		if err != nil {
+			return err
+		}
 		if err := opts.Run(cmd.Context()); err != nil {
 			opts.Log.Error(err, "Failed to destroy infrastructure")
 			return err
@@ -106,7 +111,10 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
-	awsSession := awsutil.NewSession("cli-destroy-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-destroy-infra", o.CredentialsSecretData, o.Region)
+	if err != nil {
+		return err
+	}
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 	elbClient := elb.New(awsSession, awsConfig)

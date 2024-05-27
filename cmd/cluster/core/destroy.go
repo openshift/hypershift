@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -42,7 +43,7 @@ type DestroyOptions struct {
 }
 
 type AWSPlatformDestroyOptions struct {
-	AWSCredentialsFile  string
+	AWSCredentialsOpts  awsutil.AWSCredentialsOptions
 	BaseDomain          string
 	BaseDomainPrefix    string
 	PreserveIAM         bool

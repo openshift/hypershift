@@ -23,9 +23,7 @@ import (
 type ConsoleLogOpts struct {
 	Name               string
 	Namespace          string
-	AWSCredentialsFile string
-	AWSKey             string
-	AWSSecretKey       string
+	AWSCredentialsOpts awsutil.AWSCredentialsOptions
 	OutputDir          string
 }
 
@@ -43,14 +41,18 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&opts.Namespace, "namespace", "n", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", opts.OutputDir, "Directory where to place console logs (required)")
 
+	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+
 	cmd.MarkFlagRequired("name")
-	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("output-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := opts.AWSCredentialsOpts.Validate()
+		if err != nil {
+			return err
+		}
 		if err := opts.Run(cmd.Context()); err != nil {
 			log.Log.Error(err, "Failed to get console logs")
 			return err
@@ -74,7 +76,11 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	}
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
-	awsSession := awsutil.NewSession("cli-console-logs", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+
+	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-console-logs", nil, region)
+	if err != nil {
+		return err
+	}
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
