@@ -44,7 +44,7 @@ func main() {
 }
 
 type awsEndpointServiceAdmissionTracer struct {
-	decoder *admission.Decoder
+	decoder admission.Decoder
 }
 
 var _ admission.Handler = &awsEndpointServiceAdmissionTracer{}

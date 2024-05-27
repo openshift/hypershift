@@ -33,7 +33,7 @@ func Setup(mgr manager.Manager, deploymentNamespace string, deploymentName strin
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
-	if err := c.Watch(source.Kind(mgr.GetCache(), &configv1.Proxy{}), &handler.EnqueueRequestForObject{}); err != nil {
+	if err := c.Watch(source.Kind(mgr.GetCache(), &configv1.Proxy{}, &handler.TypedEnqueueRequestForObject[*configv1.Proxy]{})); err != nil {
 		return fmt.Errorf("failed to set up watch for %T: %w", &configv1.Proxy{}, err)
 	}
 	if err := mgr.Add(&noLeaderElectionRunnable{c}); err != nil {

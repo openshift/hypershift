@@ -106,7 +106,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
 
-	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &capiv1.Machine{}), &handler.EnqueueRequestForObject{}); err != nil {
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &capiv1.Machine{}, &handler.EnqueueRequestForObject{})); err != nil {
 		return fmt.Errorf("failed to watch Machines: %w", err)
 	}
 	go kubevirtInfraCache.Start(ctx)
@@ -142,7 +142,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		}
 		return true
 	})
-	if err := c.Watch(source.Kind(kubevirtInfraCache, &corev1.Service{}), handler.EnqueueRequestsFromMapFunc(allNodes), isKCCMService); err != nil {
+	if err := c.Watch(source.Kind[client.Object](kubevirtInfraCache, &corev1.Service{}, handler.EnqueueRequestsFromMapFunc(allNodes), isKCCMService)); err != nil {
 		return fmt.Errorf("failed to watch kubevirt services: %w", err)
 	}
 

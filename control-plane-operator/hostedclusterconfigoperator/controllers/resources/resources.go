@@ -208,11 +208,11 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		&operatorv1.IngressController{},
 	}
 	for _, r := range resourcesToWatch {
-		if err := c.Watch(source.Kind(opts.Manager.GetCache(), r), eventHandler()); err != nil {
+		if err := c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler())); err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
-	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}), eventHandler()); err != nil {
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 
