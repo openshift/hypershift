@@ -269,26 +269,25 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			t.Logf("Skipping cluster dump because no artifact directory was provided")
 			return nil
 		}
-		dumpDir := filepath.Join(artifactDir, artifactSubdirFor(t))
 
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
 			var dumpErrors []error
-			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsOpts, dumpDir)
+			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsOpts, artifactDir)
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
+			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
-			err = dump.DumpJournals(t, ctx, hc, dumpDir, opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile)
+			err = dump.DumpJournals(t, ctx, hc, artifactDir, opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile)
 			if err != nil {
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:
-			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
+			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}

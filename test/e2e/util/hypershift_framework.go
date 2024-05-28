@@ -52,6 +52,8 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 }
 
 func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
+	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
+
 	// create a hypershift cluster for the test
 	hostedCluster := h.createHostedCluster(opts, platform, serviceAccountSigningKey, artifactDir)
 
@@ -261,8 +263,7 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 	g.Expect(err).NotTo(HaveOccurred(), "failed to generate platform specific cluster options")
 
 	// Dump the output from rendering the cluster objects for posterity
-	dumpDir := filepath.Join(artifactDir, artifactSubdirFor(h.T))
-	if err := os.MkdirAll(dumpDir, 0755); err != nil {
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
 		h.Errorf("failed to create dump directory: %v", err)
 	}
 
@@ -270,7 +271,7 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 	opts.Render = false
 	opts.RenderInto = ""
 	h.Logf("Creating a new cluster. Options: %v", opts)
-	if err := createCluster(h.ctx, hc, opts, dumpDir); err != nil {
+	if err := createCluster(h.ctx, hc, opts, artifactDir); err != nil {
 		h.Errorf("failed to create cluster, tearing down: %v", err)
 		return hc
 	}
