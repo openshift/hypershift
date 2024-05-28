@@ -104,7 +104,10 @@ func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.
 	if err != nil {
 		return err
 	}
-	if err := c.Watch(&source.Informer{Informer: services.Informer()}, namedResourceHandler(r.ServiceName)); err != nil {
+	if err := c.Watch(&source.Informer{
+		Informer: services.Informer(),
+		Handler:  namedResourceHandler(r.ServiceName),
+	}); err != nil {
 		return err
 	}
 	mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {

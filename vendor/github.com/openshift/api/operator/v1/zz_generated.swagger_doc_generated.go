@@ -265,6 +265,7 @@ var map_ConsoleSpec = map[string]string{
 	"providers":     "providers contains configuration for using specific service providers.",
 	"route":         "route contains hostname and secret reference that contains the serving certificate. If a custom route is specified, a new route will be created with the provided hostname, under which console will be available. In case of custom hostname uses the default routing suffix of the cluster, the Secret specification for a serving certificate will not be needed. In case of custom hostname points to an arbitrary domain, manual DNS configurations steps are necessary. The default console route will be maintained to reserve the default hostname for console if the custom route is removed. If not specified, default route will be used. DEPRECATED",
 	"plugins":       "plugins defines a list of enabled console plugin names.",
+	"ingress":       "ingress allows to configure the alternative ingress for the console. This field is intended for clusters without ingress capability, where access to routes is not possible.",
 }
 
 func (ConsoleSpec) SwaggerDoc() map[string]string {
@@ -318,6 +319,16 @@ var map_DeveloperConsoleCatalogTypes = map[string]string{
 
 func (DeveloperConsoleCatalogTypes) SwaggerDoc() map[string]string {
 	return map_DeveloperConsoleCatalogTypes
+}
+
+var map_Ingress = map[string]string{
+	"":                   "Ingress allows cluster admin to configure alternative ingress for the console.",
+	"consoleURL":         "consoleURL is a URL to be used as the base console address. If not specified, the console route hostname will be used. This field is required for clusters without ingress capability, where access to routes is not possible. Make sure that appropriate ingress is set up at this URL. The console operator will monitor the URL and may go degraded if it's unreachable for an extended period. Must use the HTTPS scheme.",
+	"clientDownloadsURL": "clientDownloadsURL is a URL to be used as the address to download client binaries. If not specified, the downloads route hostname will be used. This field is required for clusters without ingress capability, where access to routes is not possible. The console operator will monitor the URL and may go degraded if it's unreachable for an extended period. Must use the HTTPS scheme.",
+}
+
+func (Ingress) SwaggerDoc() map[string]string {
+	return map_Ingress
 }
 
 var map_Perspective = map[string]string{
@@ -501,8 +512,11 @@ func (IBMCloudCSIDriverConfigSpec) SwaggerDoc() map[string]string {
 }
 
 var map_VSphereCSIDriverConfigSpec = map[string]string{
-	"":                   "VSphereCSIDriverConfigSpec defines properties that can be configured for vsphere CSI driver.",
-	"topologyCategories": "topologyCategories indicates tag categories with which vcenter resources such as hostcluster or datacenter were tagged with. If cluster Infrastructure object has a topology, values specified in Infrastructure object will be used and modifications to topologyCategories will be rejected.",
+	"":                                 "VSphereCSIDriverConfigSpec defines properties that can be configured for vsphere CSI driver.",
+	"topologyCategories":               "topologyCategories indicates tag categories with which vcenter resources such as hostcluster or datacenter were tagged with. If cluster Infrastructure object has a topology, values specified in Infrastructure object will be used and modifications to topologyCategories will be rejected.",
+	"globalMaxSnapshotsPerBlockVolume": "globalMaxSnapshotsPerBlockVolume is a global configuration parameter that applies to volumes on all kinds of datastores. If omitted, the platform chooses a default, which is subject to change over time, currently that default is 3. Snapshots can not be disabled using this parameter. Increasing number of snapshots above 3 can have negative impact on performance, for more details see: https://kb.vmware.com/s/article/1025279 Volume snapshot documentation: https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/3.0/vmware-vsphere-csp-getting-started/GUID-E0B41C69-7EEB-450F-A73D-5FD2FF39E891.html",
+	"granularMaxSnapshotsPerBlockVolumeInVSAN": "granularMaxSnapshotsPerBlockVolumeInVSAN is a granular configuration parameter on vSAN datastore only. It overrides GlobalMaxSnapshotsPerBlockVolume if set, while it falls back to the global constraint if unset. Snapshots for VSAN can not be disabled using this parameter.",
+	"granularMaxSnapshotsPerBlockVolumeInVVOL": "granularMaxSnapshotsPerBlockVolumeInVVOL is a granular configuration parameter on Virtual Volumes datastore only. It overrides GlobalMaxSnapshotsPerBlockVolume if set, while it falls back to the global constraint if unset. Snapshots for VVOL can not be disabled using this parameter.",
 }
 
 func (VSphereCSIDriverConfigSpec) SwaggerDoc() map[string]string {
@@ -698,6 +712,7 @@ func (EtcdList) SwaggerDoc() map[string]string {
 
 var map_EtcdSpec = map[string]string{
 	"controlPlaneHardwareSpeed": "HardwareSpeed allows user to change the etcd tuning profile which configures the latency parameters for heartbeat interval and leader election timeouts allowing the cluster to tolerate longer round-trip-times between etcd members. Valid values are \"\", \"Standard\" and \"Slower\".\n\t\"\" means no opinion and the platform is left to choose a reasonable default\n\twhich is subject to change without notice.",
+	"backendQuotaGiB":           "backendQuotaGiB sets the etcd backend storage size limit in gibibytes. The value should be an integer not less than 8 and not more than 32. When not specified, the default value is 8.",
 }
 
 func (EtcdSpec) SwaggerDoc() map[string]string {
@@ -999,6 +1014,7 @@ var map_IngressControllerTuningOptions = map[string]string{
 	"serverTimeout":               "serverTimeout defines how long a connection will be held open while waiting for a server/backend response.\n\nIf unset, the default timeout is 30s",
 	"serverFinTimeout":            "serverFinTimeout defines how long a connection will be held open while waiting for the server/backend response to the client closing the connection.\n\nIf unset, the default timeout is 1s",
 	"tunnelTimeout":               "tunnelTimeout defines how long a tunnel connection (including websockets) will be held open while the tunnel is idle.\n\nIf unset, the default timeout is 1h",
+	"connectTimeout":              "ConnectTimeout defines the maximum time to wait for a connection attempt to a server/backend to succeed.\n\nThis field expects an unsigned duration string of decimal numbers, each with optional fraction and a unit suffix, e.g. \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\" U+00B5 or \"μs\" U+03BC), \"ms\", \"s\", \"m\", \"h\".\n\nWhen omitted, this means the user has no opinion and the platform is left to choose a reasonable default. This default is subject to change over time. The current default is 5s.",
 	"tlsInspectDelay":             "tlsInspectDelay defines how long the router can hold data to find a matching route.\n\nSetting this too short can cause the router to fall back to the default certificate for edge-terminated or reencrypt routes even when a better matching certificate could be used.\n\nIf unset, the default inspect delay is 5s",
 	"healthCheckInterval":         "healthCheckInterval defines how long the router waits between two consecutive health checks on its configured backends.  This value is applied globally as a default for all routes, but may be overridden per-route by the route annotation \"router.openshift.io/haproxy.health.check.interval\".\n\nExpects an unsigned duration string of decimal numbers, each with optional fraction and a unit suffix, eg \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\" U+00B5 or \"μs\" U+03BC), \"ms\", \"s\", \"m\", \"h\".\n\nSetting this to less than 5s can cause excess traffic due to too frequent TCP health checks and accompanying SYN packet storms.  Alternatively, setting this too high can result in increased latency, due to backend servers that are no longer available, but haven't yet been detected as such.\n\nAn empty or zero healthCheckInterval means no opinion and IngressController chooses a default, which is subject to change over time. Currently the default healthCheckInterval value is 5s.\n\nCurrently the minimum allowed value is 1s and the maximum allowed value is 2147483647ms (24.85 days).  Both are subject to change over time.",
 	"maxConnections":              "maxConnections defines the maximum number of simultaneous connections that can be established per HAProxy process. Increasing this value allows each ingress controller pod to handle more connections but at the cost of additional system resources being consumed.\n\nPermitted values are: empty, 0, -1, and the range 2000-2000000.\n\nIf this field is empty or 0, the IngressController will use the default value of 50000, but the default is subject to change in future releases.\n\nIf the value is -1 then HAProxy will dynamically compute a maximum value based on the available ulimits in the running container. Selecting -1 (i.e., auto) will result in a large value being computed (~520000 on OpenShift >=4.10 clusters) and therefore each HAProxy process will incur significant memory usage compared to the current default of 50000.\n\nSetting a value that is greater than the current operating system limit will prevent the HAProxy process from starting.\n\nIf you choose a discrete value (e.g., 750000) and the router pod is migrated to a new node, there's no guarantee that that new node has identical ulimits configured. In such a scenario the pod would fail to start. If you have nodes with different ulimits configured (e.g., different tuned profiles) and you choose a discrete value then the guidance is to use -1 and let the value be computed dynamically at runtime.\n\nYou can monitor memory usage for router containers with the following metric: 'container_memory_working_set_bytes{container=\"router\",namespace=\"openshift-ingress\"}'.\n\nYou can monitor memory usage of individual HAProxy processes in router containers with the following metric: 'container_memory_working_set_bytes{container=\"router\",namespace=\"openshift-ingress\"}/container_processes{container=\"router\",namespace=\"openshift-ingress\"}'.",
@@ -1284,6 +1300,8 @@ func (MachineConfigurationSpec) SwaggerDoc() map[string]string {
 }
 
 var map_MachineConfigurationStatus = map[string]string{
+	"observedGeneration":         "observedGeneration is the last generation change you've dealt with",
+	"conditions":                 "conditions is a list of conditions and their status",
 	"nodeDisruptionPolicyStatus": "nodeDisruptionPolicyStatus status reflects what the latest cluster-validated policies are, and will be used by the Machine Config Daemon during future node updates.",
 }
 
@@ -1342,7 +1360,7 @@ func (NodeDisruptionPolicyConfig) SwaggerDoc() map[string]string {
 }
 
 var map_NodeDisruptionPolicySpecAction = map[string]string{
-	"type":    "type represents the commands that will be carried out if this NodeDisruptionPolicySpecActionType is executed Valid value are Reboot, Drain, Reload, Restart, DaemonReload, None and Special reload/restart requires a corresponding service target specified in the reload/restart field. Other values require no further configuration",
+	"type":    "type represents the commands that will be carried out if this NodeDisruptionPolicySpecActionType is executed Valid values are Reboot, Drain, Reload, Restart, DaemonReload and None. reload/restart requires a corresponding service target specified in the reload/restart field. Other values require no further configuration",
 	"reload":  "reload specifies the service to reload, only valid if type is reload",
 	"restart": "restart specifies the service to restart, only valid if type is restart",
 }
@@ -1389,7 +1407,7 @@ func (NodeDisruptionPolicyStatus) SwaggerDoc() map[string]string {
 }
 
 var map_NodeDisruptionPolicyStatusAction = map[string]string{
-	"type":    "type represents the commands that will be carried out if this NodeDisruptionPolicyStatusActionType is executed Valid value are Reboot, Drain, Reload, Restart, DaemonReload, None and Special reload/restart requires a corresponding service target specified in the reload/restart field. Other values require no further configuration",
+	"type":    "type represents the commands that will be carried out if this NodeDisruptionPolicyStatusActionType is executed Valid values are Reboot, Drain, Reload, Restart, DaemonReload, None and Special. reload/restart requires a corresponding service target specified in the reload/restart field. Other values require no further configuration",
 	"reload":  "reload specifies the service to reload, only valid if type is reload",
 	"restart": "restart specifies the service to restart, only valid if type is restart",
 }
