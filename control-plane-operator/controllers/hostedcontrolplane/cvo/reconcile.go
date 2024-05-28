@@ -114,7 +114,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, releaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -137,11 +137,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.Bool(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image, platformType, oauthEnabled)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(releaseImage, platformType, oauthEnabled)),
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneImage, image, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneImage, releaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
