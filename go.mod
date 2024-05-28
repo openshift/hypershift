@@ -1,6 +1,8 @@
 module github.com/openshift/hypershift
 
-go 1.21
+go 1.22.0
+
+toolchain go1.22.3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
@@ -41,7 +43,7 @@ require (
 	github.com/onsi/gomega v1.33.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/openshift/api v0.0.0-20240405095747-3e50337fcaea
+	github.com/openshift/api v0.0.0-20240527133614-ba11c1587003
 	github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
@@ -73,9 +75,9 @@ require (
 	google.golang.org/grpc v1.63.2
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.29.3
+	k8s.io/api v0.30.1
 	k8s.io/apiextensions-apiserver v0.29.3
-	k8s.io/apimachinery v0.29.3
+	k8s.io/apimachinery v0.30.1
 	k8s.io/apiserver v0.29.3
 	k8s.io/cli-runtime v0.29.3
 	k8s.io/client-go v0.29.3
@@ -89,7 +91,7 @@ require (
 	kubevirt.io/api v1.1.1
 	kubevirt.io/containerized-data-importer-api v1.58.1
 	sigs.k8s.io/apiserver-network-proxy v0.29.0
-	sigs.k8s.io/cluster-api v1.7.1
+	sigs.k8s.io/cluster-api v1.7.2
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.5.0
 	sigs.k8s.io/cluster-api-provider-azure v1.15.0
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
