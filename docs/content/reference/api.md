@@ -5464,6 +5464,48 @@ string
 </tr>
 </tbody>
 </table>
+###KubevirtHostDevice { #hypershift.openshift.io/v1beta1.KubevirtHostDevice }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform">KubevirtNodePoolPlatform</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>deviceName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>DeviceName is the name of the host device that is desired to be utilized in the HostedCluster&rsquo;s NodePool
+The device can be any supported PCI device, including GPU, either as a passthrough or a vGPU slice.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>count</code></br>
+<em>
+int
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Count is the number of instances the specified host device will be attached to each of the
+NodePool&rsquo;s nodes. Default is 1.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubevirtManualStorageDriverConfig { #hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig }
 <p>
 (<em>Appears on:</em>
@@ -5643,6 +5685,20 @@ map[string]string
 <p>NodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
 Selector which must match a node&rsquo;s labels for the VM to be scheduled on that node. More info:
 <a href="https://kubernetes.io/docs/concepts/configuration/assign-pod-node/">https://kubernetes.io/docs/concepts/configuration/assign-pod-node/</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>hostDevices</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtHostDevice">
+[]KubevirtHostDevice
+</a>
+</em>
+</td>
+<td>
+<p>KubevirtHostDevices specifies the host devices (e.g. GPU devices) to be passed
+from the management cluster, to the nodepool nodes</p>
 </td>
 </tr>
 </tbody>

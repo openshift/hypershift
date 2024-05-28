@@ -752,6 +752,10 @@ type KubevirtNodePoolPlatform struct {
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// KubevirtHostDevices specifies the host devices (e.g. GPU devices) to be passed
+	// from the management cluster, to the nodepool nodes
+	KubevirtHostDevices []KubevirtHostDevice `json:"hostDevices,omitempty"`
 }
 
 // KubevirtNetwork specifies the configuration for a virtual machine
@@ -761,6 +765,20 @@ type KubevirtNetwork struct {
 	// it is a value with the format "[namespace]/[name]" to reference the
 	// multus network attachment definition
 	Name string `json:"name"`
+}
+
+type KubevirtHostDevice struct {
+	// DeviceName is the name of the host device that is desired to be utilized in the HostedCluster's NodePool
+	// The device can be any supported PCI device, including GPU, either as a passthrough or a vGPU slice.
+	DeviceName string `json:"deviceName"`
+
+	// Count is the number of instances the specified host device will be attached to each of the
+	// NodePool's nodes. Default is 1.
+	//
+	// +optional
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Count int `json:"count,omitempty"`
 }
 
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating
