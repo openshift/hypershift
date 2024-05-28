@@ -13,7 +13,7 @@ import (
 )
 
 type CVOParams struct {
-	Image                   string
+	ReleaseImage            string
 	ControlPlaneImage       string
 	CLIImage                string
 	AvailabilityProberImage string
@@ -28,7 +28,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		ControlPlaneImage:       util.HCPControlPlaneReleaseImage(hcp),
-		Image:                   hcp.Spec.ReleaseImage,
+		ReleaseImage:            hcp.Spec.ReleaseImage,
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ClusterID:               hcp.Spec.ClusterID,
 		PlatformType:            hcp.Spec.Platform.Type,
