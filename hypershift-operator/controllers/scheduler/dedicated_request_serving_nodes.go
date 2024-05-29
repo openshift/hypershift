@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -25,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -45,6 +47,11 @@ const (
 	PlaceholderLabel = "hypershift.openshift.io/placeholder"
 
 	autoSizerNamespace = placeholderNamespace
+
+	clusterNamespaceKey = "clusterNamespace"
+	clusterNameKey      = "clusterName"
+	pairLabelKey        = "hypershift.openshift.io/pairlabel"
+	schedulerFinalizer  = "hypershift.openshift.io/dedicated-request-serving-scheduler"
 )
 
 type DedicatedServingComponentNodeReaper struct {
@@ -362,6 +369,23 @@ func (r *DedicatedServingComponentSchedulerAndSizer) SetupWithManager(ctx contex
 	return builder.Complete(r)
 }
 
+func (r *DedicatedServingComponentSchedulerAndSizer) deletePairConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Deleting pair configmaps for hosted cluster", "hostedcluster", client.ObjectKeyFromObject(hc))
+	configMapList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, configMapList, client.HasLabels{pairLabelKey}, client.InNamespace(placeholderNamespace)); err != nil {
+		return fmt.Errorf("failed to list configmaps: %w", err)
+	}
+	for _, cm := range configMapList.Items {
+		if cm.Data[clusterNameKey] == hc.Name && cm.Data[clusterNamespaceKey] == hc.Namespace {
+			if err := r.Delete(ctx, &cm); err != nil {
+				return fmt.Errorf("failed to delete configmap %s: %w", client.ObjectKeyFromObject(&cm).String(), err)
+			}
+		}
+	}
+	return nil
+}
+
 func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	hc := &hyperv1.HostedCluster{}
 	log := ctrl.LoggerFrom(ctx)
@@ -374,17 +398,39 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 	if !hc.DeletionTimestamp.IsZero() {
-		log.Info("hostedcluster is deleted")
-		// Ensure that any placeholder deployment is deleted
-		if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
-			return ctrl.Result{}, err
+		log.Info("hostedcluster is deleted, cleaning up")
+		if controllerutil.ContainsFinalizer(hc, schedulerFinalizer) {
+			if controllerutil.ContainsFinalizer(hc, hostedcluster.HostedClusterFinalizer) {
+				// Wait until the hosted cluster finalizer is removed
+				return ctrl.Result{}, nil
+			}
+			// Ensure that any placeholder deployment is deleted
+			if err := r.deletePlaceholderDeployment(ctx, hc); err != nil {
+				return ctrl.Result{}, err
+			}
+			if err := r.deletePairConfigMaps(ctx, hc); err != nil {
+				return ctrl.Result{}, err
+			}
+			controllerutil.RemoveFinalizer(hc, schedulerFinalizer)
+			if err := r.Update(ctx, hc); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
+
 		return ctrl.Result{}, nil
 	}
 	if hcTopology := hc.Annotations[hyperv1.TopologyAnnotation]; hcTopology != hyperv1.DedicatedRequestServingComponentsTopology {
 		log.Info("hostedcluster does not use isolated request serving components, nothing to do")
 		return ctrl.Result{}, nil
 	}
+	if !controllerutil.ContainsFinalizer(hc, schedulerFinalizer) {
+		controllerutil.AddFinalizer(hc, schedulerFinalizer)
+		if err := r.Update(ctx, hc); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	isPaused, duration, err := util.ProcessPausedUntilField(hc.Spec.PausedUntil, time.Now())
 	if err != nil {
 		log.Error(err, "error processing hosted cluster paused field")
@@ -430,13 +476,22 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 			if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
 				pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
 			}
-			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && pairLabel != "" && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel {
+			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && pairLabel != "" && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && node.DeletionTimestamp.IsZero() {
 				goalNodes = append(goalNodes, node)
 			}
 		} else if node.Labels[hyperv1.HostedClusterLabel] == "" {
 			availableNodes = append(availableNodes, node)
 		}
 	}
+	if pairLabel == "" {
+		// If no nodes were labeled, but only a configmap was created, find the pair label
+		// to use from the configmaps
+		pairLabel, err = r.pairLabelFromConfigMaps(ctx, hc.Namespace, hc.Name)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get pair label from configmaps: %w", err)
+		}
+	}
+
 	log = log.WithValues("pairLabel", pairLabel)
 
 	// Find any nodes that are in the same fleet manager group and have the right size
@@ -444,6 +499,9 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 	// and tainted with the hosted cluster label. This can happen if not all nodes were labeled/tainted
 	// when they were initially selected.
 	if pairLabel != "" {
+		if err := r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
+		}
 		var needClusterLabel []corev1.Node
 		for _, node := range availableNodes {
 			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel {
@@ -473,7 +531,14 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 				return ctrl.Result{}, fmt.Errorf("failed to get nodes from placeholders: %w", err)
 			}
 			if len(candidateNodes) > 0 {
+				pairLabel = candidateNodes[0].Labels[OSDFleetManagerPairedNodesLabel]
+				if pairLabel == "" {
+					return ctrl.Result{}, fmt.Errorf("node %s has no pair label", candidateNodes[0].Name)
+				}
 				log.WithValues("pairLabel", candidateNodes[0].Labels[OSDFleetManagerPairedNodesLabel]).Info("claiming candidate nodes")
+				if err := r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
+					return ctrl.Result{}, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
+				}
 				for _, node := range candidateNodes {
 					if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
 						return ctrl.Result{}, err
@@ -526,6 +591,19 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		pairLabel = ""
+		if len(nodes) > 0 {
+			pairLabel = nodes[0].Labels[OSDFleetManagerPairedNodesLabel]
+			if pairLabel != "" {
+				return ctrl.Result{}, fmt.Errorf("node %s has no fleetmanager pair label", nodes[0].Name)
+			}
+		}
+		if pairLabel == "" {
+			return ctrl.Result{}, fmt.Errorf("cannot determine pair label")
+		}
+		if err = r.ensurePairConfigMap(ctx, pairLabel, hc.Namespace, hc.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("cannot ensure pair label %s config map: %w", pairLabel, err)
+		}
 		for _, node := range nodes {
 			if err := r.ensureHostedClusterLabelAndTaint(ctx, hc, &node); err != nil {
 				return ctrl.Result{}, err
@@ -537,6 +615,49 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) ensurePairConfigMap(ctx context.Context, pairLabel, hcNamespace, hcName string) error {
+	cfgMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: placeholderNamespace,
+			Name:      pairLabel,
+		},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cfgMap), cfgMap); err != nil {
+		if apierrors.IsNotFound(err) {
+			cfgMap.Labels = map[string]string{
+				pairLabelKey: pairLabel,
+			}
+			cfgMap.Data = map[string]string{
+				clusterNamespaceKey: hcNamespace,
+				clusterNameKey:      hcName,
+			}
+			if err := r.Create(ctx, cfgMap); err != nil {
+				return fmt.Errorf("failed to create: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to read configmap: %w", err)
+		}
+	} else {
+		if cfgMap.Data[clusterNamespaceKey] != hcNamespace || cfgMap.Data[clusterNameKey] != hcName {
+			return fmt.Errorf("conflict: configmap already exists for a different cluster")
+		}
+	}
+	return nil
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) pairLabelFromConfigMaps(ctx context.Context, namespace, name string) (string, error) {
+	configMapList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, configMapList, client.InNamespace(placeholderNamespace), client.HasLabels{pairLabelKey}); err != nil {
+		return "", err
+	}
+	for _, cm := range configMapList.Items {
+		if cm.Data[clusterNameKey] == name && cm.Data[clusterNamespaceKey] == namespace {
+			return cm.Name, nil
+		}
+	}
+	return "", nil
 }
 
 func (r *DedicatedServingComponentSchedulerAndSizer) nodesFromPlaceholders(ctx context.Context, size string) ([]corev1.Node, error) {
