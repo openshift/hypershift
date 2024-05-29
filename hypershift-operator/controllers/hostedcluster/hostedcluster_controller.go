@@ -111,7 +111,7 @@ import (
 )
 
 const (
-	finalizer                           = "hypershift.openshift.io/finalizer"
+	HostedClusterFinalizer              = "hypershift.openshift.io/finalizer"
 	HostedClusterAnnotation             = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
@@ -524,8 +524,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		// Now we can remove the finalizer.
-		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
-			controllerutil.RemoveFinalizer(hcluster, finalizer)
+		if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
+			controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
@@ -1053,8 +1053,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Part two: reconcile the state of the world
 
 	// Ensure the cluster has a finalizer for cleanup and update right away.
-	if !controllerutil.ContainsFinalizer(hcluster, finalizer) {
-		controllerutil.AddFinalizer(hcluster, finalizer)
+	if !controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
+		controllerutil.AddFinalizer(hcluster, HostedClusterFinalizer)
 		if err := r.Update(ctx, hcluster); err != nil {
 			if apierrors.IsConflict(err) {
 				return ctrl.Result{Requeue: true}, nil

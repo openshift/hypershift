@@ -356,6 +356,9 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 				Annotations: map[string]string{
 					hyperv1.TopologyAnnotation: hyperv1.DedicatedRequestServingComponentsTopology,
 				},
+				Finalizers: []string{
+					schedulerFinalizer,
+				},
 			},
 		}
 		for _, m := range mods {
