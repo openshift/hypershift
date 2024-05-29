@@ -151,7 +151,7 @@ type HostedClusterReconciler struct {
 	// 2) The OCP version being deployed is the latest version supported by Hypershift
 	HypershiftOperatorImage string
 
-	OpenShiftImageRegistryOverrides map[string]string
+	RegistryOverrides map[string]string
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
@@ -584,7 +584,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the ICSP/IDMS from the management cluster
-	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.OpenShiftImageRegistryOverrides)
+	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.RegistryOverrides)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
