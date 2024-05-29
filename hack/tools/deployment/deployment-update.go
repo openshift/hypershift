@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"k8s.io/utils/ptr"
 	"log"
 	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
 	"strings"
 )
 
@@ -58,22 +63,30 @@ var (
 		},
 	}
 
-	file      = flag.String("file", "", "The path to the deployment specification file.")
-	env       = flag.String("env", "", "The environment to change in the deployment spec.")
-	oldTag    = flag.String("old-tag", "", "The old tag used in search.")
-	newTag    = flag.String("new-tag", "", "The new tag to use.")
-	newCommit = flag.String("new-commit", "", "The new commit SHA to use.")
+	autoCommitChanges = false
+	branchName        = ""
+
+	file       = flag.String("file", "", "The path to the deployment specification file.")
+	env        = flag.String("env", "", "The environment to change in the deployment spec.")
+	oldTag     = flag.String("old-tag", "", "The old tag used in search.")
+	newTag     = flag.String("new-tag", "", "The new tag to use.")
+	newCommit  = flag.String("new-commit", "", "The new commit SHA to use.")
+	jiraTicket = flag.String("jira-ticket", "", "Uses the jira ticket to create a branch with the same name with the environment added on.")
+	remote     = flag.String("remote", "origin", "The remote branch to use when committing changes.")
 )
 
 func main() {
-	// Check all flags were used
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	// Verify required flags are used
 	flag.Parse()
-	if file != nil && len(*file) == 0 ||
-		env != nil && len(*env) == 0 ||
-		oldTag != nil && len(*oldTag) == 0 ||
-		newTag != nil && len(*newTag) == 0 ||
-		newCommit != nil && len(*newCommit) == 0 {
-		log.Fatalf("all flags are required")
+	if ptr.Deref(file, "") == "" ||
+		ptr.Deref(env, "") == "" ||
+		ptr.Deref(oldTag, "") == "" ||
+		ptr.Deref(newTag, "") == "" ||
+		ptr.Deref(newCommit, "") == "" {
+		log.Fatalf("flags - file, env, old-tag, new-tag, new-commit - are required")
 	}
 
 	// Verify the right env value was used
@@ -81,6 +94,23 @@ func main() {
 		log.Fatalf("invalid environment: %s", *env)
 	}
 	log.Print("Updating deployment spec for environment: ", *env)
+
+	if ptr.Deref(jiraTicket, "") != "" {
+		autoCommitChanges = true
+
+		err := gitCheckout(ctx, filepath.Dir(*file), "master")
+		if err != nil {
+			log.Fatalf("failed to checkout the master branch: %v", err)
+		}
+
+		branchName = *jiraTicket + "-" + *env
+
+		log.Printf("Creating git branch: %s", branchName)
+		err = gitCreateBranch(filepath.Dir(*file), branchName)
+		if err != nil {
+			log.Fatalf("failed to create branch: %v", err)
+		}
+	}
 
 	// Read the deployment spec
 	deploymentFileContents, err := os.ReadFile(*file)
@@ -107,6 +137,40 @@ func main() {
 		log.Fatalf("Error: %v", err)
 	}
 
+	if autoCommitChanges {
+		// Add the changes in git
+		log.Printf("Adding changes in git")
+		err = gitAdd(filepath.Dir(*file), *file)
+		if err != nil {
+			log.Fatalf("Error adding changes in git: %v", err)
+		}
+
+		// Commit the changes in git
+		log.Printf("Committing changes in git")
+		err = gitCommit(filepath.Dir(*file), fmt.Sprintf("Bump HyperShift in %s to %s / %s", *env, *newTag, *newCommit))
+		if err != nil {
+			log.Fatalf("Error committing changes in git: %v", err)
+		}
+
+		// Push the changes up
+		log.Printf("Pushing changes in git")
+		err = gitPush(filepath.Dir(*file), ptr.Deref(remote, ""), branchName)
+		if err != nil {
+			log.Fatalf("Error pushing changes in git: %v", err)
+		}
+
+		// TODO automate the MR request
+		log.Printf("-------------Info for MR-------------")
+		log.Printf("MR Title: %s: Bump HyperShift in %s to %s / %s", *jiraTicket, *env, *newTag, *newCommit)
+
+		// Output the changes between tags for the merge request
+		cmd := exec.Command("go", "run", "../release/notes.go", "--from="+*oldTag, "--to="+*newTag)
+		cmdOutput, err := cmd.Output()
+		if err != nil {
+			log.Fatalf("Error : %v", err)
+		}
+		log.Printf("MR Description as follows\n\n%s", string(cmdOutput))
+	}
 }
 
 // updateDeploymentByEnvironment updates the sectors in a particular ROSA environment
@@ -178,5 +242,60 @@ func updateTagAndCommitSHA(lines *[]string, sector, oldTag, newTag, newCommit st
 		log.Printf("did not find a line containing the old tag, %s, for sector '%s'", oldTag, sector)
 	}
 
+	return nil
+}
+
+func gitCheckout(ctx context.Context, repoPath, branch string) error {
+	cmd := exec.Command("git", "checkout", branch)
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error checking out branch: %s\n%s", err, output)
+	}
+	fmt.Printf("Output: %s\n", output)
+	return nil
+}
+
+func gitCreateBranch(repoPath, branch string) error {
+	cmd := exec.Command("git", "checkout", "-b", branch)
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error creating branch: %s\n%s", err, output)
+	}
+	fmt.Printf("Output: %s\n", output)
+	return nil
+}
+
+func gitAdd(repoPath, fileToAdd string) error {
+	cmd := exec.Command("git", "add", fileToAdd)
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error adding files: %s\n%s", err, output)
+	}
+	fmt.Printf("Output: %s\n", output)
+	return nil
+}
+
+func gitCommit(repoPath, message string) error {
+	cmd := exec.Command("git", "commit", "-m", message, "--signoff")
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error committing files: %s\n%s", err, output)
+	}
+	fmt.Printf("Output: %s\n", output)
+	return nil
+}
+
+func gitPush(repoPath, remote, branch string) error {
+	cmd := exec.Command("git", "push", remote, branch)
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error pushing to remote: %s\n%s", err, output)
+	}
+	fmt.Printf("Output: %s\n", output)
 	return nil
 }
