@@ -212,6 +212,7 @@ func expectedRules(networkType hyperv1.NetworkType) []rbacv1.PolicyRule {
 			},
 			ResourceNames: []string{
 				"openshift-service-ca.crt",
+				caConfigMap,
 			},
 			Verbs: []string{
 				"get",
