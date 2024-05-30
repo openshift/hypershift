@@ -89,6 +89,8 @@ spec:
           value: quay.io/openshift/cli:latest
         - name: AZURE_ENVIRONMENT_FILEPATH
           value: /tmp/azurestackcloud.json
+        - name: OPERATOR_IMAGE_VERSION
+          value: 1.0.0
         image: quay.io/openshift/cluster-image-registry-operator:latest
         name: cluster-image-registry-operator
         ports:
