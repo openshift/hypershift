@@ -991,6 +991,10 @@ func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
 		if nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE {
 			supported = true
 		}
+	case hyperv1.NonePlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitectureARM64 {
+			supported = true
+		}
 	}
 
 	return supported
