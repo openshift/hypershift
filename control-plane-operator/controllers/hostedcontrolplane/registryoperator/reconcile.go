@@ -46,6 +46,15 @@ echo "{{ .WorkerNamespace }}" > "{{ .TokenDir }}/namespace"
 cp "{{ .CABundle }}" "{{ .TokenDir }}/ca.crt"
 export KUBERNETES_SERVICE_HOST=kube-apiserver
 export KUBERNETES_SERVICE_PORT=$KUBE_APISERVER_SERVICE_PORT
+
+while true; do
+  if curl --fail --cacert {{ .TokenDir }}/ca.crt -H "Authorization: Bearer $(cat {{ .TokenDir }}/token)" "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}/apis/config.openshift.io/v1/featuregates" &> /dev/null; then
+    break
+  fi
+  echo "Waiting for access to featuregates resource"
+  sleep 2
+done
+
 exec /usr/bin/cluster-image-registry-operator \
   --files="{{ .ServingCertDir }}/tls.crt" \
   --files="{{ .ServingCertDir }}/tls.key"
