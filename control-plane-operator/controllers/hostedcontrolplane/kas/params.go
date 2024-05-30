@@ -99,10 +99,13 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ConsolePublicURL:     fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 		DisableProfiling:     util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
 
+		// TODO: Need to refactor the way we get the images to prevent future image name changes broke our
+		// 		 compatbility between multiple OCP Payload releases.
+		//       for future references: https://issues.redhat.com/browse/OCPBUGS-34640
 		Images: KubeAPIServerImages{
 			HyperKube:                  releaseImageProvider.GetImage("hyperkube"),
 			CLI:                        releaseImageProvider.GetImage("cli"),
-			ClusterConfigOperator:      releaseImageProvider.GetImage("cluster-config-api"),
+			ClusterConfigOperator:      releaseImageProvider.GetImages([]string{"cluster-config-api", "cluster-config-operator"}),
 			TokenMinterImage:           releaseImageProvider.GetImage("token-minter"),
 			AWSKMS:                     releaseImageProvider.GetImage("aws-kms-encryption-provider"),
 			AzureKMS:                   releaseImageProvider.GetImage("azure-kms-encryption-provider"),
@@ -110,6 +113,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			KonnectivityServer:         releaseImageProvider.GetImage("apiserver-network-proxy"),
 		},
 	}
+
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
 		params.Authentication = hcp.Spec.Configuration.Authentication

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/blang/semver"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -183,10 +184,23 @@ func ReconcileIgnitionServer(ctx context.Context,
 		"app":                         ignitionserver.ResourceName,
 		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
 	}
-	configAPIImage := componentImages["cluster-config-api"]
-	if configAPIImage == "" {
-		return fmt.Errorf("cluster-config-api image not found in payload images")
+
+	payloadVersion, err := semver.Parse(releaseVersion)
+	if err != nil {
+		return fmt.Errorf("failed to parse payload version: %w", err)
 	}
+
+	configAPIImage := componentImages["cluster-config-api"]
+	errorMessage := "cluster-config-api image not found in payload images"
+	if payloadVersion.Major == 4 && payloadVersion.Minor < 15 {
+		configAPIImage = componentImages["cluster-config-operator"]
+		errorMessage = "cluster-config-operator image not found in payload images"
+	}
+
+	if configAPIImage == "" {
+		return fmt.Errorf(errorMessage)
+	}
+
 	machineConfigOperatorImage := componentImages["machine-config-operator"]
 	if machineConfigOperatorImage == "" {
 		return fmt.Errorf("machine-config-operator image not found in payload images")
