@@ -157,6 +157,8 @@ func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	return reconcile.Result{}, nil
 }
 
+type ignoreError error
+
 type action struct {
 	requeueAfter time.Duration
 	applyCfg     *hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration
@@ -205,69 +207,34 @@ func (r *reconciler) reconcile(
 		}, nil
 	}
 
-	// Note: for every HostedCluster, we *either* expect to see the HCCO report the number of nodes into the
-	// HostedControlPlane status, *or* we must walk NodePools and count up their replicas here. We need to
-	// determine which of the cases we're in by looking at what the HCCO supports, and we cannot simply look
-	// at the HostedControlPlane status, as we may race, which could land us in the following unpleasant case:
-	// - this controller reconciles a new HostedCluster, uses NodePools as the source of truth for size
-	// - this controller adds a large t-shirt size, we scale up the request serving nodes
-	// - the HCCO finishes processing and reports some other number of nodes, using Nodes as the source of truth
-	// - this controller re-processes and transitions the cluster to a different t-shirt size, causing churn on the
-	//   request serving nodes
-	hccoReportsNodeCount, err := r.hccoReportsNodeCount(ctx, hostedCluster)
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine if HCCO reports node count: %w", err)
-	}
-
-	// Determine if the Kube API Server is available to determine if we can trust the node count from nodepool.status.replicas
-	// If the Kube API Server is not available, we cannot trust the node count from nodepool.status.replicas
-	// Ref: kubernetes-sigs/cluster-api#10195
-	kasAvailableCondition := meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hypershiftv1beta1.KubeAPIServerAvailable))
-	kasAvailable := kasAvailableCondition != nil && kasAvailableCondition.Status == metav1.ConditionTrue
-
-	// first, we figure out the node count for the hosted cluster
-	var nodeCount uint32
-	if hccoReportsNodeCount {
-		hostedControlPlane, err := r.hostedControlPlaneForHostedCluster(ctx, hostedCluster)
-		if err != nil {
-			return nil, nil
-		}
-
-		if hostedControlPlane.Status.NodeCount != nil && *hostedControlPlane.Status.NodeCount > 0 {
-			nodeCount = uint32(*hostedControlPlane.Status.NodeCount)
+	var sizeClass *schedulingv1alpha1.SizeConfiguration
+	if overrideSize := hostedCluster.Annotations[hypershiftv1beta1.ClusterSizeOverrideAnnotation]; overrideSize != "" {
+		// given the override size, get the size configuration
+		for i, class := range config.Spec.Sizes {
+			if class.Name == overrideSize {
+				sizeClass = &config.Spec.Sizes[i]
+			}
 		}
 	} else {
-		nodePools, err := r.nodePoolsForHostedCluster(ctx, hostedCluster)
+		nodeCount, err := r.determineNodeCount(ctx, hostedCluster, sizeClassLabelPresent)
 		if err != nil {
+			if _, ignore := err.(ignoreError); ignore {
+				logger.Info("Ignoring error", "error", err.Error())
+				return nil, nil
+			}
 			return nil, err
 		}
 
-		for _, nodePool := range nodePools.Items {
-			var replicas uint32
-			// If autoscaling, the replicas should be returned from status
-			if nodePool.Spec.AutoScaling != nil {
-				// If the Kube API Server is not available, and we already have a size label, skip processing
-				if !kasAvailable && sizeClassLabelPresent {
-					return nil, nil
-				}
-				replicas = uint32(nodePool.Status.Replicas)
-			} else if nodePool.Spec.Replicas != nil {
-				replicas = uint32(*nodePool.Spec.Replicas)
+		// given the node count we need to figure out if we need to transition to another t-shirt size
+		for i, class := range config.Spec.Sizes {
+			if class.Criteria.From <= nodeCount && (class.Criteria.To == nil || *class.Criteria.To >= nodeCount) {
+				sizeClass = &config.Spec.Sizes[i]
 			}
-			nodeCount += replicas
 		}
 	}
 
-	// second, given the node count we need to figure out if we need to transition to another t-shirt size
-	var sizeClass *schedulingv1alpha1.SizeConfiguration
-	for i, class := range config.Spec.Sizes {
-		if class.Criteria.From <= nodeCount && (class.Criteria.To == nil || *class.Criteria.To >= nodeCount) {
-			sizeClass = &config.Spec.Sizes[i]
-		}
-	}
 	if sizeClass == nil {
-		// this should never happen
-		logger.Error(fmt.Errorf("nodeSize of %d matched no configured size class", nodeCount), "could not find a size class for hosted cluster")
+		logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
 		return nil, nil
 	}
 	if sizeClassLabelPresent && sizeClass.Name == currentSizeClass {
@@ -402,6 +369,62 @@ func (r *reconciler) reconcile(
 		return &action{applyCfg: cfg}, nil
 	}
 	return nil, nil
+}
+
+func (r *reconciler) determineNodeCount(ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, sizeClassLabelPresent bool) (uint32, error) {
+	// Note: for every HostedCluster, we *either* expect to see the HCCO report the number of nodes into the
+	// HostedControlPlane status, *or* we must walk NodePools and count up their replicas here. We need to
+	// determine which of the cases we're in by looking at what the HCCO supports, and we cannot simply look
+	// at the HostedControlPlane status, as we may race, which could land us in the following unpleasant case:
+	// - this controller reconciles a new HostedCluster, uses NodePools as the source of truth for size
+	// - this controller adds a large t-shirt size, we scale up the request serving nodes
+	// - the HCCO finishes processing and reports some other number of nodes, using Nodes as the source of truth
+	// - this controller re-processes and transitions the cluster to a different t-shirt size, causing churn on the
+	//   request serving nodes
+	hccoReportsNodeCount, err := r.hccoReportsNodeCount(ctx, hostedCluster)
+	if err != nil {
+		return 0, fmt.Errorf("failed to determine if HCCO reports node count: %w", err)
+	}
+
+	// Determine if the Kube API Server is available to determine if we can trust the node count from nodepool.status.replicas
+	// If the Kube API Server is not available, we cannot trust the node count from nodepool.status.replicas
+	// Ref: kubernetes-sigs/cluster-api#10195
+	kasAvailableCondition := meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hypershiftv1beta1.KubeAPIServerAvailable))
+	kasAvailable := kasAvailableCondition != nil && kasAvailableCondition.Status == metav1.ConditionTrue
+
+	// first, we figure out the node count for the hosted cluster
+	var nodeCount uint32
+	if hccoReportsNodeCount {
+		hostedControlPlane, err := r.hostedControlPlaneForHostedCluster(ctx, hostedCluster)
+		if err != nil {
+			return 0, ignoreError(fmt.Errorf("failed to get hosted control plane: %w", err))
+		}
+
+		if hostedControlPlane.Status.NodeCount != nil && *hostedControlPlane.Status.NodeCount > 0 {
+			nodeCount = uint32(*hostedControlPlane.Status.NodeCount)
+		}
+	} else {
+		nodePools, err := r.nodePoolsForHostedCluster(ctx, hostedCluster)
+		if err != nil {
+			return 0, err
+		}
+
+		for _, nodePool := range nodePools.Items {
+			var replicas uint32
+			// If autoscaling, the replicas should be returned from status
+			if nodePool.Spec.AutoScaling != nil {
+				// If the Kube API Server is not available, and we already have a size label, skip processing
+				if !kasAvailable && sizeClassLabelPresent {
+					return 0, ignoreError(fmt.Errorf("KAS is not available, and no size class label is set yet"))
+				}
+				replicas = uint32(nodePool.Status.Replicas)
+			} else if nodePool.Spec.Replicas != nil {
+				replicas = uint32(*nodePool.Spec.Replicas)
+			}
+			nodeCount += replicas
+		}
+	}
+	return nodeCount, nil
 }
 
 // transitionsWithinSlidingWindow determines the number of hosted clusters that have transitioned within the sliding
