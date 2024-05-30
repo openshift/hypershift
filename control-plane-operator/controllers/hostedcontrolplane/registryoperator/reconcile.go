@@ -253,6 +253,10 @@ func buildMainContainer(image, registryImage, prunerImage, releaseVersion string
 				Name:  "AZURE_ENVIRONMENT_FILEPATH",
 				Value: "/tmp/azurestackcloud.json",
 			},
+			{
+				Name:  "OPERATOR_IMAGE_VERSION",
+				Value: releaseVersion,
+			},
 		}
 		proxy.SetEnvVars(&c.Env)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
