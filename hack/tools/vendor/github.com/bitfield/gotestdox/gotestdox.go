@@ -127,7 +127,7 @@ func (td *TestDoxer) Filter() {
 			})
 			for _, r := range tests {
 				fmt.Fprintln(td.Stdout, r.String())
-				if r.Action == "fail" {
+				if r.Action == ActionFail {
 					for _, line := range outputs[r.Test] {
 						fmt.Fprint(td.Stdout, line)
 					}
@@ -136,10 +136,10 @@ func (td *TestDoxer) Filter() {
 			fmt.Fprintln(td.Stdout)
 		case event.IsOutput():
 			outputs[event.Test] = append(outputs[event.Test], event.Output)
-		case event.IsTestResult():
+		case event.IsTestResult(), event.IsFuzzFail():
 			event.Sentence = Prettify(event.Test)
 			results[event.Package] = append(results[event.Package], event)
-			if event.Action == "fail" {
+			if event.Action == ActionFail {
 				td.OK = false
 			}
 		}
@@ -157,6 +157,11 @@ func ParseJSON(line string) (Event, error) {
 	}
 	return event, nil
 }
+
+const (
+	ActionPass = "pass"
+	ActionFail = "fail"
+)
 
 // Event represents a Go test event as recorded by the 'go test -json' command.
 // It does not attempt to unmarshal all the data, only those fields it needs to
@@ -184,7 +189,7 @@ type Event struct {
 // set, check marks will be shown in green and x's in red.
 func (e Event) String() string {
 	status := color.RedString("x")
-	if e.Action == "pass" {
+	if e.Action == ActionPass {
 		status = color.GreenString("✔")
 	}
 	return fmt.Sprintf(" %s %s (%.2fs)", status, e.Sentence, e.Elapsed)
@@ -195,14 +200,33 @@ func (e Event) String() string {
 // (for example, examples) are ignored, and all events on tests other than pass
 // or fail events (for example, run or pause events) are also ignored.
 func (e Event) IsTestResult() bool {
-	// Skip events on benchmarks and examples
-	if !strings.HasPrefix(e.Test, "Test") {
+	// Skip events on benchmarks, examples, and fuzz tests
+	if strings.HasPrefix(e.Test, "Benchmark") {
 		return false
 	}
-	if e.Action == "pass" || e.Action == "fail" {
+	if strings.HasPrefix(e.Test, "Example") {
+		return false
+	}
+	if strings.HasPrefix(e.Test, "Fuzz") {
+		return false
+	}
+	if e.Test == "" {
+		return false
+	}
+	if e.Action == ActionPass || e.Action == ActionFail {
 		return true
 	}
 	return false
+}
+
+func (e Event) IsFuzzFail() bool {
+	if !strings.HasPrefix(e.Test, "Fuzz") {
+		return false
+	}
+	if e.Action != ActionFail {
+		return false
+	}
+	return true
 }
 
 // IsPackageResult determines whether or not the test event is a package pass
@@ -212,7 +236,7 @@ func (e Event) IsPackageResult() bool {
 	if e.Test != "" {
 		return false
 	}
-	if e.Action == "pass" || e.Action == "fail" {
+	if e.Action == ActionPass || e.Action == ActionFail {
 		return true
 	}
 	return false

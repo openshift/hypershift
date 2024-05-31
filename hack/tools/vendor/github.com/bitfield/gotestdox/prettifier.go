@@ -56,8 +56,8 @@ import (
 // (copious) debug information to the [DebugWriter] stream, elaborating on its
 // decisions.
 func Prettify(input string) string {
+	var prefix string
 	p := &prettifier{
-		input: []rune(strings.TrimPrefix(input, "Test")),
 		words: []string{},
 		debug: io.Discard,
 	}
@@ -65,10 +65,15 @@ func Prettify(input string) string {
 		p.debug = DebugWriter
 	}
 	p.log("input:", input)
+	if strings.HasPrefix(input, "Fuzz") {
+		input = strings.TrimPrefix(input, "Fuzz")
+		prefix = "[fuzz] "
+	}
+	p.input = []rune(strings.TrimPrefix(input, "Test"))
 	for state := betweenWords; state != nil; {
 		state = state(p)
 	}
-	result := strings.Join(p.words, " ")
+	result := prefix + strings.Join(p.words, " ")
 	p.log(fmt.Sprintf("result: %q", result))
 	return result
 }
@@ -127,7 +132,7 @@ func (p *prettifier) emit() {
 	word := string(p.input[p.start:p.pos])
 	switch {
 	case len(p.words) == 0:
-		// This is the first word
+		// This is the first word, capitalise it
 		word = cases.Title(language.Und, cases.NoLower).String(word)
 	case len(word) == 1:
 		// Single letter word such as A
