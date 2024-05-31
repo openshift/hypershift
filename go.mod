@@ -1,7 +1,6 @@
 module github.com/openshift/hypershift
 
 go 1.22.0
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.5.2
@@ -16,11 +15,11 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.1.0
 	github.com/Azure/go-autorest/autorest v0.11.29
 	github.com/IBM-Cloud/power-go-client v1.6.0
-	github.com/IBM/go-sdk-core/v5 v5.17.2
+	github.com/IBM/go-sdk-core/v5 v5.17.3
 	github.com/IBM/ibm-cos-sdk-go v1.10.3
-	github.com/IBM/networking-go-sdk v0.45.0
-	github.com/IBM/platform-services-go-sdk v0.60.0
-	github.com/IBM/vpc-go-sdk v0.50.0
+	github.com/IBM/networking-go-sdk v0.46.1
+	github.com/IBM/platform-services-go-sdk v0.63.1
+	github.com/IBM/vpc-go-sdk v0.51.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.52.6
 	github.com/blang/semver v3.5.1+incompatible
