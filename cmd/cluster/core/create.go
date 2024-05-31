@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"os"
 	"strings"
 	"time"
@@ -203,6 +204,7 @@ type AzurePlatformOptions struct {
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
 	SubnetID               string
+	MultiArch              bool
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
@@ -499,7 +501,7 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 
 	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
 	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
-	if !opts.AWSPlatform.MultiArch && !opts.Render && opts.Arch != hyperv1.ArchitecturePPC64LE {
+	if !opts.AWSPlatform.MultiArch && !opts.AzurePlatform.MultiArch && !opts.Render && opts.Arch != hyperv1.ArchitecturePPC64LE {
 		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
 		if err != nil {
 			return err
@@ -552,4 +554,31 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 
 	// Otherwise, apply the objects
 	return apply(ctx, opts.Log, exampleOptions, opts.Wait, opts.BeforeApply)
+}
+
+// ValidateMultiArchRelease validates a release image or release stream is multi-arch if the multi-arch flag is set
+func ValidateMultiArchRelease(ctx context.Context, opts *CreateOptions) error {
+	// Validate the release image is multi-arch when the multi-arch flag is set and a release image is provided
+	if (opts.AWSPlatform.MultiArch || opts.AzurePlatform.MultiArch) && len(opts.ReleaseImage) > 0 {
+		pullSecret, err := os.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		validMultiArchRelease, err := registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
+		if err != nil {
+			return err
+		}
+
+		if !validMultiArchRelease {
+			return fmt.Errorf("release image is not a multi-arch image")
+		}
+	}
+
+	// Validate the release stream is multi-arch when the multi-arch flag is set and a release stream is provided
+	if (opts.AWSPlatform.MultiArch || opts.AzurePlatform.MultiArch) && len(opts.ReleaseStream) > 0 && !strings.Contains(opts.ReleaseStream, "multi") {
+		return fmt.Errorf("release stream is not a multi-arch stream")
+	}
+
+	return nil
 }

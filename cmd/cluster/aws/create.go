@@ -4,18 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
-
 	"github.com/spf13/cobra"
+	"os"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -251,40 +247,13 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 	return nil
 }
 
-// validateMultiArchRelease validates a release image or release stream is multi-arch if the multi-arch flag is set
-func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions) error {
-	// Validate the release image is multi-arch when the multi-arch flag is set and a release image is provided
-	if opts.AWSPlatform.MultiArch && len(opts.ReleaseImage) > 0 {
-		pullSecret, err := os.ReadFile(opts.PullSecretFile)
-		if err != nil {
-			return fmt.Errorf("failed to read pull secret file: %w", err)
-		}
-
-		validMultiArchRelease, err := registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
-		if err != nil {
-			return err
-		}
-
-		if !validMultiArchRelease {
-			return fmt.Errorf("release image is not a multi-arch image")
-		}
-	}
-
-	// Validate the release stream is multi-arch when the multi-arch flag is set and a release stream is provided
-	if opts.AWSPlatform.MultiArch && len(opts.ReleaseStream) > 0 && !strings.Contains(opts.ReleaseStream, "multi") {
-		return fmt.Errorf("release stream is not a multi-arch stream")
-	}
-
-	return nil
-}
-
 // validateAWSOptions validates different AWS flag parameters
 func validateAWSOptions(ctx context.Context, opts *core.CreateOptions) error {
 	if err := ValidateCreateCredentialInfo(opts.AWSPlatform.AWSCredentialsOpts, opts.CredentialSecretName, opts.Namespace, opts.PullSecretFile); err != nil {
 		return err
 	}
 
-	if err := validateMultiArchRelease(ctx, opts); err != nil {
+	if err := core.ValidateMultiArchRelease(ctx, opts); err != nil {
 		return err
 	}
 
