@@ -18,13 +18,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 // AgentNodePoolPlatformApplyConfiguration represents an declarative configuration of the AgentNodePoolPlatform type for use
 // with apply.
 type AgentNodePoolPlatformApplyConfiguration struct {
-	AgentLabelSelector *v1.LabelSelector `json:"agentLabelSelector,omitempty"`
+	AgentLabelSelector *v1.LabelSelectorApplyConfiguration `json:"agentLabelSelector,omitempty"`
 }
 
 // AgentNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AgentNodePoolPlatform type for use with
@@ -36,7 +36,7 @@ func AgentNodePoolPlatform() *AgentNodePoolPlatformApplyConfiguration {
 // WithAgentLabelSelector sets the AgentLabelSelector field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the AgentLabelSelector field is set to the value of the last call.
-func (b *AgentNodePoolPlatformApplyConfiguration) WithAgentLabelSelector(value v1.LabelSelector) *AgentNodePoolPlatformApplyConfiguration {
-	b.AgentLabelSelector = &value
+func (b *AgentNodePoolPlatformApplyConfiguration) WithAgentLabelSelector(value *v1.LabelSelectorApplyConfiguration) *AgentNodePoolPlatformApplyConfiguration {
+	b.AgentLabelSelector = value
 	return b
 }
