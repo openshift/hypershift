@@ -144,13 +144,23 @@ const (
 	// for AWS workers has been created.
 	// A failure here indicates that NodePools without a security group will be
 	// blocked from creating machines.
+	// +deprecated
 	AWSDefaultSecurityGroupCreated ConditionType = "AWSDefaultSecurityGroupCreated"
 
 	// AWSDefaultSecurityGroupDeleted indicates whether the default security group
 	// for AWS workers has been deleted.
 	// A failure here indicates that the Security Group has some dependencies that
 	// there are still pending cloud resources to be deleted that are using that SG.
+	// +deprecated
 	AWSDefaultSecurityGroupDeleted ConditionType = "AWSDefaultSecurityGroupDeleted"
+
+	// AWSSecurityGroupsReconciled indicates whether the security groups for AWS
+	// have been reconciled.
+	AWSSecurityGroupsReconciled ConditionType = "AWSSecurityGroupsReconciled"
+
+	// AWSSecurityGroupsDeleted indicates whether the security groups for AWS
+	// have been deleted.
+	AWSSecurityGroupsDeleted ConditionType = "AWSSecurityGroupsDeleted"
 
 	// PlatformCredentialsFound indicates that credentials required for the
 	// desired platform are valid.
