@@ -594,7 +594,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		pairLabel = ""
 		if len(nodes) > 0 {
 			pairLabel = nodes[0].Labels[OSDFleetManagerPairedNodesLabel]
-			if pairLabel != "" {
+			if pairLabel == "" {
 				return ctrl.Result{}, fmt.Errorf("node %s has no fleetmanager pair label", nodes[0].Name)
 			}
 		}
