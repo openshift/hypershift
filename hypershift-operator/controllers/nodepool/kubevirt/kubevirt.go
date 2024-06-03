@@ -328,26 +328,50 @@ func shouldAttachDefaultNetwork(kvPlatform *hyperv1.KubevirtNodePoolPlatform) bo
 func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hcluster *hyperv1.HostedCluster) (*capikubevirt.KubevirtMachineTemplateSpec, error) {
 	vmTemplate := virtualMachineTemplateBase(nodePool, bootImage)
 
-	vmTemplate.Spec.Template.Spec.Affinity = &corev1.Affinity{
-		PodAntiAffinity: &corev1.PodAntiAffinity{
-			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
-				{
-					Weight: int32(100),
-					PodAffinityTerm: corev1.PodAffinityTerm{
-						LabelSelector: &metav1.LabelSelector{
-							MatchExpressions: []metav1.LabelSelectorRequirement{
-								{
-									Key:      hyperv1.NodePoolNameLabel,
-									Operator: metav1.LabelSelectorOpIn,
-									Values:   []string{nodePool.Name},
-								},
-							},
-						},
-						TopologyKey: "kubernetes.io/hostname",
+	// Newer versions of the NodePool controller transitioned to spreading VMs across the cluster
+	// using TopologySpreadConstraints instead of Pod Anti-Affinity. When the new controller interacts
+	// with a older NodePool that was previously using pod anti-affinity, we don't want to immediately
+	// start using TopologySpreadConstraints because it will cause the MachineSet controller to update
+	// and replace all existing VMs. For example, it would be unexpected for a user to update the
+	// NodePool controller and for that to trigger a rolling update of all KubeVirt VMs.
+	//
+	// This annotation signals to the NodePool controller that it is safe to use TopologySpreadConstraints on a NodePool
+	// without triggering an unexpected update of KubeVirt VMs.
+	if _, ok := nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation]; ok {
+		vmTemplate.Spec.Template.Spec.TopologySpreadConstraints = []corev1.TopologySpreadConstraint{
+			{
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: corev1.ScheduleAnyway,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						hyperv1.NodePoolNameLabel: nodePool.Name,
 					},
 				},
 			},
-		},
+		}
+	} else {
+		vmTemplate.Spec.Template.Spec.Affinity = &corev1.Affinity{
+			PodAntiAffinity: &corev1.PodAntiAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+					{
+						Weight: int32(100),
+						PodAffinityTerm: corev1.PodAffinityTerm{
+							LabelSelector: &metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{
+										Key:      hyperv1.NodePoolNameLabel,
+										Operator: metav1.LabelSelectorOpIn,
+										Values:   []string{nodePool.Name},
+									},
+								},
+							},
+							TopologyKey: "kubernetes.io/hostname",
+						},
+					},
+				},
+			},
+		}
 	}
 
 	if vmTemplate.ObjectMeta.Labels == nil {
