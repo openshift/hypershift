@@ -90,6 +90,7 @@ nav:
         - how-to/azure/troubleshooting/debug-nodes.md
   - 'Agent':
     - how-to/agent/create-agent-cluster.md
+    - how-to/agent/create-heterogeneous-nodepools.md
     - 'Other SDN providers': how-to/agent/other-sdn-providers.md
   - 'Disconnected':
     - how-to/disconnected/automatically-initialize-registry-overrides.md
