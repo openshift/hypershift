@@ -40,6 +40,7 @@ func NewCreateCommands() *cobra.Command {
 		NodeSelector:                   nil,
 		Log:                            log.Log,
 		NodeDrainTimeout:               0,
+		NodeVolumeDetachTimeout:        0,
 		NodeUpgradeType:                "",
 		Arch:                           "amd64",
 		OLMCatalogPlacement:            v1beta1.ManagementOLMCatalogPlacement,
@@ -69,6 +70,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ImageContentSources, "image-content-sources", opts.ImageContentSources, "Path to a file with image content sources")
 	cmd.PersistentFlags().Int32Var(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If 0 or greater, creates a nodepool with that many replicas; else if less than 0, does not create a nodepool.")
 	cmd.PersistentFlags().DurationVar(&opts.NodeDrainTimeout, "node-drain-timeout", opts.NodeDrainTimeout, "The NodeDrainTimeout on any created NodePools")
+	cmd.PersistentFlags().DurationVar(&opts.NodeVolumeDetachTimeout, "node-volume-detach-timeout", opts.NodeVolumeDetachTimeout, "The NodeVolumeDetachTimeout on any created NodePools")
 	cmd.PersistentFlags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
 	cmd.PersistentFlags().BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
 	cmd.PersistentFlags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine autorepair with machine health checks")

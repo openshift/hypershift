@@ -168,6 +168,11 @@ type NodePoolSpec struct {
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 
+	// NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volume from a node.
+	// After the timeout, volumes that haven't been detached are skipped.
+	// +optional
+	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
+
 	// NodeLabels propagates a list of labels to Nodes, only once on creation.
 	// Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
 	// +optional

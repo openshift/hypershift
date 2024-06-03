@@ -24,6 +24,7 @@ spec:
     autoRepair: false
     upgradeType: InPlace
   nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
   platform:
     type: Agent
   release:

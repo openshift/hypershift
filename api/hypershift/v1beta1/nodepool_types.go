@@ -134,14 +134,24 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
-	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+	// NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
 	// The default value is 0, meaning that the node can be drained without any time limitations.
 	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
 	// TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
 	// the purpose of the change. In future we plan to propagate this field in-place.
-	// https://github.com/kubernetes-sigs/cluster-api/issues/5880
+	// https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
+
+	// NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+	// The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+	// After the timeout, the detachment of volumes that haven't been detached yet is skipped.
+	// TODO (cbusse): Same comment as Alberto's for `NodeDrainTimeout`:
+	// Today changing this field will trigger a recreate rolling update, which kind of defeats
+	// the purpose of the change. In future we plan to propagate this field in-place.
+	// https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+	// +optional
+	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 
 	// NodeLabels propagates a list of labels to Nodes, only once on creation.
 	// Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set

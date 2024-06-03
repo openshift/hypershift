@@ -58,6 +58,7 @@ type CreateOptions struct {
 	NetworkType                      string
 	NodePoolReplicas                 int32
 	NodeDrainTimeout                 time.Duration
+	NodeVolumeDetachTimeout          time.Duration
 	PullSecretFile                   string
 	ReleaseImage                     string
 	ReleaseStream                    string
@@ -343,6 +344,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		NetworkType:                      hyperv1.NetworkType(opts.NetworkType),
 		NodePoolReplicas:                 opts.NodePoolReplicas,
 		NodeDrainTimeout:                 opts.NodeDrainTimeout,
+		NodeVolumeDetachTimeout:          opts.NodeVolumeDetachTimeout,
 		PullSecret:                       pullSecret,
 		ReleaseImage:                     opts.ReleaseImage,
 		SSHPrivateKey:                    sshPrivateKey,

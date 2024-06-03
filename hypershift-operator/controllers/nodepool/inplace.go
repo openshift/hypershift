@@ -86,8 +86,9 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 				Name: machineSet.Spec.Template.Spec.InfrastructureRef.Name,
 			},
 			// Keep current version for later check.
-			Version:          machineSet.Spec.Template.Spec.Version,
-			NodeDrainTimeout: nodePool.Spec.NodeDrainTimeout,
+			Version:                 machineSet.Spec.Template.Spec.Version,
+			NodeDrainTimeout:        nodePool.Spec.NodeDrainTimeout,
+			NodeVolumeDetachTimeout: nodePool.Spec.NodeVolumeDetachTimeout,
 		},
 	}
 
