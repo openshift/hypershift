@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,6 +55,8 @@ type PodExecOptions struct {
 	Namespace     string
 	ContainerName string
 
+	Timeout time.Duration
+
 	Executor RemoteExecutor
 	Config   *restclient.Config
 }
@@ -85,6 +88,9 @@ func (p *PodExecOptions) Validate() error {
 
 // Run executes a validated remote execution against a pod.
 func (p *PodExecOptions) Run(ctx context.Context) error {
+	if p.Timeout == 0 {
+		p.Timeout = 2 * time.Minute
+	}
 	err := p.Validate()
 	if err != nil {
 		return err
@@ -119,6 +125,9 @@ func (p *PodExecOptions) Run(ctx context.Context) error {
 		Stderr:    p.ErrOut != nil,
 		TTY:       p.TTY,
 	}, k8sScheme.ParameterCodec)
+
+	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
+	defer cancel()
 
 	return p.Executor.Execute(ctx, "POST", req.URL(), p.Config, p.In, p.Out, p.ErrOut, p.TTY)
 }

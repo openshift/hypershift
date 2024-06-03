@@ -847,7 +847,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			}
 
 			// Validate cluster-version-operator is not allowed to access management KAS.
-			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
+			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator", 0)
 			g.Expect(err).To(HaveOccurred())
 
 			// Validate private router is not allowed to access management KAS.
@@ -857,13 +857,13 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 					// === CONT  TestCreateClusterPrivate/EnsureHostedCluster/EnsureNetworkPolicies/EnsureLimitedEgressTrafficToManagementKAS
 					//    util.go:851: private router pod was unexpectedly allowed to reach the management KAS. stdOut: . stdErr: Internal error occurred: error executing command in container: container is not created or running
 					// Should be solve with https://issues.redhat.com/browse/HOSTEDCP-1200
-					_, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
+					_, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
 					g.Expect(err).To(HaveOccurred())
 				}
 			}
 
 			// Validate cluster api is allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
+			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
 				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
@@ -920,7 +920,7 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 	return nil
 }
 
-func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string) (string, error) {
+func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string, timeout time.Duration) (string, error) {
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
 		client.InNamespace(namespace),
@@ -949,6 +949,7 @@ func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespac
 		PodName:       podList.Items[0].Name,
 		Config:        restConfig,
 		ContainerName: containerName,
+		Timeout:       timeout,
 	}
 
 	err = podExecuter.Run(ctx)
