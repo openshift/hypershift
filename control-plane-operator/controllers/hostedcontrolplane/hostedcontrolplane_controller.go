@@ -716,26 +716,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
-	releaseImageProvider := imageprovider.New(releaseImage)
-	{
-		if len(releaseImageProvider.GetMissingImages()) == 0 {
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidReleaseInfo),
-				Status:             metav1.ConditionTrue,
-				Reason:             hyperv1.AsExpectedReason,
-				Message:            hyperv1.AllIsWellMessage,
-				ObservedGeneration: hostedControlPlane.Generation,
-			})
-		} else {
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidReleaseInfo),
-				Status:             metav1.ConditionFalse,
-				Reason:             hyperv1.MissingReleaseImagesReason,
-				Message:            strings.Join(releaseImageProvider.GetMissingImages(), ", "),
-				ObservedGeneration: hostedControlPlane.Generation,
-			})
-		}
-	}
 
 	hostedControlPlane.Status.Initialized = true
 
@@ -894,7 +874,51 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
-	return ctrl.Result{}, r.reconcile(ctx, hostedControlPlane, createOrUpdate, imageprovider.New(releaseImage), infraStatus)
+	// releaseImage might be overriden by spec.controlPlaneReleaseImage
+	// User facing components should reflect the version from spec.releaseImage
+	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return ctrl.Result{}, err
+	}
+	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
+	userReleaseImage, err := r.UserReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get lookup release image: %w", err)
+	}
+
+	userReleaseImageProvider := imageprovider.New(userReleaseImage)
+	releaseImageProvider := imageprovider.New(releaseImage)
+
+	var errs []error
+	if err := r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImageProvider, userReleaseImageProvider, infraStatus); err != nil {
+		errs = append(errs, err)
+	}
+
+	originalHostedControlPlane := hostedControlPlane.DeepCopy()
+	missingImages := sets.New(releaseImageProvider.GetMissingImages()...).Insert(userReleaseImageProvider.GetMissingImages()...)
+	if missingImages.Len() == 0 {
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidReleaseInfo),
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            hyperv1.AllIsWellMessage,
+			ObservedGeneration: hostedControlPlane.Generation,
+		})
+	} else {
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidReleaseInfo),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.MissingReleaseImagesReason,
+			Message:            strings.Join(missingImages.UnsortedList(), ", "),
+			ObservedGeneration: hostedControlPlane.Generation,
+		})
+	}
+
+	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+		errs = append(errs, fmt.Errorf("failed to update status: %w", err))
+	}
+
+	return ctrl.Result{}, utilerrors.NewAggregate(errs)
 }
 
 // useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
@@ -914,20 +938,7 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 	return true
 }
 
-func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus) error {
-	// releaseImage might be overriden by spec.controlPlaneReleaseImage
-	// User facing components should reflect the version from spec.releaseImage
-	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return err
-	}
-	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
-	userReleaseImage, err := r.UserReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
-	if err != nil {
-		return fmt.Errorf("failed to get lookup release image: %w", err)
-	}
-	userReleaseImageProvider := imageprovider.New(userReleaseImage)
-
+func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus) error {
 	// Reconcile default service account
 	r.Log.Info("Reconciling default service account")
 	if err := r.reconcileDefaultServiceAccount(ctx, hostedControlPlane, createOrUpdate); err != nil {
