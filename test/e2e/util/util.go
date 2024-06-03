@@ -951,7 +951,7 @@ func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespac
 		ContainerName: containerName,
 	}
 
-	err = podExecuter.Run()
+	err = podExecuter.Run(ctx)
 	return stdOut.String(), err
 }
 
@@ -1082,7 +1082,7 @@ func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedClus
 			Config:        restConfig,
 		}
 
-		if err := podExecuter.Run(); err != nil {
+		if err := podExecuter.Run(ctx); err != nil {
 			t.Errorf("failed to execute etcdctl command; %v", err)
 		}
 
