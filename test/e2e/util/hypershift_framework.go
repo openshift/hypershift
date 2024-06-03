@@ -287,7 +287,7 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	// Save off any error so that we can continue with the teardown
 	dumpErr := dumpCluster(ctx, t, true)
 
-	if !cleanupPhase {
+	if !cleanupPhase && !t.Failed() {
 		ValidateMetrics(t, ctx, hc, []string{
 			hcmetrics.SilenceAlertsMetricName,
 			hcmetrics.LimitedSupportEnabledMetricName,
