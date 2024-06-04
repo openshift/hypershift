@@ -588,7 +588,6 @@ github.com/openshift/custom-resource-status/conditions/v1
 # github.com/openshift/library-go v0.0.0-20220811164604-fef421ec24f4
 ## explicit; go 1.17
 github.com/openshift/library-go/pkg/operator/apiserver/audit
-github.com/openshift/library-go/test/library/metrics
 # github.com/opentracing/opentracing-go v1.2.0
 ## explicit; go 1.14
 github.com/opentracing/opentracing-go
