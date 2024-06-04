@@ -4,13 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"k8s.io/utils/ptr"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
+
+	"k8s.io/utils/ptr"
 )
 
 var (
@@ -72,6 +73,7 @@ var (
 	newTag     = flag.String("new-tag", "", "The new tag to use.")
 	newCommit  = flag.String("new-commit", "", "The new commit SHA to use.")
 	jiraTicket = flag.String("jira-ticket", "", "Uses the jira ticket to create a branch with the same name with the environment added on.")
+	token      = flag.String("token", "", "The token to use to authenticate to Gitlab API.")
 	remote     = flag.String("remote", "origin", "The remote branch to use when committing changes.")
 )
 
@@ -106,7 +108,7 @@ func main() {
 		branchName = *jiraTicket + "-" + *env
 
 		log.Printf("Creating git branch: %s", branchName)
-		err = gitCreateBranch(filepath.Dir(*file), branchName)
+		err = gitCreateBranch(ctx, filepath.Dir(*file), branchName)
 		if err != nil {
 			log.Fatalf("failed to create branch: %v", err)
 		}
@@ -140,36 +142,52 @@ func main() {
 	if autoCommitChanges {
 		// Add the changes in git
 		log.Printf("Adding changes in git")
-		err = gitAdd(filepath.Dir(*file), *file)
+		err = gitAdd(ctx, filepath.Dir(*file), *file)
 		if err != nil {
 			log.Fatalf("Error adding changes in git: %v", err)
 		}
 
 		// Commit the changes in git
 		log.Printf("Committing changes in git")
-		err = gitCommit(filepath.Dir(*file), fmt.Sprintf("Bump HyperShift in %s to %s / %s", *env, *newTag, *newCommit))
+		err = gitCommit(ctx, filepath.Dir(*file), fmt.Sprintf("Bump HyperShift in %s to %s / %s", *env, *newTag, *newCommit))
 		if err != nil {
 			log.Fatalf("Error committing changes in git: %v", err)
 		}
 
-		// Push the changes up
-		log.Printf("Pushing changes in git")
-		err = gitPush(filepath.Dir(*file), ptr.Deref(remote, ""), branchName)
-		if err != nil {
-			log.Fatalf("Error pushing changes in git: %v", err)
-		}
-
-		// TODO automate the MR request
-		log.Printf("-------------Info for MR-------------")
-		log.Printf("MR Title: %s: Bump HyperShift in %s to %s / %s", *jiraTicket, *env, *newTag, *newCommit)
+		// Generate MR title and description
+		log.Printf("Generating merge request title and description")
+		mergeRequestTitle := fmt.Sprintf("%s: Bump HyperShift in %s to %s / %s", *jiraTicket, *env, *newTag, *newCommit)
 
 		// Output the changes between tags for the merge request
-		cmd := exec.Command("go", "run", "../release/notes.go", "--from="+*oldTag, "--to="+*newTag)
+		cmd := exec.Command("go", "run", "../release/notes.go", "--from="+*oldTag, "--to="+*newTag, "--token="+*token)
 		cmdOutput, err := cmd.Output()
 		if err != nil {
 			log.Fatalf("Error : %v", err)
 		}
-		log.Printf("MR Description as follows\n\n%s", string(cmdOutput))
+
+		// Attempt to remove any control plane changes from the release notes
+		var mergeRequestDescription string
+		mergeRequestStrings := strings.Split(string(cmdOutput), "area/hypershift-operator")
+
+		// It's possible there were only HO changes and if so, just use the command output
+		if len(mergeRequestStrings) < 2 {
+			mergeRequestDescription = string(cmdOutput)
+		} else {
+			// newlines must be escaped in the commit message
+			mergeRequestDescription = "## area/hypershift-operator" + "\n" + mergeRequestStrings[1]
+			mergeRequestDescription = strings.Replace(mergeRequestDescription, "\n", "\\n", -1)
+		}
+
+		mergeRequestDescription = mergeRequestDescription + "\\n/hold"
+
+		log.Printf(mergeRequestDescription)
+
+		// Push the changes up and create the merge request
+		log.Printf("Pushing changes in git and creating merge request")
+		err = gitPushAndCreateMergeRequest(ctx, filepath.Dir(*file), ptr.Deref(remote, ""), branchName, mergeRequestTitle, mergeRequestDescription)
+		if err != nil {
+			log.Fatalf("Error pushing changes in git: %v", err)
+		}
 	}
 }
 
@@ -246,7 +264,7 @@ func updateTagAndCommitSHA(lines *[]string, sector, oldTag, newTag, newCommit st
 }
 
 func gitCheckout(ctx context.Context, repoPath, branch string) error {
-	cmd := exec.Command("git", "checkout", branch)
+	cmd := exec.CommandContext(ctx, "git", "checkout", branch)
 	cmd.Dir = repoPath
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -256,8 +274,8 @@ func gitCheckout(ctx context.Context, repoPath, branch string) error {
 	return nil
 }
 
-func gitCreateBranch(repoPath, branch string) error {
-	cmd := exec.Command("git", "checkout", "-b", branch)
+func gitCreateBranch(ctx context.Context, repoPath, branch string) error {
+	cmd := exec.CommandContext(ctx, "git", "checkout", "-b", branch)
 	cmd.Dir = repoPath
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -267,8 +285,8 @@ func gitCreateBranch(repoPath, branch string) error {
 	return nil
 }
 
-func gitAdd(repoPath, fileToAdd string) error {
-	cmd := exec.Command("git", "add", fileToAdd)
+func gitAdd(ctx context.Context, repoPath, fileToAdd string) error {
+	cmd := exec.CommandContext(ctx, "git", "add", fileToAdd)
 	cmd.Dir = repoPath
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -278,8 +296,8 @@ func gitAdd(repoPath, fileToAdd string) error {
 	return nil
 }
 
-func gitCommit(repoPath, message string) error {
-	cmd := exec.Command("git", "commit", "-m", message, "--signoff")
+func gitCommit(ctx context.Context, repoPath, message string) error {
+	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message, "--signoff")
 	cmd.Dir = repoPath
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -289,8 +307,8 @@ func gitCommit(repoPath, message string) error {
 	return nil
 }
 
-func gitPush(repoPath, remote, branch string) error {
-	cmd := exec.Command("git", "push", remote, branch)
+func gitPushAndCreateMergeRequest(ctx context.Context, repoPath, remote, branch, mergeRequestTitle, mergeRequestDescription string) error {
+	cmd := exec.CommandContext(ctx, "git", "push", remote, branch, "-o merge_request.create", fmt.Sprintf("-o merge_request.title=%s", mergeRequestTitle), fmt.Sprintf("-o merge_request.description=%s", mergeRequestDescription))
 	cmd.Dir = repoPath
 	output, err := cmd.CombinedOutput()
 	if err != nil {
