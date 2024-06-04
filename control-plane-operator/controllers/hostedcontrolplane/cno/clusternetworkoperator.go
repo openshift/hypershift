@@ -33,6 +33,8 @@ import (
 const (
 	operatorName          = "cluster-network-operator"
 	konnectivityProxyName = "konnectivity-proxy"
+	caConfigMap           = "root-ca"
+	caConfigMapKey        = "ca.crt"
 )
 
 type Images struct {
@@ -115,8 +117,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		TokenAudience:           hcp.Spec.IssuerURL,
 		SbDbPubStrategy:         util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb),
 		DefaultIngressDomain:    defaultIngressDomain,
-		CAConfigMap:             "root-ca",
-		CAConfigMapKey:          "ca.crt",
+		CAConfigMap:             caConfigMap,
+		CAConfigMapKey:          caConfigMapKey,
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
@@ -153,6 +155,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hype
 				},
 				ResourceNames: []string{
 					"openshift-service-ca.crt",
+					caConfigMap,
 				},
 				Verbs: []string{
 					"get",
