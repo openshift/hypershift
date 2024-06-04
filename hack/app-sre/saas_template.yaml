@@ -497,6 +497,23 @@ objects:
           secret:
             secretName: ${EXTERNAL_DNS_CREDS_SECRET}
   status: {}
+- apiVersion: monitoring.coreos.com/v1
+  kind: PodMonitor
+  metadata:
+    creationTimestamp: null
+    name: external-dns
+    namespace: ${NAMESPACE}
+  spec:
+    jobLabel: component
+    namespaceSelector: {}
+    podMetricsEndpoints:
+    - bearerTokenSecret:
+        key: ""
+      interval: 30s
+      port: metrics
+    selector:
+      matchLabels:
+        name: external-dns
 - apiVersion: apps/v1
   kind: Deployment
   metadata:
