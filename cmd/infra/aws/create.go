@@ -124,6 +124,11 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) error {
 	if err != nil {
 		return err
 	}
+	return o.Output(result)
+}
+
+func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
+	// Write out stateful information
 	out := os.Stdout
 	if len(o.OutputFile) > 0 {
 		var err error

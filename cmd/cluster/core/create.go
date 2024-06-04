@@ -62,6 +62,7 @@ type CreateOptions struct {
 	ReleaseImage                     string
 	ReleaseStream                    string
 	Render                           bool
+	RenderInto                       string
 	SSHKeyFile                       string
 	ServiceCIDR                      []string
 	ClusterCIDR                      []string
@@ -476,7 +477,7 @@ func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, erro
 }
 
 func Validate(ctx context.Context, opts *CreateOptions) error {
-	if !opts.Render {
+	if !opts.Render && opts.RenderInto != "" {
 		client, err := util.GetClient()
 		if err != nil {
 			return err
@@ -499,7 +500,7 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 
 	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
 	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
-	if !opts.AWSPlatform.MultiArch && !opts.Render && opts.Arch != hyperv1.ArchitecturePPC64LE {
+	if !opts.AWSPlatform.MultiArch && (!opts.Render || opts.RenderInto != "") && opts.Arch != hyperv1.ArchitecturePPC64LE {
 		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
 		if err != nil {
 			return err
@@ -539,13 +540,28 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 	}
 
 	// In render mode, print the objects and return early
-	if opts.Render {
+	if opts.Render || opts.RenderInto != "" {
+		output := os.Stdout
+		if opts.RenderInto != "" {
+			var err error
+			output, err = os.Create(opts.RenderInto)
+			if err != nil {
+				return fmt.Errorf("failed to create file for rendering output: %w", err)
+			}
+			defer func() {
+				if err := output.Close(); err != nil {
+					fmt.Printf("failed to close file for rendering output: %v\n", err)
+				}
+			}()
+		}
 		for _, object := range exampleOptions.Resources().AsObjects() {
-			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+			err := hyperapi.YamlSerializer.Encode(object, output)
 			if err != nil {
 				return fmt.Errorf("failed to encode objects: %w", err)
 			}
-			fmt.Println("---")
+			if _, err := fmt.Fprintln(output, "---"); err != nil {
+				return fmt.Errorf("failed to write object separator: %w", err)
+			}
 		}
 		return nil
 	}
