@@ -984,11 +984,15 @@ func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
 			supported = true
 		}
 	case hyperv1.AgentPlatform:
-		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE {
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE || nodePool.Spec.Arch == hyperv1.ArchitectureARM64 {
 			supported = true
 		}
 	case hyperv1.PowerVSPlatform:
 		if nodePool.Spec.Arch == hyperv1.ArchitecturePPC64LE {
+			supported = true
+		}
+	case hyperv1.NonePlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitectureARM64 {
 			supported = true
 		}
 	}

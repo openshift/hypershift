@@ -3101,6 +3101,18 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
+			name: "supported platform with multiple arch baremetal - arm64",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AgentPlatform,
+					},
+					Arch: hyperv1.ArchitectureARM64,
+				},
+			},
+			expect: true,
+		},
+		{
 			name: "supported platform with multiple arch - amd64",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
@@ -3120,6 +3132,30 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 						Type: hyperv1.AgentPlatform,
 					},
 					Arch: hyperv1.ArchitecturePPC64LE,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "supported platform with multiple arch baremetal - arm64",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.NonePlatform,
+					},
+					Arch: hyperv1.ArchitectureARM64,
+				},
+			},
+			expect: true,
+		},
+		{
+			name: "supported platform with multiple arch baremetal - amd64",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.NonePlatform,
+					},
+					Arch: hyperv1.ArchitectureAMD64,
 				},
 			},
 			expect: true,
