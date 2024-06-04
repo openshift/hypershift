@@ -109,10 +109,6 @@ func (o *CreateIAMOptions) Run(ctx context.Context, client crclient.Client) erro
 	if err != nil {
 		return err
 	}
-	return o.Output(results)
-}
-
-func (o *CreateIAMOptions) Output(results *CreateIAMOutput) error {
 	// Write out stateful information
 	out := os.Stdout
 	if len(o.OutputFile) > 0 {

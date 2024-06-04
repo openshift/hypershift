@@ -19,7 +19,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -48,80 +47,21 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 
 // createCluster calls the correct cluster create CLI function based on the
 // cluster platform.
-func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions, outputDir string) error {
-	infraFile := filepath.Join(outputDir, "infrastructure.json")
-	iamFile := filepath.Join(outputDir, "iam.json")
-	manifestsFile := filepath.Join(outputDir, "manifests.yaml")
+func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions) error {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		infraOpts := aws.CreateInfraOptions(opts)
-		infraOpts.OutputFile = infraFile
-		infra, err := infraOpts.CreateInfra(ctx, opts.Log)
-		if err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
-		}
-		if err := infraOpts.Output(infra); err != nil {
-			return fmt.Errorf("failed to write infra: %w", err)
-		}
-
-		client, err := util.GetClient()
-		if err != nil {
-			return err
-		}
-		iamOpts := aws.CreateIAMOptions(opts, infra)
-		iamOpts.OutputFile = iamFile
-		iam, err := iamOpts.CreateIAM(ctx, client)
-		if err != nil {
-			return fmt.Errorf("failed to create IAM: %w", err)
-		}
-		if err := iamOpts.Output(iam); err != nil {
-			return fmt.Errorf("failed to write IAM: %w", err)
-		}
-
-		opts.InfrastructureJSON = infraFile
-		opts.AWSPlatform.IAMJSON = iamFile
-		return renderCreate(ctx, opts, manifestsFile, aws.CreateCluster)
+		return aws.CreateCluster(ctx, opts)
 	case hyperv1.NonePlatform:
-		return renderCreate(ctx, opts, manifestsFile, none.CreateCluster)
+		return none.CreateCluster(ctx, opts)
 	case hyperv1.KubevirtPlatform:
-		return renderCreate(ctx, opts, manifestsFile, kubevirt.CreateCluster)
+		return kubevirt.CreateCluster(ctx, opts)
 	case hyperv1.AzurePlatform:
-		infraOpts, err := azure.CreateInfraOptions(ctx, opts)
-		if err != nil {
-			return fmt.Errorf("failed to create infra options: %w", err)
-		}
-		infraOpts.OutputFile = infraFile
-		if _, err := infraOpts.Run(ctx, opts.Log); err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
-		}
-
-		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, opts, manifestsFile, azure.CreateCluster)
+		return azure.CreateCluster(ctx, opts)
 	case hyperv1.PowerVSPlatform:
-		infraOpts, infra := powervs.CreateInfraOptions(opts)
-		infraOpts.OutputFile = infraFile
-		if err := infra.SetupInfra(ctx, infraOpts); err != nil {
-			return fmt.Errorf("failed to setup infra: %w", err)
-		}
-		infraOpts.Output(infra)
-
-		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, opts, manifestsFile, powervs.CreateCluster)
+		return powervs.CreateCluster(ctx, opts)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
-}
-
-func renderCreate(ctx context.Context, opts *core.CreateOptions, outputFile string, create func(context.Context, *core.CreateOptions) error) error {
-	opts.Render = true
-	opts.RenderInto = outputFile
-	if err := create(ctx, opts); err != nil {
-		return fmt.Errorf("failed to render cluster manifests: %w", err)
-	}
-
-	opts.Render = false
-	opts.RenderInto = ""
-	return create(ctx, opts)
 }
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
@@ -269,33 +209,30 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			t.Logf("Skipping cluster dump because no artifact directory was provided")
 			return nil
 		}
+		dumpDir := filepath.Join(artifactDir, strings.ReplaceAll(t.Name(), "/", "_"))
 
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
 			var dumpErrors []error
-			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsOpts, artifactDir)
+			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsOpts, dumpDir)
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
+			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
-			err = dump.DumpJournals(t, ctx, hc, artifactDir, opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile)
+			err = dump.DumpJournals(t, ctx, hc, dumpDir, opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile)
 			if err != nil {
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:
-			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
+			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}
 			return nil
 		}
 	}
-}
-
-func artifactSubdirFor(t *testing.T) string {
-	return strings.ReplaceAll(t.Name(), "/", "_")
 }

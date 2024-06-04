@@ -120,8 +120,33 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	if infra == nil {
-		var opt *powervsinfra.CreateInfraOptions
-		opt, infra = CreateInfraOptions(opts)
+		opt := &powervsinfra.CreateInfraOptions{
+			Name:                   opts.Name,
+			Namespace:              opts.Namespace,
+			BaseDomain:             opts.BaseDomain,
+			ResourceGroup:          opts.PowerVSPlatform.ResourceGroup,
+			InfraID:                opts.InfraID,
+			OutputFile:             opts.InfrastructureJSON,
+			Region:                 opts.PowerVSPlatform.Region,
+			Zone:                   opts.PowerVSPlatform.Zone,
+			CloudInstanceID:        opts.PowerVSPlatform.CloudInstanceID,
+			CloudConnection:        opts.PowerVSPlatform.CloudConnection,
+			VPCRegion:              opts.PowerVSPlatform.VPCRegion,
+			VPC:                    opts.PowerVSPlatform.VPC,
+			Debug:                  opts.PowerVSPlatform.Debug,
+			RecreateSecrets:        opts.PowerVSPlatform.RecreateSecrets,
+			PER:                    opts.PowerVSPlatform.PER,
+			TransitGatewayLocation: opts.PowerVSPlatform.TransitGatewayLocation,
+			TransitGateway:         opts.PowerVSPlatform.TransitGateway,
+		}
+		infra = &powervsinfra.Infra{
+			ID:            opts.InfraID,
+			BaseDomain:    opts.BaseDomain,
+			ResourceGroup: opts.PowerVSPlatform.ResourceGroup,
+			Region:        opts.PowerVSPlatform.Region,
+			Zone:          opts.PowerVSPlatform.Zone,
+			VPCRegion:     opts.PowerVSPlatform.VPCRegion,
+		}
 		err = infra.SetupInfra(ctx, opt)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
@@ -162,33 +187,4 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PowerVS.Resources = powerVSResources
 
 	return nil
-}
-
-func CreateInfraOptions(opts *core.CreateOptions) (*powervsinfra.CreateInfraOptions, *powervsinfra.Infra) {
-	return &powervsinfra.CreateInfraOptions{
-			Name:                   opts.Name,
-			Namespace:              opts.Namespace,
-			BaseDomain:             opts.BaseDomain,
-			ResourceGroup:          opts.PowerVSPlatform.ResourceGroup,
-			InfraID:                opts.InfraID,
-			OutputFile:             opts.InfrastructureJSON,
-			Region:                 opts.PowerVSPlatform.Region,
-			Zone:                   opts.PowerVSPlatform.Zone,
-			CloudInstanceID:        opts.PowerVSPlatform.CloudInstanceID,
-			CloudConnection:        opts.PowerVSPlatform.CloudConnection,
-			VPCRegion:              opts.PowerVSPlatform.VPCRegion,
-			VPC:                    opts.PowerVSPlatform.VPC,
-			Debug:                  opts.PowerVSPlatform.Debug,
-			RecreateSecrets:        opts.PowerVSPlatform.RecreateSecrets,
-			PER:                    opts.PowerVSPlatform.PER,
-			TransitGatewayLocation: opts.PowerVSPlatform.TransitGatewayLocation,
-			TransitGateway:         opts.PowerVSPlatform.TransitGateway,
-		}, &powervsinfra.Infra{
-			ID:            opts.InfraID,
-			BaseDomain:    opts.BaseDomain,
-			ResourceGroup: opts.PowerVSPlatform.ResourceGroup,
-			Region:        opts.PowerVSPlatform.Region,
-			Zone:          opts.PowerVSPlatform.Zone,
-			VPCRegion:     opts.PowerVSPlatform.VPCRegion,
-		}
 }

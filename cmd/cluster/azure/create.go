@@ -84,12 +84,24 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to deserialize infra json file: %w", err)
 		}
 	} else {
-		infraOpts, err := CreateInfraOptions(ctx, opts)
+		rhcosImage, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
 
-		infra, err = infraOpts.Run(ctx, opts.Log)
+		infra, err = (&azureinfra.CreateInfraOptions{
+			Name:                   opts.Name,
+			Location:               opts.AzurePlatform.Location,
+			InfraID:                opts.InfraID,
+			CredentialsFile:        opts.AzurePlatform.CredentialsFile,
+			BaseDomain:             opts.BaseDomain,
+			RHCOSImage:             rhcosImage,
+			VnetID:                 opts.AzurePlatform.VnetID,
+			ResourceGroupName:      opts.AzurePlatform.ResourceGroupName,
+			NetworkSecurityGroupID: opts.AzurePlatform.NetworkSecurityGroupID,
+			ResourceGroupTags:      opts.AzurePlatform.ResourceGroupTags,
+			SubnetID:               opts.AzurePlatform.SubnetID,
+		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
@@ -142,27 +154,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
 	}
 	return nil
-}
-
-func CreateInfraOptions(ctx context.Context, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
-	rhcosImage, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
-	if err != nil {
-		return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
-	}
-
-	return azureinfra.CreateInfraOptions{
-		Name:                   opts.Name,
-		Location:               opts.AzurePlatform.Location,
-		InfraID:                opts.InfraID,
-		CredentialsFile:        opts.AzurePlatform.CredentialsFile,
-		BaseDomain:             opts.BaseDomain,
-		RHCOSImage:             rhcosImage,
-		VnetID:                 opts.AzurePlatform.VnetID,
-		ResourceGroupName:      opts.AzurePlatform.ResourceGroupName,
-		NetworkSecurityGroupID: opts.AzurePlatform.NetworkSecurityGroupID,
-		ResourceGroupTags:      opts.AzurePlatform.ResourceGroupTags,
-		SubnetID:               opts.AzurePlatform.SubnetID,
-	}, nil
 }
 
 // lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
