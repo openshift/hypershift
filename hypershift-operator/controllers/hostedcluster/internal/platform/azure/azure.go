@@ -90,6 +90,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 					Args: []string{
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect=true",
+						"--feature-gates=MachinePool=false",
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
