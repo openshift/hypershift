@@ -24,7 +24,6 @@ import (
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	support "github.com/openshift/hypershift/support/util"
-	"github.com/openshift/library-go/test/library/metrics"
 	promapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -1109,7 +1108,7 @@ func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
 	if err != nil {
 		panic(err)
 	}
-	prometheusClient, err := metrics.NewPrometheusClient(ctx, kubeClient, routeClient)
+	prometheusClient, err := newPrometheusClient(ctx, kubeClient, routeClient)
 	if err != nil {
 		panic(err)
 	}
