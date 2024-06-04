@@ -41,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -197,9 +198,6 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 }
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
-	g := NewWithT(t)
-	start := time.Now()
-
 	// waitTimeout for nodes to become Ready
 	waitTimeout := 30 * time.Minute
 	switch platform {
@@ -209,37 +207,74 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 		waitTimeout = 60 * time.Minute
 	}
 
-	t.Logf("Waiting for nodes to become ready. Want: %v", n)
+	t.Logf("waiting for %d nodes to become ready", n)
+	start := time.Now()
+	var previousError string
+	previousResourceVersion := ""                // RV of the list, for quick short-circuits
+	previousConditions := map[string]condition{} // node name mapped to their ready condition
 	nodes := &corev1.NodeList{}
-	readyNodeCount := 0
 	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, waitTimeout, true, func(ctx context.Context) (done bool, err error) {
 		err = client.List(ctx, nodes)
 		if err != nil {
+			if err.Error() != previousError {
+				t.Logf("failed to list nodes: %v", err)
+				previousError = err.Error()
+			}
 			return false, nil
 		}
 
-		var readyNodes []string
+		if nodes.ResourceVersion == previousResourceVersion {
+			return false, nil
+		}
+		previousResourceVersion = nodes.ResourceVersion
+
+		currentConditions := map[string]condition{}
 		for _, node := range nodes.Items {
 			for _, cond := range node.Status.Conditions {
-				if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
-					readyNodes = append(readyNodes, node.Name)
-					g.Expect(node.Labels[hyperv1.NodePoolLabel]).NotTo(BeEmpty())
+				if cond.Type == corev1.NodeReady {
+					currentConditions[node.Name] = conditionForNode(cond)
 				}
 			}
+			// TODO(muraee): where does this logic belong?
+			if _, exists := node.Labels[hyperv1.NodePoolLabel]; !exists {
+				return true, fmt.Errorf("node %s was missing %s label", node.Name, hyperv1.NodePoolLabel)
+			}
 		}
-		if len(readyNodes) != int(n) {
-			readyNodeCount = len(readyNodes)
-			return false, nil
-		}
-		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
 
-		return true, nil
+		previouslyReady, currentlyReady := readyNodes(previousConditions), readyNodes(currentConditions)
+		if !previouslyReady.Equal(currentlyReady) {
+			t.Logf("found %d/%d ready nodes: %v", len(currentlyReady), n, strings.Join(currentlyReady.UnsortedList(), ", "))
+		}
+		for node, ready := range currentConditions {
+			if !conditionsIdentical(ready, previousConditions[node]) {
+				prefix := ""
+				if ready.Status != metav1.ConditionTrue {
+					prefix = "un"
+				}
+				msg := fmt.Sprintf("%sready node %s: %s", prefix, node, formatCondition(ready))
+				t.Log(msg)
+			}
+		}
+		previousConditions = currentConditions
+		return len(currentlyReady) == int(n), nil
 	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
+	duration := time.Since(start).Round(time.Second)
 
-	t.Logf("All nodes for nodepool appear to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
-
+	if err != nil {
+		t.Fatalf("Failed to wait for %d ready nodes in %s: %v", n, duration, err)
+	}
+	t.Logf("Successfully waited for %d ready nodes in %s", n, duration)
 	return nodes.Items
+}
+
+func readyNodes(conditions map[string]condition) sets.Set[string] {
+	ready := sets.New[string]()
+	for node, cond := range conditions {
+		if cond.Status == metav1.ConditionTrue {
+			ready.Insert(node)
+		}
+	}
+	return ready
 }
 
 func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePoolName string) []corev1.Node {
@@ -1539,7 +1574,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	t.Logf("validating status for hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 	start := time.Now()
 	previousResourceVersion := ""
-	previousConditions := map[string]metav1.Condition{}
+	previousConditions := map[string]condition{}
 	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 			t.Logf("Failed to get hostedcluster: %v", err)
@@ -1552,9 +1587,10 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		}
 		previousResourceVersion = hostedCluster.ResourceVersion
 
-		currentConditions := map[string]metav1.Condition{}
+		currentConditions := map[string]condition{}
 		conditionsValid := true
-		for i, condition := range hostedCluster.Status.Conditions {
+		for _, cond := range hostedCluster.Status.Conditions {
+			condition := conditionFor(cond)
 			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
 				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
 				t.Logf("unchecked condition: %s", formatCondition(condition))
@@ -1568,7 +1604,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 			conditionsValid = conditionsValid && (condition.Status == expectedStatus)
 
-			currentConditions[condition.Type] = hostedCluster.Status.Conditions[i]
+			currentConditions[condition.Type] = condition
 			if conditionsIdentical(currentConditions[condition.Type], previousConditions[condition.Type]) {
 				// no need to spam anything, we already said it when we processed this last time
 				continue
@@ -1592,7 +1628,34 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }
 
-func formatCondition(condition metav1.Condition) string {
+type condition = struct {
+	Type    string
+	Status  metav1.ConditionStatus
+	Reason  string
+	Message string
+}
+
+// n.b. we can't use structural typing and the condition alias for a subset of fields
+func conditionForNode(in corev1.NodeCondition) condition {
+	return condition{
+		Type:    string(in.Type),
+		Status:  metav1.ConditionStatus(in.Status),
+		Reason:  in.Reason,
+		Message: in.Message,
+	}
+}
+
+// n.b. we can't use structural typing and the condition alias for a subset of fields
+func conditionFor(in metav1.Condition) condition {
+	return condition{
+		Type:    in.Type,
+		Status:  in.Status,
+		Reason:  in.Reason,
+		Message: in.Message,
+	}
+}
+
+func formatCondition(condition condition) string {
 	msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
 	if condition.Reason != "" {
 		msg += ": " + condition.Reason
@@ -1603,7 +1666,7 @@ func formatCondition(condition metav1.Condition) string {
 	return msg
 }
 
-func conditionsIdentical(a, b metav1.Condition) bool {
+func conditionsIdentical(a, b condition) bool {
 	return a.Type == b.Type && a.Status == b.Status && a.Reason == b.Reason && a.Message == b.Message
 }
 
