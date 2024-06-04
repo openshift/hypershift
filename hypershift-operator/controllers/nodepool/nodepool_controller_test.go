@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	k8sutilspointer "k8s.io/utils/pointer"
 	"regexp"
 	"strings"
 	"testing"
@@ -464,6 +465,7 @@ status:
 		name                        string
 		nodePool                    *hyperv1.NodePool
 		config                      []client.Object
+		mirroredConfigs             []corev1.ConfigMap
 		expectedCoreConfigResources int
 		cpoImageMetadata            *dockerv1client.DockerImageConfig
 		expect                      string
@@ -576,6 +578,17 @@ status:
 			},
 			config: []client.Object{
 				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "containerRuntimeConfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig1,
+					},
+				},
+			},
+			mirroredConfigs: []corev1.ConfigMap{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "containerRuntimeConfig-1",
 						Namespace: namespace,
@@ -865,7 +878,7 @@ kind: Config`)},
 				Name: "haproxy-router",
 				From: &corev1.ObjectReference{},
 			}}}}}
-			got, missingConfigs, err := r.getConfig(context.Background(),
+			got, mirroredConfigs, missingConfigs, err := r.getConfig(context.Background(),
 				tc.nodePool,
 				tc.expectedCoreConfigResources,
 				namespace,
@@ -878,6 +891,9 @@ kind: Config`)},
 			}
 			g.Expect(missingConfigs).To(Equal(tc.missingConfigs))
 			g.Expect(err).ToNot(HaveOccurred())
+			if diff := cmp.Diff(mirroredConfigs, tc.mirroredConfigs, cmpopts.IgnoreFields(metav1.ObjectMeta{}, "ResourceVersion")); diff != "" {
+				t.Errorf("actual mirrored configs differs from expected: %s", diff)
+			}
 			if diff := cmp.Diff(got, tc.expect); diff != "" {
 				t.Errorf("actual config differs from expected: %s", diff)
 			}
@@ -1319,6 +1335,158 @@ status: {}
 			if diff := cmp.Diff(pp, tc.perfprofExpect); diff != "" {
 				t.Errorf("actual Performance Profile config differs from expected: %s", diff)
 				t.Logf("got:\n%s\n, expected:\n%s\n", pp, tc.perfprofExpect)
+			}
+		})
+	}
+}
+
+func TestMirrorContainerRuntimeConfig(t *testing.T) {
+	containerRuntimeConfig1 := `apiVersion: machineconfiguration.openshift.io/v1
+	kind: ContainerRuntimeConfig
+	metadata:
+	 name: set-pids-limit
+	spec:
+	 containerRuntimeConfig:
+	   pidsLimit: 2048
+	`
+	containerRuntimeConfig2 := `apiVersion: machineconfiguration.openshift.io/v1
+	kind: ContainerRuntimeConfig
+	metadata:
+	 name: change-to-runc
+	spec:
+	 containerRuntimeConfig:
+	   defaultRuntime: crun
+	`
+	hcpNamespace := "hostedcontrolplane-namespace"
+	npNamespace := "nodepool-namespace"
+	npName := "nodepool-test"
+	np := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      npName,
+			Namespace: npNamespace,
+		},
+	}
+	testCases := []struct {
+		name                    string
+		nodePool                *hyperv1.NodePool
+		controlPlaneNamespace   string
+		configsToBeMirrored     []corev1.ConfigMap
+		existingConfigsInHcpNs  []client.Object
+		expectedMirroredConfigs []corev1.ConfigMap
+		configsForDeletion      []corev1.ConfigMap
+	}{
+		{
+			name:                  "with containerruntime",
+			nodePool:              np,
+			controlPlaneNamespace: hcpNamespace,
+			configsToBeMirrored: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "foo",
+						Namespace: npNamespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig1,
+					},
+				},
+			},
+			existingConfigsInHcpNs: nil,
+			expectedMirroredConfigs: []corev1.ConfigMap{
+				{
+					Immutable: k8sutilspointer.Bool(true),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      composeConfigName("foo", npName),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							mirroredConfigLabel: "",
+							nodePoolAnnotation:  npName,
+						},
+						Annotations: map[string]string{nodePoolAnnotation: npNamespace + "/" + npName},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig1,
+					},
+				},
+			},
+		},
+		{
+			name:                  "with configs that need to be deleted",
+			nodePool:              np,
+			controlPlaneNamespace: hcpNamespace,
+			configsToBeMirrored: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "foo",
+						Namespace: npNamespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig2,
+					},
+				},
+			},
+			existingConfigsInHcpNs: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "bar",
+						Namespace: npNamespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig1,
+					},
+				},
+			},
+			expectedMirroredConfigs: []corev1.ConfigMap{
+				{
+					Immutable: k8sutilspointer.Bool(true),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      composeConfigName("foo", npName),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							mirroredConfigLabel: "",
+							nodePoolAnnotation:  npName,
+						},
+						Annotations: map[string]string{nodePoolAnnotation: npNamespace + "/" + npName},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig2,
+					},
+				},
+			},
+			configsForDeletion: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      composeConfigName("bar", npName),
+						Namespace: hcpNamespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: containerRuntimeConfig1,
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := NodePoolReconciler{
+				Client:                 fake.NewClientBuilder().WithObjects(tc.existingConfigsInHcpNs...).Build(),
+				CreateOrUpdateProvider: upsert.New(true),
+			}
+			err := r.mirrorContainerRuntimeConfig(context.Background(), logr.Discard(), tc.configsToBeMirrored, tc.controlPlaneNamespace, tc.nodePool)
+			g.Expect(err).ToNot(HaveOccurred())
+			for _, config := range tc.expectedMirroredConfigs {
+				cm := &corev1.ConfigMap{}
+				err := r.Get(context.Background(), client.ObjectKeyFromObject(&config), cm)
+				g.Expect(err).ToNot(HaveOccurred())
+				if diff := cmp.Diff(cm, &config, cmpopts.IgnoreFields(metav1.ObjectMeta{}, "ResourceVersion")); diff != "" {
+					t.Errorf("actual mirrored config differs from expected: %s", diff)
+					t.Logf("got:\n%+v\n, expected:\n%+v\n", cm, config)
+				}
+			}
+			for _, config := range tc.configsForDeletion {
+				cm := &corev1.ConfigMap{}
+				err := r.Get(context.Background(), client.ObjectKeyFromObject(&config), cm)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
 		})
 	}
