@@ -14,7 +14,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +36,6 @@ spec:
     node-role.kubernetes.io/worker-cnf: ""
 `
 	controllerGeneratedPPConfig = "hypershift.openshift.io/performanceprofile-config"
-	ppConfigMapNamePrefix       = "perfprofile-"
 )
 
 type NTOPerformanceProfileTest struct {
@@ -107,7 +105,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(mc.hostedCluster.Namespace, mc.hostedCluster.Name)
 	t.Logf("Hosted control plane namespace is %s", controlPlaneNamespace)
 
-	e2eutil.EventuallyObjects(t, ctx, "performance profile ConfigMap to exist with correct labels and annotations",
+	e2eutil.EventuallyObjects(t, ctx, "performance profile ConfigMap to exist with correct name labels and annotations",
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
@@ -126,6 +124,12 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			},
 		},
 		[]e2eutil.Predicate[*corev1.ConfigMap]{
+			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
+				if want, got := nodepool.ComposeValidName(performanceProfileConfigMap.Name, nodePool.Name), configMap.Name; want != got {
+					return false, fmt.Sprintf("expected performance profile ConfigMap name to be '%s', got '%s'", want, got), nil
+				}
+				return true, fmt.Sprintf("performance profile ConfigMap name is as expected"), nil
+			},
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
 				if diff := cmp.Diff(map[string]string{
 					nodepool.PerformanceProfileConfigMapLabel: configMap.Labels[nodepool.PerformanceProfileConfigMapLabel],

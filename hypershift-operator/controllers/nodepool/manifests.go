@@ -72,11 +72,49 @@ func TunedConfigMap(namespace, name string) *corev1.ConfigMap {
 	}
 }
 
-func PerformanceProfileConfigMap(namespace, name string) *corev1.ConfigMap {
+func PerformanceProfileConfigMap(namespace, name, nodePoolName string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      "perfprofile-" + name,
+			Name:      ComposeValidName(name, nodePoolName),
 		},
 	}
+}
+
+// 63 is the qualifiedNameMaxLength allowed for k8s object
+// https://github.com/kubernetes/kubernetes/blob/957c9538670b5f7ead2c9ba9ceb9de081d66caa4/staging/src/k8s.io/apimachinery/pkg/util/validation/validation.go#L34
+const qualifiedNameMaxLength = 63
+
+// ComposeValidName takes two qualified objects` names
+func ComposeValidName(name1, name2 string) string {
+	totalLen := len(name1) + len(name2)
+	// it cannot be equal to qualifiedNameMaxLength because we should preserve 1 character for the dash '-'
+	if totalLen >= qualifiedNameMaxLength {
+		weight1 := float64(len(name1) / totalLen)
+		weight2 := float64(len(name2) / totalLen)
+
+		prefixLen1 := int(weight1 * float64(qualifiedNameMaxLength-1))
+		prefixLen2 := int(weight2 * float64(qualifiedNameMaxLength-1))
+
+		// handle rounding cases
+		if prefixLen1 == 0 {
+			prefixLen1++
+			// preserve a character for the dash
+			prefixLen2 = qualifiedNameMaxLength - 1 - prefixLen1
+		}
+		if prefixLen2 == 0 {
+			prefixLen2++
+			// preserve a character for the dash
+			prefixLen1 = qualifiedNameMaxLength - 1 - prefixLen1
+		}
+		// ensure prefix lengths do not exceed the actual lengths of the names
+		if prefixLen1 > len(name1) {
+			prefixLen1 = len(name1)
+		}
+		if prefixLen2 > len(name2) {
+			prefixLen2 = len(name2)
+		}
+		return fmt.Sprintf("%s-%s", name1[:prefixLen1], name2[:prefixLen2])
+	}
+	return fmt.Sprintf("%s-%s", name1, name2)
 }
