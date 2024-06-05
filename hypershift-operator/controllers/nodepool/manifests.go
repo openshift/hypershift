@@ -42,20 +42,23 @@ func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string
 	}
 }
 
+const ignitionUserDataPrefix = "user-data"
+
 func IgnitionUserDataSecret(namespace, name, payloadInputHash string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      fmt.Sprintf("user-data-%s-%s", name, payloadInputHash),
-		},
-	}
+	return namedSecret(namespace, fmt.Sprintf("%s-%s-%s", ignitionUserDataPrefix, name, payloadInputHash))
 }
 
+const tokenSecretPrefix = "token"
+
 func TokenSecret(namespace, name, payloadInputHash string) *corev1.Secret {
+	return namedSecret(namespace, fmt.Sprintf("%s-%s-%s", tokenSecretPrefix, name, payloadInputHash))
+}
+
+func namedSecret(namespace, name string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      fmt.Sprintf("token-%s-%s", name, payloadInputHash),
+			Name:      name,
 		},
 	}
 }
