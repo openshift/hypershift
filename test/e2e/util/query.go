@@ -1,4 +1,7 @@
-package metrics
+package util
+
+// This file is mirrored from library-go
+// https://raw.githubusercontent.com/openshift/library-go/master/test/library/metrics/query.go
 
 import (
 	"context"
@@ -7,60 +10,50 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	routeclient "github.com/openshift/client-go/route/clientset/versioned"
 	prometheusapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	corev1 "k8s.io/api/core/v1"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/transport"
 )
 
-// NewPrometheusClient returns Prometheus API or error
+// newPrometheusClient returns Prometheus API or error
 // Note: with thanos-querier you must pass an entire Alert as a query. Partial queries return an error, so have to pass the entire alert.
 // Example query for an Alert:
 // `ALERTS{alertname="PodDisruptionBudgetAtLimit",alertstate="pending",namespace="pdbnamespace",poddisruptionbudget="pdbname",prometheus="openshift-monitoring/k8s",service="kube-state-metrics",severity="warning"}==1`
 // Example query:
 // `scheduler_scheduling_duration_seconds_sum`
-func NewPrometheusClient(ctx context.Context, kclient kubernetes.Interface, rc routeclient.Interface) (prometheusv1.API, error) {
+func newPrometheusClient(ctx context.Context, kclient kubernetes.Interface, rc routeclient.Interface) (prometheusv1.API, error) {
 	_, err := kclient.CoreV1().Services("openshift-monitoring").Get(ctx, "prometheus-k8s", metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get prometheus-k8s service: %w", err)
 	}
 
 	route, err := rc.RouteV1().Routes("openshift-monitoring").Get(ctx, "thanos-querier", metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get thanos-querier route: %w", err)
 	}
 	host := route.Status.Ingress[0].Host
-	var bearerToken string
-	secrets, err := kclient.CoreV1().Secrets("openshift-monitoring").List(ctx, metav1.ListOptions{})
+	expirationSeconds := int64(24 * time.Hour / time.Second)
+	req, err := kclient.CoreV1().ServiceAccounts("openshift-monitoring").CreateToken(ctx, "prometheus-k8s",
+		&authenticationv1.TokenRequest{
+			Spec: authenticationv1.TokenRequestSpec{ExpirationSeconds: &expirationSeconds},
+		}, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not list secrets in openshift-monitoring namespace")
+		return nil, fmt.Errorf("error requesting token for service account prometheus-k8s: %v", err)
 	}
-	for _, s := range secrets.Items {
-		if s.Type != corev1.SecretTypeServiceAccountToken ||
-			!strings.HasPrefix(s.Name, "prometheus-k8s") {
-			continue
-		}
-		bearerToken = string(s.Data[corev1.ServiceAccountTokenKey])
-		break
-	}
-	if len(bearerToken) == 0 {
-		return nil, fmt.Errorf("prometheus service account not found")
-	}
-
-	return createClient(ctx, kclient, host, bearerToken)
+	return createClient(ctx, kclient, host, req.Status.Token)
 }
 
 func createClient(ctx context.Context, kclient kubernetes.Interface, host, bearerToken string) (prometheusv1.API, error) {
 	// retrieve router CA
 	routerCAConfigMap, err := kclient.CoreV1().ConfigMaps("openshift-config-managed").Get(ctx, "default-ingress-cert", metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get route CA: %w", err)
 	}
 	bundlePEM := []byte(routerCAConfigMap.Data["ca-bundle.crt"])
 
@@ -88,7 +81,8 @@ func createClient(ctx context.Context, kclient kubernetes.Interface, host, beare
 		),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create Prometheus API client: %w", err)
 	}
+
 	return prometheusv1.NewAPI(client), nil
 }
