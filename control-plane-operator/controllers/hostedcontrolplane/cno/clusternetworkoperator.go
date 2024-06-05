@@ -39,7 +39,6 @@ const (
 
 type Images struct {
 	NetworkOperator              string
-	SDN                          string
 	KubeProxy                    string
 	KubeRBACProxy                string
 	Multus                       string
@@ -85,7 +84,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	p := Params{
 		Images: Images{
 			NetworkOperator:              releaseImageProvider.GetImage("cluster-network-operator"),
-			SDN:                          userReleaseImageProvider.GetImage("sdn"),
 			KubeProxy:                    userReleaseImageProvider.GetImage("kube-proxy"),
 			KubeRBACProxy:                userReleaseImageProvider.GetImage("kube-rbac-proxy"),
 			Multus:                       userReleaseImageProvider.GetImage("multus-cni"),
@@ -531,7 +529,6 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 				},
 			}},
 
-			{Name: "SDN_IMAGE", Value: params.Images.SDN},
 			{Name: "KUBE_PROXY_IMAGE", Value: params.Images.KubeProxy},
 			{Name: "KUBE_RBAC_PROXY_IMAGE", Value: params.Images.KubeRBACProxy},
 			{Name: "MULTUS_IMAGE", Value: params.Images.Multus},
