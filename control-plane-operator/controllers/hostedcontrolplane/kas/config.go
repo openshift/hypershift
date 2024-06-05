@@ -180,6 +180,9 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	}
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
+	// TODO(rtheis): Move to "none" once the hosted cluster config operator is reconciling
+	// the Kubernetes API server endpoints and endpointslice. This will ensure that there
+	// is a smooth highly available transition off the lease reconciler.
 	args.Set("endpoint-reconciler-type", "lease")
 	args.Set("etcd-cafile", cpath(kasVolumeEtcdCA().Name, certs.CASignerCertMapKey))
 	args.Set("etcd-certfile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey))
