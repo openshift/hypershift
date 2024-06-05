@@ -230,6 +230,32 @@ set -eu
 # corresponding to this pod does not exist in the cluster so it can be added
 # as a new member.
 
+function recover_lost_member() {
+	### For restoring the data from snapshot in case of disaster, we can manually follow the below steps:
+	## restore the wal folder from snapshot
+	# etcdctl snapshot restore --wal-dir=/var/lib/data/member/wal /var/lib/data/snapshot-${DATE}/snapshot.db --name ${HOSTNAME}
+
+	## checking the status of recovered snapshot
+	# etcdctl --write-out=simple endpoint status > /var/lib/data/snapshot-${DATE}/endpoint-status-after-restore.txt
+	# diff /var/lib/data/snapshot-${DATE}/endpoint-status.txt /var/lib/data/snapshot-${DATE}/endpoint-status-after-restore.txt || true
+	###
+
+	DATE=$(date +"%Y-%m-%dT%H-%M-%S%z")
+	echo "Recovering lost member ${HOSTNAME}"
+
+	# backup the current data and save the status of the endpoint
+	mkdir -p /var/lib/data/snapshot-${DATE}
+	etcdctl snapshot save /var/lib/data/snapshot-${DATE}/snapshot.db
+	etcdctl --write-out=simple endpoint status > /var/lib/data/snapshot-${DATE}/endpoint-status.txt
+
+	# remove the data from /var/lib/data directory
+	if [[ -d /var/lib/data/member ]]; then
+	  rm -rf /var/lib/data/member
+	fi
+
+	# After the PVC clean the next iteration the member should be re-added
+}
+
 # Setup the etcdctl environment
 export ETCDCTL_API=3
 export ETCDCTL_CACERT=/etc/etcd/tls/etcd-ca/ca.crt
@@ -254,7 +280,8 @@ if [[ ! -f /var/lib/data/member/snap/db ]]; then
 	  etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
 	  echo "existing" > /etc/etcd/clusterstate/existing
 	else
-	  echo "A member does not exist with name (${HOSTNAME}), nothing to do"
+	  echo "A member does not exist with name (${HOSTNAME}), cleaning up the data directory to make sure the member could be re-added"
+	  recover_lost_member
 	fi
   else
     echo "Cannot list members in cluster, so likely not up yet"

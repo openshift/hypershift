@@ -47,7 +47,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator hyp
 
 .PHONY: sync
 sync:
-	$(GO) work sync 
+	$(GO) work sync
 
 .PHONY: update
 update: sync api-deps api api-docs deps clients app-sre-saas-template
