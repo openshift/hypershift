@@ -40,6 +40,7 @@ import (
 	kapierror "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -234,10 +235,6 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 				if cond.Type == corev1.NodeReady {
 					currentConditions[node.Name] = conditionForNode(cond)
 				}
-			}
-			// TODO(muraee): where does this logic belong?
-			if _, exists := node.Labels[hyperv1.NodePoolLabel]; !exists {
-				return true, fmt.Errorf("node %s was missing %s label", node.Name, hyperv1.NodePoolLabel)
 			}
 		}
 
@@ -605,23 +602,65 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
-		var nodePoolList hyperv1.NodePoolList
-		if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
-			t.Fatalf("failed to list nodepools: %v", err)
-		}
-		replicas := 0
-		for _, nodePool := range nodePoolList.Items {
-			replicas = replicas + int(*nodePool.Spec.Replicas)
-		}
+		t.Log("Waiting for NodePool to have Nodes matching replica counts")
+		start := time.Now()
+		var previousError string
+		previousAutoScalingNodes := sets.Set[string]{} // which nodes are we skipping?
+		previousNodes := map[string]sets.Set[string]{} // map of nodepool name to node names
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+			var nodePoolList hyperv1.NodePoolList
+			if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
+				if err.Error() != previousError {
+					t.Logf("Failed to list NodePools: %v", err)
+					previousError = err.Error()
+				}
+				return false, nil
+			}
 
-		var nodes corev1.NodeList
-		if err := guestClient.List(ctx, &nodes); err != nil {
-			t.Fatalf("failed to list nodes in guest cluster: %v", err)
-		}
+			allMatch := true
+			currentAutoScalingNodes := sets.Set[string]{}
+			currentNodes := map[string]sets.Set[string]{}
+			for _, nodePool := range nodePoolList.Items {
+				if nodePool.Spec.Replicas == nil {
+					currentAutoScalingNodes.Insert(nodePool.Name)
+					if !previousAutoScalingNodes.Has(nodePool.Name) {
+						t.Logf("Skipping replica check for NodePool %s/%s as it's auto-scaling", nodePool.Namespace, nodePool.Name)
+					}
+					continue
+				}
+				var nodes corev1.NodeList
+				if err := guestClient.List(ctx, &nodes, crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: nodePool.Name})}); err != nil {
+					msg := fmt.Sprintf("Failed to list Nodes in guest cluster for NodePool %s/%s: %v", nodePool.Namespace, nodePool.Name, err)
+					if msg != previousError {
+						t.Log(msg)
+						previousError = msg
+					}
+					return false, nil
+				}
+				names := sets.Set[string]{}
+				for _, node := range nodes.Items {
+					names.Insert(node.Name)
+				}
+				currentNodes[nodePool.Name] = names
+				allMatch = allMatch && len(names) == int(*nodePool.Spec.Replicas)
 
-		if replicas != len(nodes.Items) {
-			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", replicas, len(nodes.Items))
+				if names.Equal(previousNodes[nodePool.Name]) {
+					continue
+				}
+
+				t.Logf("NodePool %s/%s has %d/%d Nodes: %v", nodePool.Namespace, nodePool.Name, len(names), *nodePool.Spec.Replicas, strings.Join(names.UnsortedList(), ", "))
+			}
+
+			previousAutoScalingNodes = currentAutoScalingNodes
+			previousNodes = currentNodes
+			return allMatch, nil
+		})
+		duration := time.Since(start).Round(time.Second)
+
+		if err != nil {
+			t.Errorf("Failed to wait for NodePool replicas to match Node count in %s: %v", duration, err)
 		}
+		t.Logf("Successfully waited for NodePool replicas to match Node count in %s", duration)
 	})
 }
 
