@@ -202,6 +202,7 @@ const (
         "ec2:DescribeSecurityGroups",
         "ec2:DescribeSubnets",
         "ec2:DescribeVpcs",
+        "ec2:DescribeDhcpOptions",
         "ec2:DescribeVpcAttribute",
         "ec2:DescribeVolumes",
         "ec2:DetachInternetGateway",
