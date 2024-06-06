@@ -92,6 +92,7 @@ nav:
     - how-to/agent/create-agent-cluster.md
     - how-to/agent/create-heterogeneous-nodepools.md
     - 'Other SDN providers': how-to/agent/other-sdn-providers.md
+    - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
   - 'Disconnected':
     - how-to/disconnected/automatically-initialize-registry-overrides.md
     - how-to/disconnected/image-content-sources.md
@@ -107,6 +108,7 @@ nav:
     - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
   - 'None':
     - how-to/none/create-none-cluster.md
+    - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
   - 'PowerVS':
     - how-to/powervs/create-cluster-powervs.md
     - how-to/powervs/create-infra-separately.md
@@ -222,6 +224,12 @@ nav:
         - labs/Dual/watching/index.md
         - 'Watching the Control Plane': labs/Dual/watching/watching-cp.md
         - 'Watching the Data Plane': labs/Dual/watching/watching-dp.md
+- 'Recipes':
+  - recipes/index.md
+  - 'Agent':
+    - 'Expose Data Plane Ingress via MetalLB': recipes/agent/exposing-dataplane-with-metallb.md
+  - 'None':
+    - 'Expose Data Plane Ingress via MetalLB': recipes/none/exposing-dataplane-with-metallb.md
 - 'Reference':
   - reference/index.md
   - reference/goals-and-design-invariants.md
@@ -248,9 +256,9 @@ nav:
   - reference/SLOs.md
 - 'Contribute':
   - contribute/index.md
-  - contribute/release-process.md
-  - contribute/develop-in-cluster.md
-  - contribute/custom-images.md
-  - contribute/onboard-a-platform.md
-  - contribute/run-tests.md
-  - contribute/contribute-docs.md
+  - 'Release Process': contribute/release-process.md
+  - 'Custom Images': contribute/custom-images.md
+  - 'Onboard a Platform': contribute/onboard-a-platform.md
+  - 'Run Tests': contribute/run-tests.md
+  - 'Develop in Cluster': contribute/develop_in_cluster.md
+  - 'Conotribute to docs': contribute/contribute-docs.md
