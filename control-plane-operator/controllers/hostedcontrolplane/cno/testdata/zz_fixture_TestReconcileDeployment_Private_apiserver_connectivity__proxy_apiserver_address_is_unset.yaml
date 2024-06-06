@@ -104,7 +104,7 @@ spec:
         command:
         - /usr/bin/control-plane-operator
         - konnectivity-socks5-proxy
-        - --resolve-from-guest-cluster-dns=true
+        - --disable-resolver
         env:
         - name: KUBECONFIG
           value: /etc/kubernetes/kubeconfig
