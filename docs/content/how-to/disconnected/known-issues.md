@@ -189,3 +189,19 @@ for isName in ${IMAGESTREAMS}; do
   oc patch -n openshift ${isName} --type json -p '[{"op": "replace", "path": "/spec/tags/0/importPolicy/insecure", "value": true}]'
 done
 ```
+
+## `oc mirror --config` command failed with exit status 1 (on RHEL8)
+
+See: https://issues.redhat.com/browse/OCPBUGS-31536
+
+Mirroring operator images, the oc-mirror plugin is locally extracting the opm binary which, for the index images used on OCP 4.15 and greater is shipped only for RHEL9, see: https://issues.redhat.com/browse/OCPBUGS-25019 , and so it fails on RHEL8 bastion hosts.
+
+**Symptoms:**
+An error message like:
+```sh
+error: error rebuilding catalog images from file-based catalogs: error regenerating the cache for ...
+```
+when mirroring operators for OCP 4.15 and greater on a RHEL8 bastion host.
+
+**Workaround:**
+Run `oc mirror` only on RHEL9 based bastion hosts.
