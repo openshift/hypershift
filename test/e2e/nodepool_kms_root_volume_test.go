@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -22,14 +23,16 @@ type KMSRootVolumeTest struct {
 	DummyInfraSetup
 	hostedCluster *hyperv1.HostedCluster
 	clusterOpts   core.CreateOptions
+	ctx           context.Context
 
 	EncryptionKey string
 }
 
-func NewKMSRootVolumeTest(hostedCluster *hyperv1.HostedCluster, clusterOpts core.CreateOptions) *KMSRootVolumeTest {
+func NewKMSRootVolumeTest(ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterOpts core.CreateOptions) *KMSRootVolumeTest {
 	return &KMSRootVolumeTest{
 		hostedCluster: hostedCluster,
 		clusterOpts:   clusterOpts,
+		ctx:           ctx,
 	}
 }
 
@@ -84,7 +87,7 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	t.Logf("instanceID: %s", instanceID)
 
 	ec2client := ec2Client(k.clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
-	output, err := ec2client.DescribeVolumes(&ec2.DescribeVolumesInput{
+	output, err := ec2client.DescribeVolumesWithContext(k.ctx, &ec2.DescribeVolumesInput{
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("attachment.instance-id"),

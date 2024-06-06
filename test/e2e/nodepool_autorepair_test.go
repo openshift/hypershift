@@ -72,7 +72,7 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 	instanceID := awsSpec[strings.LastIndex(awsSpec, "/")+1:]
 	t.Logf("Terminating AWS instance: %s", instanceID)
 	ec2client := ec2Client(ar.clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, ar.clusterOpts.AWSPlatform.Region)
-	_, err := ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
+	_, err := ec2client.TerminateInstancesWithContext(ar.ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: []*string{aws.String(instanceID)},
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to terminate AWS instance")
@@ -81,7 +81,7 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 
 	// Wait for nodes to be ready again, without the node that was terminated
 	t.Logf("Waiting for %d available nodes without %s", numNodes, nodeToReplace)
-	err = wait.PollUntil(30*time.Second, func() (done bool, err error) {
+	err = wait.PollUntilContextTimeout(ar.ctx, 30*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ar.ctx, ar.hostedClusterClient, numNodes, ar.hostedCluster.Spec.Platform.Type, nodePool.Name)
 		for _, node := range nodes {
 			if node.Name == nodeToReplace {
@@ -89,7 +89,7 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 			}
 		}
 		return true, nil
-	}, ar.ctx.Done())
+	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
 
 }

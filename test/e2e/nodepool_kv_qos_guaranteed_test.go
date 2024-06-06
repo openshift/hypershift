@@ -57,7 +57,7 @@ func (k KubeVirtQoSClassGuaranteedTest) Run(t *testing.T, nodePool hyperv1.NodeP
 		gg.Expect(np.Spec.Platform.Kubevirt).ToNot(BeNil())
 		gg.Expect(np.Spec.Platform.Kubevirt.Compute).ToNot(BeNil())
 		gg.Expect(np.Spec.Platform.Kubevirt.Compute.QosClass).To(HaveValue(Equal(hyperv1.QoSClassGuaranteed)))
-	}).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
+	}).WithContext(k.ctx).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
 	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 	var guestNamespace string
@@ -93,7 +93,7 @@ func (k KubeVirtQoSClassGuaranteedTest) Run(t *testing.T, nodePool hyperv1.NodeP
 
 		validateQuantity(vmi.Spec.Domain.Resources.Requests.Cpu(), vmi.Spec.Domain.Resources.Limits.Cpu(), gg)
 		validateQuantity(vmi.Spec.Domain.Resources.Requests.Memory(), vmi.Spec.Domain.Resources.Limits.Memory(), gg)
-	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	}).WithContext(k.ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
 	g.Eventually(func(gg Gomega) corev1.PodQOSClass {
 		pods := &corev1.PodList{}
@@ -105,7 +105,7 @@ func (k KubeVirtQoSClassGuaranteedTest) Run(t *testing.T, nodePool hyperv1.NodeP
 		gg.Expect(pods.Items[0].Status.Phase).To(Equal(corev1.PodRunning))
 
 		return pods.Items[0].Status.QOSClass
-	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Equal(corev1.PodQOSGuaranteed))
+	}).WithContext(k.ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Equal(corev1.PodQOSGuaranteed))
 }
 
 func validateQuantity(req, limit *resource.Quantity, g Gomega) {

@@ -135,7 +135,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 
 		gg.Expect(nodePoolNsNameAnnotation).To(BeKeyOf(cm.Annotations), "Unable to find %q annotation in PerformanceProfile ConfigMap %q", nodePoolNsNameAnnotation, cm.Name)
 		gg.Expect(cm.Annotations[nodePoolNsNameAnnotation]).To(Equal(nodePool.Namespace + "/" + nodePool.Name))
-	}).Within(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+	}).WithContext(ctx).Within(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	t.Log("... configmap found with proper metadata.")
 
 	t.Log("Deleting configmap reference from nodepool ...")
@@ -160,7 +160,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			}
 		}
 		gg.Expect(ppCMs).To(BeEmpty(), "Performance Profile ConfigMap '%s/%s' for nodepool %q found. It should be deleted", controlPlaneNamespace, cmName, nodePool.Name)
-	}).Within(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+	}).WithContext(ctx).Within(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	t.Log("... configmap reference deleted")
 
 	t.Log("Ending NTO PerformanceProfile test: OK")
