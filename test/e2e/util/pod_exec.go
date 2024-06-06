@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,19 +18,19 @@ import (
 
 // RemoteExecutor defines the interface accepted by the Exec command - provided for test stubbing
 type RemoteExecutor interface {
-	Execute(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error
+	Execute(ctx context.Context, method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error
 }
 
 // DefaultRemoteExecutor is the standard implementation of remote command execution
 type DefaultRemoteExecutor struct{}
 
-func (*DefaultRemoteExecutor) Execute(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
+func (*DefaultRemoteExecutor) Execute(ctx context.Context, method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
 	exec, err := remotecommand.NewSPDYExecutor(config, method, url)
 	if err != nil {
 		return err
 	}
 
-	return exec.Stream(remotecommand.StreamOptions{
+	return exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:  stdin,
 		Stdout: stdout,
 		Stderr: stderr,
@@ -53,6 +54,8 @@ type PodExecOptions struct {
 	PodName       string
 	Namespace     string
 	ContainerName string
+
+	Timeout time.Duration
 
 	Executor RemoteExecutor
 	Config   *restclient.Config
@@ -84,7 +87,10 @@ func (p *PodExecOptions) Validate() error {
 }
 
 // Run executes a validated remote execution against a pod.
-func (p *PodExecOptions) Run() error {
+func (p *PodExecOptions) Run(ctx context.Context) error {
+	if p.Timeout == 0 {
+		p.Timeout = 2 * time.Minute
+	}
 	err := p.Validate()
 	if err != nil {
 		return err
@@ -95,7 +101,7 @@ func (p *PodExecOptions) Run() error {
 		return err
 	}
 
-	pod, err := client.Pods(p.Namespace).Get(context.TODO(), p.PodName, metav1.GetOptions{})
+	pod, err := client.Pods(p.Namespace).Get(ctx, p.PodName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -120,5 +126,8 @@ func (p *PodExecOptions) Run() error {
 		TTY:       p.TTY,
 	}, k8sScheme.ParameterCodec)
 
-	return p.Executor.Execute("POST", req.URL(), p.Config, p.In, p.Out, p.ErrOut, p.TTY)
+	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
+	defer cancel()
+
+	return p.Executor.Execute(ctx, "POST", req.URL(), p.Config, p.In, p.Out, p.ErrOut, p.TTY)
 }

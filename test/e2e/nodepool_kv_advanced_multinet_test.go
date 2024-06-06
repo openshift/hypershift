@@ -256,7 +256,7 @@ iptables -t nat -A PREROUTING -p tcp -d %[1]s -j DNAT --to-destination %[2]s
 	if err != nil {
 		return "", err
 	}
-	return e2eutil.RunCommandInPod(k.infra.Ctx(), infraClient, dnsmasqPod.Name, dnsmasqPod.Namespace, []string{"/bin/sh", "-c", command}, dnsmasqPod.Spec.Containers[0].Name)
+	return e2eutil.RunCommandInPod(k.infra.Ctx(), infraClient, dnsmasqPod.Name, dnsmasqPod.Namespace, []string{"/bin/sh", "-c", command}, dnsmasqPod.Spec.Containers[0].Name, 20*time.Minute)
 }
 
 func (k KubeVirtAdvancedMultinetTest) firstMachineAddress() (string, error) {
