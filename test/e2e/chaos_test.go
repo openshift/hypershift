@@ -15,6 +15,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/pointer"
 
@@ -70,12 +71,17 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 			},
 			Data: map[string]string{"value": string(value)},
 		}
-		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousCreationError string
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			if err := guestClient.Create(ctx, cm); err != nil {
+				if err.Error() != previousCreationError {
+					t.Logf("failed to create marker ConfigMap: %v", err)
+					previousCreationError = err.Error()
+				}
 				return false, nil
 			}
 			return true, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create marker configmap")
 
 		// Find etcd pods in the control plane namespace
@@ -112,29 +118,37 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 		}()
 
 		// The etcd cluster should eventually roll out completely
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousSTSError string
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(etcdSts), etcdSts)
 			if err != nil {
-				t.Logf("failed to get statefulset %s/%s: %s", etcdSts.Namespace, etcdSts.Name, err)
+				if err.Error() != previousSTSError {
+					t.Logf("failed to get statefulset %s/%s: %s", etcdSts.Namespace, etcdSts.Name, err)
+					previousSTSError = err.Error()
+				}
 				return false, nil
 			}
 			return *etcdSts.Spec.Replicas == etcdSts.Status.ReadyReplicas, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "etcd statefulset available replicas never converged")
 		t.Logf("etcd statefulset recovered successfully")
 
 		// The data should eventually be observed to have survived
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousCMError string
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			actual := &corev1.ConfigMap{}
 			if err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(cm), actual); err != nil {
-				t.Logf("failed to get marker configmap: %s", err)
+				if err.Error() != previousCMError {
+					t.Logf("failed to get marker configmap %s/%s: %s", cm.Namespace, cm.Name, err)
+					previousCMError = err.Error()
+				}
 				return false, nil
 			}
 			g.Expect(actual.Data).ToNot(BeNil(), "marker configmap is missing data")
 			g.Expect(actual.Data["value"]).To(Equal(string(value)), "marker data value doesn't match original")
 			t.Logf("marker data was verified")
 			return true, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to verify data following disruption")
 	}
 }
@@ -163,12 +177,17 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 			},
 			Data: map[string]string{"value": string(value)},
 		}
-		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousCreationError string
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			if err := guestClient.Create(ctx, cm); err != nil {
+				if err.Error() != previousCreationError {
+					t.Logf("failed to create marker ConfigMap: %v", err)
+					previousCreationError = err.Error()
+				}
 				return false, nil
 			}
 			return true, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create marker configmap")
 
 		// Find etcd pods in the control plane namespace
@@ -206,46 +225,62 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 		wg.Wait()
 
 		// Ensure that all etcd pods are replaced
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousPodError string
+		var previousUID types.UID
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			for _, pod := range etcdPods.Items {
 				actual := &corev1.Pod{}
 				if err := client.Get(ctx, crclient.ObjectKeyFromObject(&pod), actual); err != nil {
-					t.Logf("failed to get pod %s: %v", pod.Name, err)
+					if err.Error() != previousPodError {
+						t.Logf("failed to get pod %s/%s: %v", pod.Namespace, pod.Name, err)
+						previousPodError = err.Error()
+					}
 					return false, nil
 				}
 				if pod.UID == actual.UID {
-					t.Logf("pod %s not replaced yet", pod.Name)
+					if pod.UID != previousUID {
+						t.Logf("pod %s/%s not replaced yet", pod.Namespace, pod.Name)
+					}
+					previousUID = pod.UID
 					return false, nil
 				}
 			}
 			return true, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for etcd pods to be replaced")
 
 		// The etcd cluster should eventually roll out completely
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousSTSError string
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(etcdSts), etcdSts)
 			if err != nil {
-				t.Logf("failed to get statefulset %s/%s: %s", etcdSts.Namespace, etcdSts.Name, err)
+				if err.Error() != previousSTSError {
+					t.Logf("failed to get statefulset %s/%s: %s", etcdSts.Namespace, etcdSts.Name, err)
+					previousSTSError = err.Error()
+				}
 				return false, nil
 			}
 			return *etcdSts.Spec.Replicas == etcdSts.Status.ReadyReplicas, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "etcd statefulset available replicas never converged")
 		t.Logf("etcd statefulset recovered successfully")
 
 		// The data should eventually be observed to have survived
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousCMError string
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			actual := &corev1.ConfigMap{}
 			if err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(cm), actual); err != nil {
-				t.Logf("failed to get marker configmap: %s", err)
+				if err.Error() != previousCMError {
+					t.Logf("failed to create marker configmap %s/%s: %s", cm.Namespace, cm.Name, err)
+					previousCMError = err.Error()
+				}
 				return false, nil
 			}
 			g.Expect(actual.Data).ToNot(BeNil(), "marker configmap is missing data")
 			g.Expect(actual.Data["value"]).To(Equal(string(value)), "marker data value doesn't match original")
 			t.Logf("marker data was verified")
 			return true, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to verify data following disruption")
 	}
 }
@@ -299,32 +334,41 @@ func testSingleMemberRecovery(parentCtx context.Context, client crclient.Client,
 		}(pvc)
 		wg.Wait()
 
-		// Wait for etcd pod to be replaced
-		t.Log("Waiting for deleted pod to be replaced")
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-			err := client.Get(ctx, crclient.ObjectKeyFromObject(&randomPod), &randomPod)
-			if err != nil {
-				t.Logf("failed to get pod %s/%s: %v", randomPod.Namespace, randomPod.Name, err)
+		// Ensure that all etcd pods are replaced
+		var previousPodError string
+		var previoiusUID types.UID
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+			if err := client.Get(ctx, crclient.ObjectKeyFromObject(&randomPod), &randomPod); err != nil {
+				if err.Error() != previousPodError {
+					t.Logf("failed to get pod %s/%s: %v", randomPod.Namespace, randomPod.Name, err)
+					previousPodError = err.Error()
+				}
 				return false, nil
 			}
 			if randomPod.UID == originalPodID {
-				t.Log("original pod has not been replaced")
+				if randomPod.UID != previoiusUID {
+					t.Logf("pod %s/%s not replaced yet", randomPod.Namespace, randomPod.Name)
+				}
+				previoiusUID = randomPod.UID
 				return false, nil
 			}
-			t.Log("original pod is now replaced")
 			return true, nil
-		}, ctx.Done())
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for etcd pod to be replaced")
 
 		// The etcd cluster should eventually roll out completely
-		t.Log("Waiting for etcd statefulset to recover")
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousSTSError string
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(etcdSts), etcdSts)
 			if err != nil {
-				t.Logf("failed to get statefulset %s/%s: %s", etcdSts.Namespace, etcdSts.Name, err)
+				if err.Error() != previousSTSError {
+					t.Logf("failed to get statefulset %s/%s: %s", etcdSts.Namespace, etcdSts.Name, err)
+					previousSTSError = err.Error()
+				}
 				return false, nil
 			}
 			return *etcdSts.Spec.Replicas == etcdSts.Status.ReadyReplicas, nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "etcd statefulset available replicas never converged")
 		t.Logf("etcd statefulset recovered successfully")
 
