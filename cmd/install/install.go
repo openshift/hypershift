@@ -649,6 +649,11 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 			TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
 		}.Build()
 		objects = append(objects, externalDNSDeployment)
+
+		podMonitor := assets.ExternalDNSPodMonitor{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, podMonitor)
 	}
 
 	if opts.MonitoringDashboards {
