@@ -16,8 +16,10 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -140,7 +142,40 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		clusterNetworkCIDR = hcluster.Spec.Networking.ClusterNetwork[0].CIDR.String()
 	}
 
-	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, apiServerExternalAddress, apiServerInternalAddress, apiServerExternalPort, apiServerInternalPort, apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
+	kasSVCIP := ""
+	if sharedingress.UseSharedIngress() {
+		sharedIngressRouteSVC := &corev1.Service{
+			TypeMeta: metav1.TypeMeta{},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      sharedingress.RouterPublicService().Name,
+				Namespace: sharedingress.RouterNamespace,
+			},
+		}
+		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
+			return "", true, err
+		}
+		if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
+			return "", true, nil
+		}
+		apiServerExternalAddress = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
+		apiServerExternalPort = sharedingress.KASSVCLBPort
+
+		// Get KAS SVC info.
+		kasSVC := cpomanifests.KubeAPIServerService(hcluster.Namespace + "-" + hcluster.Name)
+		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(kasSVC), kasSVC); err != nil {
+			return "", true, err
+		}
+		if len(kasSVC.Spec.Ports) < 1 || kasSVC.Spec.ClusterIP == "" {
+			return "", true, fmt.Errorf("kas SVC %s has no ports or clusterIP", crclient.ObjectKeyFromObject(kasSVC))
+		}
+
+		kasSVCIP = kasSVC.Spec.ClusterIP
+	}
+
+	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage,
+		apiServerExternalAddress, apiServerInternalAddress, kasSVCIP,
+		apiServerExternalPort, apiServerInternalPort,
+		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
 	if err != nil {
 		return "", true, fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}
@@ -190,6 +225,7 @@ type fileToAdd struct {
 }
 
 //go:embed apiserver-haproxy/*
+//go:embed remote-kas-svc-haproxy/*
 var content embed.FS
 
 func MustAsset(name string) string {
@@ -201,12 +237,17 @@ func MustAsset(name string) string {
 }
 
 var (
-	setupAPIServerIPScriptTemplate    = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("apiserver-haproxy/setup-apiserver-ip.sh")))
-	teardownAPIServerIPScriptTemplate = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("apiserver-haproxy/teardown-apiserver-ip.sh")))
-	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(MustAsset("apiserver-haproxy/haproxy.cfg")))
+	setupAPIServerIPScriptTemplate       = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("apiserver-haproxy/setup-apiserver-ip.sh")))
+	teardownAPIServerIPScriptTemplate    = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("apiserver-haproxy/teardown-apiserver-ip.sh")))
+	haProxyConfigTemplate                = template.Must(template.New("haProxyConfig").Parse(MustAsset("apiserver-haproxy/haproxy.cfg")))
+	setupRemoteKASSVCIPScriptTemplate    = template.Must(template.New("setupRemoteKASSVCIPScript").Parse(MustAsset("remote-kas-svc-haproxy/setup-remote-kas-svc-ip.sh")))
+	teardownRemoteKASSVCIPScriptTemplate = template.Must(template.New("teardownRemoteKASSVCIPScript").Parse(MustAsset("remote-kas-svc-haproxy/teardown-remote-kas-svc-ip.sh")))
+	haProxyConfigRemoteKASSVCTemplate    = template.Must(template.New("haProxyConfigRemoteKASSVC").Parse(MustAsset("remote-kas-svc-haproxy/haproxy.cfg")))
 )
 
-func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string) ([]byte, error) {
+func apiServerProxyConfig(haProxyImage, cpoImage,
+	externalAPIAddress, internalAPIAddress, remoteKASSVCAdress string,
+	externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
 
@@ -229,26 +270,76 @@ func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAP
 		},
 	}
 
+	if sharedingress.UseSharedIngress() {
+		filesToAdd = append(filesToAdd, []fileToAdd{
+			{
+				template: setupRemoteKASSVCIPScriptTemplate,
+				name:     "/usr/local/bin/setup-remote-kas-svc-ip.sh",
+				mode:     0755,
+				params: map[string]string{
+					"RemoteKASSVCAdress": remoteKASSVCAdress,
+				},
+			},
+			{
+				template: teardownRemoteKASSVCIPScriptTemplate,
+				name:     "/usr/local/bin/teardown-remote-kas-svc-ip.sh",
+				mode:     0755,
+				params: map[string]string{
+					"RemoteKASSVCAdress": remoteKASSVCAdress,
+				},
+			},
+		}...)
+	}
+
 	// Check if no proxy contains any address that should result in skipping the system proxy
 	skipProxyForKAS := slices.ContainsFunc([]string{internalAPIAddress, "kubernetes", serviceNetwork, clusterNetwork}, func(s string) bool {
 		return strings.Contains(noProxy, s)
 	})
 
+	// Arbitrary port to bind for the data plane local proxies to communicate.
+	localPortToRemoteKASSVCPort := int32(7443)
 	if proxyAddr == "" || skipProxyForKAS {
+		apiserverProxyForwardIP := externalAPIAddress
+		apiserverProxyForwardPort := externalAPIPort
+
+		if sharedingress.UseSharedIngress() {
+			apiserverProxyForwardIP = remoteKASSVCAdress
+			apiserverProxyForwardPort = localPortToRemoteKASSVCPort
+
+			filesToAdd = append(filesToAdd, []fileToAdd{
+				{
+					template: haProxyConfigRemoteKASSVCTemplate,
+					name:     "/etc/kubernetes/remote-kas-svc-proxy/haproxy.cfg",
+					mode:     0644,
+					params: map[string]string{
+						"RemoteKASSVCAddress":         remoteKASSVCAdress,
+						"LocalPortToRemoteKASSVCPort": strconv.FormatInt(int64(localPortToRemoteKASSVCPort), 10),
+						"ExternalAPIAddress":          externalAPIAddress,
+						"ExternalAPIPort":             strconv.FormatInt(int64(externalAPIPort), 10),
+					},
+				},
+				{
+					source: generateHAProxyStaticPod("remote-kas-svc-proxy", haProxyImage, remoteKASSVCAdress, "/etc/kubernetes/remote-kas-svc-proxy", localPortToRemoteKASSVCPort),
+					name:   "/etc/kubernetes/manifests/remote-kas-svc-proxy.yaml",
+					mode:   0644,
+				},
+			}...)
+		}
+
 		filesToAdd = append(filesToAdd, []fileToAdd{
 			{
 				template: haProxyConfigTemplate,
 				name:     "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg",
 				mode:     0644,
 				params: map[string]string{
-					"ExternalAPIAddress": externalAPIAddress,
-					"ExternalAPIPort":    strconv.FormatInt(int64(externalAPIPort), 10),
+					"RemoteIP":           apiserverProxyForwardIP,
+					"RemotePort":         strconv.FormatInt(int64(apiserverProxyForwardPort), 10),
 					"InternalAPIAddress": internalAPIAddress,
 					"InternalAPIPort":    strconv.FormatInt(int64(internalAPIPort), 10),
 				},
 			},
 			{
-				source: generateHAProxyStaticPod(haProxyImage, internalAPIAddress, internalAPIPort),
+				source: generateHAProxyStaticPod("kube-apiserver-proxy", haProxyImage, internalAPIAddress, "/etc/kubernetes/apiserver-proxy-config", internalAPIPort),
 				name:   "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml",
 				mode:   0644,
 			},
@@ -284,18 +375,21 @@ func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAP
 	config.Systemd.Units = []ignitionapi.Unit{
 		apiServerIPUnit(),
 	}
+	if sharedingress.UseSharedIngress() {
+		config.Systemd.Units = append(config.Systemd.Units, remoteKASSVCIPUnit())
+	}
 	return json.Marshal(config)
 }
 
-func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort int32) func() ([]byte, error) {
+func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string, internalAPIPort int32) func() ([]byte, error) {
 	return func() ([]byte, error) {
 		pod := &corev1.Pod{}
 		pod.APIVersion = corev1.SchemeGroupVersion.String()
 		pod.Kind = "Pod"
-		pod.Name = "kube-apiserver-proxy"
+		pod.Name = name
 		pod.Namespace = "kube-system"
 		pod.Labels = map[string]string{
-			"k8s-app": "kube-apiserver-proxy",
+			"k8s-app": name,
 		}
 		pod.Spec.HostNetwork = true
 		pod.Spec.PriorityClassName = "system-node-critical"
@@ -304,7 +398,7 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 				Name: "config",
 				VolumeSource: corev1.VolumeSource{
 					HostPath: &corev1.HostPathVolumeSource{
-						Path: "/etc/kubernetes/apiserver-proxy-config",
+						Path: configPath,
 					},
 				},
 			},
@@ -433,6 +527,14 @@ func apiServerIPUnit() ignitionapi.Unit {
 	content := MustAsset("apiserver-haproxy/apiserver-ip.service")
 	return ignitionapi.Unit{
 		Name:     "apiserver-ip.service",
+		Contents: &content,
+		Enabled:  pointer.Bool(true),
+	}
+}
+func remoteKASSVCIPUnit() ignitionapi.Unit {
+	content := MustAsset("remote-kas-svc-haproxy/remote-kas-svc-ip.service")
+	return ignitionapi.Unit{
+		Name:     "remote-kas-svc-ip.service",
 		Contents: &content,
 		Enabled:  pointer.Bool(true),
 	}
