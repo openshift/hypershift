@@ -66,6 +66,10 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseI
 	params.PackageServerConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.PackageServerConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		params.PackageServerConfig.Replicas = 2
+	}
+
 	if hcp.Spec.OLMCatalogPlacement == "management" {
 		params.NoProxy = append(params.NoProxy, "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace")
 	}
