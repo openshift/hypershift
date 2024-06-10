@@ -378,6 +378,7 @@ func NewStartCommand() *cobra.Command {
 			"aws-kms-provider":               awsKMSProviderImage,
 			util.CPOImageName:                cpoImage,
 			util.CPPKIOImageName:             cpoImage,
+			"cluster-version-operator":       os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		}
 		for name, image := range imageOverrides {
 			componentImages[name] = image
