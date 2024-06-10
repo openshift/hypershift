@@ -202,7 +202,9 @@ failed to lookup release image: failed to extract release metadata: failed to ge
 ```
 
 **Root Cause**:
-Once the ICSP/IDMS are created in the Management cluster and they are only using in the "sources" side a root registry instead of pointing a registry namespace, the image-overrides are not properly propagated through all the deployments in the HostedControlPlane namespace. This is how looks like:
+Once the ICSP/IDMS are created in the Management cluster and they are only using in the "sources" side a root registry instead of pointing a registry namespace, the image-overrides are not filled with the explicit destination OCP Metadata and Release images, so the Hypeshift operator cannot infer the extact location of the images in the private registry.
+
+This is a sample:
 
 ```yaml
 apiVersion: config.openshift.io/v1
@@ -225,7 +227,7 @@ spec:
     source: docker.io
 ```
 
-**Workaround:**
+**Solution:**
 In order to solve the issue and perform a successful HostedControlPlane disconnected deployment you need at least to create the OCP namespaced reference in a IDMS/ICSP. A sample will look like this:
 
 ```yaml
