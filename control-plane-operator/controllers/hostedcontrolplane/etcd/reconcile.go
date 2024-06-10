@@ -15,6 +15,7 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -59,6 +60,12 @@ func etcdHealthzContainer() *corev1.Container {
 	}
 }
 
+func etcdDefragControllerContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "etcd-defrag",
+	}
+}
+
 //go:embed etcd-init.sh
 var etcdInitScript string
 
@@ -93,6 +100,21 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
 		util.BuildContainer(etcdMetricsContainer(), buildEtcdMetricsContainer(p, ss.Namespace)),
 		util.BuildContainer(etcdHealthzContainer(), buildEtcdHealthzContainer(p, ss.Namespace)),
+	}
+
+	// Only deploy etcd-defrag-controller container in HA mode.
+	// When we perform defragmentation it takes the etcd instance offline for a short amount of time.
+	// Therefore we only want to do this when there are multiple etcd instances.
+	if p.DeploymentConfig.Replicas > 1 {
+		ss.Spec.Template.Spec.Containers = append(ss.Spec.Template.Spec.Containers,
+			util.BuildContainer(etcdDefragControllerContainer(), buildEtcdDefragControllerContainer(p, ss.Namespace)))
+
+		ss.Spec.Template.Spec.ServiceAccountName = manifests.EtcdDefragControllerServiceAccount("").Name
+
+		if p.DeploymentConfig.AdditionalLabels == nil {
+			p.DeploymentConfig.AdditionalLabels = make(map[string]string)
+		}
+		p.DeploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
 
 	ss.Spec.Template.Spec.InitContainers = []corev1.Container{
@@ -485,6 +507,35 @@ func buildEtcdHealthzContainer(p *EtcdParams, namespace string) func(c *corev1.C
 	}
 }
 
+func buildEtcdDefragControllerContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = p.CPOImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{"control-plane-operator"}
+		c.Args = []string{
+			"etcd-defrag-controller",
+			"--namespace",
+			namespace,
+		}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      "client-tls",
+				MountPath: "/etc/etcd/tls/client",
+			},
+			{
+				Name:      "etcd-ca",
+				MountPath: "/etc/etcd/tls/etcd-ca",
+			},
+		}
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			},
+		}
+	}
+}
+
 func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		var loInterface, allInterfaces string
@@ -658,5 +709,46 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *EtcdPara
 
 	p.OwnerRef.ApplyTo(pdb)
 	util.ReconcilePodDisruptionBudget(pdb, p.Availability)
+	return nil
+}
+
+func ReconcileDefragControllerRole(role *rbacv1.Role, p *EtcdParams) error {
+	p.OwnerRef.ApplyTo(role)
+
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs: []string{
+				"create",
+				"patch",
+				"update",
+			},
+		},
+	}
+	return nil
+}
+
+func ReconcileDefragControllerRoleBinding(roleBinding *rbacv1.RoleBinding, p *EtcdParams) error {
+	p.OwnerRef.ApplyTo(roleBinding)
+
+	roleBinding.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "Role",
+		Name:     manifests.EtcdDefragControllerRole("").Name,
+	}
+	roleBinding.Subjects = []rbacv1.Subject{
+		{
+			Kind: "ServiceAccount",
+			Name: manifests.EtcdDefragControllerServiceAccount("").Name,
+		},
+	}
 	return nil
 }
