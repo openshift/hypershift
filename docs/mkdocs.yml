@@ -94,7 +94,9 @@ nav:
     - 'Other SDN providers': how-to/agent/other-sdn-providers.md
     - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
   - 'Disconnected':
-    - how-to/disconnected/automatically-initialize-registry-overrides.md
+    - how-to/disconnected/index.md
+    - how-to/disconnected/tls-certificates.md
+    - 'IDMS/ICSP Config for Management Cluster': how-to/disconnected/idms-icsp-for-management-clusters.md
     - how-to/disconnected/image-content-sources.md
     - how-to/disconnected/disconnected-workarounds.md
     - how-to/disconnected/known-issues.md

@@ -61,13 +61,20 @@ func TestOLM(t *testing.T) {
 				Namespace: guestNamespace,
 			},
 		}
-		err := wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
+		var previousGetError string
+		err := wait.PollUntilContextTimeout(waitCtx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment); err != nil {
-				t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
+				if err.Error() != previousGetError {
+					t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
+					previousGetError = err.Error()
+				}
 				return false, nil
 			}
 			return true, nil
 		})
+		if err != nil {
+			t.Fatalf("failed to get Red Hat Catalog deployment: %v", err)
+		}
 
 		t.Logf("Creating guest cluster catalogSource using the Red Hat operators image from the hosted control plane")
 		guestClusterCatalogSource := &operatorsv1alpha1.CatalogSource{
@@ -82,9 +89,13 @@ func TestOLM(t *testing.T) {
 				DisplayName: "OLM HyperShift Test CatalogSource",
 			},
 		}
-		err = wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
+		var previousCreateError string
+		err = wait.PollUntilContextTimeout(waitCtx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			if err := guestClient.Create(ctx, guestClusterCatalogSource); err != nil && !apierrors.IsAlreadyExists(err) {
-				t.Logf("failed to create guest cluster catalogSource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
+				if err.Error() != previousCreateError {
+					t.Logf("failed to get guest cluster catalogSource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
+					previousCreateError = err.Error()
+				}
 				return false, nil
 			}
 			return true, nil
@@ -118,9 +129,13 @@ func testGuestClusterCatalogReady(parentCtx context.Context, client crclient.Cli
 		}
 
 		// The guest cluster catalogSource should eventually become available
-		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousError string
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(guestClusterCatalogSource), guestClusterCatalogSource); err != nil {
-				t.Logf("failed to get guestcluster catalogsource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
+				if err.Error() != previousError {
+					t.Logf("failed to get guestcluster catalogsource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
+					previousError = err.Error()
+				}
 				return false, nil
 			}
 			if guestClusterCatalogSource.Status.GRPCConnectionState == nil {
@@ -128,7 +143,7 @@ func testGuestClusterCatalogReady(parentCtx context.Context, client crclient.Cli
 			}
 
 			return guestClusterCatalogSource.Status.GRPCConnectionState.LastObservedState == "READY", nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "guestCluster catalogSource never became READY")
 		t.Logf("guestCluster catalogSource became available")
 	}
@@ -188,13 +203,22 @@ func testOperatorInstallationFromSource(parentCtx context.Context, client crclie
 
 		// Wait for successful csv installation
 		t.Logf("Waiting for csv to be installed by subscription")
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousSubscriptionError string
+		var previousInstalledCSV string
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(subscription), subscription); err != nil {
-				t.Logf("failed to get guestcluster subscription %s/%s: %s", subscription.Namespace, subscription.Name, err)
+				if err.Error() != previousSubscriptionError {
+					t.Logf("failed to get guestcluster subscription %s/%s: %s", subscription.Namespace, subscription.Name, err)
+					previousSubscriptionError = err.Error()
+				}
 				return false, nil
 			}
+			if subscription.Status.InstalledCSV != previousInstalledCSV {
+				t.Logf("subscription %s/%s installedCSV %s", subscription.Namespace, subscription.Name, subscription.Status.InstalledCSV)
+			}
+			previousInstalledCSV = subscription.Status.InstalledCSV
 			return subscription.Status.InstalledCSV != "", nil
-		}, ctx.Done())
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "csv never installed")
 		t.Logf("subscription created csv %s/%s", subscription.Namespace, subscription.Status.InstalledCSV)
 
@@ -207,11 +231,24 @@ func testOperatorInstallationFromSource(parentCtx context.Context, client crclie
 			},
 		}
 
-		err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+		var previousCSVError string
+		var previousPhase operatorsv1alpha1.ClusterServiceVersionPhase
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(csv), csv); err != nil {
+				if err.Error() != previousCSVError {
+					t.Logf("failed to get guestcluster CSV %s/%s: %s", csv.Namespace, csv.Name, err)
+					previousCSVError = err.Error()
+				}
 				return false, nil
 			}
+			if csv.Status.Phase != previousPhase {
+				t.Logf("CSV %s/%s phase is %s", csv.Namespace, csv.Name, csv.Status.Phase)
+			}
+			previousPhase = csv.Status.Phase
 			return csv.Status.Phase == operatorsv1alpha1.CSVPhaseSucceeded, nil
-		}, ctx.Done())
+		})
+		if err != nil {
+			t.Fatalf("failed to wait for successful CSV: %v", err)
+		}
 	}
 }

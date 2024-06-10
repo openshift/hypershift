@@ -43,7 +43,6 @@ fi
 
 bin/test-e2e \
   -test.v \
-  -test.timeout=2h10m \
   -test.run=${CI_TESTS_RUN} \
   -test.parallel=20 \
   --e2e.aws-credentials-file=/etc/hypershift-pool-aws-credentials/credentials \

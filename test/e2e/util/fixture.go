@@ -39,6 +39,8 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		opts.InfraID = hc.Name
+	case hyperv1.AzurePlatform:
+		opts.InfraID = hc.Name
 	case hyperv1.PowerVSPlatform:
 		opts.InfraID = fmt.Sprintf("%s-infra", hc.Name)
 	}

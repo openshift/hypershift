@@ -98,6 +98,7 @@ const (
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
 	HypershiftOperatorName                = "operator"
+	ExternalDNSDeploymentName             = "external-dns"
 	HyperShiftInstallCLIVersionAnnotation = "hypershift.openshift.io/install-cli-version"
 )
 
@@ -191,22 +192,22 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			APIVersion: appsv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "external-dns",
+			Name:      ExternalDNSDeploymentName,
 			Namespace: o.Namespace.Name,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"name": "external-dns",
+					"name": ExternalDNSDeploymentName,
 				},
 			},
 			Replicas: &replicas,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name":                    "external-dns",
-						"app":                     "external-dns",
-						hyperv1.OperatorComponent: "external-dns",
+						"name":                    ExternalDNSDeploymentName,
+						"app":                     ExternalDNSDeploymentName,
+						hyperv1.OperatorComponent: ExternalDNSDeploymentName,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -862,6 +863,36 @@ func (o ExternalDNSClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 		},
 	}
 	return binding
+}
+
+type ExternalDNSPodMonitor struct {
+	Namespace *corev1.Namespace
+}
+
+func (o ExternalDNSPodMonitor) Build() *prometheusoperatorv1.PodMonitor {
+	return &prometheusoperatorv1.PodMonitor{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodMonitor",
+			APIVersion: prometheusoperatorv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      ExternalDNSDeploymentName,
+		},
+		Spec: prometheusoperatorv1.PodMonitorSpec{
+			JobLabel: "component",
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": ExternalDNSDeploymentName,
+				},
+			},
+			PodMetricsEndpoints: []prometheusoperatorv1.PodMetricsEndpoint{{
+				Port:     "metrics",
+				Interval: "30s",
+			},
+			},
+		},
+	}
 }
 
 type HyperShiftOperatorServiceAccount struct {
