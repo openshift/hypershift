@@ -888,16 +888,55 @@ type AgentNodePoolPlatform struct {
 	AgentLabelSelector *metav1.LabelSelector `json:"agentLabelSelector,omitempty"`
 }
 
-type AzureNodePoolPlatform struct {
-	VMSize string `json:"vmsize"`
-	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
-	// subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
+type AzureVMImageType string
+
+const (
+	ImageID          AzureVMImageType = "ImageID"
+	AzureMarketplace AzureVMImageType = "AzureMarketplace"
+)
+
+// AzureVMImage represents the different types of image data that can be provided for an Azure VM.
+// +union
+type AzureVMImage struct {
+	// Type is the type of image data that will be provided to the Azure VM. This can be either "ImageID" or
+	// "AzureMarketplace".
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum:=ImageID;AzureMarketplace
+	// +unionDiscriminator
+	Type AzureVMImageType `json:"azureImageType"`
+
+	// ImageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
+	//
 	// +optional
-	ImageID string `json:"imageID,omitempty"`
+	// +unionMember
+	ImageID *string `json:"imageID,omitempty"`
+
+	// AzureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.
+	//
+	// +optional
+	// +unionMember
+	AzureMarketplace *MarketplaceImage `json:"azureMarketplace,omitempty"`
+}
+
+type AzureNodePoolPlatform struct {
+	// VMSize is the Azure VM instance type to use for the nodes being created in the nodepool.
+	//
+	// +kubebuilder:validation:Required
+	VMSize string `json:"vmsize"`
+
+	// Image is the image to boot the VMs with
+	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Image is immutable"
+	// +kubebuilder:validation:Required
+	Image AzureVMImage `json:"image"`
+
+	// DiskSizeGB is the size in GB to assign to the OS disk
 	// +kubebuilder:default:=120
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
+
 	// DiskStorageAccountType is the disk storage account type to use. Valid values are:
 	// * Standard_LRS: HDD
 	// * StandardSSD_LRS: Standard SSD
@@ -911,16 +950,26 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Enum=Standard_LRS;StandardSSD_LRS;Premium_LRS;UltraSSD_LRS
 	// +optional
 	DiskStorageAccountType string `json:"diskStorageAccountType,omitempty"`
-	// AvailabilityZone of the nodepool. Must not be specified for clusters
-	// in a location that does not support AvailabilityZone.
+
+	// AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+	// for clusters in a location that does not support AvailabilityZone.
+	//
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
-	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
+
+	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+	// needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+	// DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+	// listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.
+	//
 	// +optional
 	DiskEncryptionSetID string `json:"diskEncryptionSetID,omitempty"`
-	// EnableEphemeralOSDisk enables ephemeral OS disk
+
+	// EnableEphemeralOSDisk is a flag when set to true, will enable ephemeral OS disk.
+	//
 	// +optional
 	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
+
 	// SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
 	// different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
 	// in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
@@ -928,14 +977,41 @@ type AzureNodePoolPlatform struct {
 	//
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
-	// +immutable
-	// +required
 	SubnetID string `json:"subnetID"`
+
 	// Diagnostics specifies the diagnostics settings for a virtual machine.
-	// If not specified then Boot diagnostics will be disabled.
+	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics       *Diagnostics `json:"diagnostics,omitempty"`
 	MachineIdentityID string       `json:"machineIdentityID"`
+}
+
+// MarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image. This struct
+// replicates the same fields found in CAPZ - https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/main/api/v1beta1/types.go.
+type MarketplaceImage struct {
+	// Publisher is the name of the organization that created the image
+	//
+	// +kubebuilder:validation:MinLength=1
+	Publisher string `json:"publisher"`
+
+	// Offer specifies the name of a group of related images created by the publisher.
+	//
+	// +kubebuilder:validation:MinLength=1
+	Offer string `json:"offer"`
+
+	// SKU specifies an instance of an offer, such as a major release of a distribution.
+	// For example, 18.04-LTS, 2019-Datacenter
+	//
+	// +kubebuilder:validation:MinLength=1
+	SKU string `json:"sku"`
+
+	// Version specifies the version of an image sku. The allowed formats are Major.Minor.Build or 'latest'. Major,
+	// Minor, and Build are decimal numbers. Specify 'latest' to use the latest version of an image available at
+	// deployment time. Even if you use 'latest', the VM image will not automatically update after deploy time even if a
+	// new version becomes available.
+	//
+	// +kubebuilder:validation:MinLength=1
+	Version string `json:"version"`
 }
 
 // We define our own condition type since metav1.Condition has validation

@@ -7,47 +7,45 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openshift/hypershift/cmd/version"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
+	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/spf13/pflag"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
-		Location:     "eastus",
-		InstanceType: "Standard_D4s_v4",
-		DiskSizeGB:   120,
+		Location: "eastus",
+
+		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
 }
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
+	azurenodepool.BindOptions(opts.NodePoolOpts, flags)
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required)")
 	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the cluster")
 	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
-	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "The instance type to use for nodes")
-	flags.Int32Var(&opts.DiskSizeGB, "root-disk-size", opts.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
 	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
 	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "An existing VNET ID.")
-	flags.StringVar(&opts.DiskEncryptionSetID, "disk-encryption-set-id", opts.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
-	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
-	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
 }
@@ -62,18 +60,15 @@ type RawCreateOptions struct {
 	CredentialsFile        string
 	Location               string
 	EncryptionKeyID        string
-	InstanceType           string
-	DiskSizeGB             int32
 	AvailabilityZones      []string
 	ResourceGroupName      string
 	VnetID                 string
-	DiskEncryptionSetID    string
 	NetworkSecurityGroupID string
-	EnableEphemeralOSDisk  bool
-	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
 	SubnetID               string
 	RHCOSImage             string
+
+	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
 
 type AzureEncryptionKey struct {
@@ -85,6 +80,8 @@ type AzureEncryptionKey struct {
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
 type validatedCreateOptions struct {
 	*RawCreateOptions
+
+	*azurenodepool.ValidatedAzurePlatformCreateOptions
 }
 
 type ValidatedCreateOptions struct {
@@ -98,15 +95,16 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
-	// Validate a resource group is provided when using the disk encryption set id flag
-	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
-		return nil, fmt.Errorf("--resource-group-name is required when using --disk-encryption-set-id")
-	}
-	return &ValidatedCreateOptions{
+	validOpts := &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
 		},
-	}, nil
+	}
+
+	var err error
+	validOpts.ValidatedAzurePlatformCreateOptions, err = o.NodePoolOpts.Validate()
+
+	return validOpts, err
 }
 
 // completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
@@ -262,6 +260,24 @@ func credentialSecret(namespace, name string) *corev1.Secret {
 }
 
 func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	var vmImage hyperv1.AzureVMImage
+	if o.MarketplacePublisher == "" {
+		vmImage = hyperv1.AzureVMImage{
+			Type:    hyperv1.ImageID,
+			ImageID: ptr.To(o.infra.BootImageID),
+		}
+	} else {
+		vmImage = hyperv1.AzureVMImage{
+			Type: hyperv1.AzureMarketplace,
+			AzureMarketplace: &hyperv1.MarketplaceImage{
+				Publisher: o.MarketplacePublisher,
+				Offer:     o.MarketplaceOffer,
+				SKU:       o.MarketplaceSKU,
+				Version:   o.MarketplaceVersion,
+			},
+		}
+	}
+
 	if len(o.AvailabilityZones) > 0 {
 		var nodePools []*hyperv1.NodePool
 		for _, availabilityZone := range o.AvailabilityZones {
@@ -270,9 +286,9 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-				VMSize:                 o.InstanceType,
-				ImageID:                o.infra.BootImageID,
-				DiskSizeGB:             o.DiskSizeGB,
+				VMSize:                 o.NodePoolOpts.InstanceType,
+				Image:                  vmImage,
+				DiskSizeGB:             o.NodePoolOpts.DiskSize,
 				AvailabilityZone:       availabilityZone,
 				DiskEncryptionSetID:    o.DiskEncryptionSetID,
 				EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
@@ -289,9 +305,9 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 	}
 	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:                 o.InstanceType,
-		ImageID:                o.infra.BootImageID,
-		DiskSizeGB:             o.DiskSizeGB,
+		VMSize:                 o.NodePoolOpts.InstanceType,
+		Image:                  vmImage,
+		DiskSizeGB:             o.NodePoolOpts.DiskSize,
 		DiskEncryptionSetID:    o.DiskEncryptionSetID,
 		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
 		DiskStorageAccountType: o.DiskStorageAccountType,
@@ -345,7 +361,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
 	rhcosImage := azureOpts.RHCOSImage
-	if rhcosImage == "" {
+	if rhcosImage == "" && azureOpts.MarketplacePublisher == "" {
 		var err error
 		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile)
 		if err != nil {

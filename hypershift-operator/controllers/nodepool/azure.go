@@ -5,19 +5,19 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
 	"golang.org/x/crypto/ssh"
-	utilpointer "k8s.io/utils/pointer"
+
+	"k8s.io/utils/ptr"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 )
 
 func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, existing capiazure.AzureMachineTemplateSpec) (*capiazure.AzureMachineTemplateSpec, error) {
-	// The azure api requires to pass a public key. This key is randomly generated, the private portion is thrown away and the public key
+	// The azure api requires passing a public key. This key is randomly generated, the private portion is thrown away and the public key
 	// gets written to the template.
 	sshKey := existing.Template.Spec.SSHPublicKey
 	if sshKey == "" {
@@ -33,11 +33,15 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		return nil, fmt.Errorf("failed to determine subnet name for Azure machine: %w", err)
 	}
 
+	// This should never happen by design with the CEL validation on nodePool.Spec.Platform.Azure.Image
+	if nodePool.Spec.Platform.Azure.Image.ImageID == nil && nodePool.Spec.Platform.Azure.Image.AzureMarketplace == nil {
+		return nil, fmt.Errorf("either ImageID or AzureMarketplace needs to be provided for the Azure machine")
+	}
+
 	azureMachineTemplate := &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
 		VMSize: nodePool.Spec.Platform.Azure.VMSize,
-		Image:  &capiazure.Image{ID: utilpointer.String(bootImage(hcluster, nodePool))},
 		OSDisk: capiazure.OSDisk{
-			DiskSizeGB: utilpointer.Int32(nodePool.Spec.Platform.Azure.DiskSizeGB),
+			DiskSizeGB: ptr.To(nodePool.Spec.Platform.Azure.DiskSizeGB),
 			ManagedDisk: &capiazure.ManagedDiskParameters{
 				StorageAccountType: nodePool.Spec.Platform.Azure.DiskStorageAccountType,
 			},
@@ -48,6 +52,24 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		SSHPublicKey:  sshKey,
 		FailureDomain: failureDomain(nodePool),
 	}}}
+
+	switch nodePool.Spec.Platform.Azure.Image.Type {
+	case hyperv1.ImageID:
+		azureMachineTemplate.Template.Spec.Image = &capiazure.Image{
+			ID: nodePool.Spec.Platform.Azure.Image.ImageID,
+		}
+	case hyperv1.AzureMarketplace:
+		azureMachineTemplate.Template.Spec.Image = &capiazure.Image{
+			Marketplace: &capiazure.AzureMarketplaceImage{
+				ImagePlan: capiazure.ImagePlan{
+					Publisher: nodePool.Spec.Platform.Azure.Image.AzureMarketplace.Publisher,
+					Offer:     nodePool.Spec.Platform.Azure.Image.AzureMarketplace.Offer,
+					SKU:       nodePool.Spec.Platform.Azure.Image.AzureMarketplace.SKU,
+				},
+				Version: nodePool.Spec.Platform.Azure.Image.AzureMarketplace.Version,
+			},
+		}
+	}
 
 	if nodePool.Spec.Platform.Azure.MachineIdentityID != "" {
 		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
@@ -102,16 +124,9 @@ func generateSSHPubkey() (string, error) {
 	return base64.StdEncoding.EncodeToString(ssh.MarshalAuthorizedKey(publicRsaKey)), nil
 }
 
-func bootImage(hcluster *hyperv1.HostedCluster, nodepool *hyperv1.NodePool) string {
-	if nodepool.Spec.Platform.Azure.ImageID != "" {
-		return nodepool.Spec.Platform.Azure.ImageID
-	}
-	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/images/rhcos.x86_64.vhd", hcluster.Spec.Platform.Azure.SubscriptionID, hcluster.Spec.Platform.Azure.ResourceGroupName)
-}
-
 func failureDomain(nodepool *hyperv1.NodePool) *string {
 	if nodepool.Spec.Platform.Azure.AvailabilityZone == "" {
 		return nil
 	}
-	return utilpointer.String(nodepool.Spec.Platform.Azure.AvailabilityZone)
+	return ptr.To(nodepool.Spec.Platform.Azure.AvailabilityZone)
 }

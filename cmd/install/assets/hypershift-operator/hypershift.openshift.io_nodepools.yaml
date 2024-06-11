@@ -563,13 +563,13 @@ spec:
                     properties:
                       availabilityZone:
                         description: |-
-                          AvailabilityZone of the nodepool. Must not be specified for clusters
-                          in a location that does not support AvailabilityZone.
+                          AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+                          for clusters in a location that does not support AvailabilityZone.
                         type: string
                       diagnostics:
                         description: |-
                           Diagnostics specifies the diagnostics settings for a virtual machine.
-                          If not specified then Boot diagnostics will be disabled.
+                          If not specified, then Boot diagnostics will be disabled.
                         properties:
                           storageAccountType:
                             default: Disabled
@@ -599,11 +599,16 @@ spec:
                           rule: 'self.storageAccountType == ''UserManaged'' ? has(self.storageAccountURI)
                             : true'
                       diskEncryptionSetID:
-                        description: DiskEncryptionSetID is the ID of the DiskEncryptionSet
-                          resource to use to encrypt the OS disks for the VMs.
+                        description: |-
+                          DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+                          needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+                          DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+                          listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.
                         type: string
                       diskSizeGB:
                         default: 120
+                        description: DiskSizeGB is the size in GB to assign to the
+                          OS disk
                         format: int32
                         minimum: 16
                         type: integer
@@ -626,13 +631,64 @@ spec:
                         - UltraSSD_LRS
                         type: string
                       enableEphemeralOSDisk:
-                        description: EnableEphemeralOSDisk enables ephemeral OS disk
+                        description: EnableEphemeralOSDisk is a flag when set to true,
+                          will enable ephemeral OS disk.
                         type: boolean
-                      imageID:
-                        description: |-
-                          ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
-                          subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
-                        type: string
+                      image:
+                        description: Image is the image to boot the VMs with
+                        properties:
+                          azureImageType:
+                            description: |-
+                              Type is the type of image data that will be provided to the Azure VM. This can be either "ImageID" or
+                              "AzureMarketplace".
+                            enum:
+                            - ImageID
+                            - AzureMarketplace
+                            type: string
+                          azureMarketplace:
+                            description: AzureMarketplace contains the Azure Marketplace
+                              image info to use to boot the Azure VMs from.
+                            properties:
+                              offer:
+                                description: Offer specifies the name of a group of
+                                  related images created by the publisher.
+                                minLength: 1
+                                type: string
+                              publisher:
+                                description: Publisher is the name of the organization
+                                  that created the image
+                                minLength: 1
+                                type: string
+                              sku:
+                                description: |-
+                                  SKU specifies an instance of an offer, such as a major release of a distribution.
+                                  For example, 18.04-LTS, 2019-Datacenter
+                                minLength: 1
+                                type: string
+                              version:
+                                description: |-
+                                  Version specifies the version of an image sku. The allowed formats are Major.Minor.Build or 'latest'. Major,
+                                  Minor, and Build are decimal numbers. Specify 'latest' to use the latest version of an image available at
+                                  deployment time. Even if you use 'latest', the VM image will not automatically update after deploy time even if a
+                                  new version becomes available.
+                                minLength: 1
+                                type: string
+                            required:
+                            - offer
+                            - publisher
+                            - sku
+                            - version
+                            type: object
+                          imageID:
+                            description: ImageID is the Azure resource ID of a VHD
+                              image to use to boot the Azure VMs from.
+                            type: string
+                        required:
+                        - azureImageType
+                        type: object
+                        x-kubernetes-validations:
+                        - message: Image is immutable
+                          rule: self == oldSelf
                       machineIdentityID:
                         type: string
                       subnetID:
@@ -646,8 +702,11 @@ spec:
                         - message: SubnetID is immutable
                           rule: self == oldSelf
                       vmsize:
+                        description: VMSize is the Azure VM instance type to use for
+                          the nodes being created in the nodepool.
                         type: string
                     required:
+                    - image
                     - machineIdentityID
                     - subnetID
                     - vmsize
@@ -1809,14 +1868,71 @@ spec:
                         description: EnableEphemeralOSDisk is a flag when set to true,
                           will enable ephemeral OS disk.
                         type: boolean
-                      imageID:
+                      image:
                         description: |-
                           ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
                           is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
                           The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
                           Hosted Cluster specification respectively, HostedCluster.Spec.Platform.Azure.SubscriptionID and
                           HostedCluster.Spec.Platform.Azure.ResourceGroupName.
-                        type: string
+                        properties:
+                          azureImageType:
+                            description: |-
+                              Type is the type of image data that will be provided to the Azure VM. This can be either "ImageID" or
+                              "AzureMarketplace".
+                            enum:
+                            - ImageID
+                            - AzureMarketplace
+                            type: string
+                          azureMarketplace:
+                            description: AzureMarketplace contains the Azure Marketplace
+                              image info to use to boot the Azure VMs from.
+                            properties:
+                              offer:
+                                description: Offer specifies the name of a group of
+                                  related images created by the publisher.
+                                minLength: 1
+                                type: string
+                              publisher:
+                                description: Publisher is the name of the organization
+                                  that created the image
+                                maxLength: 50
+                                minLength: 3
+                                pattern: ^[a-z0-9][a-z0-9-_]{2,49}$
+                                type: string
+                              sku:
+                                description: |-
+                                  SKU specifies an instance of an offer, such as a major release of a distribution.
+                                  For example, 18.04-LTS, 2019-Datacenter
+                                minLength: 1
+                                pattern: ^[a-z0-9-_]+$
+                                type: string
+                              version:
+                                description: |-
+                                  Version specifies the version of an image sku. The allowed formats are Major.Minor.Build or 'latest'. Major,
+                                  Minor, and Build are decimal numbers. Specify 'latest' to use the latest version of an image available at
+                                  deployment time. Even if you use 'latest', the VM image will not automatically update after deploy time even if a
+                                  new version becomes available.
+                                maxLength: 32
+                                minLength: 1
+                                pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+                                type: string
+                            required:
+                            - offer
+                            - publisher
+                            - sku
+                            - version
+                            type: object
+                          imageID:
+                            description: ImageID is the Azure resource ID of a VHD
+                              image to use to boot the Azure VMs from.
+                            type: string
+                        required:
+                        - azureImageType
+                        type: object
+                        x-kubernetes-validations:
+                        - message: Image is immutable
+                          rule: self == oldSelf
                       machineIdentityID:
                         description: |-
                           MachineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. This
@@ -1844,6 +1960,7 @@ spec:
                           the nodes being created in the nodepool.
                         type: string
                     required:
+                    - image
                     - subnetID
                     - vmsize
                     type: object

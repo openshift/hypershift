@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"encoding/json"
+	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"os"
 	"path/filepath"
 	"testing"
@@ -90,12 +91,32 @@ func TestCreateCluster(t *testing.T) {
 				"--render-sensitive",
 			},
 		},
+		{
+			name: "create with azure marketplace image",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--name=bryans-cluster",
+				"--location=eastus",
+				"--node-pool-replicas=312",
+				"--base-domain=base.domain.com",
+				"--release-image=fake-release-image",
+				"--enable-ephemeral-disk=true",
+				"--instance-type=Standard_DS2_v2",
+				"--disk-storage-account-type=Standard_LRS",
+				"--marketplace-publisher=azureopenshift",
+				"--marketplace-offer=aro4",
+				"--marketplace-sku=aro_414",
+				"--marketplace-version=414.92.2024021",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
 			azureOpts := DefaultOptions()
+			azurenodepool.BindOptions(azureOpts.NodePoolOpts, flags)
 			BindDeveloperOptions(azureOpts, flags)
 			if err := flags.Parse(testCase.args); err != nil {
 				t.Fatalf("failed to parse flags: %v", err)
