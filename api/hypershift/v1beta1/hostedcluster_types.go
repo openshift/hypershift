@@ -286,6 +286,9 @@ const (
 
 	// ManagementPlatformAnnotation specifies the infrastructure platform of the underlying management cluster
 	ManagementPlatformAnnotation = "hypershift.openshift.io/management-platform"
+
+	// KubeAPIServerVerbosityLevelAnnotation allows specifing the log verbosity of kube-apiserver.
+	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
