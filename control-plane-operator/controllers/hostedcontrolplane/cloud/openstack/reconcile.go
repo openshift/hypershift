@@ -25,7 +25,7 @@ func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.Owner
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *OpenStackParams, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *OpenStackParams, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider, hasCACert bool) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: ccmLabels(),
@@ -49,7 +49,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 
 	addVolumes(deployment, hcp)
 
-	if hcp.Spec.Platform.OpenStack.CACertSecret != nil {
+	if hasCACert {
 		addCACert(deployment)
 	}
 
@@ -67,7 +67,7 @@ func addVolumes(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane) 
 			Name: credentialsSecretVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: hcp.Spec.Platform.OpenStack.CloudsYamlSecret.Name,
+					SecretName: hcp.Spec.Platform.OpenStack.IdentityRef.Name,
 				},
 			},
 		},
@@ -83,7 +83,7 @@ func addCACert(deployment *appsv1.Deployment) {
 	ccmContainer := &deployment.Spec.Template.Spec.Containers[0]
 	ccmContainer.VolumeMounts = append(ccmContainer.VolumeMounts, corev1.VolumeMount{
 		Name:      ccmCloudCA().Name,
-		MountPath: "/etc/pki/ca-trust/extracted/pem",
+		MountPath: CaDir,
 		ReadOnly:  true,
 	})
 }
@@ -94,7 +94,7 @@ func buildCCMContainer(controllerManagerImage string) func(c *corev1.Container) 
 		c.Command = []string{"/usr/bin/openstack-cloud-controller-manager"}
 		c.Args = []string{
 			"--v=1",
-			"--cloud-config=/etc/openstack/config/" + CloudConfigKey,
+			"--cloud-config=" + CloudConfigDir + "/" + CredentialsFile,
 			"--kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig",
 			"--cloud-provider=openstack",
 			"--use-service-account-credentials=false",
@@ -114,12 +114,12 @@ func buildCCMContainer(controllerManagerImage string) func(c *corev1.Container) 
 			},
 			{
 				Name:      ccmCloudConfig().Name,
-				MountPath: "/etc/openstack/config",
+				MountPath: CloudConfigDir,
 				ReadOnly:  true,
 			},
 			{
 				Name:      credentialsSecretVolumeName,
-				MountPath: "/etc/openstack/credentials",
+				MountPath: CloudCredentialsDir,
 				ReadOnly:  true,
 			},
 		}
@@ -143,8 +143,8 @@ func buildCCMTrustedCA(v *corev1.Volume) {
 		LocalObjectReference: corev1.LocalObjectReference{Name: manifests.OpenStackTrustedCA("").Name},
 		Items: []corev1.KeyToPath{
 			{
-				Key:  "ca.pem",
-				Path: "ca.pem",
+				Key:  CaKey,
+				Path: CaKey,
 			},
 		},
 	}

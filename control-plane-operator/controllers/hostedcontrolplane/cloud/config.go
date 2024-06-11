@@ -13,7 +13,7 @@ func ProviderConfigKey(provider string) string {
 	case azure.Provider:
 		return azure.CloudConfigKey
 	case openstack.Provider:
-		return openstack.CloudConfigKey
+		return openstack.CredentialsFile
 	default:
 		return ""
 	}
