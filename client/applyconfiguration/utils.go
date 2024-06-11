@@ -86,6 +86,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.AzureNodePoolPlatformApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &applyconfigurationhypershiftv1alpha1.AzurePlatformSpecApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureVMImage"):
+		return &applyconfigurationhypershiftv1alpha1.AzureVMImageApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
 		return &applyconfigurationhypershiftv1alpha1.ClusterAutoscalingApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterConfiguration"):
@@ -168,6 +170,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.ManagedEtcdSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &applyconfigurationhypershiftv1alpha1.ManagedEtcdStorageSpecApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("MarketplaceImage"):
+		return &applyconfigurationhypershiftv1alpha1.MarketplaceImageApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePool"):
 		return &applyconfigurationhypershiftv1alpha1.NodePoolApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolAutoScaling"):
@@ -264,6 +268,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
+		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
 		return &hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
@@ -354,6 +360,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("MarketplaceImage"):
+		return &hypershiftv1beta1.MarketplaceImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePool"):
 		return &hypershiftv1beta1.NodePoolApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolAutoScaling"):
