@@ -24,9 +24,10 @@ import (
 )
 
 const (
-	AWSCAPIProvider     = "aws-cluster-api-controllers"
-	AzureCAPIProvider   = "azure-cluster-api-controllers"
-	PowerVSCAPIProvider = "ibmcloud-cluster-api-controllers"
+	AWSCAPIProvider       = "aws-cluster-api-controllers"
+	AzureCAPIProvider     = "azure-cluster-api-controllers"
+	PowerVSCAPIProvider   = "ibmcloud-cluster-api-controllers"
+	OpenStackCAPIProvider = "openstack-cluster-api-controllers"
 )
 
 var _ Platform = aws.AWS{}
@@ -125,7 +126,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = powervs.New(capiImageProvider)
 	case hyperv1.OpenStackPlatform:
 		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, PowerVSCAPIProvider, pullSecretBytes)
+			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackCAPIProvider, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
