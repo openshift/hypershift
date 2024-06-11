@@ -3,7 +3,7 @@ module github.com/openshift/hypershift/api
 go 1.22.0
 
 require (
-	github.com/openshift/api v0.0.0-20240524162738-d899f8877d22
+	github.com/openshift/api v0.0.0-20240611134040-5c2b46e4709a
 	k8s.io/api v0.30.1
 	k8s.io/apimachinery v0.30.1
 )

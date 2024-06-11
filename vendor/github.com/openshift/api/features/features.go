@@ -541,4 +541,11 @@ var (
 					contactPerson("jspeed").
 					productScope(ocpSpecific).
 					mustRegister()
+
+	FeatureGatePersistentIPsForVirtualization = newFeatureGate("PersistentIPsForVirtualization").
+							reportProblemsToJiraComponent("CNV Network").
+							contactPerson("mduarted").
+							productScope(ocpSpecific).
+							enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+							mustRegister()
 )
