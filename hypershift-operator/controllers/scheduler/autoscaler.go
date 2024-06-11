@@ -300,7 +300,7 @@ func (r *RequestServingNodeAutoscaler) SetupWithManager(mgr ctrl.Manager) error 
 	tickerChannel := make(chan event.GenericEvent)
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
-		WatchesRawSource(&source.Channel{Source: tickerChannel}, &handler.EnqueueRequestForObject{}).
+		WatchesRawSource(source.Channel(tickerChannel, &handler.EnqueueRequestForObject{})).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,

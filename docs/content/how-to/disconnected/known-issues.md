@@ -56,7 +56,7 @@ Currently the HCP client is directly (client side) trying to access the OCP rele
 1. the HCP CLI client should explicitly consume the internal CA used to sign the TLS cert of the internal mirror registry
 
 **Workaround:**
-Explicitly set `--network-type OVNKubernetes` (or other valid SDN provider if needed) when running `hcp create cluster` to skip the auto-detection of the SDN network type. 
+Explicitly set `--network-type OVNKubernetes` (or other valid SDN provider if needed) when running `hcp create cluster` to skip the auto-detection of the SDN network type.
 
 ## HCP: imageRegistryOverrides information is extracted only once on HyperShift operator initialization and never refreshed
 
@@ -188,4 +188,59 @@ for isName in ${IMAGESTREAMS}; do
   echo "#### Patching ${isName} using insecure registry"
   oc patch -n openshift ${isName} --type json -p '[{"op": "replace", "path": "/spec/tags/0/importPolicy/insecure", "value": true}]'
 done
+```
+
+## IDMS/ICSP with only root registry are not propagated to the registry-override flag under ignition server
+
+See: [OCPBUGS-33951](https://issues.redhat.com/browse/OCPBUGS-33951)
+
+**Symptoms:**
+Even having the ICSP/IDMS well set in the Management cluster and working fine in that side, the HostedControlPlane deployment is not capable of extract the metadata release fromthe OCP payload images. Something like this log entry will show up in the ControlPlaneOperator or HypershiftOperator pod.
+
+```
+failed to lookup release image: failed to extract release metadata: failed to get repo setup: failed to create repository client for https://registry.sample.net: Get "https://registry.sample.net/v2/": tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+**Root Cause**:
+Once the ICSP/IDMS are created in the Management cluster and they are only using in the "sources" side a root registry instead of pointing a registry namespace, the image-overrides are not filled with the explicit destination OCP Metadata and Release images, so the Hypeshift operator cannot infer the extact location of the images in the private registry.
+
+This is a sample:
+
+```yaml
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+  name: image-policy
+spec:
+  imageDigestMirrors:
+  - mirrors:
+    - registry.sample.net/redhat.io
+    source: registry.redhat.io
+  - mirrors:
+    - registry.sample.net/connect.redhat.com
+    source: registry.connect.redhat.com
+  - mirrors:
+    - registry.sample.net/gcr.io
+    source: gcr.io
+  - mirrors:
+    - registry.sample.net/docker.io
+    source: docker.io
+```
+
+**Solution:**
+In order to solve the issue and perform a successful HostedControlPlane disconnected deployment you need at least to create the OCP namespaced reference in a IDMS/ICSP. A sample will look like this:
+
+```yaml
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+  name: ocp-release
+spec:
+  imageDigestMirrors:
+  - mirrors:
+    - registry.sample.net/quay.io/openshift-release-dev/ocp-v4.0-art-dev
+    source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+  - mirrors:
+    - registry.sample.net/quay.io/openshift-release-dev/ocp-release
+    source: quay.io/openshift-release-dev/ocp-release
 ```

@@ -1,5 +1,7 @@
-# Setting up Alternative Image Registries Through ImageContentSources
+# Configuring disconnected workloads in the HostedCluster through ImageContentSources
+
 ## What is ImageContentSources and why do we need it?
+
 Users can set up alternative image registry information for their guest clusters to use through a field called `ImageContentSources` in a hosted control plane's specification. Alternatively, this field can also be set through the HyperShift CLI by specifying a filepath to a file containing the source and mirrors for the alternative registry information, `--image-content-sources=/path/to/file/with/sources_and_mirrors.yml`.
 
 Here is an example of the expected format for this field, `ImageContentSources`:

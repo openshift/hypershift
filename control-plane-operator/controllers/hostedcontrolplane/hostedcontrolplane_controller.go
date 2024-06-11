@@ -716,26 +716,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
-	releaseImageProvider := imageprovider.New(releaseImage)
-	{
-		if len(releaseImageProvider.GetMissingImages()) == 0 {
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidReleaseInfo),
-				Status:             metav1.ConditionTrue,
-				Reason:             hyperv1.AsExpectedReason,
-				Message:            hyperv1.AllIsWellMessage,
-				ObservedGeneration: hostedControlPlane.Generation,
-			})
-		} else {
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidReleaseInfo),
-				Status:             metav1.ConditionFalse,
-				Reason:             hyperv1.MissingReleaseImagesReason,
-				Message:            strings.Join(releaseImageProvider.GetMissingImages(), ", "),
-				ObservedGeneration: hostedControlPlane.Generation,
-			})
-		}
-	}
 
 	hostedControlPlane.Status.Initialized = true
 
@@ -894,7 +874,51 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
-	return ctrl.Result{}, r.reconcile(ctx, hostedControlPlane, createOrUpdate, imageprovider.New(releaseImage), infraStatus)
+	// releaseImage might be overriden by spec.controlPlaneReleaseImage
+	// User facing components should reflect the version from spec.releaseImage
+	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return ctrl.Result{}, err
+	}
+	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
+	userReleaseImage, err := r.UserReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get lookup release image: %w", err)
+	}
+
+	userReleaseImageProvider := imageprovider.New(userReleaseImage)
+	releaseImageProvider := imageprovider.New(releaseImage)
+
+	var errs []error
+	if err := r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImageProvider, userReleaseImageProvider, infraStatus); err != nil {
+		errs = append(errs, err)
+	}
+
+	originalHostedControlPlane := hostedControlPlane.DeepCopy()
+	missingImages := sets.New(releaseImageProvider.GetMissingImages()...).Insert(userReleaseImageProvider.GetMissingImages()...)
+	if missingImages.Len() == 0 {
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidReleaseInfo),
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            hyperv1.AllIsWellMessage,
+			ObservedGeneration: hostedControlPlane.Generation,
+		})
+	} else {
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidReleaseInfo),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.MissingReleaseImagesReason,
+			Message:            strings.Join(missingImages.UnsortedList(), ", "),
+			ObservedGeneration: hostedControlPlane.Generation,
+		})
+	}
+
+	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+		errs = append(errs, fmt.Errorf("failed to update status: %w", err))
+	}
+
+	return ctrl.Result{}, utilerrors.NewAggregate(errs)
 }
 
 // useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
@@ -914,20 +938,7 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 	return true
 }
 
-func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus) error {
-	// releaseImage might be overriden by spec.controlPlaneReleaseImage
-	// User facing components should reflect the version from spec.releaseImage
-	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return err
-	}
-	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
-	userReleaseImage, err := r.UserReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
-	if err != nil {
-		return fmt.Errorf("failed to get lookup release image: %w", err)
-	}
-	userReleaseImageProvider := imageprovider.New(userReleaseImage)
-
+func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus) error {
 	// Reconcile default service account
 	r.Log.Info("Reconciling default service account")
 	if err := r.reconcileDefaultServiceAccount(ctx, hostedControlPlane, createOrUpdate); err != nil {
@@ -3159,7 +3170,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	}
 
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type)
+		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type, hcp.Spec.AdditionalTrustBundle, hcp.Spec.Configuration)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
@@ -3390,7 +3401,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.ReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
@@ -3825,6 +3836,7 @@ func checkCatalogImageOverides(images ...string) (bool, error) {
 
 func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := registryoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+
 	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
 		return registryoperator.ReconcileDeployment(deployment, params)
@@ -4701,7 +4713,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 	originalHCP := hcp.DeepCopy()
 	var condition *metav1.Condition
-	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC, hcp.Spec.Platform.AWS.ResourceTags)
+	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp)
 	if creationErr != nil {
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
@@ -4748,10 +4760,16 @@ func awsSecurityGroupName(infraID string) string {
 	return fmt.Sprintf("%s-default-sg", infraID)
 }
 
-func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, infraID, vpcID string, additionalTags []hyperv1.AWSResourceTag) (string, error) {
+func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, hcp *hyperv1.HostedControlPlane) (string, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
-	// Determine VPC cidr
+	var (
+		vpcID          = hcp.Spec.Platform.AWS.CloudProviderConfig.VPC
+		infraID        = hcp.Spec.InfraID
+		additionalTags = hcp.Spec.Platform.AWS.ResourceTags
+	)
+
+	// Validate VPC exists
 	vpcResult, err := ec2Client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
 		VpcIds: []*string{awssdk.String(vpcID)},
 	})
@@ -4762,10 +4780,19 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	if len(vpcResult.Vpcs) == 0 {
 		return "", fmt.Errorf("vpc %s not found", vpcID)
 	}
-	vpcCIDR := awssdk.StringValue(vpcResult.Vpcs[0].CidrBlock)
+
+	if len(hcp.Spec.Networking.MachineNetwork) == 0 {
+		// Should never happen
+		return "", errors.New("failed to extract machine CIDR while creating default security group: hostedcontrolplane.spec.networking.machineNetwork length is 0")
+	}
+	machineCIDRs := make([]string, len(hcp.Spec.Networking.MachineNetwork))
+	for i, mNet := range hcp.Spec.Networking.MachineNetwork {
+		machineCIDRs[i] = mNet.CIDR.String()
+	}
+
+	// Search for an existing default worker security group and create one if not found
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
-		logger.Error(err, "Failed to list security groups")
 		return "", fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
 	}
 	sgID := ""
@@ -4811,7 +4838,6 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			},
 		})
 		if err != nil {
-			logger.Error(err, "Failed to create security group")
 			return "", fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
 		}
 		sgID = awssdk.StringValue(createSGResult.GroupId)
@@ -4821,27 +4847,24 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			GroupIds: []*string{awssdk.String(sgID)},
 		}
 		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
-			logger.Error(err, "Failed to wait for security group to exist")
 			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
 		}
 
 		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
 		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
-			logger.Error(err, "Failed to fetch security group", "sgID", sgID)
 			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
 		}
 
 		sg = describeSGResult.SecurityGroups[0]
 		logger.Info("Created security group", "id", sgID)
 	}
-	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(vpcCIDR, sgID, awssdk.StringValue(sg.OwnerId))
+	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(machineCIDRs, sgID, awssdk.StringValue(sg.OwnerId))
 	_, err = ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       awssdk.String(sgID),
 		IpPermissions: ingressPermissions,
 	})
 	if err != nil {
 		if awsErrorCode(err) != "InvalidPermission.Duplicate" {
-			logger.Error(err, "Failed to set security group ingress rules")
 			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
 		}
 		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)

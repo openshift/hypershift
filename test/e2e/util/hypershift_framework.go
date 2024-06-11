@@ -3,6 +3,8 @@ package util
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -50,8 +52,10 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 }
 
 func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
+	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
+
 	// create a hypershift cluster for the test
-	hostedCluster := h.createHostedCluster(opts, platform, serviceAccountSigningKey)
+	hostedCluster := h.createHostedCluster(opts, platform, serviceAccountSigningKey, artifactDir)
 
 	// if cluster creation failed, immediately try and clean up.
 	if h.Failed() {
@@ -178,7 +182,7 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 	})
 }
 
-func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform hyperv1.PlatformType, serviceAccountSigningKey []byte) *hyperv1.HostedCluster {
+func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform hyperv1.PlatformType, serviceAccountSigningKey []byte, artifactDir string) *hyperv1.HostedCluster {
 	h.Logf("createHostedCluster()")
 
 	g := NewWithT(h.T)
@@ -258,9 +262,16 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 	opts, err = createClusterOpts(h.ctx, h.client, hc, opts)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to generate platform specific cluster options")
 
+	// Dump the output from rendering the cluster objects for posterity
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		h.Errorf("failed to create dump directory: %v", err)
+	}
+
 	// Try and create the cluster. If it fails, mark test as failed and return.
+	opts.Render = false
+	opts.RenderInto = ""
 	h.Logf("Creating a new cluster. Options: %v", opts)
-	if err := createCluster(h.ctx, hc, opts); err != nil {
+	if err := createCluster(h.ctx, hc, opts, artifactDir); err != nil {
 		h.Errorf("failed to create cluster, tearing down: %v", err)
 		return hc
 	}
@@ -287,7 +298,7 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	// Save off any error so that we can continue with the teardown
 	dumpErr := dumpCluster(ctx, t, true)
 
-	if !cleanupPhase {
+	if !cleanupPhase && !t.Failed() {
 		ValidateMetrics(t, ctx, hc, []string{
 			hcmetrics.SilenceAlertsMetricName,
 			hcmetrics.LimitedSupportEnabledMetricName,

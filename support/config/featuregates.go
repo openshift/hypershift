@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 )
 
 func FeatureGates(fg *configv1.FeatureGateSelection) []string {
@@ -13,7 +14,7 @@ func FeatureGates(fg *configv1.FeatureGateSelection) []string {
 		enabled = fg.CustomNoUpgrade.Enabled
 		disabled = fg.CustomNoUpgrade.Disabled
 	} else {
-		fs, err := configv1.FeatureSets(configv1.Hypershift, fg.FeatureSet)
+		fs, err := features.FeatureSets(features.Hypershift, fg.FeatureSet)
 		if err != nil {
 			return nil
 		}

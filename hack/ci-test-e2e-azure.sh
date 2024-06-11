@@ -25,7 +25,6 @@ trap generate_junit EXIT
 
 bin/test-e2e \
   -test.v \
-  -test.timeout=2h10m \
   -test.run='^TestCreateCluster.*|^TestNodePool.*' \
   -test.parallel=20 \
   --e2e.platform=Azure \

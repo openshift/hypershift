@@ -296,6 +296,13 @@ const (
 	// health check created for a NodePool. The annotation can be set in either the HostedCluster or the NodePool.
 	// If set on both, the one on the NodePool takes precedence. The value can be a number or a percentage value.
 	MachineHealthCheckMaxUnhealthyAnnotation = "hypershift.openshift.io/machine-health-check-max-unhealthy"
+
+	// ClusterSizeOverrideAnnotation allows overriding the value of the size label regardless of the number
+	// of workers associated with the HostedCluster. The value should be the desired size label.
+	ClusterSizeOverrideAnnotation = "hypershift.openshift.io/cluster-size-override"
+
+	// KubeAPIServerVerbosityLevelAnnotation allows specifing the log verbosity of kube-apiserver.
+	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

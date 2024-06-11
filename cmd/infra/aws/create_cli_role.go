@@ -97,6 +97,7 @@ const (
 				"Action": [
 					"iam:CreateInstanceProfile",
 					"iam:DeleteInstanceProfile",
+					"iam:TagInstanceProfile",
 					"iam:GetRole",
 					"iam:UpdateAssumeRolePolicy",
 					"iam:GetInstanceProfile",
@@ -107,6 +108,7 @@ const (
 					"iam:PutRolePolicy",
 					"iam:AddRoleToInstanceProfile",
 					"iam:CreateOpenIDConnectProvider",
+					"iam:TagOpenIDConnectProvider",
 					"iam:ListOpenIDConnectProviders",
 					"iam:DeleteRolePolicy",
 					"iam:UpdateRole",

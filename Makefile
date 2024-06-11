@@ -45,8 +45,12 @@ pre-commit: all verify test
 
 build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
 
+.PHONY: sync
+sync:
+	$(GO) work sync 
+
 .PHONY: update
-update: api-deps api api-docs deps clients app-sre-saas-template
+update: sync api-deps api api-docs deps clients app-sre-saas-template
 
 .PHONY: verify
 verify: update staticcheck fmt vet
@@ -57,13 +61,13 @@ verify: update staticcheck fmt vet
 	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
 
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
 
 $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
 
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
 
 # Build hypershift-operator binary
@@ -137,7 +141,7 @@ api-docs: $(GENAPIDOCS)
 
 .PHONY: clients
 clients:
-	hack/update-codegen.sh
+	GO=GO111MODULE=on GOFLAGS=-mod=readonly hack/update-codegen.sh
 
 
 .PHONY: release
@@ -174,7 +178,7 @@ test:
 e2e:
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
 
 # Run go fmt against code
 .PHONY: fmt
@@ -200,16 +204,16 @@ vet:
 .PHONY: deps
 deps:
 	$(GO) mod tidy
-	$(GO) mod vendor
+	$(GO) work vendor
 	$(GO) mod verify
 	$(GO) list -m -mod=readonly -json all > /dev/null
-	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+	(cd hack/tools && $(GO) mod tidy && $(GO) work vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
 
 .PHONY: api-deps
 api-deps:
 	cd api && \
 	  $(GO) mod tidy && \
-	  $(GO) mod vendor && \
+	  $(GO) work vendor && \
 	  $(GO) mod verify && \
 	  $(GO) list -m -mod=readonly -json all > /dev/null
 

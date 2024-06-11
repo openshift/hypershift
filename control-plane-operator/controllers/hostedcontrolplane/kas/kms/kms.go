@@ -2,7 +2,7 @@ package kms
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apiserver/pkg/apis/config/v1"
+	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 )
 
 type IKMSProvider interface {

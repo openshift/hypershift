@@ -356,6 +356,9 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 				Annotations: map[string]string{
 					hyperv1.TopologyAnnotation: hyperv1.DedicatedRequestServingComponentsTopology,
 				},
+				Finalizers: []string{
+					schedulerFinalizer,
+				},
 			},
 		}
 		for _, m := range mods {
@@ -379,13 +382,6 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			}
 		}
 	}
-	_ = scheduledHC
-	hcName := func(name string) func(*hyperv1.HostedCluster) {
-		return func(hc *hyperv1.HostedCluster) {
-			hc.Name = name
-		}
-	}
-	_ = hcName
 
 	node := func(name, zone, sizeLabel, OSDFleetManagerPairedNodesID string, mods ...func(*corev1.Node)) *corev1.Node {
 		n := &corev1.Node{}
@@ -460,6 +456,49 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 		}
 	}
 
+	provisionedDeployment := func(d *appsv1.Deployment, size string, nodes []corev1.Node) []client.Object {
+		labels := map[string]string{
+			PlaceholderLabel:               d.Name,
+			hyperv1.HostedClusterSizeLabel: size,
+		}
+		var result []client.Object
+		d.Labels = labels
+		d.Generation = 1
+		d.Spec = appsv1.DeploymentSpec{
+			Replicas: ptr.To(int32(2)),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+			},
+		}
+		d.Status = appsv1.DeploymentStatus{
+			AvailableReplicas:  2,
+			ReadyReplicas:      2,
+			UpdatedReplicas:    2,
+			Replicas:           2,
+			ObservedGeneration: 1,
+		}
+		result = append(result, d)
+		for _, n := range nodes {
+			result = append(result, &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod-" + n.Name,
+					Namespace: placeholderNamespace,
+					Labels:    labels,
+				},
+				Spec: corev1.PodSpec{
+					NodeName: n.Name,
+				},
+			})
+		}
+
+		return result
+	}
+
 	placeHolderPod := func(depName, name string) *corev1.Pod {
 		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -499,6 +538,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 		expectError           bool
 		expectPlaceholder     bool
 	}{
+
 		{
 			name: "scheduled hosted cluster with 2 existing Nodes",
 			hc:   hostedcluster(scheduledHC),
@@ -555,6 +595,19 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 				node("n2", "zone-b", "small", "id1", withCluster(hostedcluster())),
 			),
 			expectPlaceholder: true,
+		},
+		{
+			name: "label nodes when placeholder deployment is ready",
+			hc:   hostedcluster(withSize("medium")),
+			additionalObjects: provisionedDeployment(placeholderDeployment(hostedcluster()), "medium", []corev1.Node{
+				*(node("n1", "zone-a", "medium", "pair1")),
+				*(node("n2", "zone-b", "medium", "pair1")),
+			}),
+			nodes: nodes(
+				node("n1", "zone-a", "medium", "pair1"),
+				node("n2", "zone-b", "medium", "pair1"),
+			),
+			checkScheduledNodes: true,
 		},
 	}
 	for _, test := range tests {

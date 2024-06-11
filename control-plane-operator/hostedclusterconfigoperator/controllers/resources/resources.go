@@ -14,6 +14,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -52,6 +53,7 @@ import (
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kubeadminpassword"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -206,13 +208,14 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
 		&operatorv1.IngressController{},
+		&discoveryv1.EndpointSlice{},
 	}
 	for _, r := range resourcesToWatch {
-		if err := c.Watch(source.Kind(opts.Manager.GetCache(), r), eventHandler()); err != nil {
+		if err := c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler())); err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
-	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}), eventHandler()); err != nil {
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 
@@ -260,23 +263,14 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile crds: %w", err))
 	}
 
-	// We only keep reconciling the endpoint for existing clusters that are relying on this for nodes haproxy to work.
-	// Otherwise, changing the haproxy config to !=443 would result in a NodePool rollout which want to avoid for existing clusters.
-	// Existing clusters are given the *hcp.Spec.Networking.APIServer.Port == 443 semantic as we were enforcing this default previously,
-	// and it's a now a forbidden operation.
-	if hcp.Spec.Networking.APIServer != nil && hcp.Spec.Networking.APIServer.Port != nil &&
-		*hcp.Spec.Networking.APIServer.Port == 443 {
-		log.Info("reconciling kubernetes.default endpoints")
-		endpoints := manifests.APIServerEndpoints()
-		if _, err := r.CreateOrUpdate(ctx, r.client, endpoints, func() error {
-			if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Ports) == 0 {
-				return nil
-			}
-			endpoints.Subsets[0].Ports[0].Port = 443
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints: %w", err))
-		}
+	// Clusters with "none" as their Kubernetes API server endpoint reconciliation
+	// type must manually manage the Kubernetes endpoints and endpointslice resources.
+	// Due to recent Kubernetes changes, we need to reconcile these resources to avoid
+	// problems such as [1].
+	// [1] https://github.com/kubernetes/kubernetes/issues/118777
+	log.Info("reconciling kubernetes.default endpoints and endpointslice")
+	if err := r.reconcileKASEndpoints(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints and endpointslice: %w", err))
 	}
 
 	log.Info("reconciling install configmap")
@@ -1159,6 +1153,39 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Con
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver apiservice (%s): %w", apiSvcGroup, err))
 		}
+	}
+	return errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	var errs []error
+
+	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+	kasEndpointsPort := util.KASPodPort(hcp)
+	kasEndpointSlicePort := kasEndpointsPort
+
+	// We only keep reconciling the endpoint for existing clusters that are relying on this for nodes haproxy to work.
+	// Otherwise, changing the haproxy config to !=443 would result in a NodePool rollout which want to avoid for existing clusters.
+	// Existing clusters are given the *hcp.Spec.Networking.APIServer.Port == 443 semantic as we were enforcing this default previously,
+	// and it's a now a forbidden operation.
+	if hcp.Spec.Networking.APIServer != nil && hcp.Spec.Networking.APIServer.Port != nil &&
+		*hcp.Spec.Networking.APIServer.Port == 443 {
+		kasEndpointsPort = 443
+	}
+
+	kasEndpoints := manifests.KASEndpoints()
+	if _, err := r.CreateOrUpdate(ctx, r.client, kasEndpoints, func() error {
+		kas.ReconcileKASEndpoints(kasEndpoints, kasAdvertiseAddress, kasEndpointsPort)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints: %w", err))
+	}
+	kasEndpointSlice := manifests.KASEndpointSlice()
+	if _, err := r.CreateOrUpdate(ctx, r.client, kasEndpointSlice, func() error {
+		kas.ReconcileKASEndpointSlice(kasEndpointSlice, kasAdvertiseAddress, kasEndpointSlicePort)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoint slice: %w", err))
 	}
 	return errors.NewAggregate(errs)
 }

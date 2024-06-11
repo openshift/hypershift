@@ -40,7 +40,9 @@ import (
 	kapierror "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -73,7 +75,7 @@ var expectedKasManagementComponents = []string{
 }
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
-	return wait.PollImmediateWithContext(ctx, time.Second, time.Minute*1, func(ctx context.Context) (done bool, err error) {
+	return wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*1, true, func(ctx context.Context) (done bool, err error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(original), original); err != nil {
 			t.Logf("failed to retrieve object %s, will retry: %v", original.GetName(), err)
 			return false, nil
@@ -98,7 +100,7 @@ func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client c
 // along the way.
 func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) error {
 	t.Logf("Deleting namespace: %s", namespace)
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 20*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Delete(ctx, ns, &crclient.DeleteOptions{}); err != nil {
 			if errors.IsNotFound(err) {
@@ -114,7 +116,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	}
 
 	t.Logf("Waiting for namespace to be finalized. Namespace: %s", namespace)
-	err = wait.PollImmediateWithContext(ctx, 10*time.Second, 20*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
 			if errors.IsNotFound(err) {
@@ -136,7 +138,7 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 	start := time.Now()
 	t.Logf("Waiting for hostedcluster kubeconfig to be published. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	var guestKubeConfigSecret corev1.Secret
-	err := wait.PollImmediateWithContext(ctx, 1*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		if err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 			return false, nil
 		}
@@ -181,7 +183,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	// SOA TTL is 60s. If DNS lookup fails on the api-* name, it is unlikely to succeed in less than 60s.
-	err = wait.PollImmediateWithContext(waitForGuestClientCtx, 35*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(waitForGuestClientCtx, 35*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 		if err != nil {
 			t.Logf("attempt to connect failed: %s", err)
@@ -197,9 +199,6 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 }
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
-	g := NewWithT(t)
-	start := time.Now()
-
 	// waitTimeout for nodes to become Ready
 	waitTimeout := 30 * time.Minute
 	switch platform {
@@ -209,37 +208,70 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 		waitTimeout = 60 * time.Minute
 	}
 
-	t.Logf("Waiting for nodes to become ready. Want: %v", n)
+	t.Logf("waiting for %d nodes to become ready", n)
+	start := time.Now()
+	var previousError string
+	previousResourceVersion := ""                // RV of the list, for quick short-circuits
+	previousConditions := map[string]condition{} // node name mapped to their ready condition
 	nodes := &corev1.NodeList{}
-	readyNodeCount := 0
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, waitTimeout, true, func(ctx context.Context) (done bool, err error) {
 		err = client.List(ctx, nodes)
 		if err != nil {
+			if err.Error() != previousError {
+				t.Logf("failed to list nodes: %v", err)
+				previousError = err.Error()
+			}
 			return false, nil
 		}
 
-		var readyNodes []string
+		if nodes.ResourceVersion == previousResourceVersion {
+			return false, nil
+		}
+		previousResourceVersion = nodes.ResourceVersion
+
+		currentConditions := map[string]condition{}
 		for _, node := range nodes.Items {
 			for _, cond := range node.Status.Conditions {
-				if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
-					readyNodes = append(readyNodes, node.Name)
-					g.Expect(node.Labels[hyperv1.NodePoolLabel]).NotTo(BeEmpty())
+				if cond.Type == corev1.NodeReady {
+					currentConditions[node.Name] = conditionForNode(cond)
 				}
 			}
 		}
-		if len(readyNodes) != int(n) {
-			readyNodeCount = len(readyNodes)
-			return false, nil
+
+		previouslyReady, currentlyReady := readyNodes(previousConditions), readyNodes(currentConditions)
+		if !previouslyReady.Equal(currentlyReady) {
+			t.Logf("found %d/%d ready nodes: %v", len(currentlyReady), n, strings.Join(currentlyReady.UnsortedList(), ", "))
 		}
-		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
-
-		return true, nil
+		for node, ready := range currentConditions {
+			if !conditionsIdentical(ready, previousConditions[node]) {
+				prefix := ""
+				if ready.Status != metav1.ConditionTrue {
+					prefix = "un"
+				}
+				msg := fmt.Sprintf("%sready node %s: %s", prefix, node, formatCondition(ready))
+				t.Log(msg)
+			}
+		}
+		previousConditions = currentConditions
+		return len(currentlyReady) == int(n), nil
 	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
+	duration := time.Since(start).Round(time.Second)
 
-	t.Logf("All nodes for nodepool appear to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
-
+	if err != nil {
+		t.Fatalf("Failed to wait for %d ready nodes in %s: %v", n, duration, err)
+	}
+	t.Logf("Successfully waited for %d ready nodes in %s", n, duration)
 	return nodes.Items
+}
+
+func readyNodes(conditions map[string]condition) sets.Set[string] {
+	ready := sets.New[string]()
+	for node, cond := range conditions {
+		if cond.Status == metav1.ConditionTrue {
+			ready.Insert(node)
+		}
+	}
+	return ready
 }
 
 func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePoolName string) []corev1.Node {
@@ -257,7 +289,7 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 
 	t.Logf("Waiting for nodes to become ready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
 	nodesFromNodePool := []corev1.Node{}
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, waitTimeout, true, func(ctx context.Context) (done bool, err error) {
 		nodes := &corev1.NodeList{}
 		err = client.List(ctx, nodes)
 		if err != nil {
@@ -295,7 +327,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 
 	var rolloutIncompleteReason, prevRolloutIncompleteReason string
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		latest := hostedCluster.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(latest), latest)
 		if err != nil {
@@ -356,7 +388,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 	t.Logf("Waiting for hostedcontrolplane to rollout image. Namespace: %s, name: %s, image: %s", namespace, hostedCluster.Name, image)
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		cp := &hyperv1.HostedControlPlane{}
 		err = client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, cp)
 		if err != nil {
@@ -396,7 +428,7 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 	t.Logf("Waiting for nodepool %s/%s to report version %s (currently %s)", nodePool.Namespace, nodePool.Name, version, nodePool.Status.Version)
 	// TestInPlaceUpgradeNodePool must update nodes in the pool sequentially and it takes about 5m per node
 	// TestInPlaceUpgradeNodePool currently uses a single nodepool with 2 replicas so 20m should be enough time (2x expected)
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 20*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		latest := nodePool.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
 		if err != nil {
@@ -414,7 +446,7 @@ func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crcli
 	g := NewWithT(t)
 
 	waitTimeout := 30 * time.Minute
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, waitTimeout, true, func(ctx context.Context) (done bool, err error) {
 		var nodePoolList hyperv1.NodePoolList
 		if err := client.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: hostedCluster.Namespace}); err != nil {
 			t.Fatalf("failed to list nodepools: %v", err)
@@ -570,23 +602,65 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
-		var nodePoolList hyperv1.NodePoolList
-		if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
-			t.Fatalf("failed to list nodepools: %v", err)
-		}
-		replicas := 0
-		for _, nodePool := range nodePoolList.Items {
-			replicas = replicas + int(*nodePool.Spec.Replicas)
-		}
+		t.Log("Waiting for NodePool to have Nodes matching replica counts")
+		start := time.Now()
+		var previousError string
+		previousAutoScalingNodes := sets.Set[string]{} // which nodes are we skipping?
+		previousNodes := map[string]sets.Set[string]{} // map of nodepool name to node names
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+			var nodePoolList hyperv1.NodePoolList
+			if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
+				if err.Error() != previousError {
+					t.Logf("Failed to list NodePools: %v", err)
+					previousError = err.Error()
+				}
+				return false, nil
+			}
 
-		var nodes corev1.NodeList
-		if err := guestClient.List(ctx, &nodes); err != nil {
-			t.Fatalf("failed to list nodes in guest cluster: %v", err)
-		}
+			allMatch := true
+			currentAutoScalingNodes := sets.Set[string]{}
+			currentNodes := map[string]sets.Set[string]{}
+			for _, nodePool := range nodePoolList.Items {
+				if nodePool.Spec.Replicas == nil {
+					currentAutoScalingNodes.Insert(nodePool.Name)
+					if !previousAutoScalingNodes.Has(nodePool.Name) {
+						t.Logf("Skipping replica check for NodePool %s/%s as it's auto-scaling", nodePool.Namespace, nodePool.Name)
+					}
+					continue
+				}
+				var nodes corev1.NodeList
+				if err := guestClient.List(ctx, &nodes, crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: nodePool.Name})}); err != nil {
+					msg := fmt.Sprintf("Failed to list Nodes in guest cluster for NodePool %s/%s: %v", nodePool.Namespace, nodePool.Name, err)
+					if msg != previousError {
+						t.Log(msg)
+						previousError = msg
+					}
+					return false, nil
+				}
+				names := sets.Set[string]{}
+				for _, node := range nodes.Items {
+					names.Insert(node.Name)
+				}
+				currentNodes[nodePool.Name] = names
+				allMatch = allMatch && len(names) == int(*nodePool.Spec.Replicas)
 
-		if replicas != len(nodes.Items) {
-			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", replicas, len(nodes.Items))
+				if names.Equal(previousNodes[nodePool.Name]) {
+					continue
+				}
+
+				t.Logf("NodePool %s/%s has %d/%d Nodes: %v", nodePool.Namespace, nodePool.Name, len(names), *nodePool.Spec.Replicas, strings.Join(names.UnsortedList(), ", "))
+			}
+
+			previousAutoScalingNodes = currentAutoScalingNodes
+			previousNodes = currentNodes
+			return allMatch, nil
+		})
+		duration := time.Since(start).Round(time.Second)
+
+		if err != nil {
+			t.Errorf("Failed to wait for NodePool replicas to match Node count in %s: %v", duration, err)
 		}
+		t.Logf("Successfully waited for NodePool replicas to match Node count in %s", duration)
 	})
 }
 
@@ -847,7 +921,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			}
 
 			// Validate cluster-version-operator is not allowed to access management KAS.
-			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
+			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator", 0)
 			g.Expect(err).To(HaveOccurred())
 
 			// Validate private router is not allowed to access management KAS.
@@ -857,13 +931,13 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 					// === CONT  TestCreateClusterPrivate/EnsureHostedCluster/EnsureNetworkPolicies/EnsureLimitedEgressTrafficToManagementKAS
 					//    util.go:851: private router pod was unexpectedly allowed to reach the management KAS. stdOut: . stdErr: Internal error occurred: error executing command in container: container is not created or running
 					// Should be solve with https://issues.redhat.com/browse/HOSTEDCP-1200
-					_, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
+					_, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
 					g.Expect(err).To(HaveOccurred())
 				}
 			}
 
 			// Validate cluster api is allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
+			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
 				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
@@ -920,7 +994,7 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 	return nil
 }
 
-func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string) (string, error) {
+func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string, timeout time.Duration) (string, error) {
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
 		client.InNamespace(namespace),
@@ -949,9 +1023,10 @@ func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespac
 		PodName:       podList.Items[0].Name,
 		Config:        restConfig,
 		ContainerName: containerName,
+		Timeout:       timeout,
 	}
 
-	err = podExecuter.Run()
+	err = podExecuter.Run(ctx)
 	return stdOut.String(), err
 }
 
@@ -1082,7 +1157,7 @@ func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedClus
 			Config:        restConfig,
 		}
 
-		if err := podExecuter.Run(); err != nil {
+		if err := podExecuter.Run(ctx); err != nil {
 			t.Errorf("failed to execute etcdctl command; %v", err)
 		}
 
@@ -1098,7 +1173,7 @@ func WaitForNodePoolConditionsNotToBePresent(t *testing.T, ctx context.Context, 
 	g := NewWithT(t)
 
 	t.Logf("Waiting for nodepool %s conditions to not be present: %v", nodePool.Name, conditions)
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 20*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		latest := nodePool.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
 		if err != nil {
@@ -1324,7 +1399,7 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 			t.Errorf("failed to create webhook: %v", err)
 		}
 
-		err := wait.PollImmediateWithContext(ctx, 5*time.Second, 1*time.Minute, func(ctx context.Context) (done bool, err error) {
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 1*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 			webhook := &admissionregistrationv1.ValidatingWebhookConfiguration{}
 			if err := guestClient.Get(ctx, client.ObjectKeyFromObject(guestWebhookConf), webhook); err != nil && errors.IsNotFound(err) {
 				// webhook has been deleted
@@ -1539,8 +1614,8 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	t.Logf("validating status for hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 	start := time.Now()
 	previousResourceVersion := ""
-	previousConditions := map[string]metav1.Condition{}
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+	previousConditions := map[string]condition{}
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 			t.Logf("Failed to get hostedcluster: %v", err)
 			return false, nil
@@ -1552,9 +1627,10 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		}
 		previousResourceVersion = hostedCluster.ResourceVersion
 
-		currentConditions := map[string]metav1.Condition{}
+		currentConditions := map[string]condition{}
 		conditionsValid := true
-		for i, condition := range hostedCluster.Status.Conditions {
+		for _, cond := range hostedCluster.Status.Conditions {
+			condition := conditionFor(cond)
 			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
 				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
 				t.Logf("unchecked condition: %s", formatCondition(condition))
@@ -1568,7 +1644,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 			conditionsValid = conditionsValid && (condition.Status == expectedStatus)
 
-			currentConditions[condition.Type] = hostedCluster.Status.Conditions[i]
+			currentConditions[condition.Type] = condition
 			if conditionsIdentical(currentConditions[condition.Type], previousConditions[condition.Type]) {
 				// no need to spam anything, we already said it when we processed this last time
 				continue
@@ -1592,7 +1668,34 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }
 
-func formatCondition(condition metav1.Condition) string {
+type condition = struct {
+	Type    string
+	Status  metav1.ConditionStatus
+	Reason  string
+	Message string
+}
+
+// n.b. we can't use structural typing and the condition alias for a subset of fields
+func conditionForNode(in corev1.NodeCondition) condition {
+	return condition{
+		Type:    string(in.Type),
+		Status:  metav1.ConditionStatus(in.Status),
+		Reason:  in.Reason,
+		Message: in.Message,
+	}
+}
+
+// n.b. we can't use structural typing and the condition alias for a subset of fields
+func conditionFor(in metav1.Condition) condition {
+	return condition{
+		Type:    in.Type,
+		Status:  in.Status,
+		Reason:  in.Reason,
+		Message: in.Message,
+	}
+}
+
+func formatCondition(condition condition) string {
 	msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
 	if condition.Reason != "" {
 		msg += ": " + condition.Reason
@@ -1603,7 +1706,7 @@ func formatCondition(condition metav1.Condition) string {
 	return msg
 }
 
-func conditionsIdentical(a, b metav1.Condition) bool {
+func conditionsIdentical(a, b condition) bool {
 	return a.Type == b.Type && a.Status == b.Status && a.Reason == b.Reason && a.Message == b.Message
 }
 

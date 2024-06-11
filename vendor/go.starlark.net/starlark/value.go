@@ -254,12 +254,17 @@ var (
 //
 // Example usage:
 //
-//	iter := iterable.Iterator()
+//	var seq Iterator = ...
+//	iter := seq.Iterate()
 //	defer iter.Done()
-//	var x Value
-//	for iter.Next(&x) {
+//	var elem Value
+//	for iter.Next(elem) {
 //		...
 //	}
+//
+// Or, using go1.23 iterators:
+//
+//	for elem := range Elements(seq) { ... }
 type Iterator interface {
 	// If the iterator is exhausted, Next returns false.
 	// Otherwise it sets *p to the current element of the sequence,
@@ -283,6 +288,8 @@ type Mapping interface {
 }
 
 // An IterableMapping is a mapping that supports key enumeration.
+//
+// See [Entries] for example use.
 type IterableMapping interface {
 	Mapping
 	Iterate() Iterator // see Iterable interface
@@ -528,7 +535,7 @@ func (f Float) Unary(op syntax.Token) (Value, error) {
 
 // String is the type of a Starlark text string.
 //
-// A String encapsulates an an immutable sequence of bytes,
+// A String encapsulates an immutable sequence of bytes,
 // but strings are not directly iterable. Instead, iterate
 // over the result of calling one of these four methods:
 // codepoints, codepoint_ords, elems, elem_ords.
@@ -767,6 +774,15 @@ func (fn *Function) ParamDefault(i int) Value {
 
 func (fn *Function) HasVarargs() bool { return fn.funcode.HasVarargs }
 func (fn *Function) HasKwargs() bool  { return fn.funcode.HasKwargs }
+
+// NumFreeVars returns the number of free variables of this function.
+func (fn *Function) NumFreeVars() int { return len(fn.funcode.FreeVars) }
+
+// FreeVar returns the binding (name and binding position) and value
+// of the i'th free variable of function fn.
+func (fn *Function) FreeVar(i int) (Binding, Value) {
+	return Binding(fn.funcode.FreeVars[i]), fn.freevars[i].(*cell).v
+}
 
 // A Builtin is a function implemented in Go.
 type Builtin struct {
@@ -1053,6 +1069,7 @@ func (t Tuple) Slice(start, end, step int) Value {
 }
 
 func (t Tuple) Iterate() Iterator { return &tupleIterator{elems: t} }
+
 func (t Tuple) Freeze() {
 	for _, elem := range t {
 		elem.Freeze()

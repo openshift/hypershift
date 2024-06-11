@@ -93,6 +93,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -111,7 +112,7 @@ import (
 )
 
 const (
-	finalizer                           = "hypershift.openshift.io/finalizer"
+	HostedClusterFinalizer              = "hypershift.openshift.io/finalizer"
 	HostedClusterAnnotation             = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
@@ -151,7 +152,7 @@ type HostedClusterReconciler struct {
 	// 2) The OCP version being deployed is the latest version supported by Hypershift
 	HypershiftOperatorImage string
 
-	OpenShiftImageRegistryOverrides map[string]string
+	RegistryOverrides map[string]string
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
@@ -524,8 +525,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		// Now we can remove the finalizer.
-		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
-			controllerutil.RemoveFinalizer(hcluster, finalizer)
+		if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
+			controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
@@ -584,7 +585,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the ICSP/IDMS from the management cluster
-	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.OpenShiftImageRegistryOverrides)
+	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.RegistryOverrides)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1053,8 +1054,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Part two: reconcile the state of the world
 
 	// Ensure the cluster has a finalizer for cleanup and update right away.
-	if !controllerutil.ContainsFinalizer(hcluster, finalizer) {
-		controllerutil.AddFinalizer(hcluster, finalizer)
+	if !controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
+		controllerutil.AddFinalizer(hcluster, HostedClusterFinalizer)
 		if err := r.Update(ctx, hcluster); err != nil {
 			if apierrors.IsConflict(err) {
 				return ctrl.Result{Requeue: true}, nil
@@ -1808,6 +1809,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
 		hyperv1.AWSLoadBalancerSubnetsAnnotation,
 		hyperv1.ManagementPlatformAnnotation,
+		hyperv1.KubeAPIServerVerbosityLevelAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -4220,10 +4222,12 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 		return nil
 	}
 
+	// Verify the platform is at least initialized
 	if hc.Spec.Platform.Azure == nil {
 		return errors.New("azurecluster needs .spec.platform.azure to be filled")
 	}
 
+	// Verify the credentials secret contains the data fields we expect
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Namespace: hc.Namespace,
 		Name:      hc.Spec.Platform.Azure.Credentials.Name,
@@ -4237,6 +4241,12 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 		if _, found := credentialsSecret.Data[expectedKey]; !found {
 			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
 		}
+	}
+
+	// Verify the resource group locations match
+	err := azureutil.VerifyResourceGroupLocationsMatch(ctx, hc, credentialsSecret)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
 	return utilerrors.NewAggregate(errs)

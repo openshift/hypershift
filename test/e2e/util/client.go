@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/client-go/rest"
 	cr "sigs.k8s.io/controller-runtime"
@@ -16,6 +17,7 @@ func GetConfig() (*rest.Config, error) {
 	}
 	cfg.QPS = 100
 	cfg.Burst = 100
+	cfg.Timeout = 5 * time.Minute
 	return cfg, nil
 }
 

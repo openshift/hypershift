@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -38,7 +39,6 @@ type NodePoolTestCase struct {
 	name            string
 	test            NodePoolTest
 	manifestBuilder NodePoolManifestBuilder
-	infraSetup      func(t *testing.T) error
 }
 
 func TestNodePool(t *testing.T) {
@@ -119,6 +119,11 @@ func TestNodePool(t *testing.T) {
 				if globalOpts.Platform != hyperv1.KubevirtPlatform {
 					t.Skip("tests only supported on platform KubeVirt")
 				}
+				//FIXME: Un-quarentine the kubevirt multinet advanced test when CI has enough
+				//       resources to run it without issues.
+				if os.Getenv("CI") == "true" {
+					t.Skip("Quarentined test 'kubevirt advanced multinet' cannot run at CI")
+				}
 			},
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{{
@@ -165,17 +170,6 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 				}
 			}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 		})
-	}
-}
-
-// nodePoolScaleDownToZero function will scaleDown the nodePool created for the current tests
-// when it finishes the execution. It's usually summoned via defer.
-func nodePoolScaleDownToZero(ctx context.Context, client crclient.Client, nodePool hyperv1.NodePool, t *testing.T) {
-	err := client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-	np := nodePool.DeepCopy()
-	nodePool.Spec.Replicas = &zeroReplicas
-	if err = client.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
-		t.Error(fmt.Errorf("failed to downscale nodePool %s: %v", nodePool.Name, err), "cannot scaledown the desired nodepool")
 	}
 }
 

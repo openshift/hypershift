@@ -52,8 +52,10 @@ func setupConfigMapObserver(cfg *operator.HostedClusterConfigOperatorConfig) err
 		return err
 	}
 	if err := c.Watch(
-		&source.Informer{Informer: configMaps.Informer()},
-		&handler.EnqueueRequestForObject{},
+		&source.Informer{
+			Informer: configMaps.Informer(),
+			Handler:  &handler.EnqueueRequestForObject{},
+		},
 	); err != nil {
 		return err
 	}
