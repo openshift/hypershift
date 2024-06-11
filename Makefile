@@ -96,7 +96,7 @@ product-cli:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -136,6 +136,11 @@ cluster-api-provider-agent: $(CONTROLLER_GEN)
 cluster-api-provider-azure: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-azure/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-azure/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-azure
+
+.PHONY: cluster-api-provider-openstack
+cluster-api-provider-openstack: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/cluster-api-provider-openstack/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-openstack/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-openstack
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
