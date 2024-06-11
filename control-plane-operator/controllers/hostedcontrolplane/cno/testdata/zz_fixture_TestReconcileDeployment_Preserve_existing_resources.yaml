@@ -77,8 +77,6 @@ spec:
         - name: OVN_IMAGE
         - name: OVN_CONTROL_PLANE_IMAGE
         - name: EGRESS_ROUTER_CNI_IMAGE
-        - name: KURYR_DAEMON_IMAGE
-        - name: KURYR_CONTROLLER_IMAGE
         - name: NETWORK_METRICS_DAEMON_IMAGE
         - name: NETWORK_CHECK_SOURCE_IMAGE
         - name: NETWORK_CHECK_TARGET_IMAGE
