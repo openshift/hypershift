@@ -121,6 +121,10 @@ const (
 	// a HostedControlPlane.
 	ClusterAPIPowerVSProviderImage = "hypershift.openshift.io/capi-provider-powervs-image"
 
+	// ClusterAPIOpenStackProviderImage overrides the CAPI OpenStack provider image to use for
+	// a HostedControlPlane.
+	ClusterAPIOpenStackProviderImage = "hypershift.openshift.io/capi-provider-openstack-image"
+
 	// AESCBCKeySecretKey defines the Kubernetes secret key name that contains the aescbc encryption key
 	// in the AESCBC secret encryption strategy
 	AESCBCKeySecretKey = "key"

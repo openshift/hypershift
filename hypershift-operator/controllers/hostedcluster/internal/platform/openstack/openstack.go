@@ -4,22 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	k8sutilspointer "k8s.io/utils/pointer"
 
+	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type OpenStack struct {
 	capiProviderImage string
 }
+
+const (
+	cloudName = "openstack"
+)
 
 func New(capiProviderImage string) *OpenStack {
 	return &OpenStack{
@@ -29,79 +39,105 @@ func New(capiProviderImage string) *OpenStack {
 
 func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-	return nil, nil
+	openstackCluster := &capiopenstack.OpenStackCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcluster.Name,
+			Namespace: controlPlaneNamespace,
+		},
+	}
+	openstackPlatform := hcluster.Spec.Platform.OpenStack
+	if openstackPlatform != nil {
+		openstackCluster.Spec.IdentityRef = capiopenstack.OpenStackIdentityReference{
+			Name:      openstackPlatform.CloudsYamlSecret.Name,
+			CloudName: cloudName,
+		}
+	}
+
+	if _, err := createOrUpdate(ctx, client, openstackCluster, func() error {
+		openstackCluster.Annotations = map[string]string{
+			capiv1.ManagedByAnnotation: "external",
+		}
+		// TODO(maysa): figure out why this is not being set on the object
+		openstackCluster.Status.Ready = true
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return openstackCluster, nil
 }
 
 func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	// image := a.capiProviderImage
-	// if envImage := os.Getenv(images.AzureCAPIProviderEnvVar); len(envImage) > 0 {
-	// 	image = envImage
-	// }
-	// if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAzureProviderImage]; ok {
-	// 	image = override
-	// }
-	// defaultMode := int32(0640)
-	// return &appsv1.DeploymentSpec{
-	// 	Template: corev1.PodTemplateSpec{
-	// 		Spec: corev1.PodSpec{
-	// 			TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
-	// 			Containers: []corev1.Container{{
-	// 				Name:            "manager",
-	// 				Image:           image,
-	// 				ImagePullPolicy: corev1.PullIfNotPresent,
-	// 				Args: []string{
-	// 					"--namespace=$(MY_NAMESPACE)",
-	// 					"--leader-elect=true",
-	// 				},
-	// 				Resources: corev1.ResourceRequirements{
-	// 					Requests: corev1.ResourceList{
-	// 						corev1.ResourceCPU:    resource.MustParse("10m"),
-	// 						corev1.ResourceMemory: resource.MustParse("10Mi"),
-	// 					},
-	// 				},
-	// 				Env: []corev1.EnvVar{
-	// 					{
-	// 						Name: "MY_NAMESPACE",
-	// 						ValueFrom: &corev1.EnvVarSource{
-	// 							FieldRef: &corev1.ObjectFieldSelector{
-	// 								FieldPath: "metadata.namespace",
-	// 							},
-	// 						},
-	// 					},
-	// 				},
-	// 				VolumeMounts: []corev1.VolumeMount{
-	// 					{
-	// 						Name:      "capi-webhooks-tls",
-	// 						ReadOnly:  true,
-	// 						MountPath: "/tmp/k8s-webhook-server/serving-certs",
-	// 					},
-	// 					{
-	// 						Name:      "svc-kubeconfig",
-	// 						MountPath: "/etc/kubernetes",
-	// 					},
-	// 				},
-	// 			}},
-	// 			Volumes: []corev1.Volume{
-	// 				{
-	// 					Name: "capi-webhooks-tls",
-	// 					VolumeSource: corev1.VolumeSource{
-	// 						Secret: &corev1.SecretVolumeSource{
-	// 							SecretName: "capi-webhooks-tls",
-	// 						},
-	// 					},
-	// 				},
-	// 				{
-	// 					Name: "svc-kubeconfig",
-	// 					VolumeSource: corev1.VolumeSource{
-	// 						Secret: &corev1.SecretVolumeSource{
-	// 							DefaultMode: &defaultMode,
-	// 							SecretName:  "service-network-admin-kubeconfig",
-	// 						},
-	// 					},
-	// 				},
-	// 			},
-	// 		}}}, nil
-	return nil, nil
+	// TODO(maysa): verify if we really need all the volumes in use
+	image := a.capiProviderImage
+	if envImage := os.Getenv(images.OpenStackCAPIProviderEnvVar); len(envImage) > 0 {
+		image = envImage
+	}
+	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIOpenStackProviderImage]; ok {
+		image = override
+	}
+	defaultMode := int32(0640)
+	return &appsv1.DeploymentSpec{
+		Replicas: k8sutilspointer.Int32(1),
+		Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name:            "manager",
+					Image:           image,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Args: []string{
+						"--namespace=$(MY_NAMESPACE)",
+						"--leader-elect",
+						"--metrics-bind-addr=127.0.0.1:8080",
+						"--v=2",
+					},
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("10m"),
+							corev1.ResourceMemory: resource.MustParse("10Mi"),
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name: "MY_NAMESPACE",
+							ValueFrom: &corev1.EnvVarSource{
+								FieldRef: &corev1.ObjectFieldSelector{
+									FieldPath: "metadata.namespace",
+								},
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "capi-webhooks-tls",
+							ReadOnly:  true,
+							MountPath: "/tmp/k8s-webhook-server/serving-certs",
+						},
+						{
+							Name:      "svc-kubeconfig",
+							MountPath: "/etc/kubernetes",
+						},
+					},
+				}},
+				Volumes: []corev1.Volume{
+					{
+						Name: "capi-webhooks-tls",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName: "capi-webhooks-tls",
+							},
+						},
+					},
+					{
+						Name: "svc-kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "service-network-admin-kubeconfig",
+							},
+						},
+					},
+				},
+			}}}, nil
 }
 
 func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
@@ -165,7 +201,18 @@ func (a OpenStack) ReconcileSecretEncryption(ctx context.Context, c client.Clien
 }
 
 func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
-	return nil
+	return []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"ipam.cluster.x-k8s.io"},
+			Resources: []string{"ipaddressclaims", "ipaddressclaims/status"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
+		{
+			APIGroups: []string{"ipam.cluster.x-k8s.io"},
+			Resources: []string{"ipaddresses", "ipaddresses/status"},
+			Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
+		},
+	}
 }
 
 func (a OpenStack) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
