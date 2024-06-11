@@ -561,6 +561,38 @@ spec:
                           AvailabilityZone of the nodepool. Must not be specified for clusters
                           in a location that does not support AvailabilityZone.
                         type: string
+                      diagnostics:
+                        description: |-
+                          Diagnostics specifies the diagnostics settings for a virtual machine.
+                          If not specified then Boot diagnostics will be disabled.
+                        properties:
+                          storageAccountType:
+                            default: Disabled
+                            description: |-
+                              StorageAccountType determines if the storage account for storing the diagnostics data
+                              should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+                            enum:
+                            - Managed
+                            - UserManaged
+                            - Disabled
+                            type: string
+                          storageAccountURI:
+                            description: |-
+                              StorageAccountURI is the URI of the user-managed storage account.
+                              The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                              but may differ if you are using Azure DNS zone endpoints.
+                              You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+                              endpoints tab in the Azure console or with the CLI by issuing
+                              `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+                            format: uri
+                            maxLength: 1024
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: storageAccountURI is required when storageAccountType
+                            is UserManaged
+                          rule: 'self.storageAccountType == ''UserManaged'' ? has(self.storageAccountURI)
+                            : true'
                       diskEncryptionSetID:
                         description: DiskEncryptionSetID is the ID of the DiskEncryptionSet
                           resource to use to encrypt the OS disks for the VMs.
@@ -597,10 +629,15 @@ spec:
                           subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
                         type: string
                       subnetID:
-                        default: default
-                        description: SubnetName is the name of the subnet to place
-                          the Nodes into
+                        description: |-
+                          SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+                          different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+                          in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+                          hcluster.Spec.Platform.Azure.SubscriptionID.
                         type: string
+                        x-kubernetes-validations:
+                        - message: SubnetID is immutable
+                          rule: self == oldSelf
                       vmsize:
                         type: string
                     required:
@@ -1662,6 +1699,38 @@ spec:
                           AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
                           for clusters in a location that does not support AvailabilityZone.
                         type: string
+                      diagnostics:
+                        description: |-
+                          Diagnostics specifies the diagnostics settings for a virtual machine.
+                          If not specified then Boot diagnostics will be disabled.
+                        properties:
+                          storageAccountType:
+                            default: Disabled
+                            description: |-
+                              StorageAccountType determines if the storage account for storing the diagnostics data
+                              should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+                            enum:
+                            - Managed
+                            - UserManaged
+                            - Disabled
+                            type: string
+                          storageAccountURI:
+                            description: |-
+                              StorageAccountURI is the URI of the user-managed storage account.
+                              The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                              but may differ if you are using Azure DNS zone endpoints.
+                              You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+                              endpoints tab in the Azure console or with the CLI by issuing
+                              `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+                            format: uri
+                            maxLength: 1024
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: storageAccountURI is required when storageAccountType
+                            is UserManaged
+                          rule: 'self.storageAccountType == ''UserManaged'' ? has(self.storageAccountURI)
+                            : true'
                       diskEncryptionSetID:
                         description: |-
                           DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This

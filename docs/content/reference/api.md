@@ -2447,6 +2447,21 @@ in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same su
 hcluster.Spec.Platform.Azure.SubscriptionID.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>diagnostics</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Diagnostics">
+Diagnostics
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Diagnostics specifies the diagnostics settings for a virtual machine.
+If not specified then Boot diagnostics will be disabled.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1beta1.AzurePlatformSpec }
@@ -3367,6 +3382,53 @@ string
 <em>(Optional)</em>
 <p>PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
 available internally to the cluster exist.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###Diagnostics { #hypershift.openshift.io/v1beta1.Diagnostics }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>Diagnostics specifies the diagnostics settings for a virtual machine.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storageAccountType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>StorageAccountType determines if the storage account for storing the diagnostics data
+should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageAccountURI</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageAccountURI is the URI of the user-managed storage account.
+The URI typically will be <code>https://&lt;mystorageaccountname&gt;.blob.core.windows.net/</code>
+but may differ if you are using Azure DNS zone endpoints.
+You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+endpoints tab in the Azure console or with the CLI by issuing
+<code>az storage account list --query='[].{name: name, &quot;resource group&quot;: resourceGroup, &quot;blob endpoint&quot;: primaryEndpoints.blob}'</code>.</p>
 </td>
 </tr>
 </tbody>

@@ -20,14 +20,15 @@ package v1alpha1
 // AzureNodePoolPlatformApplyConfiguration represents an declarative configuration of the AzureNodePoolPlatform type for use
 // with apply.
 type AzureNodePoolPlatformApplyConfiguration struct {
-	VMSize                 *string `json:"vmsize,omitempty"`
-	ImageID                *string `json:"imageID,omitempty"`
-	DiskSizeGB             *int32  `json:"diskSizeGB,omitempty"`
-	DiskStorageAccountType *string `json:"diskStorageAccountType,omitempty"`
-	AvailabilityZone       *string `json:"availabilityZone,omitempty"`
-	DiskEncryptionSetID    *string `json:"diskEncryptionSetID,omitempty"`
-	EnableEphemeralOSDisk  *bool   `json:"enableEphemeralOSDisk,omitempty"`
-	SubnetID               *string `json:"subnetID,omitempty"`
+	VMSize                 *string                        `json:"vmsize,omitempty"`
+	ImageID                *string                        `json:"imageID,omitempty"`
+	DiskSizeGB             *int32                         `json:"diskSizeGB,omitempty"`
+	DiskStorageAccountType *string                        `json:"diskStorageAccountType,omitempty"`
+	AvailabilityZone       *string                        `json:"availabilityZone,omitempty"`
+	DiskEncryptionSetID    *string                        `json:"diskEncryptionSetID,omitempty"`
+	EnableEphemeralOSDisk  *bool                          `json:"enableEphemeralOSDisk,omitempty"`
+	SubnetID               *string                        `json:"subnetID,omitempty"`
+	Diagnostics            *DiagnosticsApplyConfiguration `json:"diagnostics,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AzureNodePoolPlatform type for use with
@@ -97,5 +98,13 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithEnableEphemeralOSDisk(valu
 // If called multiple times, the SubnetID field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithSubnetID(value string) *AzureNodePoolPlatformApplyConfiguration {
 	b.SubnetID = &value
+	return b
+}
+
+// WithDiagnostics sets the Diagnostics field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Diagnostics field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithDiagnostics(value *DiagnosticsApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
+	b.Diagnostics = value
 	return b
 }
