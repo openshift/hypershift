@@ -51,6 +51,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	flags.BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 	flags.BoolVar(&opts.PER, "power-edge-router", opts.PER, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
+	flags.BoolVar(&opts.TransitGatewayGlobalRouting, "transit-gateway-global-routing", opts.TransitGatewayGlobalRouting, "Enabling this flag chooses global routing mode when creating transit gateway")
 	flags.StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
 	flags.StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 }
@@ -87,6 +88,10 @@ type RawCreateOptions struct {
 	// Set this field when reusing existing resources from IBM Cloud
 	TransitGateway string
 
+	// TransitGatewayGlobalRouting flag is to choose global routing while creating transit gateway
+	// If set to false, local routing will be chosen.
+	// Default Value: false
+	TransitGatewayGlobalRouting bool
 	// nodepool related options
 	// SysType of the worker node in PowerVS service
 	SysType string
@@ -119,6 +124,9 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 
 	if o.PER && o.TransitGatewayLocation == "" {
 		return nil, fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
+	}
+	if o.TransitGatewayGlobalRouting && !o.PER {
+		return nil, fmt.Errorf("power-edge-router flag to be enabled for global-routing to get configured")
 	}
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
@@ -280,23 +288,24 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 func CreateInfraOptions(powerVSOpts *ValidatedCreateOptions, opts *core.CreateOptions) (*powervsinfra.CreateInfraOptions, *powervsinfra.Infra) {
 	return &powervsinfra.CreateInfraOptions{
-			Name:                   opts.Name,
-			Namespace:              opts.Namespace,
-			BaseDomain:             opts.BaseDomain,
-			ResourceGroup:          powerVSOpts.ResourceGroup,
-			InfraID:                opts.InfraID,
-			OutputFile:             opts.InfrastructureJSON,
-			Region:                 powerVSOpts.Region,
-			Zone:                   powerVSOpts.Zone,
-			CloudInstanceID:        powerVSOpts.CloudInstanceID,
-			CloudConnection:        powerVSOpts.CloudConnection,
-			VPCRegion:              powerVSOpts.VPCRegion,
-			VPC:                    powerVSOpts.VPC,
-			Debug:                  powerVSOpts.Debug,
-			RecreateSecrets:        powerVSOpts.RecreateSecrets,
-			PER:                    powerVSOpts.PER,
-			TransitGatewayLocation: powerVSOpts.TransitGatewayLocation,
-			TransitGateway:         powerVSOpts.TransitGateway,
+			Name:                        opts.Name,
+			Namespace:                   opts.Namespace,
+			BaseDomain:                  opts.BaseDomain,
+			ResourceGroup:               powerVSOpts.ResourceGroup,
+			InfraID:                     opts.InfraID,
+			OutputFile:                  opts.InfrastructureJSON,
+			Region:                      powerVSOpts.Region,
+			Zone:                        powerVSOpts.Zone,
+			CloudInstanceID:             powerVSOpts.CloudInstanceID,
+			CloudConnection:             powerVSOpts.CloudConnection,
+			VPCRegion:                   powerVSOpts.VPCRegion,
+			VPC:                         powerVSOpts.VPC,
+			Debug:                       powerVSOpts.Debug,
+			RecreateSecrets:             powerVSOpts.RecreateSecrets,
+			PER:                         powerVSOpts.PER,
+			TransitGatewayLocation:      powerVSOpts.TransitGatewayLocation,
+			TransitGateway:              powerVSOpts.TransitGateway,
+			TransitGatewayGlobalRouting: powerVSOpts.TransitGatewayGlobalRouting,
 		}, &powervsinfra.Infra{
 			ID:            opts.InfraID,
 			BaseDomain:    opts.BaseDomain,

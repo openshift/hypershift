@@ -29,6 +29,7 @@ import (
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	regionutils "github.com/ppc64le-cloud/powervs-utils"
 
 	hypershiftLog "github.com/openshift/hypershift/cmd/log"
 )
@@ -86,23 +87,24 @@ const (
 
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
 type CreateInfraOptions struct {
-	Name                   string
-	Namespace              string
-	BaseDomain             string
-	ResourceGroup          string
-	InfraID                string
-	Region                 string
-	Zone                   string
-	CloudInstanceID        string
-	CloudConnection        string
-	VPCRegion              string
-	VPC                    string
-	OutputFile             string
-	Debug                  bool
-	RecreateSecrets        bool
-	PER                    bool
-	TransitGatewayLocation string
-	TransitGateway         string
+	Name                        string
+	Namespace                   string
+	BaseDomain                  string
+	ResourceGroup               string
+	InfraID                     string
+	Region                      string
+	Zone                        string
+	CloudInstanceID             string
+	CloudConnection             string
+	VPCRegion                   string
+	VPC                         string
+	OutputFile                  string
+	Debug                       bool
+	RecreateSecrets             bool
+	PER                         bool
+	TransitGatewayGlobalRouting bool
+	TransitGatewayLocation      string
+	TransitGateway              string
 }
 
 type TimeDuration struct {
@@ -229,6 +231,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	cmd.Flags().BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 	cmd.Flags().BoolVar(&opts.PER, "power-edge-router", opts.PER, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
+	cmd.Flags().BoolVar(&opts.TransitGatewayGlobalRouting, "transit-gateway-global-routing", opts.TransitGatewayGlobalRouting, "Enabling this flag chooses global routing mode when creating transit gateway")
 	cmd.Flags().StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
 	cmd.Flags().StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 
@@ -263,7 +266,10 @@ func (options *CreateInfraOptions) Run(ctx context.Context) error {
 	}
 
 	if options.PER && options.TransitGatewayLocation == "" {
-		return fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
+		return fmt.Errorf("transit gateway location is required if power-edge-router flag is enabled")
+	}
+	if options.TransitGatewayGlobalRouting && !options.PER {
+		return fmt.Errorf("power-edge-router flag to be enabled for global-routing to get configured")
 	}
 
 	infra := &Infra{
@@ -1554,10 +1560,12 @@ func (infra *Infra) createTransitGateway(ctx context.Context, options *CreateInf
 	}
 
 	log(options.InfraID).Info("Creating Transit Gateway ...")
+	// Checking if global routing required for transit gateway.
+	globalRouting := regionutils.IsGlobalRoutingRequiredForTG(options.Region, options.VPCRegion)
 	tg, _, err = tgapisv1.CreateTransitGatewayWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayOptions{
 		Location:      utilpointer.String(options.TransitGatewayLocation),
 		Name:          utilpointer.String(transitGatewayName),
-		Global:        utilpointer.Bool(true),
+		Global:        utilpointer.Bool(globalRouting || options.TransitGatewayGlobalRouting),
 		ResourceGroup: &transitgatewayapisv1.ResourceGroupIdentity{ID: utilpointer.String(infra.ResourceGroupID)},
 	})
 	if err != nil {
