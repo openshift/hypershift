@@ -98,7 +98,7 @@ func (k KubeVirtNodeSelectorTest) Run(t *testing.T, nodePool hyperv1.NodePool, _
 
 		gg.Expect(vmi.Spec.NodeSelector).ToNot(BeNil())
 		gg.Expect(vmi.Spec.NodeSelector).To(Equal(k.nodeSelector))
-	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	}).WithContext(k.ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 
 func (k KubeVirtNodeSelectorTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {

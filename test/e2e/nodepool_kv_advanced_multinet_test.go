@@ -149,13 +149,12 @@ func (k KubeVirtAdvancedMultinetTest) SetupInfra(t *testing.T) error {
 	}
 
 	t.Logf("Waiting for dnsmasq pod to have an address...")
-	err = wait.PollImmediate(5*time.Second, 2*time.Minute, func() (bool, error) {
-		if err := infraClient.Get(k.infra.Ctx(), client.ObjectKeyFromObject(dnsmasqPod), dnsmasqPod); err != nil {
+	err = wait.PollUntilContextTimeout(k.infra.Ctx(), 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		if err := infraClient.Get(ctx, client.ObjectKeyFromObject(dnsmasqPod), dnsmasqPod); err != nil {
 			return false, err
 		}
 		return dnsmasqPod.Status.PodIP != "", nil
-	},
-	)
+	})
 	if err != nil {
 		return fmt.Errorf("failed waitting for dnsmasq pod to have an address: %w", err)
 	}

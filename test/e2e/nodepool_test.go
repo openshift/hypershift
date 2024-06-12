@@ -50,7 +50,7 @@ func TestNodePool(t *testing.T) {
 				return []NodePoolTestCase{
 					{
 						name: "TestKMSRootVolumeEncryption",
-						test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
+						test: NewKMSRootVolumeTest(ctx, hostedCluster, clusterOpts),
 					},
 					{
 						name: "TestNodePoolAutoRepair",
