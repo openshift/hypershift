@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -33,7 +34,7 @@ import (
 type DestroyInfraOptions struct {
 	Region              string
 	InfraID             string
-	AWSCredentialsOpts  awsutil.AWSCredentialsOptions
+	AWSCredentialsOpts  *DelegatedAWSCredentialOptions
 	Name                string
 	BaseDomain          string
 	BaseDomainPrefix    string
@@ -41,6 +42,76 @@ type DestroyInfraOptions struct {
 	Log                 logr.Logger
 
 	CredentialsSecretData *util.CredentialsSecretData
+
+	AWSEbsCsiDriverControllerCredentialsFile    string
+	CloudControllerCredentialsFile              string
+	CloudNetworkConfigControllerCredentialsFile string
+	ControlPlaneOperatorCredentialsFile         string
+	NodePoolCredentialsFile                     string
+	OpenshiftImageRegistryCredentialsFile       string
+}
+
+type DelegatedAWSCredentialOptions struct {
+	AWSCredentialsOpts *awsutil.AWSCredentialsOptions
+
+	AWSEbsCsiDriverControllerCredentialsFile    string
+	CloudControllerCredentialsFile              string
+	CloudNetworkConfigControllerCredentialsFile string
+	ControlPlaneOperatorCredentialsFile         string
+	NodePoolCredentialsFile                     string
+	OpenshiftImageRegistryCredentialsFile       string
+}
+
+func DefaultDelegatedAWSCredentialOptions() *DelegatedAWSCredentialOptions {
+	return &DelegatedAWSCredentialOptions{
+		AWSCredentialsOpts: &awsutil.AWSCredentialsOptions{},
+	}
+}
+
+func BindOptions(opts *DelegatedAWSCredentialOptions, flags *pflag.FlagSet) {
+	opts.AWSCredentialsOpts.BindFlags(flags)
+
+	flags.StringVar(&opts.AWSEbsCsiDriverControllerCredentialsFile, "aws-creds.aws-ebs-csi-driver-controller", opts.AWSEbsCsiDriverControllerCredentialsFile, "Path to an AWS credentials file for the aws-ebs-csi-driver-controller")
+	flags.StringVar(&opts.CloudControllerCredentialsFile, "aws-creds.cloud-controller", opts.CloudControllerCredentialsFile, "Path to an AWS credentials file for the cloud-controller")
+	flags.StringVar(&opts.CloudNetworkConfigControllerCredentialsFile, "aws-creds.cloud-network-config-controller", opts.CloudNetworkConfigControllerCredentialsFile, "Path to an AWS credentials file for the cloud-network-config-controller")
+	flags.StringVar(&opts.ControlPlaneOperatorCredentialsFile, "aws-creds.control-plane-operator", opts.ControlPlaneOperatorCredentialsFile, "Path to an AWS credentials file for the control-plane-operator")
+	flags.StringVar(&opts.NodePoolCredentialsFile, "aws-creds.node-pool", opts.NodePoolCredentialsFile, "Path to an AWS credentials file for the node-pool")
+	flags.StringVar(&opts.OpenshiftImageRegistryCredentialsFile, "aws-creds.openshift-image-registry", opts.OpenshiftImageRegistryCredentialsFile, "Path to an AWS credentials file for the openshift-image-registry")
+
+}
+
+func (o *DelegatedAWSCredentialOptions) Validate() error {
+	allComponentCredentialsPresent := true
+	anyComponentCredentialsPresent := false
+	for _, credential := range []string{
+		o.AWSEbsCsiDriverControllerCredentialsFile,
+		o.CloudControllerCredentialsFile,
+		o.CloudNetworkConfigControllerCredentialsFile,
+		o.ControlPlaneOperatorCredentialsFile,
+		o.NodePoolCredentialsFile,
+		o.OpenshiftImageRegistryCredentialsFile,
+	} {
+		if credential == "" {
+			allComponentCredentialsPresent = false
+		} else {
+			anyComponentCredentialsPresent = true
+		}
+	}
+
+	// ensure that only one type of credential has been passed
+	globalCredentialsPresent := o.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.STSCredentialsFile != ""
+	if globalCredentialsPresent {
+		if !anyComponentCredentialsPresent {
+			return o.AWSCredentialsOpts.Validate()
+		} else {
+			return fmt.Errorf("cannot set any --aws-creds.component flags at the same time as other credentials")
+		}
+	} else {
+		if !allComponentCredentialsPresent {
+			return fmt.Errorf("either --aws-creds, --sts-creds, or all --aws-creds.component flags must be set")
+		}
+	}
+	return nil
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -54,6 +125,8 @@ func NewDestroyCommand() *cobra.Command {
 		Region: "us-east-1",
 		Name:   "example",
 		Log:    log.Log,
+
+		AWSCredentialsOpts: DefaultDelegatedAWSCredentialOptions(),
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
@@ -63,14 +136,14 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. se 'none' for an empty prefix")
 	cmd.Flags().DurationVar(&opts.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
-	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+	BindOptions(opts.AWSCredentialsOpts, cmd.Flags())
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("base-domain")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := opts.AWSCredentialsOpts.Validate()
-		if err != nil {
+		if err := opts.Validate(); err != nil {
+			opts.Log.Error(err, "Incorrect flags passed")
 			return err
 		}
 		if err := opts.Run(cmd.Context()); err != nil {
@@ -82,6 +155,10 @@ func NewDestroyCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+func (o *DestroyInfraOptions) Validate() error {
+	return o.AWSCredentialsOpts.Validate()
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context) error {
@@ -111,16 +188,40 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
-	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-destroy-infra", o.CredentialsSecretData, o.Region)
-	if err != nil {
-		return err
+	var ec2Client ec2iface.EC2API
+	var elbClient elbiface.ELBAPI
+	var elbv2Client elbv2iface.ELBV2API
+	var route53Client route53iface.Route53API
+	var s3Client s3iface.S3API
+	if o.AWSCredentialsOpts.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.AWSCredentialsOpts.STSCredentialsFile != "" {
+		awsSession, err := o.AWSCredentialsOpts.AWSCredentialsOpts.GetSession("cli-destroy-infra", o.CredentialsSecretData, o.Region)
+		if err != nil {
+			return err
+		}
+		awsConfig := awsutil.NewConfig()
+		ec2Client = ec2.New(awsSession, awsConfig)
+		elbClient = elb.New(awsSession, awsConfig)
+		elbv2Client = elbv2.New(awsSession, awsConfig)
+		route53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
+		s3Client = s3.New(awsSession, awsConfig)
+	} else {
+		delegatingClent, err := NewDelegatingClient(
+			o.AWSEbsCsiDriverControllerCredentialsFile,
+			o.CloudControllerCredentialsFile,
+			o.CloudNetworkConfigControllerCredentialsFile,
+			o.ControlPlaneOperatorCredentialsFile,
+			o.NodePoolCredentialsFile,
+			o.OpenshiftImageRegistryCredentialsFile,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create delegating client: %w", err)
+		}
+		ec2Client = delegatingClent.EC2API
+		elbClient = delegatingClent.ELBAPI
+		elbv2Client = delegatingClent.ELBV2API
+		route53Client = delegatingClent.Route53API
+		s3Client = delegatingClent.S3API
 	}
-	awsConfig := awsutil.NewConfig()
-	ec2Client := ec2.New(awsSession, awsConfig)
-	elbClient := elb.New(awsSession, awsConfig)
-	elbv2Client := elbv2.New(awsSession, awsConfig)
-	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
-	s3Client := s3.New(awsSession, awsConfig)
 
 	errs := o.destroyInstances(ctx, ec2Client)
 	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)

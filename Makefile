@@ -138,13 +138,17 @@ api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
 
 .PHONY: clients
-clients:
+clients: delegating_client
 	GO=GO111MODULE=on GOFLAGS=-mod=readonly hack/update-codegen.sh
-
 
 .PHONY: release
 release:
 	go run ./hack/tools/release/notes.go --from=${FROM} --to=${TO} --token=${TOKEN}
+
+.PHONY: delegating_client
+delegating_client:
+	go run ./cmd/infra/aws/delegatingclientgenerator/main.go > ./cmd/infra/aws/delegating_client.txt
+	mv ./cmd/infra/aws/delegating_client.{txt,go}
 
 .PHONY: app-sre-saas-template
 app-sre-saas-template: hypershift
