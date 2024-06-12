@@ -54,7 +54,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
@@ -1563,7 +1563,7 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
 	// Therefore, this secret is mutable.
-	userDataSecret.Immutable = k8sutilspointer.Bool(false)
+	userDataSecret.Immutable = ptr.To(false)
 
 	if userDataSecret.Annotations == nil {
 		userDataSecret.Annotations = make(map[string]string)
@@ -1585,7 +1585,7 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 }
 
 func reconcileNodeTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, rawConfig string) error {
-	tuningConfigMap.Immutable = k8sutilspointer.Bool(false)
+	tuningConfigMap.Immutable = ptr.To(false)
 	if tuningConfigMap.Annotations == nil {
 		tuningConfigMap.Annotations = make(map[string]string)
 	}
@@ -1630,7 +1630,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
 	// Therefore, this secret is mutable.
-	tokenSecret.Immutable = k8sutilspointer.Bool(false)
+	tokenSecret.Immutable = ptr.To(false)
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
@@ -1680,7 +1680,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	machineDeployment.Labels[capiv1.ClusterNameLabel] = CAPIClusterName
 
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32(int32(0))
+	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
@@ -1690,9 +1690,9 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
 	// However, since we don't run the webhook, CAPI updates the machinedeployment
 	// after it has been created with defaults.
-	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32(0)
-	machineDeployment.Spec.RevisionHistoryLimit = k8sutilspointer.Int32(1)
-	machineDeployment.Spec.ProgressDeadlineSeconds = k8sutilspointer.Int32(600)
+	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
+	machineDeployment.Spec.RevisionHistoryLimit = ptr.To[int32](1)
+	machineDeployment.Spec.ProgressDeadlineSeconds = ptr.To[int32](600)
 
 	// Set selector and template
 	machineDeployment.Spec.ClusterName = CAPIClusterName
@@ -1793,12 +1793,12 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 
 	isUpdating := false
 	// Propagate version and userData Secret to the machineDeployment.
-	if userDataSecret.Name != k8sutilspointer.StringDeref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
+	if userDataSecret.Name != ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		log.Info("New user data Secret has been generated",
 			"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
 			"target", userDataSecret.Name)
 
-		if targetVersion != k8sutilspointer.StringDeref(machineDeployment.Spec.Template.Spec.Version, "") {
+		if targetVersion != ptr.Deref(machineDeployment.Spec.Template.Spec.Version, "") {
 			log.Info("Starting version update: Propagating new version to the MachineDeployment",
 				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
 		}
@@ -1808,7 +1808,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
 		}
 		machineDeployment.Spec.Template.Spec.Version = &targetVersion
-		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = k8sutilspointer.String(userDataSecret.Name)
+		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
 		isUpdating = true
 	}
 
@@ -1891,19 +1891,20 @@ func taintsToJSON(taints []hyperv1.Taint) (string, error) {
 	return string(taintsInJSON), nil
 }
 
-func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context,
-	mhc *capiv1.MachineHealthCheck,
-	nodePool *hyperv1.NodePool,
-	hc *hyperv1.HostedCluster,
-	CAPIClusterName string) error {
+func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context, mhc *capiv1.MachineHealthCheck, nodePool *hyperv1.NodePool,
+	hc *hyperv1.HostedCluster, CAPIClusterName string) error {
 
 	log := ctrl.LoggerFrom(ctx)
 
-	// Opinionated spec based on
+	// Opinionated defaults based on
 	// https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
-	// TODO (alberto): possibly expose this config at the nodePool API.
-	maxUnhealthy := intstr.FromInt(2)
-	timeOut := 8 * time.Minute
+	maxUnhealthy := ptr.To(intstr.FromInt(2))
+	timeout := &metav1.Duration{
+		Duration: 8 * time.Minute,
+	}
+	nodeStartupTimeout := &metav1.Duration{
+		Duration: 20 * time.Minute,
+	}
 
 	maxUnhealthyOverride := nodePool.Annotations[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation]
 	if maxUnhealthyOverride == "" {
@@ -1915,20 +1916,54 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context,
 		if _, err := intstr.GetScaledValueFromIntOrPercent(&maxUnhealthyValue, 100, true); err != nil {
 			log.Error(err, "Cannot parse max unhealthy override duration", "value", maxUnhealthyOverride)
 		} else {
-			maxUnhealthy = maxUnhealthyValue
+			maxUnhealthy = &maxUnhealthyValue
 		}
 	}
 
-	timeOutOverride := nodePool.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
-	if timeOutOverride == "" {
-		timeOutOverride = hc.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
+	timeoutOverride := nodePool.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
+	if timeoutOverride == "" {
+		timeoutOverride = hc.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation]
 	}
-	if timeOutOverride != "" {
-		timeOutOverrideTime, err := time.ParseDuration(timeOutOverride)
+	if timeoutOverride != "" {
+		timeoutOverrideTime, err := time.ParseDuration(timeoutOverride)
 		if err != nil {
-			log.Error(err, "Cannot parse timeout override duration", "value", timeOutOverride)
+			log.Error(err, "Cannot parse timeout override duration", "value", timeoutOverride)
 		} else {
-			timeOut = timeOutOverrideTime
+			timeout = &metav1.Duration{
+				Duration: timeoutOverrideTime,
+			}
+		}
+	}
+
+	// default unhealthyConditions if not set by the user.
+	unhealthyConditions := []capiv1.UnhealthyCondition{
+		{
+			Type:    corev1.NodeReady,
+			Status:  corev1.ConditionFalse,
+			Timeout: *timeout,
+		},
+		{
+			Type:    corev1.NodeReady,
+			Status:  corev1.ConditionUnknown,
+			Timeout: *timeout,
+		},
+	}
+
+	if nodePool.Spec.Management.AutoRepairSettings != nil {
+		if nodePool.Spec.Management.AutoRepairSettings.NodeStartupTimeout != nil {
+			nodeStartupTimeout = nodePool.Spec.Management.AutoRepairSettings.NodeStartupTimeout
+		}
+
+		if len(nodePool.Spec.Management.AutoRepairSettings.UnhealthyConditions) > 0 {
+			unhealthyConditions = []capiv1.UnhealthyCondition{}
+			for _, cond := range nodePool.Spec.Management.AutoRepairSettings.UnhealthyConditions {
+				unhealthyConditions = append(unhealthyConditions, capiv1.UnhealthyCondition{
+					Type:    cond.Type,
+					Status:  cond.Status,
+					Timeout: cond.Timeout,
+				})
+			}
+
 		}
 	}
 
@@ -1940,26 +1975,9 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context,
 				resourcesName: resourcesName,
 			},
 		},
-		UnhealthyConditions: []capiv1.UnhealthyCondition{
-			{
-				Type:   corev1.NodeReady,
-				Status: corev1.ConditionFalse,
-				Timeout: metav1.Duration{
-					Duration: timeOut,
-				},
-			},
-			{
-				Type:   corev1.NodeReady,
-				Status: corev1.ConditionUnknown,
-				Timeout: metav1.Duration{
-					Duration: timeOut,
-				},
-			},
-		},
-		MaxUnhealthy: &maxUnhealthy,
-		NodeStartupTimeout: &metav1.Duration{
-			Duration: 20 * time.Minute,
-		},
+		UnhealthyConditions: unhealthyConditions,
+		MaxUnhealthy:        maxUnhealthy,
+		NodeStartupTimeout:  nodeStartupTimeout,
 	}
 	return nil
 }
@@ -1977,7 +1995,7 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		//
 		// 1. if it’s a new MachineDeployment, or the replicas field of the old MachineDeployment is < min size, use min size
 		// 2. if the replicas field of the old MachineDeployment is > max size, use max size
-		mdReplicas := k8sutilspointer.Int32Deref(machineDeployment.Spec.Replicas, 0)
+		mdReplicas := ptr.Deref(machineDeployment.Spec.Replicas, 0)
 		if mdReplicas < nodePool.Spec.AutoScaling.Min {
 			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
 		} else if mdReplicas > nodePool.Spec.AutoScaling.Max {
@@ -1992,8 +2010,9 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	if !isAutoscalingEnabled(nodePool) {
 		machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
 		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
-		machineDeployment.Spec.Replicas = k8sutilspointer.Int32(k8sutilspointer.Int32Deref(nodePool.Spec.Replicas, 0))
+		machineDeployment.Spec.Replicas = ptr.To[int32](ptr.Deref(nodePool.Spec.Replicas, 0))
 	}
+
 }
 
 func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash string, proxy *configv1.Proxy, nodePool *hyperv1.NodePool) ignitionapi.Config {
@@ -2004,7 +2023,7 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 				TLS: ignitionapi.TLS{
 					CertificateAuthorities: []ignitionapi.Resource{
 						{
-							Source: k8sutilspointer.String(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+							Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
 						},
 					},
 				},
@@ -2012,19 +2031,19 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 			Config: ignitionapi.IgnitionConfig{
 				Merge: []ignitionapi.Resource{
 					{
-						Source: k8sutilspointer.String(fmt.Sprintf("https://%s/ignition", endpoint)),
+						Source: ptr.To(fmt.Sprintf("https://%s/ignition", endpoint)),
 						HTTPHeaders: []ignitionapi.HTTPHeader{
 							{
 								Name:  "Authorization",
-								Value: k8sutilspointer.String(fmt.Sprintf("Bearer %s", encodedToken)),
+								Value: ptr.To(fmt.Sprintf("Bearer %s", encodedToken)),
 							},
 							{
 								Name:  "NodePool",
-								Value: k8sutilspointer.String(client.ObjectKeyFromObject(nodePool).String()),
+								Value: ptr.To(client.ObjectKeyFromObject(nodePool).String()),
 							},
 							{
 								Name:  "TargetConfigVersionHash",
-								Value: k8sutilspointer.String(targetConfigVersionHash),
+								Value: ptr.To(targetConfigVersionHash),
 							},
 						},
 					},
@@ -2033,10 +2052,10 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 		},
 	}
 	if proxy.Status.HTTPProxy != "" {
-		cfg.Ignition.Proxy.HTTPProxy = k8sutilspointer.String(proxy.Status.HTTPProxy)
+		cfg.Ignition.Proxy.HTTPProxy = ptr.To(proxy.Status.HTTPProxy)
 	}
 	if proxy.Status.HTTPSProxy != "" {
-		cfg.Ignition.Proxy.HTTPSProxy = k8sutilspointer.String(proxy.Status.HTTPSProxy)
+		cfg.Ignition.Proxy.HTTPSProxy = ptr.To(proxy.Status.HTTPSProxy)
 	}
 	if proxy.Status.NoProxy != "" {
 		for _, item := range strings.Split(proxy.Status.NoProxy, ",") {

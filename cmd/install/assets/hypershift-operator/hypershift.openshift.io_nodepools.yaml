@@ -167,6 +167,42 @@ spec:
                       AutoRepair specifies whether health checks should be enabled for machines
                       in the NodePool. The default is false.
                     type: boolean
+                  autoRepairSettings:
+                    description: AutoRepairSettings health checks settings for machines
+                      in the NodePool when AutoRepair is enabled.
+                    properties:
+                      nodeStartupTimeout:
+                        description: |-
+                          Machines older than this duration without a node will be considered to have
+                          failed and will be remediated.
+                          If not set, this value is defaulted to 20 minutes.
+                          If you wish to disable this feature, set the value explicitly to 0.
+                        type: string
+                      unhealthyConditions:
+                        description: |-
+                          UnhealthyConditions contains a list of the conditions that determine
+                          whether a node is considered unhealthy.  The conditions are combined in a
+                          logical OR, i.e. if any of the conditions is met, the node is unhealthy.
+                        items:
+                          properties:
+                            status:
+                              minLength: 1
+                              type: string
+                            timeout:
+                              description: |-
+                                Timeout specifies the duration, after which a node is considered unhealthy
+                                if the condition type has been in the given status for at least that duration value.
+                              type: string
+                            type:
+                              minLength: 1
+                              type: string
+                          required:
+                          - status
+                          - timeout
+                          - type
+                          type: object
+                        type: array
+                    type: object
                   inPlace:
                     description: InPlace is the configuration for in-place upgrades.
                     properties:
@@ -1318,6 +1354,46 @@ spec:
                       AutoRepair specifies whether health checks should be enabled for machines
                       in the NodePool. The default is false.
                     type: boolean
+                  autoRepairSettings:
+                    description: AutoRepairSettings health checks settings for machines
+                      in the NodePool when AutoRepair is enabled.
+                    properties:
+                      nodeStartupTimeout:
+                        description: |-
+                          Machines older than this duration without a node will be considered to have
+                          failed and will be remediated.
+                          If not set, this value is defaulted to 20 minutes.
+                          If you wish to disable this feature, set the value explicitly to 0.
+                        type: string
+                      unhealthyConditions:
+                        description: |-
+                          UnhealthyConditions contains a list of the conditions that determine
+                          whether a node is considered unhealthy.  The conditions are combined in a
+                          logical OR, i.e. if any of the conditions is met, the node is unhealthy.
+                        items:
+                          description: |-
+                            UnhealthyCondition represents a Node condition type and value with a timeout
+                            specified as a duration.  When the named condition has been in the given
+                            status for at least the timeout value, a node is considered unhealthy.
+                          properties:
+                            status:
+                              minLength: 1
+                              type: string
+                            timeout:
+                              description: |-
+                                Timeout specifies the duration, after which a node is considered unhealthy
+                                if the condition type has been in the given status for at least that duration.
+                              type: string
+                            type:
+                              minLength: 1
+                              type: string
+                          required:
+                          - status
+                          - timeout
+                          - type
+                          type: object
+                        type: array
+                    type: object
                   inPlace:
                     description: InPlace is the configuration for in-place upgrades.
                     properties:

@@ -54,6 +54,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.APIEndpointApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("APIServerNetworking"):
 		return &applyconfigurationhypershiftv1alpha1.APIServerNetworkingApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AutoRepairSettings"):
+		return &applyconfigurationhypershiftv1alpha1.AutoRepairSettingsApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSCloudProviderConfig"):
 		return &applyconfigurationhypershiftv1alpha1.AWSCloudProviderConfigApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
@@ -218,6 +220,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.ServicePublishingStrategyMappingApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Taint"):
 		return &applyconfigurationhypershiftv1alpha1.TaintApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("UnhealthyCondition"):
+		return &applyconfigurationhypershiftv1alpha1.UnhealthyConditionApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &applyconfigurationhypershiftv1alpha1.UnmanagedEtcdSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Volume"):
@@ -234,6 +238,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.APIEndpointApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("APIServerNetworking"):
 		return &hypershiftv1beta1.APIServerNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AutoRepairSettings"):
+		return &hypershiftv1beta1.AutoRepairSettingsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSCloudProviderConfig"):
 		return &hypershiftv1beta1.AWSCloudProviderConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
@@ -404,6 +410,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ServicePublishingStrategyMappingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Taint"):
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("UnhealthyCondition"):
+		return &hypershiftv1beta1.UnhealthyConditionApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):

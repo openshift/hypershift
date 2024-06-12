@@ -24,10 +24,11 @@ import (
 // NodePoolManagementApplyConfiguration represents an declarative configuration of the NodePoolManagement type for use
 // with apply.
 type NodePoolManagementApplyConfiguration struct {
-	UpgradeType *v1alpha1.UpgradeType             `json:"upgradeType,omitempty"`
-	Replace     *ReplaceUpgradeApplyConfiguration `json:"replace,omitempty"`
-	InPlace     *InPlaceUpgradeApplyConfiguration `json:"inPlace,omitempty"`
-	AutoRepair  *bool                             `json:"autoRepair,omitempty"`
+	UpgradeType        *v1alpha1.UpgradeType                 `json:"upgradeType,omitempty"`
+	Replace            *ReplaceUpgradeApplyConfiguration     `json:"replace,omitempty"`
+	InPlace            *InPlaceUpgradeApplyConfiguration     `json:"inPlace,omitempty"`
+	AutoRepair         *bool                                 `json:"autoRepair,omitempty"`
+	AutoRepairSettings *AutoRepairSettingsApplyConfiguration `json:"autoRepairSettings,omitempty"`
 }
 
 // NodePoolManagementApplyConfiguration constructs an declarative configuration of the NodePoolManagement type for use with
@@ -65,5 +66,13 @@ func (b *NodePoolManagementApplyConfiguration) WithInPlace(value *InPlaceUpgrade
 // If called multiple times, the AutoRepair field is set to the value of the last call.
 func (b *NodePoolManagementApplyConfiguration) WithAutoRepair(value bool) *NodePoolManagementApplyConfiguration {
 	b.AutoRepair = &value
+	return b
+}
+
+// WithAutoRepairSettings sets the AutoRepairSettings field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AutoRepairSettings field is set to the value of the last call.
+func (b *NodePoolManagementApplyConfiguration) WithAutoRepairSettings(value *AutoRepairSettingsApplyConfiguration) *NodePoolManagementApplyConfiguration {
+	b.AutoRepairSettings = value
 	return b
 }

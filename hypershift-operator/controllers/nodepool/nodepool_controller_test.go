@@ -3246,6 +3246,13 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 		return mhc
 	}
 
+	nodepoolWithAutoRepairSettings := func(autoRepairSettings *hyperv1.AutoRepairSettings) *hyperv1.NodePool {
+		np := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nodepool"}}
+		np.Spec.ClusterName = "cluster"
+		np.Spec.Management.AutoRepairSettings = autoRepairSettings
+		return np
+	}
+
 	withTimeoutOverride := func(value string) func(client.Object) {
 		return func(o client.Object) {
 			a := o.GetAnnotations()
@@ -3281,6 +3288,12 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 		}
 	}
 
+	withUnhealthyConditions := func(conditions []capiv1.UnhealthyCondition) func(*capiv1.MachineHealthCheck) {
+		return func(mhc *capiv1.MachineHealthCheck) {
+			mhc.Spec.UnhealthyConditions = conditions
+		}
+	}
+
 	tests := []struct {
 		name     string
 		hc       *hyperv1.HostedCluster
@@ -3300,16 +3313,24 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			expected: healthcheck(withTimeout(10 * time.Minute)),
 		},
 		{
-			name:     "timeout override in np",
-			hc:       hostedcluster(),
-			np:       nodepool(withTimeoutOverride("40m")),
-			expected: healthcheck(withTimeout(40 * time.Minute)),
-		},
-		{
-			name:     "timeout override in both, np takes precedence",
-			hc:       hostedcluster(withTimeoutOverride("10m")),
-			np:       nodepool(withTimeoutOverride("40m")),
-			expected: healthcheck(withTimeout(40 * time.Minute)),
+			name: "timeout override in both, np takes precedence",
+			hc:   hostedcluster(withTimeoutOverride("10m")),
+			np: nodepoolWithAutoRepairSettings(&hyperv1.AutoRepairSettings{
+				UnhealthyConditions: []hyperv1.UnhealthyCondition{
+					{
+						Timeout: metav1.Duration{
+							Duration: 40 * time.Minute,
+						},
+					},
+				},
+			}),
+			expected: healthcheck(withUnhealthyConditions([]capiv1.UnhealthyCondition{
+				{
+					Timeout: metav1.Duration{
+						Duration: 40 * time.Minute,
+					},
+				},
+			})),
 		},
 		{
 			name:     "invalid timeout override, retains default",
@@ -3337,8 +3358,8 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 		},
 		{
 			name:     "invalid maxunhealthy override value, default is preserved",
-			hc:       hostedcluster(),
-			np:       nodepool(withMaxUnhealthyOverride("foo")),
+			hc:       hostedcluster(withMaxUnhealthyOverride("foo")),
+			np:       nodepool(),
 			expected: healthcheck(),
 		},
 	}

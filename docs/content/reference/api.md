@@ -2212,6 +2212,56 @@ string
 </tr>
 </tbody>
 </table>
+###AutoRepairSettings { #hypershift.openshift.io/v1beta1.AutoRepairSettings }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolManagement">NodePoolManagement</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeStartupTimeout</code></br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Machines older than this duration without a node will be considered to have
+failed and will be remediated.
+If not set, this value is defaulted to 20 minutes.
+If you wish to disable this feature, set the value explicitly to 0.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>unhealthyConditions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.UnhealthyCondition">
+[]UnhealthyCondition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>UnhealthyConditions contains a list of the conditions that determine
+whether a node is considered unhealthy.  The conditions are combined in a
+logical OR, i.e. if any of the conditions is met, the node is unhealthy.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AvailabilityPolicy { #hypershift.openshift.io/v1beta1.AvailabilityPolicy }
 <p>
 (<em>Appears on:</em>
@@ -6614,6 +6664,20 @@ bool
 in the NodePool. The default is false.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>autoRepairSettings</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoRepairSettings">
+AutoRepairSettings
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AutoRepairSettings health checks settings for machines in the NodePool when AutoRepair is enabled.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###NodePoolPlatform { #hypershift.openshift.io/v1beta1.NodePoolPlatform }
@@ -8386,6 +8450,64 @@ Kubernetes core/v1.TaintEffect
 <p>Required. The effect of the taint on pods
 that do not tolerate the taint.
 Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###UnhealthyCondition { #hypershift.openshift.io/v1beta1.UnhealthyCondition }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AutoRepairSettings">AutoRepairSettings</a>)
+</p>
+<p>
+<p>UnhealthyCondition represents a Node condition type and value with a timeout
+specified as a duration.  When the named condition has been in the given
+status for at least the timeout value, a node is considered unhealthy.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#nodeconditiontype-v1-core">
+Kubernetes core/v1.NodeConditionType
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#conditionstatus-v1-core">
+Kubernetes core/v1.ConditionStatus
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>timeout</code></br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<p>Timeout specifies the duration, after which a node is considered unhealthy
+if the condition type has been in the given status for at least that duration.</p>
 </td>
 </tr>
 </tbody>
