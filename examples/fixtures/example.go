@@ -62,6 +62,7 @@ type ExampleOptions struct {
 	SSHPrivateKey                    []byte
 	NodePoolReplicas                 int32
 	NodeDrainTimeout                 time.Duration
+	NodeVolumeDetachTimeout          time.Duration
 	ImageContentSources              []hyperv1.ImageContentSource
 	InfraID                          string
 	MachineCIDR                      string
@@ -643,8 +644,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Platform: hyperv1.NodePoolPlatform{
 					Type: cluster.Spec.Platform.Type,
 				},
-				Arch:             o.Arch,
-				NodeDrainTimeout: &metav1.Duration{Duration: o.NodeDrainTimeout},
+				Arch:                    o.Arch,
+				NodeDrainTimeout:        &metav1.Duration{Duration: o.NodeDrainTimeout},
+				NodeVolumeDetachTimeout: &metav1.Duration{Duration: o.NodeVolumeDetachTimeout},
 			},
 		}
 	}

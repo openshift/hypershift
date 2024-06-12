@@ -766,12 +766,32 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+<p>NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
 The default value is 0, meaning that the node can be drained without any time limitations.
 NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
 TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
 the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
+<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeVolumeDetachTimeout</code></br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+After the timeout, the detachment of volumes that haven&rsquo;t been detached yet is skipped.
+TODO (cbusse): Same comment as Alberto&rsquo;s for <code>NodeDrainTimeout</code>:
+Today changing this field will trigger a recreate rolling update, which kind of defeats
+the purpose of the change. In future we plan to propagate this field in-place.
+<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
 </td>
 </tr>
 <tr>
@@ -6875,12 +6895,32 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+<p>NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
 The default value is 0, meaning that the node can be drained without any time limitations.
 NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
 TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
 the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
+<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeVolumeDetachTimeout</code></br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+After the timeout, the detachment of volumes that haven&rsquo;t been detached yet is skipped.
+TODO (cbusse): Same comment as Alberto&rsquo;s for <code>NodeDrainTimeout</code>:
+Today changing this field will trigger a recreate rolling update, which kind of defeats
+the purpose of the change. In future we plan to propagate this field in-place.
+<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
 </td>
 </tr>
 <tr>

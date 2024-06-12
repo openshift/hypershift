@@ -79,6 +79,7 @@ spec:
       strategy: RollingUpdate
     upgradeType: Replace
   nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
   platform:
     aws:
       instanceProfile: example-profile

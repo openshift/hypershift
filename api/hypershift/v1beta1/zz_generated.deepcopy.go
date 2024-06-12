@@ -2132,6 +2132,11 @@ func (in *NodePoolSpec) DeepCopyInto(out *NodePoolSpec) {
 		*out = new(v1.Duration)
 		**out = **in
 	}
+	if in.NodeVolumeDetachTimeout != nil {
+		in, out := &in.NodeVolumeDetachTimeout, &out.NodeVolumeDetachTimeout
+		*out = new(v1.Duration)
+		**out = **in
+	}
 	if in.NodeLabels != nil {
 		in, out := &in.NodeLabels, &out.NodeLabels
 		*out = make(map[string]string, len(*in))

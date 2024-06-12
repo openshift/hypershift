@@ -26,6 +26,7 @@ func NewCreateCommands() *cobra.Command {
 		Name:                           "example",
 		Namespace:                      "clusters",
 		NodeDrainTimeout:               0,
+		NodeVolumeDetachTimeout:        0,
 		NodeSelector:                   nil,
 		NodeUpgradeType:                "",
 		PullSecretFile:                 "",
@@ -62,6 +63,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "The HostedCluster's name.")
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The HostedCluster's namespace name.")
 	cmd.PersistentFlags().DurationVar(&opts.NodeDrainTimeout, "node-drain-timeout", opts.NodeDrainTimeout, "The NodeDrainTimeout for any created NodePools.")
+	cmd.PersistentFlags().DurationVar(&opts.NodeVolumeDetachTimeout, "node-volume-detach-timeout", opts.NodeVolumeDetachTimeout, "The NodeVolumeDetachTimeout for any created NodePools.")
 	cmd.PersistentFlags().Int32Var(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If set to 0 or greater, NodePools will be created with that many replicas. If set to less than 0, no NodePools will be created.")
 	cmd.PersistentFlags().StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value pairs to use as the node selector for the Hosted Control Plane pods to stick to. (e.g. role=cp,disk=fast)")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
