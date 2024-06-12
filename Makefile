@@ -23,8 +23,6 @@ GO=GO111MODULE=on GOFLAGS=-mod=vendor go
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
-CI_TESTS_RUN ?= ""
-
 OUT_DIR ?= bin
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -279,14 +277,6 @@ ci-install-hypershift-private:
 		--external-dns-credentials=/etc/hypershift-pool-aws-credentials/credentials \
 		--external-dns-domain-filter=service.ci.hypershift.devcluster.openshift.com \
 		--wait-until-available
-
-.PHONY: ci-test-e2e
-ci-test-e2e:
-	hack/ci-test-e2e.sh ${CI_TESTS_RUN}
-
-.PHONY: ci-test-e2e-azure
-ci-test-e2e-azure:
-	hack/ci-test-e2e-azure.sh
 
 .PHONY: regenerate-pki
 regenerate-pki:
