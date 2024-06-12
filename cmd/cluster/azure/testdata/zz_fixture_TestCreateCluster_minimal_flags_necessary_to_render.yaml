@@ -131,7 +131,10 @@ spec:
   platform:
     azure:
       diskSizeGB: 120
-      imageID: fakeBootImageID
+      image:
+        azureImageType: ImageID
+        imageID:
+          imageID: fakeBootImageID
       subnetID: fakeSubnetID
       vmsize: Standard_D4s_v4
     type: Azure

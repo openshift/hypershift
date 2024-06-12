@@ -48,6 +48,11 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, "The Azure Marketplace image publisher.")
+	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, "The Azure Marketplace image offer.")
+	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, "The Azure Marketplace image SKU.")
+	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, "The Azure Marketplace image version.")
+	flags.BoolVar(&opts.MarketplaceThirdPartyImage, "marketplace-third-party-image", opts.MarketplaceThirdPartyImage, "The Azure Marketplace image flag indicating if this is a third party image.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -57,21 +62,26 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile        string
-	Location               string
-	EncryptionKeyID        string
-	InstanceType           string
-	DiskSizeGB             int32
-	AvailabilityZones      []string
-	ResourceGroupName      string
-	VnetID                 string
-	DiskEncryptionSetID    string
-	NetworkSecurityGroupID string
-	EnableEphemeralOSDisk  bool
-	DiskStorageAccountType string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
-	RHCOSImage             string
+	CredentialsFile            string
+	Location                   string
+	EncryptionKeyID            string
+	InstanceType               string
+	DiskSizeGB                 int32
+	AvailabilityZones          []string
+	ResourceGroupName          string
+	VnetID                     string
+	DiskEncryptionSetID        string
+	NetworkSecurityGroupID     string
+	EnableEphemeralOSDisk      bool
+	DiskStorageAccountType     string
+	ResourceGroupTags          map[string]string
+	SubnetID                   string
+	RHCOSImage                 string
+	MarketplacePublisher       string
+	MarketplaceOffer           string
+	MarketplaceSKU             string
+	MarketplaceVersion         string
+	MarketplaceThirdPartyImage bool
 }
 
 type AzureEncryptionKey struct {
@@ -100,6 +110,18 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("--resource-group-name is required when using --disk-encryption-set-id")
 	}
+
+	// Validate publisher, offer, sku, and version flags are provided if one of them is not empty
+	marketplaceImageInfo := map[string]*string{
+		"marketplace-publisher": &o.MarketplacePublisher,
+		"marketplace-offer":     &o.MarketplaceOffer,
+		"marketplace-sku":       &o.MarketplaceSKU,
+		"marketplace-version":   &o.MarketplaceVersion,
+	}
+	if err := util.ValidateMarketplaceFlags(marketplaceImageInfo); err != nil {
+		return nil, err
+	}
+
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -265,6 +287,25 @@ func credentialSecret(namespace, name string) *corev1.Secret {
 }
 
 func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	var vmImage hyperv1.AzureVMImage
+	if o.MarketplacePublisher == "" {
+		vmImage = hyperv1.AzureVMImage{
+			Type:    hyperv1.ImageID,
+			ImageID: o.infra.BootImageID,
+		}
+	} else {
+		vmImage = hyperv1.AzureVMImage{
+			Type: hyperv1.AzureMarketplace,
+			MarketplaceImageInfo: &hyperv1.MarketplaceImage{
+				Publisher:       o.MarketplacePublisher,
+				Offer:           o.MarketplaceOffer,
+				SKU:             o.MarketplaceSKU,
+				Version:         o.MarketplaceVersion,
+				ThirdPartyImage: o.MarketplaceThirdPartyImage,
+			},
+		}
+	}
+
 	if len(o.AvailabilityZones) > 0 {
 		var nodePools []*hyperv1.NodePool
 		for _, availabilityZone := range o.AvailabilityZones {
@@ -274,7 +315,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 				VMSize:                 o.InstanceType,
-				ImageID:                o.infra.BootImageID,
+				Image:                  vmImage,
 				DiskSizeGB:             o.DiskSizeGB,
 				AvailabilityZone:       availabilityZone,
 				DiskEncryptionSetID:    o.DiskEncryptionSetID,
@@ -292,7 +333,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	}
 	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 		VMSize:                 o.InstanceType,
-		ImageID:                o.infra.BootImageID,
+		Image:                  vmImage,
 		DiskSizeGB:             o.DiskSizeGB,
 		DiskEncryptionSetID:    o.DiskEncryptionSetID,
 		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
@@ -346,7 +387,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
 	rhcosImage := azureOpts.RHCOSImage
-	if rhcosImage == "" {
+	if rhcosImage == "" && azureOpts.MarketplacePublisher == "" {
 		var err error
 		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
 		if err != nil {
