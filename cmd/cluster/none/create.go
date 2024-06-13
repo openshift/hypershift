@@ -3,11 +3,58 @@ package none
 import (
 	"context"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/spf13/cobra"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 )
+
+type CreateOptions struct {
+	APIServerAddress          string
+	ExposeThroughLoadBalancer bool
+}
+
+func (o *CreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) error {
+	return nil
+}
+
+func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
+	var err error
+	if o.APIServerAddress == "" && !o.ExposeThroughLoadBalancer {
+		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
+	}
+	return err
+}
+
+func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
+	if cluster.Spec.DNS.BaseDomain == "" {
+		cluster.Spec.DNS.BaseDomain = "example.com"
+	}
+	cluster.Spec.Platform = hyperv1.PlatformSpec{
+		Type: hyperv1.NonePlatform,
+	}
+	if o.APIServerAddress != "" {
+		cluster.Spec.Services = core.GetServicePublishingStrategyMappingByAPIServerAddress(o.APIServerAddress, cluster.Spec.Networking.NetworkType)
+	} else {
+		cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
+	}
+	return nil
+}
+
+func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	nodePool := constructor(hyperv1.NonePlatform, "")
+	if nodePool.Spec.Management.UpgradeType == "" {
+		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+	}
+	return []*hyperv1.NodePool{nodePool}
+}
+
+func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
+	return nil, nil
+}
+
+var _ core.Platform = (*CreateOptions)(nil)
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -16,12 +63,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.NonePlatform = core.NonePlatformCreateOptions{
-		APIServerAddress: "",
-	}
+	noneOpts := &CreateOptions{}
 
-	cmd.Flags().StringVar(&opts.NonePlatform.APIServerAddress, "external-api-server-address", opts.NonePlatform.APIServerAddress, "The external API Server Address when using platform none")
-	cmd.Flags().BoolVar(&opts.NonePlatform.ExposeThroughLoadBalancer, "expose-through-load-balancer", opts.NonePlatform.ExposeThroughLoadBalancer, "If the services should be exposed through LoadBalancer. If not set, nodeports will be used instead")
+	cmd.Flags().StringVar(&noneOpts.APIServerAddress, "external-api-server-address", noneOpts.APIServerAddress, "The external API Server Address when using platform none")
+	cmd.Flags().BoolVar(&noneOpts.ExposeThroughLoadBalancer, "expose-through-load-balancer", noneOpts.ExposeThroughLoadBalancer, "If the services should be exposed through LoadBalancer. If not set, nodeports will be used instead")
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -33,7 +78,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err := CreateCluster(ctx, opts, noneOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -43,29 +88,9 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
+func CreateCluster(ctx context.Context, opts *core.CreateOptions, noneOpts *CreateOptions) error {
 	if err := core.Validate(ctx, opts); err != nil {
 		return err
 	}
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	if opts.NonePlatform.APIServerAddress == "" && !opts.NonePlatform.ExposeThroughLoadBalancer {
-		if opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
-			return err
-		}
-	}
-
-	infraID := opts.InfraID
-	exampleOptions.InfraID = infraID
-	exampleOptions.BaseDomain = opts.BaseDomain
-	if exampleOptions.BaseDomain == "" {
-		exampleOptions.BaseDomain = "example.com"
-	}
-
-	exampleOptions.None = &apifixtures.ExampleNoneOptions{
-		APIServerAddress: opts.NonePlatform.APIServerAddress,
-	}
-	return nil
+	return core.CreateCluster(ctx, opts, noneOpts)
 }

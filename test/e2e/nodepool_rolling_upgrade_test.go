@@ -70,7 +70,7 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// wait until the nodePool starts the rolling upgrade, i.e NodePoolUpdatingPlatformMachineTemplateConditionType is present.
-	err = wait.PollImmediateWithContext(k.ctx, 5*time.Second, 2*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(k.ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool); err != nil {
 			return false, err
 		}
@@ -85,7 +85,7 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for nodePool to start the rolling upgrade")
 
 	// wait until the rolling upgrade is completed, i.e NodePoolUpdatingPlatformMachineTemplateConditionType is removed.
-	err = wait.PollImmediateWithContext(k.ctx, 30*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(k.ctx, 30*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool); err != nil {
 			return false, err
 		}

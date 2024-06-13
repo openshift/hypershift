@@ -79,7 +79,7 @@ func (k KubeVirtMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []c
 				},
 			},
 		}))
-	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	}).WithContext(k.infra.Ctx()).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 
 func (k KubeVirtMultinetTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {

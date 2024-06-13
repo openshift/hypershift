@@ -54,7 +54,7 @@ func (k KubeVirtCacheTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []core
 		gg.Expect(np.Status.Platform).ToNot(BeNil())
 		gg.Expect(np.Status.Platform.KubeVirt).ToNot(BeNil())
 		gg.Expect(np.Status.Platform.KubeVirt.CacheName).ToNot(BeEmpty(), "cache DataVolume name should be populated")
-	}).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
+	}).WithContext(k.ctx).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
 	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 	var guestNamespace string

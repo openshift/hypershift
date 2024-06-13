@@ -33,10 +33,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
 	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
-	opts.AWSPlatform.AWSCredentialsOpts.BindFlags(cmd.Flags())
+	opts.AWSPlatform.Credentials.BindFlags(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := ValidateCredentialInfo(opts.AWSPlatform.AWSCredentialsOpts, opts.CredentialSecretName, opts.Namespace)
+		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return err
 		}
@@ -64,7 +64,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	// Override the credentialSecret with credentialFile
 	var err error
 	var secretData *util.CredentialsSecretData
-	if len(o.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
+	if len(o.AWSPlatform.Credentials.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
 		secretData, err = util.ExtractOptionsFromSecret(nil, o.CredentialSecretName, o.Namespace, "")
 		if err != nil {
 			return err
@@ -75,7 +75,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
 		Region:                region,
 		InfraID:               infraID,
-		AWSCredentialsOpts:    o.AWSPlatform.AWSCredentialsOpts,
+		AWSCredentialsOpts:    &awsinfra.DelegatedAWSCredentialOptions{AWSCredentialsOpts: &o.AWSPlatform.Credentials},
 		Name:                  o.Name,
 		BaseDomain:            baseDomain,
 		BaseDomainPrefix:      baseDomainPrefix,
@@ -91,7 +91,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		o.Log.Info("Destroying IAM", "infraID", infraID)
 		destroyOpts := awsinfra.DestroyIAMOptions{
 			Region:                region,
-			AWSCredentialsOpts:    o.AWSPlatform.AWSCredentialsOpts,
+			AWSCredentialsOpts:    o.AWSPlatform.Credentials,
 			InfraID:               infraID,
 			Log:                   o.Log,
 			CredentialsSecretData: secretData,

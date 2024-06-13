@@ -1723,8 +1723,9 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 				Name: machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
 			},
 			// Keep current version for later check.
-			Version:          machineDeployment.Spec.Template.Spec.Version,
-			NodeDrainTimeout: nodePool.Spec.NodeDrainTimeout,
+			Version:                 machineDeployment.Spec.Template.Spec.Version,
+			NodeDrainTimeout:        nodePool.Spec.NodeDrainTimeout,
+			NodeVolumeDetachTimeout: nodePool.Spec.NodeVolumeDetachTimeout,
 		},
 	}
 

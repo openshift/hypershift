@@ -39,7 +39,6 @@ const (
 
 type Images struct {
 	NetworkOperator              string
-	SDN                          string
 	KubeProxy                    string
 	KubeRBACProxy                string
 	Multus                       string
@@ -52,8 +51,6 @@ type Images struct {
 	OVN                          string
 	OVNControlPlane              string
 	EgressRouterCNI              string
-	KuryrDaemon                  string
-	KuryrController              string
 	NetworkMetricsDaemon         string
 	NetworkCheckSource           string
 	NetworkCheckTarget           string
@@ -85,7 +82,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	p := Params{
 		Images: Images{
 			NetworkOperator:              releaseImageProvider.GetImage("cluster-network-operator"),
-			SDN:                          userReleaseImageProvider.GetImage("sdn"),
 			KubeProxy:                    userReleaseImageProvider.GetImage("kube-proxy"),
 			KubeRBACProxy:                userReleaseImageProvider.GetImage("kube-rbac-proxy"),
 			Multus:                       userReleaseImageProvider.GetImage("multus-cni"),
@@ -98,8 +94,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			OVN:                          userReleaseImageProvider.GetImage("ovn-kubernetes"),
 			OVNControlPlane:              releaseImageProvider.GetImage("ovn-kubernetes"),
 			EgressRouterCNI:              userReleaseImageProvider.GetImage("egress-router-cni"),
-			KuryrDaemon:                  userReleaseImageProvider.GetImage("kuryr-cni"),
-			KuryrController:              userReleaseImageProvider.GetImage("kuryr-controller"),
 			NetworkMetricsDaemon:         userReleaseImageProvider.GetImage("network-metrics-daemon"),
 			NetworkCheckSource:           userReleaseImageProvider.GetImage("cluster-network-operator"),
 			NetworkCheckTarget:           userReleaseImageProvider.GetImage("cluster-network-operator"),
@@ -531,7 +525,6 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 				},
 			}},
 
-			{Name: "SDN_IMAGE", Value: params.Images.SDN},
 			{Name: "KUBE_PROXY_IMAGE", Value: params.Images.KubeProxy},
 			{Name: "KUBE_RBAC_PROXY_IMAGE", Value: params.Images.KubeRBACProxy},
 			{Name: "MULTUS_IMAGE", Value: params.Images.Multus},
@@ -544,8 +537,6 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "OVN_IMAGE", Value: params.Images.OVN},
 			{Name: "OVN_CONTROL_PLANE_IMAGE", Value: params.Images.OVNControlPlane},
 			{Name: "EGRESS_ROUTER_CNI_IMAGE", Value: params.Images.EgressRouterCNI},
-			{Name: "KURYR_DAEMON_IMAGE", Value: params.Images.KuryrDaemon},
-			{Name: "KURYR_CONTROLLER_IMAGE", Value: params.Images.KuryrController},
 			{Name: "NETWORK_METRICS_DAEMON_IMAGE", Value: params.Images.NetworkMetricsDaemon},
 			{Name: "NETWORK_CHECK_SOURCE_IMAGE", Value: params.Images.NetworkCheckSource},
 			{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: params.Images.NetworkCheckTarget},

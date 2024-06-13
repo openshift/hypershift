@@ -41,6 +41,7 @@ spec:
     autoRepair: false
     upgradeType: Replace
   nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
   platform:
     aws:
       instanceProfile: hypershift-arm-2m289-worker

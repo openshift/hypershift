@@ -54,7 +54,7 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 		gg.Expect(np.Spec.Platform).ToNot(BeNil())
 		gg.Expect(np.Spec.Platform.Type).To(Equal(hyperv1.KubevirtPlatform))
 		gg.Expect(np.Spec.Platform.Kubevirt).ToNot(BeNil())
-	}).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
+	}).WithContext(k.ctx).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
 	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 	var guestNamespace string
@@ -90,7 +90,7 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 
 		gg.Expect(vmi.Spec.Domain.CPU).ToNot(BeNil())
 		gg.Expect(vmi.Spec.Domain.CPU.Cores).To(Equal(uint32(3)))
-	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	}).WithContext(k.ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 
 func (k KubeVirtJsonPatchTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {

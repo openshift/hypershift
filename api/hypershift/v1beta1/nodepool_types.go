@@ -134,14 +134,24 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
-	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+	// NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
 	// The default value is 0, meaning that the node can be drained without any time limitations.
 	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
 	// TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
 	// the purpose of the change. In future we plan to propagate this field in-place.
-	// https://github.com/kubernetes-sigs/cluster-api/issues/5880
+	// https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
+
+	// NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+	// The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+	// After the timeout, the detachment of volumes that haven't been detached yet is skipped.
+	// TODO (cbusse): Same comment as Alberto's for `NodeDrainTimeout`:
+	// Today changing this field will trigger a recreate rolling update, which kind of defeats
+	// the purpose of the change. In future we plan to propagate this field in-place.
+	// https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+	// +optional
+	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 
 	// NodeLabels propagates a list of labels to Nodes, only once on creation.
 	// Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
@@ -929,6 +939,11 @@ type AzureNodePoolPlatform struct {
 	// +immutable
 	// +required
 	SubnetID string `json:"subnetID"`
+
+	// Diagnostics specifies the diagnostics settings for a virtual machine.
+	// If not specified then Boot diagnostics will be disabled.
+	// +optional
+	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation
@@ -1005,4 +1020,24 @@ type Taint struct {
 	// that do not tolerate the taint.
 	// Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
 	Effect corev1.TaintEffect `json:"effect"`
+}
+
+// Diagnostics specifies the diagnostics settings for a virtual machine.
+// +kubebuilder:validation:XValidation:rule="self.storageAccountType == 'UserManaged' ? has(self.storageAccountURI) : true", message="storageAccountURI is required when storageAccountType is UserManaged"
+type Diagnostics struct {
+	// StorageAccountType determines if the storage account for storing the diagnostics data
+	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+	// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
+	// +kubebuilder:default:=Disabled
+	StorageAccountType string `json:"storageAccountType,omitempty"`
+	// StorageAccountURI is the URI of the user-managed storage account.
+	// The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+	// but may differ if you are using Azure DNS zone endpoints.
+	// You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+	// endpoints tab in the Azure console or with the CLI by issuing
+	// `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+	// +kubebuilder:validation:Format=uri
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	StorageAccountURI string `json:"storageAccountURI,omitempty"`
 }

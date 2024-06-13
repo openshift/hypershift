@@ -4,15 +4,105 @@ import (
 	"context"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/examples/fixtures"
 )
+
+type CreateOptions struct {
+	APIServerAddress   string
+	AgentNamespace     string
+	AgentLabelSelector string
+}
+
+func (o *CreateOptions) Validate(ctx context.Context, options *core.CreateOptions) error {
+	return nil
+}
+
+func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
+	var err error
+	if o.APIServerAddress == "" {
+		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
+	}
+	if opts.DefaultDual {
+		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
+		// TODO (jparrill): Refactor this to use a 'forward' instead of a 'backward' logic flow
+		if len(o.AgentNamespace) <= 0 {
+			return fmt.Errorf("--default-dual is only supported on Agent platform")
+		}
+		opts.ClusterCIDR = []string{globalconfig.DefaultIPv4ClusterCIDR, globalconfig.DefaultIPv6ClusterCIDR}
+		opts.ServiceCIDR = []string{globalconfig.DefaultIPv4ServiceCIDR, globalconfig.DefaultIPv6ServiceCIDR}
+	}
+	return err
+}
+
+func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
+	if cluster.Spec.DNS.BaseDomain == "" {
+		cluster.Spec.DNS.BaseDomain = "example.com"
+	}
+	cluster.Spec.Platform = hyperv1.PlatformSpec{
+		Type: hyperv1.AgentPlatform,
+		Agent: &hyperv1.AgentPlatformSpec{
+			AgentNamespace: o.AgentNamespace,
+		},
+	}
+	cluster.Spec.Services = core.GetServicePublishingStrategyMappingByAPIServerAddress(o.APIServerAddress, cluster.Spec.Networking.NetworkType)
+	return nil
+}
+
+func (o *CreateOptions) GenerateNodePools(defaultNodePool core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	nodePool := defaultNodePool(hyperv1.AgentPlatform, "")
+	nodePool.Spec.Platform.Agent = &hyperv1.AgentNodePoolPlatform{}
+	if nodePool.Spec.Management.UpgradeType == "" {
+		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+	}
+	if o.AgentLabelSelector != "" {
+		agentSelector, err := metav1.ParseToLabelSelector(o.AgentLabelSelector)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to parse AgentLabelSelector: %s", err))
+		}
+		nodePool.Spec.Platform.Agent.AgentLabelSelector = agentSelector
+	}
+	return []*hyperv1.NodePool{nodePool}
+}
+
+func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
+	return []crclient.Object{
+		&rbacv1.Role{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Role",
+				APIVersion: rbacv1.SchemeGroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: o.AgentNamespace,
+				Name:      "capi-provider-role",
+			},
+			Rules: []rbacv1.PolicyRule{
+				{
+					APIGroups: []string{"agent-install.openshift.io"},
+					Resources: []string{"agents"},
+					Verbs:     []string{"*"},
+				},
+			},
+		},
+	}, nil
+}
+
+var _ core.Platform = (*CreateOptions)(nil)
+
+func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset.")
+	flags.StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "The namespace in which to search for Agents")
+	flags.StringVar(&opts.AgentLabelSelector, "agentLabelSelector", opts.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
+}
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -21,14 +111,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.AgentPlatform = core.AgentPlatformCreateOptions{
-		APIServerAddress: "",
-		AgentNamespace:   "",
-	}
-
-	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset.")
-	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
-	cmd.Flags().StringVar(&opts.AgentPlatform.AgentLabelSelector, "agentLabelSelector", opts.AgentPlatform.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
+	agentOpts := &CreateOptions{}
+	BindOptions(agentOpts, cmd.Flags())
 	_ = cmd.MarkFlagRequired("agent-namespace")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -40,7 +124,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := createCluster(ctx, opts); err != nil {
+		if err := CreateCluster(ctx, opts, agentOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -50,35 +134,11 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func createCluster(ctx context.Context, opts *core.CreateOptions) error {
-	return core.CreateCluster(ctx, opts, ApplyPlatformSpecificsValues)
-}
-
-func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *fixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	if opts.AgentPlatform.APIServerAddress == "" {
-		opts.AgentPlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
-		if err != nil {
-			return err
-		}
-	}
-
-	infraID := opts.InfraID
-	exampleOptions.InfraID = infraID
-	exampleOptions.BaseDomain = opts.BaseDomain
-	if exampleOptions.BaseDomain == "" {
-		exampleOptions.BaseDomain = "example.com"
-	}
-
-	exampleOptions.Agent = &fixtures.ExampleAgentOptions{
-		APIServerAddress:   opts.AgentPlatform.APIServerAddress,
-		AgentNamespace:     opts.AgentPlatform.AgentNamespace,
-		AgentLabelSelector: opts.AgentPlatform.AgentLabelSelector,
-	}
-
+func CreateCluster(ctx context.Context, opts *core.CreateOptions, agentOpts *CreateOptions) error {
 	// Validate that the agent namespace exists
 	agentNamespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: opts.AgentPlatform.AgentNamespace,
+			Name: agentOpts.AgentNamespace,
 		},
 	}
 	client, err := util.GetClient()
@@ -89,5 +149,5 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *fixtures.
 		return fmt.Errorf("failed to get agent namespace: %w", err)
 	}
 
-	return nil
+	return core.CreateCluster(ctx, opts, agentOpts)
 }

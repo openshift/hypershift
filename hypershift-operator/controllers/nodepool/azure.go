@@ -67,6 +67,19 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		azureMachineTemplate.Template.Spec.OSDisk.DiffDiskSettings = &capiazure.DiffDiskSettings{Option: "Local"}
 	}
 
+	if nodePool.Spec.Platform.Azure.Diagnostics != nil && nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountType != "" {
+		azureMachineTemplate.Template.Spec.Diagnostics = &capiazure.Diagnostics{
+			Boot: &capiazure.BootDiagnostics{
+				StorageAccountType: capiazure.BootDiagnosticsStorageAccountType(nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountType),
+			},
+		}
+		if nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountType == "UserManaged" {
+			azureMachineTemplate.Template.Spec.Diagnostics.Boot.UserManaged = &capiazure.UserManagedBootDiagnostics{
+				StorageAccountURI: nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountURI,
+			}
+		}
+	}
+
 	return azureMachineTemplate, nil
 }
 

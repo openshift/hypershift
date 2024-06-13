@@ -139,7 +139,7 @@ func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePo
 	}
 
 	t.Logf("waiting for rollout of NodePools with NTO-generated config")
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, timeout, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}

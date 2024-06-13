@@ -58984,6 +58984,11 @@ objects:
                     NodeLabels propagates a list of labels to Nodes, only once on creation.
                     Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
                   type: object
+                nodeVolumeDetachTimeout:
+                  description: |-
+                    NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volume from a node.
+                    After the timeout, volumes that haven't been detached are skipped.
+                  type: string
                 pausedUntil:
                   description: |-
                     PausedUntil is a field that can be used to pause reconciliation on a resource.
@@ -59236,6 +59241,38 @@ objects:
                             AvailabilityZone of the nodepool. Must not be specified for clusters
                             in a location that does not support AvailabilityZone.
                           type: string
+                        diagnostics:
+                          description: |-
+                            Diagnostics specifies the diagnostics settings for a virtual machine.
+                            If not specified then Boot diagnostics will be disabled.
+                          properties:
+                            storageAccountType:
+                              default: Disabled
+                              description: |-
+                                StorageAccountType determines if the storage account for storing the diagnostics data
+                                should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+                              enum:
+                              - Managed
+                              - UserManaged
+                              - Disabled
+                              type: string
+                            storageAccountURI:
+                              description: |-
+                                StorageAccountURI is the URI of the user-managed storage account.
+                                The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                                but may differ if you are using Azure DNS zone endpoints.
+                                You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+                                endpoints tab in the Azure console or with the CLI by issuing
+                                `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+                              format: uri
+                              maxLength: 1024
+                              type: string
+                          type: object
+                          x-kubernetes-validations:
+                          - message: storageAccountURI is required when storageAccountType
+                              is UserManaged
+                            rule: 'self.storageAccountType == ''UserManaged'' ? has(self.storageAccountURI)
+                              : true'
                         diskEncryptionSetID:
                           description: DiskEncryptionSetID is the ID of the DiskEncryptionSet
                             resource to use to encrypt the OS disks for the VMs.
@@ -59273,10 +59310,15 @@ objects:
                             subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
                           type: string
                         subnetID:
-                          default: default
-                          description: SubnetName is the name of the subnet to place
-                            the Nodes into
+                          description: |-
+                            SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+                            different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
+                            in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+                            hcluster.Spec.Platform.Azure.SubscriptionID.
                           type: string
+                          x-kubernetes-validations:
+                          - message: SubnetID is immutable
+                            rule: self == oldSelf
                         vmsize:
                           type: string
                       required:
@@ -60077,12 +60119,12 @@ objects:
                   type: object
                 nodeDrainTimeout:
                   description: |-
-                    NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+                    NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
                     The default value is 0, meaning that the node can be drained without any time limitations.
                     NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
                     TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
                     the purpose of the change. In future we plan to propagate this field in-place.
-                    https://github.com/kubernetes-sigs/cluster-api/issues/5880
+                    https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
                   type: string
                 nodeLabels:
                   additionalProperties:
@@ -60091,6 +60133,16 @@ objects:
                     NodeLabels propagates a list of labels to Nodes, only once on creation.
                     Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
                   type: object
+                nodeVolumeDetachTimeout:
+                  description: |-
+                    NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+                    The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+                    After the timeout, the detachment of volumes that haven't been detached yet is skipped.
+                    TODO (cbusse): Same comment as Alberto's for `NodeDrainTimeout`:
+                    Today changing this field will trigger a recreate rolling update, which kind of defeats
+                    the purpose of the change. In future we plan to propagate this field in-place.
+                    https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+                  type: string
                 pausedUntil:
                   description: |-
                     PausedUntil is a field that can be used to pause reconciliation on a resource.
@@ -60341,6 +60393,38 @@ objects:
                             AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
                             for clusters in a location that does not support AvailabilityZone.
                           type: string
+                        diagnostics:
+                          description: |-
+                            Diagnostics specifies the diagnostics settings for a virtual machine.
+                            If not specified then Boot diagnostics will be disabled.
+                          properties:
+                            storageAccountType:
+                              default: Disabled
+                              description: |-
+                                StorageAccountType determines if the storage account for storing the diagnostics data
+                                should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+                              enum:
+                              - Managed
+                              - UserManaged
+                              - Disabled
+                              type: string
+                            storageAccountURI:
+                              description: |-
+                                StorageAccountURI is the URI of the user-managed storage account.
+                                The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                                but may differ if you are using Azure DNS zone endpoints.
+                                You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+                                endpoints tab in the Azure console or with the CLI by issuing
+                                `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+                              format: uri
+                              maxLength: 1024
+                              type: string
+                          type: object
+                          x-kubernetes-validations:
+                          - message: storageAccountURI is required when storageAccountType
+                              is UserManaged
+                            rule: 'self.storageAccountType == ''UserManaged'' ? has(self.storageAccountURI)
+                              : true'
                         diskEncryptionSetID:
                           description: |-
                             DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This

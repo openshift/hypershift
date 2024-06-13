@@ -61,7 +61,7 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			config, err := apiServerProxyConfig(image, tc.proxy, externalAddress, internalAddress, 443, 8443,
+			config, err := apiServerProxyConfig(image, tc.proxy, externalAddress, internalAddress, "svc address", 443, 8443,
 				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)

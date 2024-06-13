@@ -99,9 +99,9 @@ Several conditions can prevent Node(s) from being drained successfully:
 
 #### Prevention
 
-To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrainTimeout` in the NodePool CR to a value greater than `0s`. 
+To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrainTimeout` and `.spec.nodeVolumeDetachTimeout` in the NodePool CR to a value greater than `0s`. 
 
-This forces Nodes to be removed once the timeout specified in the field has been reached even if the Node cannot be drained successfully.
+This forces Nodes to be removed once the timeout specified in the field has been reached, regardless of whether the node can be drained or the volumes can be detached successfully.
 
 !!! note
     See the [Hypershift API reference page](../../reference/api.md) for more details.

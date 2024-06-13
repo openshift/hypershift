@@ -5,11 +5,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/openshift/hypershift/cmd/cluster/core"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
-	apiexample "github.com/openshift/hypershift/examples/fixtures"
 )
 
 func TestValidateKVHostedClusterCreate(t *testing.T) {
@@ -482,7 +482,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 // util function used to generate a service map that is different than the defaults
 func customKubeVirtServiceMap() []v1beta1.ServicePublishingStrategyMapping {
 	// use the defaults as a basis
-	defaults := apiexample.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false)
+	defaults := core.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false)
 
 	custom := []v1beta1.ServicePublishingStrategyMapping{}
 	for _, cur := range defaults {
@@ -523,7 +523,7 @@ func TestKubevirtClusterServiceDefaulting(t *testing.T) {
 					},
 				},
 			},
-			expectedServices: apiexample.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false),
+			expectedServices: core.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false),
 		},
 		{
 			name: "don't default when services already exist",
