@@ -64,12 +64,7 @@ spec:
       nodePort:
         address: fakeAddress
       type: NodePort
-  - service: OAuthServer
-    servicePublishingStrategy:
-      nodePort:
-        address: fakeAddress
-      type: NodePort
-  - service: OIDC
+  - service: Ignition
     servicePublishingStrategy:
       nodePort:
         address: fakeAddress
@@ -79,7 +74,12 @@ spec:
       nodePort:
         address: fakeAddress
       type: NodePort
-  - service: Ignition
+  - service: OAuthServer
+    servicePublishingStrategy:
+      nodePort:
+        address: fakeAddress
+      type: NodePort
+  - service: OIDC
     servicePublishingStrategy:
       nodePort:
         address: fakeAddress

@@ -224,7 +224,6 @@ func TestCreateCluster(t *testing.T) {
 				"--instance-type=m5.large",
 				"--region=us-east-2",
 				"--auto-repair",
-				"--generate-ssh",
 				"--name=cesar",
 				"--endpoint-access=Public",
 				"--node-pool-replicas=2",

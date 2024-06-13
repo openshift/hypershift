@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -766,6 +767,9 @@ func GetIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, use
 			},
 		})
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i].Service < ret[j].Service
+	})
 	return ret
 }
 
@@ -790,6 +794,9 @@ func GetServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress stri
 			},
 		})
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i].Service < ret[j].Service
+	})
 	return ret
 }
 

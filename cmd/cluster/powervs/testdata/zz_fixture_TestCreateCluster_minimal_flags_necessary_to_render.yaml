@@ -85,19 +85,19 @@ spec:
         name: example-etcd-encryption-key
     type: aescbc
   services:
-  - service: Ignition
-    servicePublishingStrategy:
-      type: Route
-  - service: OVNSbDb
-    servicePublishingStrategy:
-      type: Route
   - service: APIServer
     servicePublishingStrategy:
       type: LoadBalancer
-  - service: OAuthServer
+  - service: Ignition
     servicePublishingStrategy:
       type: Route
   - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: OVNSbDb
     servicePublishingStrategy:
       type: Route
   sshKey: {}
