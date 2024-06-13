@@ -1,0 +1,160 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: clusters
+spec: {}
+status: {}
+---
+apiVersion: v1
+data:
+  .dockerconfigjson: ZmFrZQ==
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: cesar-pull-secret
+  namespace: clusters
+---
+apiVersion: v1
+data:
+  id_rsa: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlKS1FJQkFBS0NBZ0VBeGJQSDUzRGRqUytxZHpmeXBsU3JSWGpHVFJ2a3RDMTVZcEN3MitWWXpMakVFajBUCmd4TlJYQ2xlV0VVRkhKRmwyblBDZUtTM3h4UHdack1Pemg0c0tBakdtQTVvS2lJdjZnWnhFV05hVlNNY1ZLaDYKZXowRDBiUkJmbWFZeTZWbEJvU3V0bzlNS3Jic1VQYUM1YlRvNFFHSy9HRXJ1OXAybExIOE0yaWNxRnJxTG4yQgpFUm1SSFZtaE12cEpIbkU5NGtCL2Z1N1hFMkFGQVYzMXBBOVFYMVpxbytaNm1FTVB6emdOQ0pMaXF5eG9FMUQxCnNyc2l2VmZsQWk3Y0NqWXFLR2RXUXkrMFFyYTRibEVzRGRtMFlzOWpsRERlZ1AwdzBoV3Bmc0cvR3labE05RS8KdFZBV1JmMXk3WlRoYmh4STY0bUFxUkZZTUk0K1pNZVdrU3JWY2pieUJUWUx1bEFiMVExcjlqaCs4a0JoNC8wWgorVlJpelFNM00wSEpldG8vSkY5cWd5dXlQMFhRaTBDNGdhd1NwOS82NmVqem9DcHFIMXY1NWxUMC9tNmViZW5OClN0T1hLSHk1Z1FIUnVTR2V0bVZ1c0NhVnZMYmlOR1d6UWZDVS9qZFRTMU41bkdoUGVqMWR6K2QrNFl6TkJvZzEKZEhTWUdmTWtkMWJSQXdvb2REV08rbm9yNDlDRE9ITUE5Tkt5V2ExamFsT2FNV0ZnbEtKbDV5SXJXRjZmNXFTMgpreC9BM3liQWszQld6eUM5WmRrcWwvTmFDYTBoNkhoTkt1bW9BUVNWTU9pdXQ5UWUwVzgrallXTXQ5OXYvdEF2Cmk2UjF2MVRlYVdnWjBSUEI1OUtmNUpXRHhZQldJSmxYU21wOEF1d0l0YnlRWldkV3VUbGV1WkUrTElNQ0F3RUEKQVFLQ0FnQVUrOXYvNks3YlNXL2liNEhGdmI3Z0JNMm5hWXFBeFVMWS8xcUdQSFdNWlNBS2Y0a09wSUpDTWZIZApsSlhTVG14dEgxUkkwZExmd25JRnRJT2h4UG9TMWJ1ZWNBa0dUOUtlR0Vqdis0ZWUrYmNNRlVYS3h0TWM4dkR3CnBac2FJbGZ5dFNxR0hmZUxvUmE4RVM0YmkzUWNUYm1leUFHSVVzdTdSSmpzSy9KVXZER1c5YU01V1dsWm9DWEgKNzJETFptR1hIaGxxTTVlSWF1eWRGSWY1L2RZZUNHSVJPMmxQdCs1NXBBMWVGNWtQYWdzeDRhbnlhb0pwYm1iVQpNSDBTYUdWWkhINi9hdFRMTC9Hclk5bzFMaUpEU3BmYkpzUzNGQ2lXWTg0MXNnTENzdlNTNTJiSHE5UnhZVkZOCmZqdmZJQWx0Vm83ZFl3WGxRWFBGNXBsSWx5OUlYQ1NqQVhzblVxcVBFajA4bVhDV1NINFVpY21BRWdhdGM4L1EKMG5TNEpDY0JkY204VjdZYUpMK0NGbHNyU0tYbEEvcFdta1RncXNra044U3haT0xYSU1UU0Q5VU5CY0tNQTlQdApCaWJkSGNGY3FjT3N0Q1ltSno2RGNYbHBlb3pqcjRNUG83aG9WTnlySnhLaGo5UTZRNXZGMTJmd2w1eDJuUGYyCi9MN1RPQWw4UWtTZDl6OTE2aFUrYUM3T1BFcmZteFFqMWlsS1AyWmdDTERtRThONWxPdUdGOUsvcUt5S0FGZ0wKVzRMSHp3N25tNHhvZjh5c0V3UHJPN2ZTelYvZVpyOVRjcGJDU09nZ0UrbitFNmY5cVNKZ2NXMTRRUXoyaUdSKwp0aDRaemNLUEN1bWo2SndubGIycmZTemcwZ0VqQlFZYU1uUXhDaXRHeG1LeTBNUWhZUUtDQVFFQStOZXRDZEE2CkFGMXYvSm96ZHNTeHpCTFlZWEEyTW5RdDNLR3N4SWxLMnJobmswQ0xKK1FyeWJqdmZDLzNKNGxKM09LMHBKSkkKa1Nkckh5MTl5d1EwSFJTMlQ2NEo3VWtLWThpZjNLT0pZYTJ4QjdGY1hlQW5rRDVaakkyb2ZtMlEwK0pFQXFVOAoxUDVMc3VWMkVibHJNei8zb2poMjRMZlRvRnVXNWpvV1NVZ0JjT2w4bkdvMUJnWm1sVDZzTFBoUUpiaWJjRTRNCk1UVkR0L0FsTXVnazFsd0tRWEw4eGNzRDdqbG91N09FYkRVZzUybzU1VEJzam9NSFhDbzE0WURHOEh0bEhndFoKSnloVytqbHdjZzFrdUlGKzRveEcxTHZrRVZ6Yzk1dUtYcG5kTHM3MDM5WTFnY3J4RXYwcUFVb2lvS1c1eVk0agpKVER1MHVSVjF2ZE9md0tDQVFFQXkyT0tKWWRKQ2xhTURCam9ETUx5aWpyVzZWREhSWnB2cURyM25HY2FVM2ZQClVTQUcraVZ6Z2piY0xYTFhPSzMyS00zck1wWTY1NmhRKzloS0o3NEFnYTJJVXNIajUvQzRielZ5enNXTDRZL0YKelp1R2JsMHIyQUU4SjduaEk1cDJ5NURiZmQvYW1OL1VLYS9UZk8vdDVDWWF0SnRqd2pWdGszWndyalJMYzdaVgp4dEtIbGs2RlhpdlY3NGJlWk9tOHd0cjhjRWkram9JeEFXUDloOXo4d1ZlZm5SWkQ3em1mUmY4QjhjeUpNOFVkCjE5ZDZUK3c3UEZ1RmFTbWkyQkJxMnphM1FqMVNCeDFPU3RkbnBzZU9sWHhhWll0YjFLKzIya2t6SWlXb2RmMVMKSVZ5dTJxQW91c2ZLbEo0MlBVRUFUcFdCbUs0NFR2Ris5NUx0K24vbi9RS0NBUUJOejdzM0gxcVR0S1FJKy9ydAp2NUhOTzNOWC9LdWwyVGhpRGxnazJMMkVhVGRTRDFPME5LQVFvdmlYLzdPc05EelppalpzWTZXM1pma1VOYmhwCkhEWmpoWStBbU81WHVZZzdMWWYzaVZlektJbjcydFVFTWN5TlNVSGROb3FpaGdaTWl5c3pISkpLRS81OXdVekwKUEF5dWFPazVXNmlvbWpMZHFPWWx0YkkwVmdURlZ1MTFSNnl1NXA5N09hN0RIUjZLdlJBMTdPSFpIVXZBbjZJeQpLZThpN0lMMGRrMWVXQjR4aHRnZUlZTmVCcnIwUWY0NmtZclFnVjV5em13c3lJVHN1OWtoclBEQzB0Vm54MEJICkdiTU9Fc2duZFMvTTQ3ZnNTZnA2bnJPRTQxNExmZ0dLWU1RNGdzb2hZdktZbHFML1V2TW1lSUM2NTNNMmxOblcKcjF4bkFvSUJBUUN1b3Jscm44M0hZcWk5ZW1WRkQ5N1JjZFEyWVhXNC9mSUJzU0FLMnp4dmp1QWorQ3dGZlVMQQorL254ekRtZ0lUN0xxb1BZMjhXWVE1M0ZvT0dMWGtseEQxK09MNDFSQ2hCUzdNRzNhVWZDVllDeUdtaERPeHo2ClM1VXJSeDlaUXJmZDhuT0VrVUZSSWw4NXJBOGJwNmZMeml3QUI2eVFoTytoUG9GaUV1VDJaZ2tndm9STk92Nm8KN1ZxMFlFbDB2SDJua2dCUEtTYjFsalFkelkxVHF4d2JwdkVXSUpnVVFKWFJ0RFFuT2toVWUxdzBpSUF0UDlsYwo2ZmlUWTN5L3FOa1hnTk81dkkxQ0xwZWJDM21rYXBTekppTTRMWUNjRG9RaXlkZHQ2b2ZMUjhmTmZaZGxnVDkzCm9UVUFoeGhyWC9TemhRdlIzVVhjQXQvU0ZBYmlvQkRCQW9JQkFRREErby9aZTdXK3FEZTFmVXNDWFpVOTRZcFEKcXBFNm12azd6Z1BsMUQ2NlN6dUd3cWNIYk51Z2Y2aHZKM3VQUmE4akR4QUI4ZnFpRXU3eTBzSnpkMGl4S0YzKwpiV0NNbXdGSzdvb3BoSE95cWxRU1hNUE1vM1NjSm5xb0R4aFFvYlVGSGc3ZjlDOVlaNmQxTDFPTkR5WkJTNE91CkhoYkgybUhMMmtuTXE4cEZoUzlTQzdLM0gwS0I2LzVVZXZzOFl1a0VOblhjUWowQTlDN3lXSDZvOHNFNWptMW0KRWFrOFNydEZnTDRXNUlyeTZTbmgvdEdHU3BTU3NLTWlsK08xQzB6UWE1TTA0SUJQUHV3M3BIS20vQWN2NUxxbwpWNjFnOVRIY2o3QWJndXZaa2JsdzZMMXU3VDJLbEhlTEpsVTVzMGxVVjZkdG0xeWgzZWRNdHRoWko4RW0KLS0tLS1FTkQgUlNBIFBSSVZBVEUgS0VZLS0tLS0K
+  id_rsa.pub: c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFDQVFERnM4Zm5jTjJOTDZwM04vS21WS3RGZU1aTkcrUzBMWGxpa0xEYjVWak11TVFTUFJPREUxRmNLVjVZUlFVY2tXWGFjOEo0cExmSEUvQm1zdzdPSGl3b0NNYVlEbWdxSWkvcUJuRVJZMXBWSXh4VXFIcDdQUVBSdEVGK1pwakxwV1VHaEs2Mmowd3F0dXhROW9MbHRPamhBWXI4WVN1NzJuYVVzZnd6YUp5b1d1b3VmWUVSR1pFZFdhRXkra2tlY1QzaVFIOSs3dGNUWUFVQlhmV2tEMUJmVm1xajVucVlRdy9QT0EwSWt1S3JMR2dUVVBXeXV5SzlWK1VDTHR3S05pb29aMVpETDdSQ3RyaHVVU3dOMmJSaXoyT1VNTjZBL1REU0ZhbCt3YjhiSm1VejBUKzFVQlpGL1hMdGxPRnVIRWpyaVlDcEVWZ3dqajVreDVhUkt0VnlOdklGTmd1NlVCdlZEV3YyT0g3eVFHSGovUm41VkdMTkF6Y3pRY2w2Mmo4a1gycURLN0kvUmRDTFFMaUJyQktuMy9ycDZQT2dLbW9mVy9ubVZQVCticDV0NmMxSzA1Y29mTG1CQWRHNUlaNjJaVzZ3SnBXOHR1STBaYk5COEpUK04xTkxVM21jYUU5NlBWM1A1Mzdoak0wR2lEVjBkSmdaOHlSM1Z0RURDaWgwTlk3NmVpdmowSU00Y3dEMDBySlpyV05xVTVveFlXQ1VvbVhuSWl0WVhwL21wTGFUSDhEZkpzQ1RjRmJQSUwxbDJTcVg4MW9KclNIb2VFMHE2YWdCQkpVdzZLNjMxQjdSYno2TmhZeTMzMi8rMEMrTHBIVy9WTjVwYUJuUkU4SG4wcC9rbFlQRmdGWWdtVmRLYW53QzdBaTF2SkJsWjFhNU9WNjVrVDRzZ3c9PQo=
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: cesar-ssh-key
+  namespace: clusters
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  annotations:
+    hypershift.openshift.io/cleanup-cloud-resources: "true"
+    hypershift.openshift.io/control-plane-operator-image: fakeCPOImage
+  creationTimestamp: null
+  name: cesar
+  namespace: clusters
+spec:
+  autoscaling: {}
+  configuration:
+    proxy:
+      httpProxy: fakeProxyAddr
+      httpsProxy: fakeProxyAddr
+      trustedCA:
+        name: ""
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: fakeBaseDomain
+    baseDomainPrefix: fakeBaseDomainPrefix
+    privateZoneID: fakePrivateZoneID
+    publicZoneID: fakePublicZoneID
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+          storageClassName: gp3-csi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: fakeInfraID
+  issuerURL: fakeIssuerURL
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    machineNetwork:
+    - cidr: 192.0.2.0/24
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    aws:
+      cloudProviderConfig:
+        subnet:
+          id: fakeSubnetID
+        vpc: fakeVPCID
+        zone: fakeName
+      endpointAccess: Public
+      multiArch: false
+      region: us-east-2
+      rolesRef:
+        controlPlaneOperatorARN: fakeControlPlaneOperatorARN
+        imageRegistryARN: fakeImageRegistryARN
+        ingressARN: fakeIngressARN
+        kubeCloudControllerARN: fakeKubeCloudControllerARN
+        networkARN: fakeNetworkARN
+        nodePoolManagementARN: fakeNodePoolManagementARN
+        storageARN: fakeStorageARN
+    type: AWS
+  pullSecret:
+    name: cesar-pull-secret
+  release:
+    image: fakeReleaseImage
+  secretEncryption:
+    kms:
+      aws:
+        activeKey:
+          arn: fakeKMSKeyARN
+        auth:
+          awsKms: fakeKMSProviderRoleARN
+        region: us-east-2
+      provider: AWS
+    type: kms
+  services:
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  - service: OVNSbDb
+    servicePublishingStrategy:
+      type: Route
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  sshKey:
+    name: cesar-ssh-key
+status:
+  controlPlaneEndpoint:
+    host: ""
+    port: 0
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: null
+  name: cesarfakeName
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: cesar
+  management:
+    autoRepair: true
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    aws:
+      instanceProfile: fakeProfileName
+      instanceType: m5.large
+      rootVolume:
+        size: 120
+        type: gp3
+      subnet:
+        id: fakeSubnetID
+    type: AWS
+  release:
+    image: fakeReleaseImage
+  replicas: 2
+status:
+  replicas: 0
+---

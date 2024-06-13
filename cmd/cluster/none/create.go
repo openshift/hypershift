@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -84,6 +85,15 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{}
+}
+
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.APIServerAddress, "external-api-server-address", opts.APIServerAddress, "The external API Server Address when using platform none")
+	flags.BoolVar(&opts.ExposeThroughLoadBalancer, "expose-through-load-balancer", opts.ExposeThroughLoadBalancer, "If the services should be exposed through LoadBalancer. If not set, nodeports will be used instead")
+}
+
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "none",
@@ -91,11 +101,8 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	noneOpts := &CreateOptions{}
-
-	cmd.Flags().StringVar(&noneOpts.APIServerAddress, "external-api-server-address", noneOpts.APIServerAddress, "The external API Server Address when using platform none")
-	cmd.Flags().BoolVar(&noneOpts.ExposeThroughLoadBalancer, "expose-through-load-balancer", noneOpts.ExposeThroughLoadBalancer, "If the services should be exposed through LoadBalancer. If not set, nodeports will be used instead")
-
+	noneOpts := DefaultOptions()
+	BindOptions(noneOpts, cmd.Flags())
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

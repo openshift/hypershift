@@ -466,15 +466,15 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 }
 
 // validateMultiArchRelease validates a release image or release stream is multi-arch if the multi-arch flag is set
-func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
+func validateMultiArchRelease(ctx context.Context, releaseImage, releaseStream, pullSecretFile string, awsOpts *RawCreateOptions) error {
 	// Validate the release image is multi-arch when the multi-arch flag is set and a release image is provided
-	if awsOpts.MultiArch && len(opts.ReleaseImage) > 0 {
-		pullSecret, err := os.ReadFile(opts.PullSecretFile)
+	if awsOpts.MultiArch && len(releaseImage) > 0 {
+		pullSecret, err := os.ReadFile(pullSecretFile)
 		if err != nil {
 			return fmt.Errorf("failed to read pull secret file: %w", err)
 		}
 
-		validMultiArchRelease, err := registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
+		validMultiArchRelease, err := registryclient.IsMultiArchManifestList(ctx, releaseImage, pullSecret)
 		if err != nil {
 			return err
 		}
@@ -485,7 +485,7 @@ func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions, aws
 	}
 
 	// Validate the release stream is multi-arch when the multi-arch flag is set and a release stream is provided
-	if awsOpts.MultiArch && len(opts.ReleaseStream) > 0 && !strings.Contains(opts.ReleaseStream, "multi") {
+	if awsOpts.MultiArch && len(releaseStream) > 0 && !strings.Contains(releaseStream, "multi") {
 		return fmt.Errorf("release stream is not a multi-arch stream")
 	}
 
@@ -498,7 +498,7 @@ func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *
 		return err
 	}
 
-	if err := validateMultiArchRelease(ctx, opts, awsOpts); err != nil {
+	if err := validateMultiArchRelease(ctx, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile, awsOpts); err != nil {
 		return err
 	}
 

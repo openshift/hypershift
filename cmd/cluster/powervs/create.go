@@ -156,6 +156,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		if err != nil {
 			return nil, fmt.Errorf("failed to read infra json file: %w", err)
 		}
+		output.infra = &powervsinfra.Infra{}
 		if err = json.Unmarshal(rawInfra, output.infra); err != nil {
 			return nil, fmt.Errorf("failed to load infra json: %w", err)
 		}

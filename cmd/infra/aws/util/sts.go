@@ -39,10 +39,12 @@ func NewSTSSession(agent, rolenArn, region string, assumeRoleCreds *credentials.
 	return awsSession, nil
 }
 
+type STSCreds struct {
+	Credentials Credentials `json:"Credentials"`
+}
+
 func ParseSTSCredentialsFile(credentialsFile string) (*credentials.Credentials, error) {
-	var stsCreds struct {
-		Credentials Credentials `json:"Credentials"`
-	}
+	var stsCreds STSCreds
 
 	rawSTSCreds, err := os.ReadFile(credentialsFile)
 	if err != nil {

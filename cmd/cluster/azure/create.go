@@ -30,6 +30,10 @@ func DefaultOptions() *RawCreateOptions {
 }
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+}
+
+func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required)")
 	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the cluster")
 	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
@@ -44,6 +48,12 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+}
+
+func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+
+	flags.StringVar(&opts.RHCOSImage, "rhcos-image", opts.RHCOSImage, "The RHCOS image to use.")
 }
 
 type RawCreateOptions struct {
@@ -61,6 +71,7 @@ type RawCreateOptions struct {
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
 	SubnetID               string
+	RHCOSImage             string
 }
 
 type AzureEncryptionKey struct {
@@ -334,9 +345,13 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 }
 
 func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
-	rhcosImage, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
-	if err != nil {
-		return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
+	rhcosImage := azureOpts.RHCOSImage
+	if rhcosImage == "" {
+		var err error
+		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
+		if err != nil {
+			return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
+		}
 	}
 
 	return azureinfra.CreateInfraOptions{
@@ -361,23 +376,23 @@ func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecret
 
 	pullSecret, err := os.ReadFile(pullSecretFile)
 	if err != nil {
-		return "", fmt.Errorf("lookupRHCOSImage: failed to read pull secret file")
+		return "", fmt.Errorf("failed to read pull secret file: %w", err)
 	}
 
 	releaseImage, err := releaseProvider.Lookup(ctx, image, pullSecret)
 	if err != nil {
-		return "", fmt.Errorf("lookupRHCOSImage: failed to lookup release image")
+		return "", fmt.Errorf("failed to lookup release image: %w", err)
 	}
 
 	// We need to translate amd64 to x86_64 and arm64 to aarch64 since that is what is in the release image stream
 	if _, ok := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]]; !ok {
-		return "", fmt.Errorf("lookupRHCOSImage: arch does not exist in release image, arch: %s", arch)
+		return "", fmt.Errorf("arch does not exist in release image, arch: %s", arch)
 	}
 
 	rhcosImage = releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]].RHCOS.AzureDisk.URL
 
 	if rhcosImage == "" {
-		return "", fmt.Errorf("lookupRHCOSImage: RHCOS VHD image is empty")
+		return "", fmt.Errorf("RHCOS VHD image is empty: %w", err)
 	}
 
 	return rhcosImage, nil

@@ -15,7 +15,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	agentOpts := &agent.RawCreateOptions{}
+	agentOpts := agent.DefaultOptions()
 	agent.BindOptions(agentOpts, cmd.Flags())
 	_ = cmd.MarkFlagRequired("agent-namespace")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")

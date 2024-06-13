@@ -8,14 +8,16 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/util"
 )
+
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{}
+}
 
 type RawCreateOptions struct {
 	APIServerAddress   string
@@ -34,20 +36,6 @@ type ValidatedCreateOptions struct {
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
-	// Validate that the agent namespace exists
-	agentNamespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: o.AgentNamespace,
-		},
-	}
-	client, err := util.GetClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client: %w", err)
-	}
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(agentNamespace), agentNamespace); err != nil {
-		return nil, fmt.Errorf("failed to get agent namespace: %w", err)
-	}
-
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -153,7 +141,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	agentOpts := &RawCreateOptions{}
+	agentOpts := DefaultOptions()
 	BindOptions(agentOpts, cmd.Flags())
 	_ = cmd.MarkFlagRequired("agent-namespace")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
