@@ -4,9 +4,7 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN --mount=type=cache,target=/go/.cache \
-    --mount=type=cache,target=/go/pkg/mod \ 
-    make build
+RUN make build
 
 FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
