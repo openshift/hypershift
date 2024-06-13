@@ -43,11 +43,12 @@ to live migrate and be portable across infra nodes.
 Below is a chart that outlines the current features of KubeVirt CSI as they map
 to the infra cluster's storage class.
 
-| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           | 
+```| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           | 
 |-----------------------|------------------------------------|-----------------------------------------------------------------------------|
 | RWX Block             | RWO (Block/Filesystem) RWX (Block) | Supported                 |                                                 |
 | RWO Block             | RWO (Block/Filesystem)             | Not Supported             |                                                 |
 | RWO Filesystem        | RWO (Block/Filesystem)             | Not Supported             | suboptimal guest block volume mode performance. |
+```
 
 More information about configuring KubeVirt CSI can be found in the
 [KubeVirt CSI StorageClass Mapping](#kubevirt csi storageclass mapping) section.
