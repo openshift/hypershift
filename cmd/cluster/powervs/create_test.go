@@ -9,14 +9,18 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 func TestCreateCluster(t *testing.T) {
+	utilrand.Seed(1234567890)
+	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(context.Background())
 	tempDir := t.TempDir()
 

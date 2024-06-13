@@ -37,7 +37,7 @@ spec:
         type: PersistentVolume
     managementType: Managed
   fips: false
-  infraID: example-x5ltc
+  infraID: example-sffhb
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
@@ -95,7 +95,7 @@ status:
 ---
 apiVersion: v1
 data:
-  key: eNcj9qbcRcFq39MP2j+krgGisJNcasuX7OEVagocgeU=
+  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
 kind: Secret
 metadata:
   creationTimestamp: null

@@ -85,9 +85,6 @@ spec:
         name: example-etcd-encryption-key
     type: aescbc
   services:
-  - service: Konnectivity
-    servicePublishingStrategy:
-      type: Route
   - service: Ignition
     servicePublishingStrategy:
       type: Route
@@ -98,6 +95,9 @@ spec:
     servicePublishingStrategy:
       type: LoadBalancer
   - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
     servicePublishingStrategy:
       type: Route
   sshKey: {}
@@ -133,7 +133,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  key: RZS0E4RKOsKhOM8uLSVy8HthlgbL08VHavAJ/TIN6LE=
+  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
 kind: Secret
 metadata:
   creationTimestamp: null

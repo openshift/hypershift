@@ -39,7 +39,7 @@ spec:
         type: PersistentVolume
     managementType: Managed
   fips: false
-  infraID: bryans-cluster-smpfb
+  infraID: bryans-cluster-f9nvz
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
@@ -69,6 +69,12 @@ spec:
         name: bryans-cluster-etcd-encryption-key
     type: aescbc
   services:
+  - service: OVNSbDb
+    servicePublishingStrategy:
+      type: Route
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
@@ -78,12 +84,6 @@ spec:
   - service: Ignition
     servicePublishingStrategy:
       type: Route
-  - service: OVNSbDb
-    servicePublishingStrategy:
-      type: Route
-  - service: APIServer
-    servicePublishingStrategy:
-      type: LoadBalancer
   sshKey: {}
 status:
   controlPlaneEndpoint:
@@ -104,7 +104,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  key: BwJ8sFxNxRt2KwZ4pfklvbEXpUowWXSF8SZJPcjS+wc=
+  key: FYHY8RFxHaJUPFFWuo2z9iWCO01hcj3fqHMMWMeEHHw=
 kind: Secret
 metadata:
   creationTimestamp: null

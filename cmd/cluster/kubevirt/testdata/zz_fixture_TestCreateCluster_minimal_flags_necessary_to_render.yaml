@@ -37,7 +37,7 @@ spec:
         type: PersistentVolume
     managementType: Managed
   fips: false
-  infraID: example-dpwfq
+  infraID: example-sffhb
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
@@ -59,9 +59,6 @@ spec:
         name: example-etcd-encryption-key
     type: aescbc
   services:
-  - service: APIServer
-    servicePublishingStrategy:
-      type: LoadBalancer
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
@@ -74,6 +71,9 @@ spec:
   - service: OVNSbDb
     servicePublishingStrategy:
       type: Route
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
   sshKey: {}
 status:
   controlPlaneEndpoint:
@@ -82,7 +82,7 @@ status:
 ---
 apiVersion: v1
 data:
-  key: GHRiO158XjzSRsPiYWECfWJ0uiVRKdEXWS+LqSQTjeo=
+  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
 kind: Secret
 metadata:
   creationTimestamp: null

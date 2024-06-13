@@ -91,12 +91,6 @@ spec:
       provider: AWS
     type: kms
   services:
-  - service: OAuthServer
-    servicePublishingStrategy:
-      type: Route
-  - service: Konnectivity
-    servicePublishingStrategy:
-      type: Route
   - service: Ignition
     servicePublishingStrategy:
       type: Route
@@ -106,6 +100,12 @@ spec:
   - service: APIServer
     servicePublishingStrategy:
       type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
   sshKey: {}
 status:
   controlPlaneEndpoint:

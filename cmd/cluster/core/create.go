@@ -2,12 +2,12 @@ package core
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +15,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
@@ -413,7 +414,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 }
 
 func generateSSHKeys() ([]byte, []byte, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	privateKey, err := rsa.GenerateKey(certs.Reader(), 4096)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -810,7 +811,7 @@ func postProcess(r *resources, opts *CreateOptions) {
 
 func etcdEncryptionKeySecret(opts *CreateOptions) *corev1.Secret {
 	generatedKey := make([]byte, 32)
-	_, err := rand.Read(generatedKey)
+	_, err := io.ReadFull(certs.Reader(), generatedKey)
 	if err != nil {
 		panic(fmt.Sprintf("failed to generate random etcd key: %v", err))
 	}
