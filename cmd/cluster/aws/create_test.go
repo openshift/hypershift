@@ -39,41 +39,35 @@ func TestIsRequiredOption(t *testing.T) {
 
 func TestValidateCreateCredentialInfo(t *testing.T) {
 	tests := map[string]struct {
-		inputOptions *core.CreateOptions
-		expectError  bool
+		inputOptions    *core.CreateOptions
+		inputAWSOptions *CreateOptions
+		expectError     bool
 	}{
 		"when CredentialSecretName is blank and aws-creds is also blank": {
-			inputOptions: &core.CreateOptions{
+			inputOptions: &core.CreateOptions{},
+			inputAWSOptions: &CreateOptions{
 				CredentialSecretName: "",
-				AWSPlatform: core.AWSPlatformOptions{
-					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
-						AWSCredentialsFile: "",
-					},
-				},
+				Credentials:          awsutil.AWSCredentialsOptions{},
 			},
 			expectError: true,
 		},
 		"when CredentialSecretName is blank, aws-creds is not blank, and pull-secret is blank": {
 			inputOptions: &core.CreateOptions{
-				CredentialSecretName: "",
-				AWSPlatform: core.AWSPlatformOptions{
-					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
-						AWSCredentialsFile: "asdf",
-					},
-				},
 				PullSecretFile: "",
+			},
+			inputAWSOptions: &CreateOptions{
+				CredentialSecretName: "",
+				Credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "asdf"},
 			},
 			expectError: true,
 		},
 		"when CredentialSecretName is blank, aws-creds is not blank, and pull-secret is not blank": {
 			inputOptions: &core.CreateOptions{
-				CredentialSecretName: "",
-				AWSPlatform: core.AWSPlatformOptions{
-					AWSCredentialsOpts: awsutil.AWSCredentialsOptions{
-						AWSCredentialsFile: "asdf",
-					},
-				},
 				PullSecretFile: "asdf",
+			},
+			inputAWSOptions: &CreateOptions{
+				CredentialSecretName: "",
+				Credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "asdf"},
 			},
 			expectError: false,
 		},
@@ -81,8 +75,7 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			options := test.inputOptions
-			err := ValidateCreateCredentialInfo(options.AWSPlatform.AWSCredentialsOpts, options.CredentialSecretName, options.Namespace, options.PullSecretFile)
+			err := ValidateCreateCredentialInfo(test.inputAWSOptions.Credentials, test.inputAWSOptions.CredentialSecretName, test.inputOptions.Namespace, test.inputOptions.PullSecretFile)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -94,24 +87,25 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 
 func TestValidateMultiArchRelease(t *testing.T) {
 	tests := map[string]struct {
-		inputOptions *core.CreateOptions
-		expectError  bool
+		inputOptions    *core.CreateOptions
+		inputAWSOptions *CreateOptions
+		expectError     bool
 	}{
 		"non-multi-arch release image used": {
 			inputOptions: &core.CreateOptions{
 				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.0-ec.3-aarch64",
-				AWSPlatform: core.AWSPlatformOptions{
-					MultiArch: true,
-				},
+			},
+			inputAWSOptions: &CreateOptions{
+				MultiArch: true,
 			},
 			expectError: true,
 		},
 		"non-multi-arch release stream used": {
 			inputOptions: &core.CreateOptions{
 				ReleaseStream: "stable",
-				AWSPlatform: core.AWSPlatformOptions{
-					MultiArch: true,
-				},
+			},
+			inputAWSOptions: &CreateOptions{
+				MultiArch: true,
 			},
 			expectError: true,
 		},
@@ -120,7 +114,7 @@ func TestValidateMultiArchRelease(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := validateMultiArchRelease(context.Background(), test.inputOptions)
+			err := validateMultiArchRelease(context.Background(), test.inputOptions, test.inputAWSOptions)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

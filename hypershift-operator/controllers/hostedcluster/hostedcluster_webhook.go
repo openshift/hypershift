@@ -6,7 +6,7 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
-	apiexample "github.com/openshift/hypershift/examples/fixtures"
+	"github.com/openshift/hypershift/cmd/cluster/core"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -61,7 +61,7 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtim
 
 		// Default services for any service types that were not configured
 		existingServices := map[hyperv1.ServiceType]bool{}
-		defaults := apiexample.GetIngressServicePublishingStrategyMapping(hcluster.Spec.Networking.NetworkType, false)
+		defaults := core.GetIngressServicePublishingStrategyMapping(hcluster.Spec.Networking.NetworkType, false)
 		for _, entry := range hcluster.Spec.Services {
 			existingServices[entry.Service] = true
 		}

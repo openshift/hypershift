@@ -12,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
@@ -119,7 +118,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
 		t.Fatal("failed to retrieve kms key arn")
 	}
@@ -200,7 +199,7 @@ func TestCreateClusterPrivate(t *testing.T) {
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
-func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) func(t *testing.T) {
+func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *e2eutil.PlatformAgnosticOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)
 		if globalOpts.Platform != hyperv1.AWSPlatform {
@@ -216,7 +215,7 @@ func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, 
 	}
 }
 
-func testSwitchFromPublicToPrivate(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) func(t *testing.T) {
+func testSwitchFromPublicToPrivate(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *e2eutil.PlatformAgnosticOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)
 		if globalOpts.Platform != hyperv1.AWSPlatform {
