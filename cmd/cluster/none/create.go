@@ -10,21 +10,49 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 )
 
-type CreateOptions struct {
+type RawCreateOptions struct {
 	APIServerAddress          string
 	ExposeThroughLoadBalancer bool
 }
 
-func (o *CreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) error {
-	return nil
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
 }
 
-func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}, nil
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
+}
+
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
+}
+
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
 	if o.APIServerAddress == "" && !o.ExposeThroughLoadBalancer {
 		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
 	}
-	return err
+	return &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+		},
+	}, err
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -56,7 +84,7 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "none",
 		Short:        "Creates basic functional HostedCluster resources on None",
@@ -78,7 +106,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts, noneOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, noneOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -86,8 +114,4 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	return cmd
-}
-
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, noneOpts *CreateOptions) error {
-	return core.CreateCluster(ctx, opts, noneOpts)
 }

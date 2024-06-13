@@ -24,7 +24,7 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-type CreateOptions struct {
+type RawCreateOptions struct {
 	Credentials             awsutil.AWSCredentialsOptions
 	CredentialSecretName    string
 	AdditionalTags          []string
@@ -44,6 +44,46 @@ type CreateOptions struct {
 	EnableProxy             bool
 	SingleNATGateway        bool
 	MultiArch               bool
+}
+
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
+	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
+	if !o.MultiArch && (!opts.Render || opts.RenderInto != "") && opts.Arch != hyperv1.ArchitecturePPC64LE {
+		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if err = hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, opts.Arch); err != nil {
+			opts.Log.Info(fmt.Sprintf("WARNING: %v", err))
+		}
+	}
+
+	if err := validateAWSOptions(ctx, opts, o); err != nil {
+		return nil, err
+	}
+
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}, nil
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
 
 	infra             *awsinfra.CreateInfraOutput
 	iamInfo           *awsinfra.CreateIAMOutput
@@ -51,25 +91,19 @@ type CreateOptions struct {
 	externalDNSDomain string
 }
 
-func (o *CreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) error {
-	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
-	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
-	if !o.MultiArch && (!opts.Render || opts.RenderInto != "") && opts.Arch != hyperv1.ArchitecturePPC64LE {
-		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
-		if err != nil {
-			return err
-		}
-
-		if err = hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, opts.Arch); err != nil {
-			opts.Log.Info(fmt.Sprintf("WARNING: %v", err))
-		}
-	}
-	return nil
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
 }
 
-func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
-	o.arch = opts.Arch
-	o.externalDNSDomain = opts.ExternalDNSDomain
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			arch:                   opts.Arch,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+		},
+	}
 
 	if opts.EtcdStorageClass == "" {
 		opts.EtcdStorageClass = "gp3-csi"
@@ -77,7 +111,7 @@ func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) 
 
 	client, err := util.GetClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Load or create infrastructure for the cluster
@@ -85,11 +119,11 @@ func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) 
 	if len(opts.InfrastructureJSON) > 0 {
 		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
-			return fmt.Errorf("failed to read infra json file: %w", err)
+			return nil, fmt.Errorf("failed to read infra json file: %w", err)
 		}
 		infra = &awsinfra.CreateInfraOutput{}
 		if err = json.Unmarshal(rawInfra, infra); err != nil {
-			return fmt.Errorf("failed to load infra json: %w", err)
+			return nil, fmt.Errorf("failed to load infra json: %w", err)
 		}
 	}
 
@@ -102,7 +136,7 @@ func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) 
 			opts.Namespace,
 			opts.BaseDomain)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		opts.BaseDomain = secretData.BaseDomain
 	}
@@ -110,43 +144,43 @@ func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) 
 		if infra != nil {
 			opts.BaseDomain = infra.BaseDomain
 		} else {
-			return fmt.Errorf("base-domain flag is required if infra-json is not provided")
+			return nil, fmt.Errorf("base-domain flag is required if infra-json is not provided")
 		}
 	}
 	if infra == nil {
 		opt := CreateInfraOptions(o, opts)
 		infra, err = opt.CreateInfra(ctx, opts.Log)
 		if err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
+			return nil, fmt.Errorf("failed to create infra: %w", err)
 		}
 	}
-	o.infra = infra
+	output.infra = infra
 
 	var iamInfo *awsinfra.CreateIAMOutput
 	if len(o.IAMJSON) > 0 {
 		rawIAM, err := os.ReadFile(o.IAMJSON)
 		if err != nil {
-			return fmt.Errorf("failed to read iam json file: %w", err)
+			return nil, fmt.Errorf("failed to read iam json file: %w", err)
 		}
 		iamInfo = &awsinfra.CreateIAMOutput{}
 		if err = json.Unmarshal(rawIAM, iamInfo); err != nil {
-			return fmt.Errorf("failed to load infra json: %w", err)
+			return nil, fmt.Errorf("failed to load infra json: %w", err)
 		}
 	} else {
 		opt := CreateIAMOptions(o, infra)
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
-			return fmt.Errorf("failed to create iam: %w", err)
+			return nil, fmt.Errorf("failed to create iam: %w", err)
 		}
 	}
-	o.iamInfo = iamInfo
+	output.iamInfo = iamInfo
 
 	// TODO: drop support for this flag, it's really muddying the waters for the CLI
 	if len(o.CredentialSecretName) > 0 {
 		var secret *corev1.Secret
 		secret, err = util.GetSecret(o.CredentialSecretName, opts.Namespace)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for from, into := range map[string]*[]byte{
 			"pullSecret":     &opts.PullSecret,
@@ -155,12 +189,12 @@ func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) 
 		} {
 			value := secret.Data[from]
 			if len(value) == 0 {
-				return fmt.Errorf("secret %s/%s does not contain key %q", opts.Namespace, o.CredentialSecretName, from)
+				return nil, fmt.Errorf("secret %s/%s does not contain key %q", opts.Namespace, o.CredentialSecretName, from)
 			}
 			*into = value
 		}
 	}
-	return nil
+	return output, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -319,8 +353,8 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 	return nil, nil
 }
 
-func DefaultOptions() *CreateOptions {
-	return &CreateOptions{
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
 		Region:         "us-east-1",
 		RootVolumeType: "gp3",
 		RootVolumeSize: 120,
@@ -328,12 +362,12 @@ func DefaultOptions() *CreateOptions {
 	}
 }
 
-func BindOptions(opts *CreateOptions, flags *flag.FlagSet) {
+func BindOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	bindCoreOptions(opts, flags)
 	opts.Credentials.BindProductFlags(flags)
 }
 
-func bindCoreOptions(opts *CreateOptions, flags *flag.FlagSet) {
+func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.Region, "region", opts.Region, "Region to use for AWS infrastructure.")
 	flags.StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availability zones in which NodePools will be created")
 	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
@@ -350,7 +384,7 @@ func bindCoreOptions(opts *CreateOptions, flags *flag.FlagSet) {
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
 }
 
-func BindDeveloperOptions(opts *CreateOptions, flags *flag.FlagSet) {
+func BindDeveloperOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	bindCoreOptions(opts, flags)
 	flags.StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	flags.BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
@@ -359,7 +393,7 @@ func BindDeveloperOptions(opts *CreateOptions, flags *flag.FlagSet) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "aws",
 		Short:        "Creates basic functional HostedCluster resources on AWS",
@@ -376,12 +410,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		err := validateAWSOptions(ctx, opts, awsOpts)
-		if err != nil {
-			return err
-		}
-
-		if err = CreateCluster(ctx, opts, awsOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, awsOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -391,11 +420,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, awsOpts *CreateOptions) error {
-	return core.CreateCluster(ctx, opts, awsOpts)
-}
-
-func CreateInfraOptions(awsOpts *CreateOptions, opts *core.CreateOptions) awsinfra.CreateInfraOptions {
+func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOptions) awsinfra.CreateInfraOptions {
 	return awsinfra.CreateInfraOptions{
 		Region:             awsOpts.Region,
 		InfraID:            opts.InfraID,
@@ -411,7 +436,7 @@ func CreateInfraOptions(awsOpts *CreateOptions, opts *core.CreateOptions) awsinf
 	}
 }
 
-func CreateIAMOptions(awsOpts *CreateOptions, infra *awsinfra.CreateInfraOutput) awsinfra.CreateIAMOptions {
+func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInfraOutput) awsinfra.CreateIAMOptions {
 	return awsinfra.CreateIAMOptions{
 		Region:             awsOpts.Region,
 		AWSCredentialsOpts: awsOpts.Credentials,
@@ -441,7 +466,7 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 }
 
 // validateMultiArchRelease validates a release image or release stream is multi-arch if the multi-arch flag is set
-func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions, awsOpts *CreateOptions) error {
+func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
 	// Validate the release image is multi-arch when the multi-arch flag is set and a release image is provided
 	if awsOpts.MultiArch && len(opts.ReleaseImage) > 0 {
 		pullSecret, err := os.ReadFile(opts.PullSecretFile)
@@ -468,7 +493,7 @@ func validateMultiArchRelease(ctx context.Context, opts *core.CreateOptions, aws
 }
 
 // validateAWSOptions validates different AWS flag parameters
-func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *CreateOptions) error {
+func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
 	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile); err != nil {
 		return err
 	}

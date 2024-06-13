@@ -18,25 +18,25 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func DefaultOptions() *CreateOptions {
-	return &CreateOptions{
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
 		ServicePublishingStrategy: IngressServicePublishingStrategy,
 		NodePoolOpts:              kubevirtnodepool.DefaultOptions(),
 	}
 }
 
-func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 	kubevirtnodepool.BindOptions(opts.NodePoolOpts, flags)
 }
 
-func bindCoreOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfraKubeConfigFile, "infra-kubeconfig-file", opts.InfraKubeConfigFile, "Path to a kubeconfig file of an external infra cluster to be used to create the guest clusters nodes onto")
 	flags.StringVar(&opts.InfraNamespace, "infra-namespace", opts.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
 	flags.StringArrayVar(&opts.InfraStorageClassMappings, "infra-storage-class-mapping", opts.InfraStorageClassMappings, "KubeVirt CSI mapping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
 }
 
-func BindDeveloperOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 
 	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The API server address that should be used for components outside the control plane")
@@ -46,7 +46,7 @@ func BindDeveloperOptions(opts *CreateOptions, flags *pflag.FlagSet) {
 	kubevirtnodepool.BindDeveloperOptions(opts.NodePoolOpts, flags)
 }
 
-type CreateOptions struct {
+type RawCreateOptions struct {
 	ServicePublishingStrategy        string
 	APIServerAddress                 string
 	InfraKubeConfigFile              string
@@ -54,10 +54,73 @@ type CreateOptions struct {
 	InfraStorageClassMappings        []string
 	InfraVolumeSnapshotClassMappings []string
 
-	NodePoolOpts *kubevirtnodepool.KubevirtPlatformCreateOptions
+	NodePoolOpts *kubevirtnodepool.RawKubevirtPlatformCreateOptions
+}
 
-	// after complete:
-	CompletedNodePoolOpts *kubevirtnodepool.KubevirtPlatformCompletedOptions
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+
+	*kubevirtnodepool.ValidatedKubevirtPlatformCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.ServicePublishingStrategy != IngressServicePublishingStrategy {
+		return nil, fmt.Errorf("service publish strategy %s is not supported, supported options: %s, %s", o.ServicePublishingStrategy, IngressServicePublishingStrategy, NodePortServicePublishingStrategy)
+	}
+	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.APIServerAddress != "" {
+		return nil, fmt.Errorf("external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", o.ServicePublishingStrategy)
+	}
+	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && (!opts.Render || opts.RenderInto != "") {
+		var err error
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, mapping := range o.InfraStorageClassMappings {
+		split := strings.Split(mapping, "/")
+		if len(split) != 2 {
+			return nil, fmt.Errorf("invalid infra storageclass mapping [%s]", mapping)
+		}
+	}
+
+	for _, mapping := range o.InfraVolumeSnapshotClassMappings {
+		split := strings.Split(mapping, "/")
+		if len(split) != 2 {
+			return nil, fmt.Errorf("invalid infra volume snapshot class mapping [%s]", mapping)
+		}
+	}
+
+	if o.InfraKubeConfigFile == "" && o.InfraNamespace != "" {
+		return nil, fmt.Errorf("external infra cluster namespace was provided but a kubeconfig is missing")
+	}
+
+	if o.InfraNamespace == "" && o.InfraKubeConfigFile != "" {
+		return nil, fmt.Errorf("external infra cluster kubeconfig was provided but an infra namespace is missing")
+	}
+
+	validOpts := &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}
+	var err error
+	validOpts.ValidatedKubevirtPlatformCreateOptions, err = o.NodePoolOpts.Validate()
+
+	return validOpts, err
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
+
+	CompletedNodePoolOpts *kubevirtnodepool.KubevirtPlatformCreateOptions
 
 	externalDNSDomain string
 
@@ -66,53 +129,25 @@ type CreateOptions struct {
 	allowUnsupportedKubeVirtRHCOSVariantsAnnotation string
 }
 
-func (o *CreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) error {
-	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.ServicePublishingStrategy != IngressServicePublishingStrategy {
-		return fmt.Errorf("service publish strategy %s is not supported, supported options: %s, %s", o.ServicePublishingStrategy, IngressServicePublishingStrategy, NodePortServicePublishingStrategy)
-	}
-	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.APIServerAddress != "" {
-		return fmt.Errorf("external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", o.ServicePublishingStrategy)
-	}
-	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && (!opts.Render || opts.RenderInto != "") {
-		var err error
-		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
-			return err
-		}
-	}
-
-	for _, mapping := range o.InfraStorageClassMappings {
-		split := strings.Split(mapping, "/")
-		if len(split) != 2 {
-			return fmt.Errorf("invalid infra storageclass mapping [%s]", mapping)
-		}
-	}
-
-	for _, mapping := range o.InfraVolumeSnapshotClassMappings {
-		split := strings.Split(mapping, "/")
-		if len(split) != 2 {
-			return fmt.Errorf("invalid infra volume snapshot class mapping [%s]", mapping)
-		}
-	}
-
-	if o.InfraKubeConfigFile == "" && o.InfraNamespace != "" {
-		return fmt.Errorf("external infra cluster namespace was provided but a kubeconfig is missing")
-	}
-
-	if o.InfraNamespace == "" && o.InfraKubeConfigFile != "" {
-		return fmt.Errorf("external infra cluster kubeconfig was provided but an infra namespace is missing")
-	}
-
-	return o.NodePoolOpts.Validate()
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
 }
 
-func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
-	o.externalDNSDomain = opts.ExternalDNSDomain
-	o.baseDomainPassthrough = opts.BaseDomain == ""
-	o.name, o.namespace = opts.Name, opts.Namespace
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+			baseDomainPassthrough:  opts.BaseDomain == "",
+			name:                   opts.Name,
+			namespace:              opts.Namespace,
+		},
+	}
 
-	completed, err := o.NodePoolOpts.Complete()
-	o.CompletedNodePoolOpts = completed
-	return err
+	completed, err := o.ValidatedKubevirtPlatformCreateOptions.Complete()
+	output.CompletedNodePoolOpts = completed
+	return output, err
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -259,7 +294,7 @@ const (
 	IngressServicePublishingStrategy  = "Ingress"
 )
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
 		Short:        "Creates basic functional HostedCluster resources on KubeVirt platform",
@@ -278,7 +313,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts, kubevirtOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, kubevirtOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -286,10 +321,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	return cmd
-}
-
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, kubevirtOpts *CreateOptions) error {
-	return core.CreateCluster(ctx, opts, kubevirtOpts)
 }
 
 func parseTenantClassString(optionString string) (string, string) {

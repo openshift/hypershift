@@ -18,9 +18,9 @@ import (
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 )
 
-func DefaultOptions() *KubevirtPlatformCreateOptions {
-	return &KubevirtPlatformCreateOptions{
-		KubevirtPlatformOptions: KubevirtPlatformOptions{
+func DefaultOptions() *RawKubevirtPlatformCreateOptions {
+	return &RawKubevirtPlatformCreateOptions{
+		KubevirtPlatformOptions: &KubevirtPlatformOptions{
 			Memory:               "4Gi",
 			Cores:                2,
 			RootVolumeSize:       32,
@@ -30,11 +30,11 @@ func DefaultOptions() *KubevirtPlatformCreateOptions {
 	}
 }
 
-func BindOptions(opts *KubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
+func BindOptions(opts *RawKubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 }
 
-func bindCoreOptions(opts *KubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
+func bindCoreOptions(opts *RawKubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Memory, "memory", opts.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
 	flags.Uint32Var(&opts.Cores, "cores", opts.Cores, "The number of cores inside the vmi, Must be a value greater or equal 1")
 	flags.StringVar(&opts.RootVolumeStorageClass, "root-volume-storage-class", opts.RootVolumeStorageClass, "The storage class to use for machines in the NodePool")
@@ -49,13 +49,13 @@ func bindCoreOptions(opts *KubevirtPlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.StringToStringVar(&opts.VmNodeSelector, "vm-node-selector", opts.VmNodeSelector, "A comma separated list of key=value pairs to use as the node selector for the KubeVirt VirtualMachines to be scheduled onto. (e.g. role=kubevirt,size=large)")
 }
 
-func BindDeveloperOptions(opts *KubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
+func BindDeveloperOptions(opts *RawKubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 	flags.StringVar(&opts.ContainerDiskImage, "containerdisk", opts.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
 }
 
-type KubevirtPlatformCreateOptions struct {
-	KubevirtPlatformOptions
+type RawKubevirtPlatformCreateOptions struct {
+	*KubevirtPlatformOptions
 	NetworkInterfaceMultiQueue string
 	QoSClass                   string
 	AdditionalNetworks         []string
@@ -75,46 +75,67 @@ type KubevirtPlatformOptions struct {
 	VmNodeSelector       map[string]string
 }
 
-type KubevirtPlatformCompletedOptions struct {
-	KubevirtPlatformOptions
-	MultiQueue         *hyperv1.MultiQueueSetting
-	QoSClass           *hyperv1.QoSClass
-	AdditionalNetworks []hyperv1.KubevirtNetwork
+// validatedKubevirtPlatformCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedKubevirtPlatformCreateOptions struct {
+	*RawKubevirtPlatformCreateOptions
 }
 
-func (o *KubevirtPlatformCreateOptions) Validate() error {
+type ValidatedKubevirtPlatformCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedKubevirtPlatformCreateOptions
+}
+
+func (o *RawKubevirtPlatformCreateOptions) Validate() (*ValidatedKubevirtPlatformCreateOptions, error) {
 	if o.CacheStrategyType != "" &&
 		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyNone) &&
 		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyPVC) {
-		return fmt.Errorf(`wrong value for the --root-volume-cache-strategy parameter. May be only "None" or "PVC"`)
+		return nil, fmt.Errorf(`wrong value for the --root-volume-cache-strategy parameter. May be only "None" or "PVC"`)
 	}
 
 	if o.RootVolumeVolumeMode != "" &&
 		o.RootVolumeVolumeMode != string(corev1.PersistentVolumeBlock) &&
 		o.RootVolumeVolumeMode != string(corev1.PersistentVolumeFilesystem) {
 
-		return fmt.Errorf(`unsupported value for the --root-volume-volume-mode parameter. May be only "Filesystem" or "Block"`)
+		return nil, fmt.Errorf(`unsupported value for the --root-volume-volume-mode parameter. May be only "Filesystem" or "Block"`)
 	}
 
 	if o.Cores < 1 {
-		return errors.New("the number of cores inside the machine must be a value greater than or equal to 1")
+		return nil, errors.New("the number of cores inside the machine must be a value greater than or equal to 1")
 	}
 
 	if o.RootVolumeSize < 16 {
-		return fmt.Errorf("the root volume size [%d] must be greater than or equal to 16", o.RootVolumeSize)
+		return nil, fmt.Errorf("the root volume size [%d] must be greater than or equal to 16", o.RootVolumeSize)
 	}
 
 	if len(o.AdditionalNetworks) == 0 && o.AttachDefaultNetwork != nil && !*o.AttachDefaultNetwork {
-		return fmt.Errorf(`missing --additional-network. when --attach-default-network is false configuring an additional network is mandatory`)
+		return nil, fmt.Errorf(`missing --additional-network. when --attach-default-network is false configuring an additional network is mandatory`)
 	}
-	return nil
+	return &ValidatedKubevirtPlatformCreateOptions{
+		validatedKubevirtPlatformCreateOptions: &validatedKubevirtPlatformCreateOptions{
+			RawKubevirtPlatformCreateOptions: o,
+		},
+	}, nil
 }
 
 type NetworkOpts struct {
 	Name string `param:"name"`
 }
 
-func (o *KubevirtPlatformCreateOptions) Complete() (*KubevirtPlatformCompletedOptions, error) {
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before nodepool creation can be invoked.
+type completetedKubevirtPlatformCreateOptions struct {
+	*KubevirtPlatformOptions
+
+	MultiQueue         *hyperv1.MultiQueueSetting
+	QoSClass           *hyperv1.QoSClass
+	AdditionalNetworks []hyperv1.KubevirtNetwork
+}
+
+type KubevirtPlatformCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completetedKubevirtPlatformCreateOptions
+}
+
+func (o *ValidatedKubevirtPlatformCreateOptions) Complete() (*KubevirtPlatformCreateOptions, error) {
 	var multiQueue *hyperv1.MultiQueueSetting
 	switch value := hyperv1.MultiQueueSetting(o.NetworkInterfaceMultiQueue); value {
 	case "": // do nothing; value is nil
@@ -144,11 +165,13 @@ func (o *KubevirtPlatformCreateOptions) Complete() (*KubevirtPlatformCompletedOp
 		})
 	}
 
-	return &KubevirtPlatformCompletedOptions{
-		KubevirtPlatformOptions: o.KubevirtPlatformOptions,
-		MultiQueue:              multiQueue,
-		QoSClass:                qosClass,
-		AdditionalNetworks:      additionalNetworks,
+	return &KubevirtPlatformCreateOptions{
+		completetedKubevirtPlatformCreateOptions: &completetedKubevirtPlatformCreateOptions{
+			KubevirtPlatformOptions: o.KubevirtPlatformOptions,
+			MultiQueue:              multiQueue,
+			QoSClass:                qosClass,
+			AdditionalNetworks:      additionalNetworks,
+		},
 	}, nil
 }
 
@@ -160,22 +183,24 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 	BindDeveloperOptions(platformOpts, cmd.Flags())
-	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		validOpts, err := platformOpts.Validate()
+		if err != nil {
+			return err
+		}
+
+		opts, err := validOpts.Complete()
+		if err != nil {
+			return err
+		}
+		return coreOpts.CreateRunFunc(opts)(cmd, args)
+	}
 
 	return cmd
 }
 
 func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
-	// TODO: it's likely good to refactor the top-level node pool CLI to expect every platform to follow this pattern
-	if err := o.Validate(); err != nil {
-		return err
-	}
-	completed, err := o.Complete()
-	if err != nil {
-		return err
-	}
-
-	nodePool.Spec.Platform.Kubevirt = completed.NodePoolPlatform()
+	nodePool.Spec.Platform.Kubevirt = o.NodePoolPlatform()
 	return nil
 }
 
@@ -183,7 +208,7 @@ func (o *KubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.KubevirtPlatform
 }
 
-func (o *KubevirtPlatformCompletedOptions) NodePoolPlatform() *hyperv1.KubevirtNodePoolPlatform {
+func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNodePoolPlatform {
 	var storageClassName *string
 	var accessModesStr []string
 	var accessModes []hyperv1.PersistentVolumeAccessMode

@@ -21,15 +21,15 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func DefaultOptions() *CreateOptions {
-	return &CreateOptions{
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
 		Location:     "eastus",
 		InstanceType: "Standard_D4s_v4",
 		DiskSizeGB:   120,
 	}
 }
 
-func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required)")
 	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the cluster")
 	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
@@ -46,7 +46,7 @@ func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
 }
 
-type CreateOptions struct {
+type RawCreateOptions struct {
 	CredentialsFile        string
 	Location               string
 	EncryptionKeyID        string
@@ -61,6 +61,44 @@ type CreateOptions struct {
 	DiskStorageAccountType string
 	ResourceGroupTags      map[string]string
 	SubnetID               string
+}
+
+type AzureEncryptionKey struct {
+	KeyVaultName string
+	KeyName      string
+	KeyVersion   string
+}
+
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	// Check if the network security group is set and the resource group is not
+	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
+		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
+	}
+
+	// Validate a resource group is provided when using the disk encryption set id flag
+	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
+		return nil, fmt.Errorf("--resource-group-name is required when using --disk-encryption-set-id")
+	}
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}, nil
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
 
 	externalDNSDomain string
 	name, namespace   string
@@ -70,60 +108,52 @@ type CreateOptions struct {
 	creds         util.AzureCreds
 }
 
-type AzureEncryptionKey struct {
-	KeyVaultName string
-	KeyName      string
-	KeyVersion   string
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
 }
 
-func (o *CreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) error {
-	// Check if the network security group is set and the resource group is not
-	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
-		return fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			name:                   opts.Name,
+			namespace:              opts.Namespace,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+		},
 	}
-
-	// Validate a resource group is provided when using the disk encryption set id flag
-	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
-		return fmt.Errorf("--resource-group-name is required when using --disk-encryption-set-id")
-	}
-	return nil
-}
-
-func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
-	o.name, o.namespace = opts.Name, opts.Namespace
-	o.externalDNSDomain = opts.ExternalDNSDomain
 
 	if opts.InfrastructureJSON != "" {
 		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
-			return fmt.Errorf("failed to read infra json file: %w", err)
+			return nil, fmt.Errorf("failed to read infra json file: %w", err)
 		}
-		if err := yaml.Unmarshal(rawInfra, &o.infra); err != nil {
-			return fmt.Errorf("failed to deserialize infra json file: %w", err)
+		if err := yaml.Unmarshal(rawInfra, &output.infra); err != nil {
+			return nil, fmt.Errorf("failed to deserialize infra json file: %w", err)
 		}
 	} else {
 		infraOpts, err := CreateInfraOptions(ctx, o, opts)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		o.infra, err = infraOpts.Run(ctx, opts.Log)
+		output.infra, err = infraOpts.Run(ctx, opts.Log)
 		if err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
+			return nil, fmt.Errorf("failed to create infra: %w", err)
 		}
 	}
 
 	if o.EncryptionKeyID != "" {
 		parsedKeyId, err := url.Parse(o.EncryptionKeyID)
 		if err != nil {
-			return fmt.Errorf("invalid encryption key identifier: %v", err)
+			return nil, fmt.Errorf("invalid encryption key identifier: %v", err)
 		}
 
 		key := strings.Split(strings.TrimPrefix(parsedKeyId.Path, "/keys/"), "/")
 		if len(key) != 2 {
-			return fmt.Errorf("invalid encryption key identifier, couldn't retrieve key name and version: %v", err)
+			return nil, fmt.Errorf("invalid encryption key identifier, couldn't retrieve key name and version: %v", err)
 		}
 
-		o.encryptionKey = &AzureEncryptionKey{
+		output.encryptionKey = &AzureEncryptionKey{
 			KeyVaultName: strings.Split(parsedKeyId.Hostname(), ".")[0],
 			KeyName:      key[0],
 			KeyVersion:   key[1],
@@ -132,13 +162,13 @@ func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) 
 
 	azureCredsRaw, err := os.ReadFile(o.CredentialsFile)
 	if err != nil {
-		return fmt.Errorf("failed to read --azure-creds file %s: %w", o.CredentialsFile, err)
+		return nil, fmt.Errorf("failed to read --azure-creds file %s: %w", o.CredentialsFile, err)
 	}
-	if err := yaml.Unmarshal(azureCredsRaw, &o.creds); err != nil {
-		return fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
+	if err := yaml.Unmarshal(azureCredsRaw, &output.creds); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
 	}
 
-	return nil
+	return output, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -272,7 +302,7 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "azure",
 		Short:        "Creates basic functional HostedCluster resources on Azure",
@@ -291,7 +321,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts, azureOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, azureOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -301,11 +331,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, azureOpts *CreateOptions) error {
-	return core.CreateCluster(ctx, opts, azureOpts)
-}
-
-func CreateInfraOptions(ctx context.Context, azureOpts *CreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
+func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
 	rhcosImage, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
 	if err != nil {
 		return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)

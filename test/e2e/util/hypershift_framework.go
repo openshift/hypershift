@@ -32,13 +32,13 @@ import (
 )
 
 type PlatformAgnosticOptions struct {
-	core.CreateOptions
+	core.RawCreateOptions
 
-	NonePlatform     none.CreateOptions
-	AWSPlatform      aws.CreateOptions
-	KubevirtPlatform kubevirt.CreateOptions
-	AzurePlatform    azure.CreateOptions
-	PowerVSPlatform  powervs.CreateOptions
+	NonePlatform     none.RawCreateOptions
+	AWSPlatform      aws.RawCreateOptions
+	KubevirtPlatform kubevirt.RawCreateOptions
+	AzurePlatform    azure.RawCreateOptions
+	PowerVSPlatform  powervs.RawCreateOptions
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)

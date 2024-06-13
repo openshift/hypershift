@@ -439,7 +439,7 @@ var nextAWSZoneIndex = 0
 
 func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOptions {
 	createOption := e2eutil.PlatformAgnosticOptions{
-		CreateOptions: core.CreateOptions{
+		RawCreateOptions: core.RawCreateOptions{
 			ReleaseImage:                     o.LatestReleaseImage,
 			NodePoolReplicas:                 2,
 			ControlPlaneAvailabilityPolicy:   string(hyperv1.SingleReplica),
@@ -490,15 +490,15 @@ func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOp
 	return createOption
 }
 
-func (o *options) DefaultNoneOptions() none.CreateOptions {
-	return none.CreateOptions{
+func (o *options) DefaultNoneOptions() none.RawCreateOptions {
+	return none.RawCreateOptions{
 		APIServerAddress:          "",
 		ExposeThroughLoadBalancer: true,
 	}
 }
 
-func (o *options) DefaultAWSOptions() hypershiftaws.CreateOptions {
-	opts := hypershiftaws.CreateOptions{
+func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
+	opts := hypershiftaws.RawCreateOptions{
 		RootVolumeSize: 64,
 		RootVolumeType: "gp3",
 		Credentials: awscmdutil.AWSCredentialsOptions{
@@ -527,13 +527,13 @@ func (o *options) DefaultAWSOptions() hypershiftaws.CreateOptions {
 	return opts
 }
 
-func (o *options) DefaultKubeVirtOptions() kubevirt.CreateOptions {
-	return kubevirt.CreateOptions{
+func (o *options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
+	return kubevirt.RawCreateOptions{
 		ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
 		InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
 		InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
-		NodePoolOpts: &kubevirtnodepool.KubevirtPlatformCreateOptions{
-			KubevirtPlatformOptions: kubevirtnodepool.KubevirtPlatformOptions{
+		NodePoolOpts: &kubevirtnodepool.RawKubevirtPlatformCreateOptions{
+			KubevirtPlatformOptions: &kubevirtnodepool.KubevirtPlatformOptions{
 				Cores:                uint32(o.configurableClusterOptions.KubeVirtNodeCores),
 				Memory:               o.configurableClusterOptions.KubeVirtNodeMemory,
 				RootVolumeSize:       uint32(o.configurableClusterOptions.KubeVirtRootVolumeSize),
@@ -543,8 +543,8 @@ func (o *options) DefaultKubeVirtOptions() kubevirt.CreateOptions {
 	}
 }
 
-func (o *options) DefaultAzureOptions() azure.CreateOptions {
-	opts := azure.CreateOptions{
+func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
+	opts := azure.RawCreateOptions{
 		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
 		Location:        o.configurableClusterOptions.AzureLocation,
 		InstanceType:    "Standard_D4s_v4",
@@ -559,8 +559,8 @@ func (o *options) DefaultAzureOptions() azure.CreateOptions {
 	return opts
 }
 
-func (o *options) DefaultPowerVSOptions() powervs.CreateOptions {
-	return powervs.CreateOptions{
+func (o *options) DefaultPowerVSOptions() powervs.RawCreateOptions {
+	return powervs.RawCreateOptions{
 		ResourceGroup:          o.configurableClusterOptions.PowerVSResourceGroup,
 		Region:                 o.configurableClusterOptions.PowerVSRegion,
 		Zone:                   o.configurableClusterOptions.PowerVSZone,

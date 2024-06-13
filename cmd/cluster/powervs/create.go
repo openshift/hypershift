@@ -23,8 +23,8 @@ const (
 	defaultCIDRBlock = "10.0.0.0/16"
 )
 
-func DefaultOptions() *CreateOptions {
-	return &CreateOptions{
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
 		Region:                 "us-south",
 		Zone:                   "us-south",
 		VPCRegion:              "us-south",
@@ -36,7 +36,7 @@ func DefaultOptions() *CreateOptions {
 	}
 }
 
-func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ResourceGroup, "resource-group", opts.ResourceGroup, "IBM Cloud Resource group")
 	flags.StringVar(&opts.Region, "region", opts.Region, "IBM Cloud region. Default is us-south")
 	flags.StringVar(&opts.Zone, "zone", opts.Zone, "IBM Cloud zone. Default is us-south")
@@ -55,7 +55,7 @@ func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 }
 
-type CreateOptions struct {
+type RawCreateOptions struct {
 	// ResourceGroup to use in IBM Cloud
 	ResourceGroup string
 	// Region to use in PowerVS service in IBM Cloud
@@ -96,49 +96,78 @@ type CreateOptions struct {
 	Processors string
 	// Memory of the worker node in PowerVS service
 	Memory int32
+}
+
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	if opts.BaseDomain == "" && opts.InfrastructureJSON == "" {
+		return nil, fmt.Errorf("base-domain flag is required if infra-json is not provided")
+	}
+
+	if o.ResourceGroup == "" && opts.InfrastructureJSON == "" {
+		return nil, fmt.Errorf("resource-group flag is required if infra-json is not provided")
+	}
+
+	if o.PER && o.TransitGatewayLocation == "" {
+		return nil, fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
+	}
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}, nil
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
 
 	externalDNSDomain string
 
 	infra *powervsinfra.Infra
 }
 
-func (o *CreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) error {
-	if opts.BaseDomain == "" && opts.InfrastructureJSON == "" {
-		return fmt.Errorf("base-domain flag is required if infra-json is not provided")
-	}
-
-	if o.ResourceGroup == "" && opts.InfrastructureJSON == "" {
-		return fmt.Errorf("resource-group flag is required if infra-json is not provided")
-	}
-
-	if o.PER && o.TransitGatewayLocation == "" {
-		return fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
-	}
-	return nil
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
 }
 
-func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+		},
+	}
 	opts.Arch = hyperv1.ArchitecturePPC64LE
-	o.externalDNSDomain = opts.ExternalDNSDomain
 
 	// Load or create infrastructure for the cluster
 	if len(opts.InfrastructureJSON) > 0 {
 		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
-			return fmt.Errorf("failed to read infra json file: %w", err)
+			return nil, fmt.Errorf("failed to read infra json file: %w", err)
 		}
-		if err = json.Unmarshal(rawInfra, o.infra); err != nil {
-			return fmt.Errorf("failed to load infra json: %w", err)
+		if err = json.Unmarshal(rawInfra, output.infra); err != nil {
+			return nil, fmt.Errorf("failed to load infra json: %w", err)
 		}
 	} else {
 		var opt *powervsinfra.CreateInfraOptions
-		opt, o.infra = CreateInfraOptions(o, opts)
-		if err := o.infra.SetupInfra(ctx, opt); err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
+		opt, output.infra = CreateInfraOptions(o, opts)
+		if err := output.infra.SetupInfra(ctx, opt); err != nil {
+			return nil, fmt.Errorf("failed to create infra: %w", err)
 		}
 	}
 
-	return nil
+	return output, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -211,7 +240,7 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "powervs",
 		Short:        "Creates basic functional HostedCluster resources on PowerVS PowerVS",
@@ -239,7 +268,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			cancel()
 		}()
 
-		if err := CreateCluster(ctx, opts, powerVsOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, powerVsOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			os.Exit(1)
 		}
@@ -248,11 +277,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, powerVsOpts *CreateOptions) error {
-	return core.CreateCluster(ctx, opts, powerVsOpts)
-}
-
-func CreateInfraOptions(powerVSOpts *CreateOptions, opts *core.CreateOptions) (*powervsinfra.CreateInfraOptions, *powervsinfra.Infra) {
+func CreateInfraOptions(powerVSOpts *ValidatedCreateOptions, opts *core.CreateOptions) (*powervsinfra.CreateInfraOptions, *powervsinfra.Infra) {
 	return &powervsinfra.CreateInfraOptions{
 			Name:                   opts.Name,
 			Namespace:              opts.Namespace,

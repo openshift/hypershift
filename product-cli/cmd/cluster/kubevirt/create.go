@@ -9,7 +9,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 )
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
 		Short:        "Creates basic functional HostedCluster resources on KubeVirt platform",
@@ -26,7 +26,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts, kubevirtOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, kubevirtOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -34,8 +34,4 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	return cmd
-}
-
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, kubevirtOpts *kubevirt.CreateOptions) error {
-	return core.CreateCluster(ctx, opts, kubevirtOpts)
 }

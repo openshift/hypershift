@@ -39,12 +39,12 @@ func TestIsRequiredOption(t *testing.T) {
 
 func TestValidateCreateCredentialInfo(t *testing.T) {
 	tests := map[string]struct {
-		inputOptions    *core.CreateOptions
+		inputOptions    *core.RawCreateOptions
 		inputAWSOptions *CreateOptions
 		expectError     bool
 	}{
 		"when CredentialSecretName is blank and aws-creds is also blank": {
-			inputOptions: &core.CreateOptions{},
+			inputOptions: &core.RawCreateOptions{},
 			inputAWSOptions: &CreateOptions{
 				CredentialSecretName: "",
 				Credentials:          awsutil.AWSCredentialsOptions{},
@@ -52,7 +52,7 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			expectError: true,
 		},
 		"when CredentialSecretName is blank, aws-creds is not blank, and pull-secret is blank": {
-			inputOptions: &core.CreateOptions{
+			inputOptions: &core.RawCreateOptions{
 				PullSecretFile: "",
 			},
 			inputAWSOptions: &CreateOptions{
@@ -62,7 +62,7 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			expectError: true,
 		},
 		"when CredentialSecretName is blank, aws-creds is not blank, and pull-secret is not blank": {
-			inputOptions: &core.CreateOptions{
+			inputOptions: &core.RawCreateOptions{
 				PullSecretFile: "asdf",
 			},
 			inputAWSOptions: &CreateOptions{
@@ -87,12 +87,12 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 
 func TestValidateMultiArchRelease(t *testing.T) {
 	tests := map[string]struct {
-		inputOptions    *core.CreateOptions
+		inputOptions    *core.RawCreateOptions
 		inputAWSOptions *CreateOptions
 		expectError     bool
 	}{
 		"non-multi-arch release image used": {
-			inputOptions: &core.CreateOptions{
+			inputOptions: &core.RawCreateOptions{
 				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.0-ec.3-aarch64",
 			},
 			inputAWSOptions: &CreateOptions{
@@ -101,7 +101,7 @@ func TestValidateMultiArchRelease(t *testing.T) {
 			expectError: true,
 		},
 		"non-multi-arch release stream used": {
-			inputOptions: &core.CreateOptions{
+			inputOptions: &core.RawCreateOptions{
 				ReleaseStream: "stable",
 			},
 			inputAWSOptions: &CreateOptions{

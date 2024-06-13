@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -50,12 +49,26 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 // createCluster calls the correct cluster create CLI function based on the
 // cluster platform.
 func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, outputDir string) error {
+	validCoreOpts, err := opts.RawCreateOptions.Validate(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to validate core options: %w", err)
+	}
+	coreOpts, err := validCoreOpts.Complete()
+	if err != nil {
+		return fmt.Errorf("failed to complete core options: %w", err)
+	}
 	infraFile := filepath.Join(outputDir, "infrastructure.json")
 	iamFile := filepath.Join(outputDir, "iam.json")
 	manifestsFile := filepath.Join(outputDir, "manifests.yaml")
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		infraOpts := aws.CreateInfraOptions(&opts.AWSPlatform, &opts.CreateOptions)
+		completer, err := opts.AWSPlatform.Validate(ctx, coreOpts)
+		if err != nil {
+			return fmt.Errorf("failed to validate AWS platform options: %w", err)
+		}
+		validOpts := completer.(*aws.ValidatedCreateOptions)
+
+		infraOpts := aws.CreateInfraOptions(validOpts, coreOpts)
 		infraOpts.OutputFile = infraFile
 		infra, err := infraOpts.CreateInfra(ctx, opts.Log)
 		if err != nil {
@@ -69,7 +82,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		if err != nil {
 			return err
 		}
-		iamOpts := aws.CreateIAMOptions(&opts.AWSPlatform, infra)
+		iamOpts := aws.CreateIAMOptions(validOpts, infra)
 		iamOpts.OutputFile = iamFile
 		iam, err := iamOpts.CreateIAM(ctx, client)
 		if err != nil {
@@ -81,13 +94,19 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 
 		opts.InfrastructureJSON = infraFile
 		opts.AWSPlatform.IAMJSON = iamFile
-		return renderCreate(ctx, &opts.CreateOptions, &opts.AWSPlatform, manifestsFile, aws.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AWSPlatform, manifestsFile)
 	case hyperv1.NonePlatform:
-		return renderCreate(ctx, &opts.CreateOptions, &opts.NonePlatform, manifestsFile, none.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.NonePlatform, manifestsFile)
 	case hyperv1.KubevirtPlatform:
-		return renderCreate(ctx, &opts.CreateOptions, &opts.KubevirtPlatform, manifestsFile, kubevirt.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.KubevirtPlatform, manifestsFile)
 	case hyperv1.AzurePlatform:
-		infraOpts, err := azure.CreateInfraOptions(ctx, &opts.AzurePlatform, &opts.CreateOptions)
+		completer, err := opts.AzurePlatform.Validate(ctx, coreOpts)
+		if err != nil {
+			return fmt.Errorf("failed to validate Azure platform options: %w", err)
+		}
+		validOpts := completer.(*azure.ValidatedCreateOptions)
+
+		infraOpts, err := azure.CreateInfraOptions(ctx, validOpts, coreOpts)
 		if err != nil {
 			return fmt.Errorf("failed to create infra options: %w", err)
 		}
@@ -97,9 +116,15 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		}
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, &opts.CreateOptions, &opts.AzurePlatform, manifestsFile, azure.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile)
 	case hyperv1.PowerVSPlatform:
-		infraOpts, infra := powervs.CreateInfraOptions(&opts.PowerVSPlatform, &opts.CreateOptions)
+		completer, err := opts.PowerVSPlatform.Validate(ctx, coreOpts)
+		if err != nil {
+			return fmt.Errorf("failed to validate PowerVS platform options: %w", err)
+		}
+		validOpts := completer.(*powervs.ValidatedCreateOptions)
+
+		infraOpts, infra := powervs.CreateInfraOptions(validOpts, coreOpts)
 		infraOpts.OutputFile = infraFile
 		if err := infra.SetupInfra(ctx, infraOpts); err != nil {
 			return fmt.Errorf("failed to setup infra: %w", err)
@@ -107,22 +132,22 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		infraOpts.Output(infra)
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, &opts.CreateOptions, &opts.PowerVSPlatform, manifestsFile, powervs.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
 }
 
-func renderCreate[T any](ctx context.Context, opts *core.CreateOptions, platformOpts T, outputFile string, create func(context.Context, *core.CreateOptions, T) error) error {
+func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts core.PlatformValidator, outputFile string) error {
 	opts.Render = true
 	opts.RenderInto = outputFile
-	if err := create(ctx, opts, platformOpts); err != nil {
+	if err := core.CreateCluster(ctx, opts, platformOpts); err != nil {
 		return fmt.Errorf("failed to render cluster manifests: %w", err)
 	}
 
 	opts.Render = false
 	opts.RenderInto = ""
-	return create(ctx, opts, platformOpts)
+	return core.CreateCluster(ctx, opts, platformOpts)
 }
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
