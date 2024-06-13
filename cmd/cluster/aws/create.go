@@ -392,9 +392,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 }
 
 func CreateCluster(ctx context.Context, opts *core.CreateOptions, awsOpts *CreateOptions) error {
-	if err := core.Validate(ctx, opts); err != nil {
-		return err
-	}
 	return core.CreateCluster(ctx, opts, awsOpts)
 }
 

@@ -231,10 +231,6 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		}
 	}
 
-	if len(opts.InfraID) == 0 {
-		opts.InfraID = infraid.New(opts.Name)
-	}
-
 	prototype.Namespace = &corev1.Namespace{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Namespace",
@@ -531,6 +527,17 @@ func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, erro
 }
 
 func Validate(ctx context.Context, opts *CreateOptions) error {
+	if opts.Wait && opts.NodePoolReplicas < 1 {
+		return errors.New("--wait requires --node-pool-replicas > 0")
+	}
+
+	// Validate HostedCluster name follows RFC1123 standard
+	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
+	errs := validation.IsDNS1123Label(opts.Name)
+	if len(errs) > 0 {
+		return fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
+	}
+
 	if !opts.Render && opts.RenderInto != "" {
 		client, err := util.GetClient()
 		if err != nil {
@@ -543,13 +550,6 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 		} else if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
 		}
-	}
-
-	// Validate HostedCluster name follows RFC1123 standard
-	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
-	errs := validation.IsDNS1123Label(opts.Name)
-	if len(errs) > 0 {
-		return fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
 	}
 
 	// Validate arch is only hyperv1.ArchitectureAMD64 or hyperv1.ArchitectureARM64 or hyperv1.ArchitecturePPC64LE
@@ -587,8 +587,16 @@ type Platform interface {
 }
 
 func CreateCluster(ctx context.Context, opts *CreateOptions, platform Platform) error {
-	if opts.Wait && opts.NodePoolReplicas < 1 {
-		return errors.New("--wait requires --node-pool-replicas > 0")
+	if len(opts.InfraID) == 0 {
+		opts.InfraID = infraid.New(opts.Name)
+	}
+
+	if err := Validate(ctx, opts); err != nil {
+		return err
+	}
+
+	if err := platform.Validate(ctx, opts); err != nil {
+		return err
 	}
 
 	if err := platform.Complete(ctx, opts); err != nil {
