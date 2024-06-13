@@ -591,13 +591,13 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platform Platform) 
 		return errors.New("--wait requires --node-pool-replicas > 0")
 	}
 
-	if err := platform.Complete(ctx, opts); err != nil {
-		return fmt.Errorf("could not complete platform specific options: %w", err)
-	}
-
 	resources, err := prototypeResources(opts)
 	if err != nil {
 		return err
+	}
+
+	if err := platform.Complete(ctx, opts); err != nil {
+		return fmt.Errorf("could not complete platform specific options: %w", err)
 	}
 
 	if err := platform.ApplyPlatformSpecifics(resources.Cluster); err != nil {
