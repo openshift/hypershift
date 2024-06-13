@@ -147,7 +147,6 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		PublicZoneID:  o.infra.PublicZoneID,
 		PrivateZoneID: o.infra.PrivateZoneID,
 	}
-	cluster.Spec.ClusterID = o.infra.InfraID
 
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type: hyperv1.AzurePlatform,
