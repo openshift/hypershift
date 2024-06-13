@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 func TestCompressDecompress(t *testing.T) {
@@ -436,5 +437,32 @@ func TestDoesMgmtClusterAndNodePoolCPUArchMatch(t *testing.T) {
 				g.Expect(err).To(BeNil())
 			}
 		})
+	}
+}
+
+func TestIPsToStrings(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	testcases := []struct {
+		ips      []configv1.IP
+		expected []string
+	}{
+		{
+			[]configv1.IP{"10.0.0.1", "10.0.0.2"},
+			[]string{"10.0.0.1", "10.0.0.2"},
+		},
+		{
+			[]configv1.IP{},
+			[]string{},
+		},
+		{
+			[]configv1.IP{"fe80:1:2:3::"},
+			[]string{"fe80:1:2:3::"},
+		},
+	}
+
+	for _, tc := range testcases {
+		res := IPsToStrings(tc.ips)
+		g.Expect(res).To(Equal(tc.expected))
 	}
 }
