@@ -269,6 +269,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				DiskEncryptionSetID:    o.DiskEncryptionSetID,
 				EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
 				DiskStorageAccountType: o.DiskStorageAccountType,
+				SubnetID:               o.infra.SubnetID,
 			}
 			nodePools = append(nodePools, nodePool)
 		}
@@ -285,6 +286,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		DiskEncryptionSetID:    o.DiskEncryptionSetID,
 		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
 		DiskStorageAccountType: o.DiskStorageAccountType,
+		SubnetID:               o.infra.SubnetID,
 	}
 	return []*hyperv1.NodePool{nodePool}
 }
