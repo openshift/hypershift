@@ -390,15 +390,25 @@ func NewStartCommand() *cobra.Command {
 			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 		}
 
-		releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			ComponentImages: componentImages,
+		}
+
+		userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate: &releaseinfo.StaticProviderDecorator{
-					Delegate: &releaseinfo.CachedProvider{
-						Inner: &releaseinfo.RegistryClientProvider{},
-						Cache: map[string]*releaseinfo.ReleaseImage{},
-					},
-					ComponentImages: componentImages,
-				},
+				Delegate:          coreReleaseProvider,
+				RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
+			},
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+		}
+
+		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate:          coreReleaseProvider,
 				RegistryOverrides: registryOverrides,
 			},
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
@@ -418,7 +428,8 @@ func NewStartCommand() *cobra.Command {
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
-			ReleaseProvider:                         releaseProvider,
+			ReleaseProvider:                         cpReleaseProvider,
+			UserReleaseProvider:                     userReleaseProvider,
 			EnableCIDebugOutput:                     enableCIDebugOutput,
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,
