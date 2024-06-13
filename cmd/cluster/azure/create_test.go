@@ -66,6 +66,22 @@ func TestCreateCluster(t *testing.T) {
 				"--rhcos-image=whatever",
 			},
 		},
+		{
+			name: "complicated invocation from bryan",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--rhcos-image=whatever",
+				"--name=bryans-cluster",
+				"--location=eastus",
+				"--node-pool-replicas=312",
+				"--base-domain=base.domain.com",
+				"--release-image=fake-release-image",
+				"--enable-ephemeral-disk=true",
+				"--instance-type=Standard_DS2_v2",
+				"--disk-storage-account-type=Standard_LRS",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
