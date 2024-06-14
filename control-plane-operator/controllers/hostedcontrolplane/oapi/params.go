@@ -15,24 +15,25 @@ import (
 )
 
 type OpenShiftAPIServerParams struct {
-	APIServer               *configv1.APIServerSpec `json:"apiServer"`
+	APIServer               *configv1.APIServerSpec
+	Proxy                   *configv1.ProxySpec
 	IngressSubDomain        string
-	EtcdURL                 string `json:"etcdURL"`
-	ServiceAccountIssuerURL string `json:"serviceAccountIssuerURL"`
+	EtcdURL                 string
+	ServiceAccountIssuerURL string
 
-	OpenShiftAPIServerDeploymentConfig      config.DeploymentConfig `json:"openshiftAPIServerDeploymentConfig,inline"`
-	OpenShiftOAuthAPIServerDeploymentConfig config.DeploymentConfig `json:"openshiftOAuthAPIServerDeploymentConfig,inline"`
-	config.OwnerRef                         `json:",inline"`
-	OpenShiftAPIServerImage                 string `json:"openshiftAPIServerImage"`
-	OAuthAPIServerImage                     string `json:"oauthAPIServerImage"`
-	ProxyImage                              string `json:"haproxyImage"`
-	AvailabilityProberImage                 string `json:"availabilityProberImage"`
-	Availability                            hyperv1.AvailabilityPolicy
-	Ingress                                 *configv1.IngressSpec
-	Image                                   *configv1.ImageSpec
-	Project                                 *configv1.Project
-	AuditWebhookRef                         *corev1.LocalObjectReference
-	InternalOAuthDisable                    bool
+	OpenShiftAPIServerDeploymentConfig      config.DeploymentConfig
+	OpenShiftOAuthAPIServerDeploymentConfig config.DeploymentConfig
+	config.OwnerRef
+	OpenShiftAPIServerImage string
+	OAuthAPIServerImage     string
+	ProxyImage              string
+	AvailabilityProberImage string
+	Availability            hyperv1.AvailabilityPolicy
+	Ingress                 *configv1.IngressSpec
+	Image                   *configv1.ImageSpec
+	Project                 *configv1.Project
+	AuditWebhookRef         *corev1.LocalObjectReference
+	InternalOAuthDisable    bool
 }
 
 type OAuthDeploymentParams struct {
@@ -53,7 +54,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: releaseImageProvider.GetImage("openshift-apiserver"),
 		OAuthAPIServerImage:     releaseImageProvider.GetImage("oauth-apiserver"),
-		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
+		ProxyImage:              releaseImageProvider.GetImage(util.CPOImageName),
 		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
 		IngressSubDomain:        globalconfig.IngressDomain(hcp),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
@@ -66,6 +67,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 		params.Ingress = hcp.Spec.Configuration.Ingress
 		params.APIServer = hcp.Spec.Configuration.APIServer
 		params.Image = hcp.Spec.Configuration.Image
+		params.Proxy = hcp.Spec.Configuration.Proxy
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
