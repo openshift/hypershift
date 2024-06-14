@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: clusters
+spec: {}
+status: {}
+---
+apiVersion: v1
+data:
+  .dockerconfigjson: null
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: test1-pull-secret
+  namespace: clusters
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  creationTimestamp: null
+  name: test1
+  namespace: clusters
+spec:
+  autoscaling: {}
+  configuration: {}
+  controllerAvailabilityPolicy: HighlyAvailable
+  dns:
+    baseDomain: ""
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+          storageClassName: gp3-csi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: test1-f9nvz
+  infrastructureAvailabilityPolicy: HighlyAvailable
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    kubevirt:
+      baseDomainPassthrough: true
+      storageDriver:
+        manual:
+          storageClassMapping:
+          - guestStorageClassName: gp3
+            infraStorageClassName: gp3-csi
+          - guestStorageClassName: ceph-rbd
+            infraStorageClassName: ocs-storagecluster-ceph-rbd
+          volumeSnapshotClassMapping:
+          - guestVolumeSnapshotClassName: rdb-snap
+            infraVolumeSnapshotClassName: ocs-storagecluster-rbd-snap
+        type: Manual
+    type: KubeVirt
+  pullSecret:
+    name: test1-pull-secret
+  release:
+    image: fake
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: test1-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: OVNSbDb
+    servicePublishingStrategy:
+      type: Route
+  sshKey: {}
+status:
+  controlPlaneEndpoint:
+    host: ""
+    port: 0
+---
+apiVersion: v1
+data:
+  key: FYHY8RFxHaJUPFFWuo2z9iWCO01hcj3fqHMMWMeEHHw=
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: test1-etcd-encryption-key
+  namespace: clusters
+type: Opaque
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: null
+  name: test1
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: test1
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    kubevirt:
+      additionalNetworks:
+      - name: ns1/nad-foo
+      - name: ns2/nad-foo2
+      attachDefaultNetwork: true
+      compute:
+        cores: 4
+        memory: 12Gi
+      networkInterfaceMultiqueue: Enable
+      nodeSelector:
+        key: val
+      rootVolume:
+        persistent:
+          accessModes:
+          - ReadWriteOnce
+          size: 32Gi
+          storageClass: gp3-csi
+        type: Persistent
+    type: KubeVirt
+  release:
+    image: fake
+  replicas: 2
+status:
+  replicas: 0
+---

@@ -127,6 +127,28 @@ func TestCreateCluster(t *testing.T) {
 			name: "minimal flags necessary to render",
 			args: []string{},
 		},
+		{
+			name: "test from dvossel",
+			args: []string{
+				"--name", "test1",
+				"--etcd-storage-class=gp3-csi",
+				"--control-plane-availability-policy", "HighlyAvailable",
+				"--infra-availability-policy", "HighlyAvailable",
+				"--node-pool-replicas", "2",
+				"--memory", "12Gi",
+				"--cores", "4",
+				"--release-image", "fake",
+				"--root-volume-access-modes", "ReadWriteOnce",
+				"--root-volume-storage-class", "gp3-csi",
+				"--root-volume-size=32",
+				"--infra-storage-class-mapping=gp3-csi/gp3",
+				"--infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rbd",
+				"--vm-node-selector", "key=val",
+				"--additional-network", "name:ns1/nad-foo",
+				"--additional-network", "name:ns2/nad-foo2",
+				"--infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
