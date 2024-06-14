@@ -73,6 +73,7 @@ import (
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -3142,8 +3143,18 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		}
 	}
 
+	noProxy := proxy.DefaultNoProxy(hcp)
+
+	var imageRegistryAdditionalTrustedCAs *corev1.ConfigMap
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Image != nil && hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name != "" {
+		imageRegistryAdditionalTrustedCAs = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name, Namespace: hcp.Namespace}}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(imageRegistryAdditionalTrustedCAs), imageRegistryAdditionalTrustedCAs); err != nil {
+			return fmt.Errorf("failed to get image registry additional trusted CA configmap: %w", err)
+		}
+	}
+
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type, hcp.Spec.AdditionalTrustBundle, hcp.Spec.Configuration)
+		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type, hcp.Spec.AdditionalTrustBundle, imageRegistryAdditionalTrustedCAs, hcp.Spec.Configuration, p.Proxy, noProxy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
