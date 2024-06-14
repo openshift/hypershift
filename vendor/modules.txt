@@ -315,6 +315,9 @@ github.com/docker/libtrust
 # github.com/dustin/go-humanize v1.0.0
 ## explicit
 github.com/dustin/go-humanize
+# github.com/elazarl/goproxy v0.0.0-20240618083138-03be62527ccb
+## explicit
+github.com/elazarl/goproxy
 # github.com/emicklei/go-restful/v3 v3.11.0
 ## explicit; go 1.13
 github.com/emicklei/go-restful/v3
@@ -1582,9 +1585,6 @@ kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1
 # kubevirt.io/controller-lifecycle-operator-sdk v0.2.1
 ## explicit; go 1.14
 kubevirt.io/controller-lifecycle-operator-sdk/pkg/sdk/api
-# sigs.k8s.io/apiserver-network-proxy v0.0.24
-## explicit; go 1.16
-sigs.k8s.io/apiserver-network-proxy/pkg/util
 # sigs.k8s.io/cluster-api v1.3.2
 ## explicit; go 1.19
 sigs.k8s.io/cluster-api/api/v1beta1
