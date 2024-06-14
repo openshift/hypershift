@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 // Ensure certain deployment fields do not get set
@@ -58,7 +59,7 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 		oapiDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oapiDeployment.Spec.MinReadySeconds
 		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditConfig, serviceServingCA, tc.deploymentConfig, imageName, "socks5ProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, tc.clusterConf)
+		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditConfig, serviceServingCA, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, nil, tc.clusterConf, nil, "")
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedTermGraceSeconds).To(Equal(oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds))
 		g.Expect(expectedMinReadySeconds).To(Equal(oapiDeployment.Spec.MinReadySeconds))
@@ -82,7 +83,6 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			},
 			Data: map[string]string{"config.yaml": "test-data"},
 		}
-		volumeProjection = []corev1.VolumeProjection{}
 	)
 	hcp.Name = "name"
 	hcp.Namespace = "namespace"
@@ -95,6 +95,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 		deploymentConfig             config.DeploymentConfig
 		additionalTrustBundle        *corev1.LocalObjectReference
 		clusterConf                  *hyperv1.ClusterConfiguration
+		imageRegistryAdditionalCAs   *corev1.ConfigMap
 		expectProjectedVolumeMounted bool
 	}{
 		{
@@ -108,11 +109,11 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 				Name: "additional-trust-bundle",
 				VolumeSource: corev1.VolumeSource{
 					Projected: &corev1.ProjectedVolumeSource{
-						Sources: append(volumeProjection, getFakeVolumeProjectionCABundle()),
+						Sources:     []corev1.VolumeProjection{getFakeVolumeProjectionCABundle()},
+						DefaultMode: ptr.To[int32](420),
 					},
 				},
 			},
-			clusterConf:                  nil,
 			expectProjectedVolumeMounted: true,
 		},
 		{
@@ -121,28 +122,34 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			deploymentConfig:             config.DeploymentConfig{},
 			expectedVolume:               nil,
 			additionalTrustBundle:        nil,
-			clusterConf:                  nil,
 			expectProjectedVolumeMounted: false,
 		},
 		{
-			name:             "Trust bundle and clusterConf provided",
+			name:             "Trust bundle and image registry additional CAs provided",
 			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
 			deploymentConfig: config.DeploymentConfig{},
 			additionalTrustBundle: &corev1.LocalObjectReference{
 				Name: "user-ca-bundle",
 			},
-			expectedVolume: &corev1.Volume{
-				Name: "additional-trust-bundle",
-				VolumeSource: corev1.VolumeSource{
-					Projected: &corev1.ProjectedVolumeSource{
-						Sources: append(volumeProjection, getFakeVolumeProjectionCABundle(), getFakeVolumeProjectionClusterConf()),
-					},
+			imageRegistryAdditionalCAs: &corev1.ConfigMap{
+				Data: map[string]string{
+					"registry1": "fake-bundle",
+					"registry2": "fake-bundle-2",
 				},
 			},
 			clusterConf: &hyperv1.ClusterConfiguration{
 				Image: &configv1.ImageSpec{
 					AdditionalTrustedCA: configv1.ConfigMapNameReference{
-						Name: "sample-cluster-conf-image-ca",
+						Name: "image-registry-additional-ca",
+					},
+				},
+			},
+			expectedVolume: &corev1.Volume{
+				Name: "additional-trust-bundle",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources:     []corev1.VolumeProjection{getFakeVolumeProjectionCABundle(), getFakeVolumeProjectionImageRegistryCAs()},
+						DefaultMode: ptr.To[int32](420),
 					},
 				},
 			},
@@ -155,7 +162,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
 			ownerRef := config.OwnerRefFrom(hcp)
 			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditConfig, nil, tc.deploymentConfig, imageName, "socks5ProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.clusterConf)
+			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditConfig, nil, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.imageRegistryAdditionalCAs, tc.clusterConf, nil, "")
 			g.Expect(err).To(BeNil())
 			if tc.expectProjectedVolumeMounted {
 				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).To(ContainElement(*tc.expectedVolume))
@@ -223,11 +230,21 @@ func getFakeVolumeProjectionCABundle() corev1.VolumeProjection {
 	}
 }
 
-func getFakeVolumeProjectionClusterConf() corev1.VolumeProjection {
+func getFakeVolumeProjectionImageRegistryCAs() corev1.VolumeProjection {
 	return corev1.VolumeProjection{
 		ConfigMap: &corev1.ConfigMapProjection{
 			LocalObjectReference: corev1.LocalObjectReference{
-				Name: "sample-cluster-conf-image-ca",
+				Name: "image-registry-additional-ca",
+			},
+			Items: []corev1.KeyToPath{
+				{
+					Key:  "registry1",
+					Path: "image-registry-1.pem",
+				},
+				{
+					Key:  "registry2",
+					Path: "image-registry-2.pem",
+				},
 			},
 		},
 	}
