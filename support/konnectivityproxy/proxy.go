@@ -114,7 +114,19 @@ func (p *konnectivityProxy) Dial(ctx context.Context, network string, requestAdd
 		return nil, fmt.Errorf("dialing proxy %q failed: %v", proxyAddress, err)
 	}
 
-	connectString := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
+	requestHost, requestPort, err := net.SplitHostPort(requestAddress)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse request address %s: %w", requestAddress, err)
+	}
+	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
+		_, ip, err := p.Resolve(ctx, requestHost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
+		}
+		requestAddress = net.JoinHostPort(ip.String(), requestPort)
+	}
+
+	connectString := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, requestHost)
 	_, err = fmt.Fprintf(proxyConn, "%s", connectString)
 	if err != nil {
 		return nil, err
@@ -187,4 +199,8 @@ func isCloudAPI(host string) bool {
 		strings.HasSuffix(host, ".microsoftonline.com") ||
 		strings.HasSuffix(host, "azure.com") ||
 		strings.HasSuffix(host, "cloud.ibm.com")
+}
+
+func isIP(address string) bool {
+	return net.ParseIP(address) != nil
 }
