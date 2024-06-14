@@ -147,17 +147,16 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		PublicZoneID:  o.infra.PublicZoneID,
 		PrivateZoneID: o.infra.PrivateZoneID,
 	}
-	cluster.Spec.ClusterID = o.infra.InfraID
 
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type: hyperv1.AzurePlatform,
 		Azure: &hyperv1.AzurePlatformSpec{
 			Credentials:       corev1.LocalObjectReference{Name: credentialSecret(cluster.Namespace, cluster.Name).Name},
-			Location:          o.Location,
-			ResourceGroupName: o.ResourceGroupName,
-			VnetID:            o.VnetID,
-			SubnetID:          o.SubnetID,
 			SubscriptionID:    o.creds.SubscriptionID,
+			Location:          o.infra.Location,
+			ResourceGroupName: o.infra.ResourceGroupName,
+			VnetID:            o.infra.VNetID,
+			SubnetID:          o.infra.SubnetID,
 			MachineIdentityID: o.infra.MachineIdentityID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
 		},
@@ -303,9 +302,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 }
 
 func CreateCluster(ctx context.Context, opts *core.CreateOptions, azureOpts *CreateOptions) error {
-	if err := core.Validate(ctx, opts); err != nil {
-		return err
-	}
 	return core.CreateCluster(ctx, opts, azureOpts)
 }
 
