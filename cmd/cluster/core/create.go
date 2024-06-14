@@ -2,19 +2,21 @@ package core
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
@@ -36,8 +38,8 @@ import (
 	"github.com/openshift/hypershift/support/infraid"
 )
 
-func DefaultOptions() *CreateOptions {
-	return &CreateOptions{
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
 		Namespace:                      "clusters",
 		Name:                           "example",
 		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
@@ -51,11 +53,11 @@ func DefaultOptions() *CreateOptions {
 }
 
 // BindOptions binds options that should always be exposed to users in all CLIs
-func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 }
 
-func bindCoreOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
@@ -94,7 +96,7 @@ func bindCoreOptions(opts *CreateOptions, flags *pflag.FlagSet) {
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
-func BindDeveloperOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 
 	flags.StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "Override the default image used to deploy the control plane operator")
@@ -103,7 +105,7 @@ func BindDeveloperOptions(opts *CreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
 }
 
-type CreateOptions struct {
+type RawCreateOptions struct {
 	AdditionalTrustBundle            string
 	Annotations                      []string
 	AutoRepair                       bool
@@ -413,7 +415,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 }
 
 func generateSSHKeys() ([]byte, []byte, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	privateKey, err := rsa.GenerateKey(certs.Reader(), 4096)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -526,29 +528,39 @@ func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, erro
 	return apiServerAddress, nil
 }
 
-func Validate(ctx context.Context, opts *CreateOptions) error {
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOptions, error) {
 	if opts.Wait && opts.NodePoolReplicas < 1 {
-		return errors.New("--wait requires --node-pool-replicas > 0")
+		return nil, errors.New("--wait requires --node-pool-replicas > 0")
 	}
 
 	// Validate HostedCluster name follows RFC1123 standard
 	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
 	errs := validation.IsDNS1123Label(opts.Name)
 	if len(errs) > 0 {
-		return fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
+		return nil, fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
 	}
 
 	if !opts.Render && opts.RenderInto != "" {
 		client, err := util.GetClient()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// Validate HostedCluster with this name doesn't exist in the namespace
 		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
-			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
+			return nil, fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
 		} else if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
+			return nil, fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
 		}
 	}
 
@@ -559,22 +571,54 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 	case hyperv1.ArchitectureARM64:
 	case hyperv1.ArchitecturePPC64LE:
 	default:
-		return fmt.Errorf("specified arch is not supported: %s", opts.Arch)
+		return nil, fmt.Errorf("specified arch %q is not supported", opts.Arch)
 	}
 
-	return nil
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: opts,
+		},
+	}, nil
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before CreateCluster() can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
+}
+
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
+}
+
+func (opts *ValidatedCreateOptions) Complete() (*CreateOptions, error) {
+	if len(opts.InfraID) == 0 {
+		opts.InfraID = infraid.New(opts.Name)
+	}
+
+	return &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: opts,
+		},
+	}, nil
+}
+
+// PlatformValidator knows how to validate platform options.
+type PlatformValidator interface {
+	// Validate allows the platform-specific logic to validate inputs.
+	Validate(context.Context, *CreateOptions) (PlatformCompleter, error)
+}
+
+// PlatformCompleter knows how to absorb configuration.
+type PlatformCompleter interface {
+	// Complete allows the platform-specific logic to default values from the agnostic set.
+	Complete(context.Context, *CreateOptions) (Platform, error)
 }
 
 // Platform closes over the work that each platform does when creating a HostedCluster and the associated
 // resources. The Platform knows how to decorate the HostedClusterSpec itself as well as how to add new
 // resources to the list that needs to be applied to the cluster for a functional guest cluster.
 type Platform interface {
-	// Validate allows the platform-specific logic to validate inputs.
-	Validate(context.Context, *CreateOptions) error
-
-	// Complete allows the platform-specific logic to default values from the agnostic set.
-	Complete(context.Context, *CreateOptions) error
-
 	// ApplyPlatformSpecifics decorates the HostedCluster prototype created from common options with platform-
 	// specific values and cAonfigurations.
 	ApplyPlatformSpecifics(*hyperv1.HostedCluster) error
@@ -586,20 +630,24 @@ type Platform interface {
 	GenerateResources() ([]crclient.Object, error)
 }
 
-func CreateCluster(ctx context.Context, opts *CreateOptions, platform Platform) error {
-	if len(opts.InfraID) == 0 {
-		opts.InfraID = infraid.New(opts.Name)
-	}
-
-	if err := Validate(ctx, opts); err != nil {
+func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform PlatformValidator) error {
+	validatedOpts, err := rawOpts.Validate(ctx)
+	if err != nil {
 		return err
 	}
 
-	if err := platform.Validate(ctx, opts); err != nil {
+	opts, err := validatedOpts.Complete()
+	if err != nil {
 		return err
 	}
 
-	if err := platform.Complete(ctx, opts); err != nil {
+	completer, err := rawPlatform.Validate(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	platform, err := completer.Complete(ctx, opts)
+	if err != nil {
 		return fmt.Errorf("could not complete platform specific options: %w", err)
 	}
 
@@ -719,6 +767,9 @@ func GetIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, use
 			},
 		})
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i].Service < ret[j].Service
+	})
 	return ret
 }
 
@@ -743,6 +794,9 @@ func GetServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress stri
 			},
 		})
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i].Service < ret[j].Service
+	})
 	return ret
 }
 
@@ -764,7 +818,7 @@ func postProcess(r *resources, opts *CreateOptions) {
 
 func etcdEncryptionKeySecret(opts *CreateOptions) *corev1.Secret {
 	generatedKey := make([]byte, 32)
-	_, err := rand.Read(generatedKey)
+	_, err := io.ReadFull(certs.Reader(), generatedKey)
 	if err != nil {
 		panic(fmt.Sprintf("failed to generate random etcd key: %v", err))
 	}

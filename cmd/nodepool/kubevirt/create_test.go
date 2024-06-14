@@ -8,16 +8,16 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func TestKubevirtPlatformCreateOptions_Validate(t *testing.T) {
+func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 	for _, test := range []struct {
 		name          string
-		input         KubevirtPlatformCreateOptions
+		input         RawKubevirtPlatformCreateOptions
 		expectedError string
 	}{
 		{
 			name: "should fail excluding default network without additional ones",
-			input: KubevirtPlatformCreateOptions{
-				KubevirtPlatformOptions: KubevirtPlatformOptions{
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
 					Cores:                1,
 					RootVolumeSize:       16,
 					AttachDefaultNetwork: ptr.To(true),
@@ -27,7 +27,7 @@ func TestKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 		},
 	} {
 		var errString string
-		if err := test.input.Validate(); err != nil {
+		if _, err := test.input.Validate(); err != nil {
 			errString = err.Error()
 		}
 		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
@@ -36,35 +36,43 @@ func TestKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 	}
 }
 
-func TestKubevirtPlatformCreateOptions_Complete(t *testing.T) {
+func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 	for _, test := range []struct {
 		name          string
-		input         KubevirtPlatformCreateOptions
-		output        *KubevirtPlatformCompletedOptions
+		input         RawKubevirtPlatformCreateOptions
+		output        []hypershiftv1beta1.KubevirtNetwork
 		expectedError string
 	}{
 		{
 			name: "should succeed configuring additional networks",
-			input: KubevirtPlatformCreateOptions{
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:                1,
+					RootVolumeSize:       16,
+					AttachDefaultNetwork: ptr.To(true),
+				},
 				AdditionalNetworks: []string{
 					"name:ns1/nad1",
 					"name:ns2/nad2",
 				},
 			},
-			output: &KubevirtPlatformCompletedOptions{
-				AdditionalNetworks: []hypershiftv1beta1.KubevirtNetwork{
-					{
-						Name: "ns1/nad1",
-					},
-					{
-						Name: "ns2/nad2",
-					},
+			output: []hypershiftv1beta1.KubevirtNetwork{
+				{
+					Name: "ns1/nad1",
+				},
+				{
+					Name: "ns2/nad2",
 				},
 			},
 		},
 		{
 			name: "should fail with unexpected additional network parameters",
-			input: KubevirtPlatformCreateOptions{
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:                1,
+					RootVolumeSize:       16,
+					AttachDefaultNetwork: ptr.To(true),
+				},
 				AdditionalNetworks: []string{
 					"badfield:ns2/nad2",
 				},
@@ -72,16 +80,26 @@ func TestKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 			expectedError: `failed to parse "--additional-network" flag: unknown param(s): badfield:ns2/nad2`,
 		},
 	} {
-		var errString string
-		outupt, err := test.input.Complete()
-		if err != nil {
-			errString = err.Error()
-		}
-		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
-			t.Errorf("got incorrect error: %v", diff)
-		}
-		if diff := cmp.Diff(test.output, outupt); diff != "" {
-			t.Errorf("got incorrect output: %v", diff)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			validated, err := test.input.Validate()
+			if err != nil {
+				t.Fatalf("Validate() failed: %v", err)
+			}
+			var errString string
+			output, err := validated.Complete()
+			if err != nil {
+				errString = err.Error()
+			}
+			if diff := cmp.Diff(test.expectedError, errString); diff != "" {
+				t.Errorf("got incorrect error: %v", diff)
+			}
+			var got []hypershiftv1beta1.KubevirtNetwork
+			if output != nil && output.completetedKubevirtPlatformCreateOptions != nil {
+				got = output.completetedKubevirtPlatformCreateOptions.AdditionalNetworks
+			}
+			if diff := cmp.Diff(test.output, got); diff != "" {
+				t.Errorf("got incorrect output: %v", diff)
+			}
+		})
 	}
 }

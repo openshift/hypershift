@@ -2,28 +2,36 @@ package kubevirt
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
+	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/test/integration/framework"
+	"github.com/spf13/pflag"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
-func TestCreateOptions_Validate(t *testing.T) {
+func TestRawCreateOptions_Validate(t *testing.T) {
 	for _, test := range []struct {
 		name          string
-		input         CreateOptions
+		input         RawCreateOptions
 		expectedError string
 	}{
 		{
 			name: "unsupported publishing strategy",
-			input: CreateOptions{
+			input: RawCreateOptions{
 				ServicePublishingStrategy: "whatever",
 			},
 			expectedError: "service publish strategy whatever is not supported, supported options: Ingress, NodePort",
 		},
 		{
 			name: "api server address invalid for ingress",
-			input: CreateOptions{
+			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				APIServerAddress:          "whatever",
 			},
@@ -31,7 +39,7 @@ func TestCreateOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid infra storage class mappings",
-			input: CreateOptions{
+			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				InfraStorageClassMappings: []string{"bad"},
 			},
@@ -39,7 +47,7 @@ func TestCreateOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "kubeconfig present without namespace",
-			input: CreateOptions{
+			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				InfraKubeConfigFile:       "something",
 			},
@@ -47,7 +55,7 @@ func TestCreateOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "kubeconfig missing with namespace",
-			input: CreateOptions{
+			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				InfraNamespace:            "something",
 			},
@@ -55,7 +63,7 @@ func TestCreateOptions_Validate(t *testing.T) {
 		},
 	} {
 		var errString string
-		if err := test.input.Validate(context.Background(), nil); err != nil {
+		if _, err := test.input.Validate(context.Background(), nil); err != nil {
 			errString = err.Error()
 		}
 		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
@@ -102,6 +110,48 @@ func TestParseTenantClassString(t *testing.T) {
 			res, options := parseTenantClassString(tc.optionString)
 			g.Expect(res).To(Equal(tc.expectedName))
 			g.Expect(options).To(Equal(tc.expectedGroup))
+		})
+	}
+}
+
+func TestCreateCluster(t *testing.T) {
+	utilrand.Seed(1234567890)
+	certs.UnsafeSeed(1234567890)
+	ctx := framework.InterruptableContext(context.Background())
+
+	for _, testCase := range []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "minimal flags necessary to render",
+			args: []string{},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
+			coreOpts := core.DefaultOptions()
+			core.BindDeveloperOptions(coreOpts, flags)
+			kubevirtOpts := DefaultOptions()
+			BindDeveloperOptions(kubevirtOpts, flags)
+			if err := flags.Parse(testCase.args); err != nil {
+				t.Fatalf("failed to parse flags: %v", err)
+			}
+
+			tempDir := t.TempDir()
+			manifestsFile := filepath.Join(tempDir, "manifests.yaml")
+			coreOpts.Render = true
+			coreOpts.RenderInto = manifestsFile
+
+			if err := core.CreateCluster(ctx, coreOpts, kubevirtOpts); err != nil {
+				t.Fatalf("failed to create cluster: %v", err)
+			}
+
+			manifests, err := os.ReadFile(manifestsFile)
+			if err != nil {
+				t.Fatalf("failed to read manifests file: %v", err)
+			}
+			testutil.CompareWithFixture(t, manifests)
 		})
 	}
 }

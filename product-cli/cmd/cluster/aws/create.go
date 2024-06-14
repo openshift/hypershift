@@ -9,7 +9,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 )
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "aws",
 		Short:        "Creates basic functional HostedCluster resources on AWS",
@@ -26,12 +26,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		err := hypershiftaws.ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile)
-		if err != nil {
-			return err
-		}
-
-		if err = hypershiftaws.CreateCluster(ctx, opts, awsOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, awsOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
