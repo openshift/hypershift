@@ -15,13 +15,8 @@ import (
 
 // Ensure certain deployment fields do not get set
 func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
-
 	imageName := "oapiImage"
-	// Setup expected values that are universal
-
-	// Setup hypershift hosted control plane.
 	targetNamespace := "test"
-	oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hcp",
@@ -30,18 +25,17 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 	}
 	hcp.Name = "name"
 	hcp.Namespace = "namespace"
-	ownerRef := config.OwnerRefFrom(hcp)
-	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
 
 	testCases := []struct {
+		name                  string
 		cm                    corev1.ConfigMap
 		auditConfig           *corev1.ConfigMap
 		deploymentConfig      config.DeploymentConfig
 		additionalTrustBundle *corev1.LocalObjectReference
 		clusterConf           *hyperv1.ClusterConfiguration
 	}{
-		// empty deployment config
 		{
+			name: "Empty deployment config",
 			cm: corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-oapi-config",
@@ -57,6 +51,9 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		g := NewGomegaWithT(t)
+		ownerRef := config.OwnerRefFrom(hcp)
+		serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
+		oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
 		expectedTermGraceSeconds := oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds
 		oapiDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oapiDeployment.Spec.MinReadySeconds
@@ -72,7 +69,6 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 	var (
 		imageName       = "oapiImage"
 		targetNamespace = "test"
-		oapiDeployment  = manifests.OpenShiftAPIServerDeployment(targetNamespace)
 		hcp             = &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "hcp",
@@ -90,7 +86,6 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 	)
 	hcp.Name = "name"
 	hcp.Namespace = "namespace"
-	ownerRef := config.OwnerRefFrom(hcp)
 	testCases := []struct {
 		name                         string
 		cm                           corev1.ConfigMap
@@ -157,6 +152,8 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
+			ownerRef := config.OwnerRefFrom(hcp)
 			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
 			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditConfig, nil, tc.deploymentConfig, imageName, "socks5ProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.clusterConf)
 			g.Expect(err).To(BeNil())
@@ -174,7 +171,6 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 
 	// Setup hypershift hosted control plane.
 	targetNamespace := "test"
-	oauthAPIDeployment := manifests.OpenShiftOAuthAPIServerDeployment(targetNamespace)
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hcp",
@@ -183,15 +179,16 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 	}
 	hcp.Name = "name"
 	hcp.Namespace = "namespace"
-	ownerRef := config.OwnerRefFrom(hcp)
 
 	testCases := []struct {
+		name             string
 		deploymentConfig config.DeploymentConfig
 		auditConfig      *corev1.ConfigMap
 		params           OAuthDeploymentParams
 	}{
-		// empty deployment config and oauth params
+		//
 		{
+			name:             "Empty deployment config and oauth params",
 			deploymentConfig: config.DeploymentConfig{},
 			auditConfig:      manifests.OpenShiftOAuthAPIServerAuditConfig(targetNamespace),
 			params:           OAuthDeploymentParams{},
@@ -199,6 +196,8 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		g := NewGomegaWithT(t)
+		oauthAPIDeployment := manifests.OpenShiftOAuthAPIServerDeployment(targetNamespace)
+		ownerRef := config.OwnerRefFrom(hcp)
 		oauthAPIDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oauthAPIDeployment.Spec.MinReadySeconds
 		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
