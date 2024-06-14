@@ -469,7 +469,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOp
 	}
 
 	switch o.Platform {
-	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
 		createOption.Arch = hyperv1.ArchitectureAMD64
 	case hyperv1.PowerVSPlatform:
 		createOption.Arch = hyperv1.ArchitecturePPC64LE

@@ -571,7 +571,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	case hyperv1.ArchitectureARM64:
 	case hyperv1.ArchitecturePPC64LE:
 	default:
-		return nil, fmt.Errorf("specified arch is not supported: %s", opts.Arch)
+		return nil, fmt.Errorf("specified arch %q is not supported", opts.Arch)
 	}
 
 	return &ValidatedCreateOptions{
