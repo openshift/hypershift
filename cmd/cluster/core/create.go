@@ -713,6 +713,10 @@ type DefaultNodePoolConstructor func(platformType hyperv1.PlatformType, suffix s
 
 func defaultNodePool(opts *CreateOptions) func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool {
 	return func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool {
+		name := opts.Name
+		if suffix != "" {
+			name = fmt.Sprintf("%s-%s", opts.Name, suffix)
+		}
 		return &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "NodePool",
@@ -720,7 +724,7 @@ func defaultNodePool(opts *CreateOptions) func(platformType hyperv1.PlatformType
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: opts.Namespace,
-				Name:      opts.Name + suffix,
+				Name:      name,
 			},
 			Spec: hyperv1.NodePoolSpec{
 				Management: hyperv1.NodePoolManagement{
