@@ -8,9 +8,10 @@ import (
 )
 
 func ReconcileKASEndpoints(endpoints *corev1.Endpoints, address string, port int32) {
-	endpoints.Labels = map[string]string{
-		discoveryv1.LabelSkipMirror: "true",
+	if endpoints.Labels == nil {
+		endpoints.Labels = map[string]string{}
 	}
+	endpoints.Labels[discoveryv1.LabelSkipMirror] = "true"
 	endpoints.Subsets = []corev1.EndpointSubset{{
 		Addresses: []corev1.EndpointAddress{{
 			IP: address,
@@ -24,9 +25,10 @@ func ReconcileKASEndpoints(endpoints *corev1.Endpoints, address string, port int
 }
 
 func ReconcileKASEndpointSlice(endpointSlice *discoveryv1.EndpointSlice, address string, port int32) {
-	endpointSlice.Labels = map[string]string{
-		discoveryv1.LabelServiceName: "kubernetes",
+	if endpointSlice.Labels == nil {
+		endpointSlice.Labels = map[string]string{}
 	}
+	endpointSlice.Labels[discoveryv1.LabelServiceName] = "kubernetes"
 	ipv4, err := util.IsIPv4(address)
 	if err != nil || ipv4 {
 		endpointSlice.AddressType = discoveryv1.AddressTypeIPv4
