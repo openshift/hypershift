@@ -303,6 +303,20 @@ const (
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifing the log verbosity of kube-apiserver.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
+
+	// NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation indicates if the NodePool currently supports
+	// using TopologySpreadConstraints on the KubeVirt VMs.
+	//
+	// Newer versions of the NodePool controller transitioned to spreading VMs across the cluster
+	// using TopologySpreadConstraints instead of Pod Anti-Affinity. When the new controller interacts
+	// with a older NodePool that was previously using pod anti-affinity, we don't want to immediately
+	// start using TopologySpreadConstraints because it will cause the MachineSet controller to update
+	// and replace all existing VMs. For example, it would be unexpected for a user to update the
+	// NodePool controller and for that to trigger a rolling update of all KubeVirt VMs.
+	//
+	// This annotation signals to the NodePool controller that it is safe to use TopologySpreadConstraints on a NodePool
+	// without triggering an unexpected update of KubeVirt VMs.
+	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

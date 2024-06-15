@@ -264,6 +264,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		UID:        hcluster.UID,
 	})
 
+	// Initialize NodePool annotations
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+
 	// Get HostedCluster deps.
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	ignEndpoint := hcluster.Status.IgnitionEndpoint
@@ -405,6 +410,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 
 		r.addKubeVirtCacheNameToStatus(kubevirtBootImage, nodePool)
+
+		// If this is a new nodepool, or we're currently updating a nodepool, then it is safe to
+		// use the new topologySpreadConstraints feature over pod anti-affinity when
+		// spreading out the VMs across the infra cluster
+		if nodePool.Status.Version == "" || isUpdatingVersion(nodePool, releaseImage.Version()) {
+			nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation] = "true"
+		}
 	}
 
 	// Validate IgnitionEndpoint.
@@ -584,11 +596,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		Reason:             hyperv1.AsExpectedReason,
 		ObservedGeneration: nodePool.Generation,
 	})
-
-	// Initialize NodePool annotations
-	if nodePool.Annotations == nil {
-		nodePool.Annotations = make(map[string]string)
-	}
 
 	// Retrieve pull secret name to check for changes when config is checked for updates
 	pullSecretName, err := r.getPullSecretName(ctx, hcluster)
