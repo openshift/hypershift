@@ -725,6 +725,7 @@ type KubevirtNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:validation:Enum=Enable;Disable
+	// +kubebuilder:default=Enable
 	NetworkInterfaceMultiQueue *MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
 
 	// AdditionalNetworks specify the extra networks attached to the nodes

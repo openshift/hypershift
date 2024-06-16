@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
@@ -26,7 +27,8 @@ func DefaultOptions() *RawKubevirtPlatformCreateOptions {
 			RootVolumeSize:       32,
 			AttachDefaultNetwork: pointer.Bool(true),
 		},
-		QoSClass: "Burstable",
+		QoSClass:                   "Burstable",
+		NetworkInterfaceMultiQueue: string(hyperv1.MultiQueueEnable),
 	}
 }
 
@@ -42,7 +44,7 @@ func bindCoreOptions(opts *RawKubevirtPlatformCreateOptions, flags *pflag.FlagSe
 	flags.StringVar(&opts.RootVolumeAccessModes, "root-volume-access-modes", opts.RootVolumeAccessModes, "The access modes of the root volume to use for machines in the NodePool (comma-delimited list)")
 	flags.StringVar(&opts.RootVolumeVolumeMode, "root-volume-volume-mode", opts.RootVolumeVolumeMode, "The volume mode of the root volume to use for machines in the NodePool. Supported values are \"Block\", \"Filesystem\"")
 	flags.StringVar(&opts.CacheStrategyType, "root-volume-cache-strategy", opts.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
-	flags.StringVar(&opts.NetworkInterfaceMultiQueue, "network-multiqueue", opts.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
+	flags.StringVar(&opts.NetworkInterfaceMultiQueue, "network-multiqueue", opts.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Enable"`)
 	flags.StringVar(&opts.QoSClass, "qos-class", opts.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
 	flags.StringArrayVar(&opts.AdditionalNetworks, "additional-network", opts.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
 	flags.BoolVar(opts.AttachDefaultNetwork, "attach-default-network", *opts.AttachDefaultNetwork, `Specify if the default pod network should be attached to the nodes. This can only be set if --additional-network is configured`)
