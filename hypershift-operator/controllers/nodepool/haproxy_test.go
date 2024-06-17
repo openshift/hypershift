@@ -28,9 +28,10 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 	clusterNetwork := " 10.128.0.0/14"
 
 	testCases := []struct {
-		name    string
-		proxy   string
-		noProxy string
+		name             string
+		proxy            string
+		noProxy          string
+		useSharedIngress bool
 	}{
 		{
 			name:    "when empty proxy it should create an haproxy",
@@ -57,11 +58,20 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			proxy:   "proxy",
 			noProxy: "localhost,kubernetes.svc,127.0.0.1,",
 		},
+		{
+			name:             "when use shared router it should create two haproxies",
+			proxy:            "",
+			noProxy:          "",
+			useSharedIngress: true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			config, err := apiServerProxyConfig(image, tc.proxy, externalAddress, internalAddress, "svc address", 443, 8443,
+			if tc.useSharedIngress {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			}
+			config, err := apiServerProxyConfig(image, tc.proxy, externalAddress, internalAddress, "SVC-IP", 443, 8443,
 				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
