@@ -15,7 +15,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -75,9 +74,7 @@ func run(ctx context.Context, opts Options) error {
 		LeaseDuration:                 &leaseDuration,
 		RenewDeadline:                 &renewDeadline,
 		RetryPeriod:                   &retryPeriod,
-		Cache: cache.Options{
-			DefaultNamespaces: map[string]cache.Config{opts.Namespace: {}},
-		},
+		Namespace:                     opts.Namespace,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)

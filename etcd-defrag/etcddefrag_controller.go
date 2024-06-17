@@ -2,7 +2,6 @@ package etcddefrag
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -231,11 +231,11 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 		r.log.Info("DefragController Defragment Partial Failure", "successfully defragged", successfulDefrags, "of members", len(endpointStatus), "tries remaining", maxDefragFailuresBeforeDegrade-r.numDefragFailures)
 
 		// TODO: This should bubble up to HCP condition errors.
-		return errors.Join(errs...)
+		return errors.NewAggregate(errs)
 	}
 
 	if len(errs) > 0 {
-		r.log.Info("found errors even though all members have been successfully defragmented", "error", errors.Join(errs...))
+		r.log.Info("found errors even though all members have been successfully defragmented", "error", errors.NewAggregate(errs))
 	}
 
 	return nil
