@@ -230,6 +230,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AgentNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AgentPlatformSpec"):
 		return &hypershiftv1beta1.AgentPlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AllocationPool"):
+		return &hypershiftv1beta1.AllocationPoolApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("APIEndpoint"):
 		return &hypershiftv1beta1.APIEndpointApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("APIServerNetworking"):
@@ -354,6 +356,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("NetworkParam"):
+		return &hypershiftv1beta1.NetworkParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePool"):
 		return &hypershiftv1beta1.NodePoolApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolAutoScaling"):
@@ -396,6 +400,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RollingUpdateApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RoutePublishingStrategy"):
 		return &hypershiftv1beta1.RoutePublishingStrategyApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("RouterParam"):
+		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
 		return &hypershiftv1beta1.SecretEncryptionSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServiceNetworkEntry"):
@@ -404,6 +410,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ServicePublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServicePublishingStrategyMapping"):
 		return &hypershiftv1beta1.ServicePublishingStrategyMappingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SubnetParam"):
+		return &hypershiftv1beta1.SubnetParamApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SubnetSpec"):
+		return &hypershiftv1beta1.SubnetSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Taint"):
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
