@@ -241,7 +241,7 @@ func ReconcileRouterService(svc *corev1.Service) error {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 			Name:       "external-dns",
 			Port:       ExternalDNSLBPort,
-			TargetPort: intstr.FromString("https"),
+			TargetPort: intstr.FromString("external-dns"),
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}
@@ -249,7 +249,7 @@ func ReconcileRouterService(svc *corev1.Service) error {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 			Name:       "kas-svc",
 			Port:       KASSVCLBPort,
-			TargetPort: intstr.FromString("https"),
+			TargetPort: intstr.FromString("kas-svc"),
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}
