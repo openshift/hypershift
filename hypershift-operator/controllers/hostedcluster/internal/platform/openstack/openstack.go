@@ -77,16 +77,17 @@ func reconcileOpenStackCluster(hcluster *hyperv1.HostedCluster, openStackCluster
 		openStackCluster.Spec.ManagedSubnets = make([]capo.SubnetSpec, len(machineNetworks))
 		// Only one Subnet is supported in CAPO
 		openStackCluster.Spec.ManagedSubnets[0] = capo.SubnetSpec{
-			CIDR:           hcluster.Spec.Networking.MachineNetwork[0].CIDR.String(),
-			DNSNameservers: openStackPlatform.ManagedSubnets[0].DNSNameservers,
+			CIDR: hcluster.Spec.Networking.MachineNetwork[0].CIDR.String(),
 		}
-
-		allocationPools := openStackPlatform.ManagedSubnets[0].AllocationPools
-		openStackCluster.Spec.ManagedSubnets[0].AllocationPools = make([]capo.AllocationPool, len(allocationPools))
-		for j := range allocationPools {
-			openStackCluster.Spec.ManagedSubnets[0].AllocationPools[j] = capo.AllocationPool{
-				Start: allocationPools[j].Start,
-				End:   allocationPools[j].End,
+		for i := range openStackPlatform.ManagedSubnets {
+			openStackCluster.Spec.ManagedSubnets[i].DNSNameservers = openStackPlatform.ManagedSubnets[i].DNSNameservers
+			allocationPools := openStackPlatform.ManagedSubnets[i].AllocationPools
+			openStackCluster.Spec.ManagedSubnets[i].AllocationPools = make([]capo.AllocationPool, len(allocationPools))
+			for j := range allocationPools {
+				openStackCluster.Spec.ManagedSubnets[i].AllocationPools[j] = capo.AllocationPool{
+					Start: allocationPools[j].Start,
+					End:   allocationPools[j].End,
+				}
 			}
 		}
 	}
