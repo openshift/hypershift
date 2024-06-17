@@ -25,9 +25,7 @@ const (
 	routerConfigKey     = "haproxy.cfg"
 	routerConfigHashKey = "hypershift.openshift.io/config-hash"
 	KASSVCLBPort        = 6443
-	// For Azure or Kubevirt on Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
-	// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
-	ExternalDNSLBPort = 7443
+	ExternalDNSLBPort   = 443
 )
 
 func hcpRouterLabels() map[string]string {
