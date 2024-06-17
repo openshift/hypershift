@@ -263,4 +263,5 @@ nav:
   - 'Onboard a Platform': contribute/onboard-a-platform.md
   - 'Run Tests': contribute/run-tests.md
   - 'Develop in Cluster': contribute/develop_in_cluster.md
+  - 'Run hypershift-operator locally': contribute/run-locally.md
   - 'Conotribute to docs': contribute/contribute-docs.md
