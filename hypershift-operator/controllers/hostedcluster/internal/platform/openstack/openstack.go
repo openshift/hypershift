@@ -7,12 +7,12 @@ import (
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -112,7 +112,6 @@ func reconcileOpenStackCluster(hcluster *hyperv1.HostedCluster, openStackCluster
 }
 
 func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	// TODO(maysa): verify if we really need all the volumes in use
 	image := a.capiProviderImage
 	if envImage := os.Getenv(images.OpenStackCAPIProviderEnvVar); len(envImage) > 0 {
 		image = envImage
@@ -125,20 +124,56 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 		Replicas: k8sutilspointer.Int32(1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
+				Volumes: []corev1.Volume{
+					{
+						Name: "capi-webhooks-tls",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "capi-webhooks-tls",
+							},
+						},
+					},
+				},
 				Containers: []corev1.Container{{
 					Name:            "manager",
 					Image:           image,
 					ImagePullPolicy: corev1.PullIfNotPresent,
+					Command:         []string{"/manager"},
 					Args: []string{
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
 						"--metrics-bind-addr=127.0.0.1:8080",
 						"--v=2",
 					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("10m"),
-							corev1.ResourceMemory: resource.MustParse("10Mi"),
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "healthz",
+							ContainerPort: 9440,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/healthz",
+								Port: intstr.FromString("healthz"),
+							},
+						},
+					},
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/readyz",
+								Port: intstr.FromString("healthz"),
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "capi-webhooks-tls",
+							ReadOnly:  true,
+							MountPath: "/tmp/k8s-webhook-server/serving-certs",
 						},
 					},
 					Env: []corev1.EnvVar{
@@ -151,37 +186,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 							},
 						},
 					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "capi-webhooks-tls",
-							ReadOnly:  true,
-							MountPath: "/tmp/k8s-webhook-server/serving-certs",
-						},
-						{
-							Name:      "svc-kubeconfig",
-							MountPath: "/etc/kubernetes",
-						},
-					},
 				}},
-				Volumes: []corev1.Volume{
-					{
-						Name: "capi-webhooks-tls",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName: "capi-webhooks-tls",
-							},
-						},
-					},
-					{
-						Name: "svc-kubeconfig",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								DefaultMode: &defaultMode,
-								SecretName:  "service-network-admin-kubeconfig",
-							},
-						},
-					},
-				},
 			}}}, nil
 }
 
