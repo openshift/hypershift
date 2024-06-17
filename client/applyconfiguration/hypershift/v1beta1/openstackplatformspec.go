@@ -24,8 +24,16 @@ import (
 // OpenStackPlatformSpecApplyConfiguration represents an declarative configuration of the OpenStackPlatformSpec type for use
 // with apply.
 type OpenStackPlatformSpecApplyConfiguration struct {
-	CloudsYamlSecret *v1.LocalObjectReference `json:"cloudsYamlSecret,omitempty"`
-	CACertSecret     *v1.LocalObjectReference `json:"caCertSecret,omitempty"`
+	CloudsYamlSecret       *v1.LocalObjectReference        `json:"cloudsYamlSecret,omitempty"`
+	CACertSecret           *v1.LocalObjectReference        `json:"caCertSecret,omitempty"`
+	ManagedSubnets         []SubnetSpecApplyConfiguration  `json:"managedSubnets,omitempty"`
+	Router                 *RouterParamApplyConfiguration  `json:"router,omitempty"`
+	Network                *NetworkParamApplyConfiguration `json:"network,omitempty"`
+	Subnets                []SubnetParamApplyConfiguration `json:"subnets,omitempty"`
+	NetworkMTU             *int                            `json:"networkMTU,omitempty"`
+	ExternalNetwork        *NetworkParamApplyConfiguration `json:"externalNetwork,omitempty"`
+	DisableExternalNetwork *bool                           `json:"disableExternalNetwork,omitempty"`
+	Tags                   []string                        `json:"tags,omitempty"`
 }
 
 // OpenStackPlatformSpecApplyConfiguration constructs an declarative configuration of the OpenStackPlatformSpec type for use with
@@ -47,5 +55,81 @@ func (b *OpenStackPlatformSpecApplyConfiguration) WithCloudsYamlSecret(value v1.
 // If called multiple times, the CACertSecret field is set to the value of the last call.
 func (b *OpenStackPlatformSpecApplyConfiguration) WithCACertSecret(value v1.LocalObjectReference) *OpenStackPlatformSpecApplyConfiguration {
 	b.CACertSecret = &value
+	return b
+}
+
+// WithManagedSubnets adds the given value to the ManagedSubnets field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the ManagedSubnets field.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithManagedSubnets(values ...*SubnetSpecApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithManagedSubnets")
+		}
+		b.ManagedSubnets = append(b.ManagedSubnets, *values[i])
+	}
+	return b
+}
+
+// WithRouter sets the Router field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Router field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithRouter(value *RouterParamApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
+	b.Router = value
+	return b
+}
+
+// WithNetwork sets the Network field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Network field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithNetwork(value *NetworkParamApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
+	b.Network = value
+	return b
+}
+
+// WithSubnets adds the given value to the Subnets field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Subnets field.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithSubnets(values ...*SubnetParamApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithSubnets")
+		}
+		b.Subnets = append(b.Subnets, *values[i])
+	}
+	return b
+}
+
+// WithNetworkMTU sets the NetworkMTU field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NetworkMTU field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithNetworkMTU(value int) *OpenStackPlatformSpecApplyConfiguration {
+	b.NetworkMTU = &value
+	return b
+}
+
+// WithExternalNetwork sets the ExternalNetwork field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ExternalNetwork field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithExternalNetwork(value *NetworkParamApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
+	b.ExternalNetwork = value
+	return b
+}
+
+// WithDisableExternalNetwork sets the DisableExternalNetwork field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DisableExternalNetwork field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithDisableExternalNetwork(value bool) *OpenStackPlatformSpecApplyConfiguration {
+	b.DisableExternalNetwork = &value
+	return b
+}
+
+// WithTags adds the given value to the Tags field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Tags field.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithTags(values ...string) *OpenStackPlatformSpecApplyConfiguration {
+	for i := range values {
+		b.Tags = append(b.Tags, values[i])
+	}
 	return b
 }

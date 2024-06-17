@@ -18,8 +18,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
 
-	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -39,31 +38,76 @@ func New(capiProviderImage string) *OpenStack {
 
 func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-	openstackCluster := &capiopenstack.OpenStackCluster{
+	openStackCluster := &capo.OpenStackCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hcluster.Name,
 			Namespace: controlPlaneNamespace,
 		},
 	}
-	openstackPlatform := hcluster.Spec.Platform.OpenStack
-	if openstackPlatform != nil {
-		openstackCluster.Spec.IdentityRef = capiopenstack.OpenStackIdentityReference{
-			Name:      openstackPlatform.CloudsYamlSecret.Name,
-			CloudName: cloudName,
-		}
+	openStackPlatform := hcluster.Spec.Platform.OpenStack
+	if openStackPlatform == nil {
+		return nil, fmt.Errorf("failed to reconcile OpenStack CAPI cluster. Empty OpenStack platform spec.")
 	}
 
-	if _, err := createOrUpdate(ctx, client, openstackCluster, func() error {
-		openstackCluster.Annotations = map[string]string{
-			capiv1.ManagedByAnnotation: "external",
-		}
-		// TODO(maysa): figure out why this is not being set on the object
-		openstackCluster.Status.Ready = true
+	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference{
+		Name:      openStackPlatform.CloudsYamlSecret.Name,
+		CloudName: cloudName,
+	}
+
+	if _, err := createOrUpdate(ctx, client, openStackCluster, func() error {
+		reconcileOpenStackCluster(hcluster, openStackCluster, openStackPlatform)
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	return openstackCluster, nil
+	return openStackCluster, nil
+}
+
+func reconcileOpenStackCluster(hcluster *hyperv1.HostedCluster, openStackCluster *capo.OpenStackCluster, openStackPlatform *hyperv1.OpenStackPlatformSpec) {
+
+	if len(openStackPlatform.Subnets) > 0 {
+		openStackCluster.Spec.Subnets = make([]capo.SubnetParam, len(openStackPlatform.Subnets))
+		for i := range openStackPlatform.Subnets {
+			openStackCluster.Spec.Subnets[i] = capo.SubnetParam{
+				ID: openStackPlatform.Subnets[i].ID,
+			}
+		}
+	} else {
+		machineNetworks := hcluster.Spec.Networking.MachineNetwork
+		openStackCluster.Spec.ManagedSubnets = make([]capo.SubnetSpec, len(machineNetworks))
+		// Only one Subnet is supported in CAPO
+		openStackCluster.Spec.ManagedSubnets[0] = capo.SubnetSpec{
+			CIDR:           hcluster.Spec.Networking.MachineNetwork[0].CIDR.String(),
+			DNSNameservers: openStackPlatform.ManagedSubnets[0].DNSNameservers,
+		}
+
+		allocationPools := openStackPlatform.ManagedSubnets[0].AllocationPools
+		openStackCluster.Spec.ManagedSubnets[0].AllocationPools = make([]capo.AllocationPool, len(allocationPools))
+		for j := range allocationPools {
+			openStackCluster.Spec.ManagedSubnets[0].AllocationPools[j] = capo.AllocationPool{
+				Start: allocationPools[j].Start,
+				End:   allocationPools[j].End,
+			}
+		}
+	}
+	if openStackPlatform.Router != nil {
+		openStackCluster.Spec.Router = &capo.RouterParam{ID: openStackPlatform.Router.ID}
+	}
+	if openStackPlatform.Network != nil {
+		openStackCluster.Spec.Network = &capo.NetworkParam{ID: openStackPlatform.Network.ID}
+	}
+
+	if openStackPlatform.NetworkMTU != nil {
+		openStackCluster.Spec.NetworkMTU = openStackPlatform.NetworkMTU
+	}
+	if openStackPlatform.ExternalNetwork != nil {
+		openStackCluster.Spec.ExternalNetwork = &capo.NetworkParam{ID: openStackPlatform.ExternalNetwork.ID}
+	}
+	if openStackPlatform.DisableExternalNetwork != nil {
+		openStackCluster.Spec.DisableExternalNetwork = openStackPlatform.DisableExternalNetwork
+	}
+	openStackCluster.Spec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{}
+	openStackCluster.Spec.Tags = openStackPlatform.Tags
 }
 
 func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
