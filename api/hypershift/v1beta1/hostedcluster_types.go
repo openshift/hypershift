@@ -1947,7 +1947,7 @@ type AllocationPool struct {
 	End string `json:"end"`
 }
 
-// RouterParam specifies an OpenStack router to use. It may be specified by either ID.
+// RouterParam specifies an OpenStack router to use. It may be specified by either ID or filter, but not both.
 // +kubebuilder:validation:MaxProperties:=1
 // +kubebuilder:validation:MinProperties:=1
 type RouterParam struct {
@@ -1955,9 +1955,22 @@ type RouterParam struct {
 	// +kubebuilder:validation:Format:=uuid
 	// +optional
 	ID *string `json:"id,omitempty"`
+
+	// Filter specifies a filter to select an OpenStack router. If provided, cannot be empty.
+	Filter *RouterFilter `json:"filter,omitempty"`
 }
 
-// NetworkParam specifies an OpenStack network. It may be specified by ID.
+// RouterFilter specifies a query to select an OpenStack router. At least one property must be set.
+// +kubebuilder:validation:MinProperties:=1
+type RouterFilter struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	ProjectID   string `json:"projectID,omitempty"`
+
+	FilterByNeutronTags `json:",inline"`
+}
+
+// NetworkParam specifies an OpenStack network. It may be specified by either ID or Filter, but not both.
 // +kubebuilder:validation:MaxProperties:=1
 // +kubebuilder:validation:MinProperties:=1
 type NetworkParam struct {
@@ -1965,9 +1978,56 @@ type NetworkParam struct {
 	// +kubebuilder:validation:Format:=uuid
 	// +optional
 	ID *string `json:"id,omitempty"`
+
+	// Filter specifies a filter to select an OpenStack network. If provided, cannot be empty.
+	// +optional
+	Filter *NetworkFilter `json:"filter,omitempty"`
 }
 
-// SubnetParam specifies an OpenStack subnet to use. It may be specified by ID.
+// NetworkFilter specifies a query to select an OpenStack network. At least one property must be set.
+// +kubebuilder:validation:MinProperties:=1
+type NetworkFilter struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	ProjectID   string `json:"projectID,omitempty"`
+
+	FilterByNeutronTags `json:",inline"`
+}
+
+// NeutronTag represents a tag on a Neutron resource.
+// It may not be empty and may not contain commas.
+// +kubebuilder:validation:Pattern:="^[^,]+$"
+// +kubebuilder:validation:MinLength:=1
+type NeutronTag string
+
+type FilterByNeutronTags struct {
+	// Tags is a list of tags to filter by. If specified, the resource must
+	// have all of the tags specified to be included in the result.
+	// +listType=set
+	// +optional
+	Tags []NeutronTag `json:"tags,omitempty"`
+
+	// TagsAny is a list of tags to filter by. If specified, the resource
+	// must have at least one of the tags specified to be included in the
+	// result.
+	// +listType=set
+	// +optional
+	TagsAny []NeutronTag `json:"tagsAny,omitempty"`
+
+	// NotTags is a list of tags to filter by. If specified, resources which
+	// contain all of the given tags will be excluded from the result.
+	// +listType=set
+	// +optional
+	NotTags []NeutronTag `json:"notTags,omitempty"`
+
+	// NotTagsAny is a list of tags to filter by. If specified, resources
+	// which contain any of the given tags will be excluded from the result.
+	// +listType=set
+	// +optional
+	NotTagsAny []NeutronTag `json:"notTagsAny,omitempty"`
+}
+
+// SubnetParam specifies an OpenStack subnet to use. It may be specified by either ID or filter, but not both.
 // +kubebuilder:validation:MaxProperties:=1
 // +kubebuilder:validation:MinProperties:=1
 type SubnetParam struct {
@@ -1975,6 +2035,25 @@ type SubnetParam struct {
 	// +kubebuilder:validation:Format:=uuid
 	// +optional
 	ID *string `json:"id,omitempty"`
+
+	// Filter specifies a filter to select the subnet. It must match exactly one subnet.
+	// +optional
+	Filter *SubnetFilter `json:"filter,omitempty"`
+}
+
+// SubnetFilter specifies a filter to select a subnet. At least one parameter must be specified.
+// +kubebuilder:validation:MinProperties:=1
+type SubnetFilter struct {
+	Name            string `json:"name,omitempty"`
+	Description     string `json:"description,omitempty"`
+	ProjectID       string `json:"projectID,omitempty"`
+	IPVersion       int    `json:"ipVersion,omitempty"`
+	GatewayIP       string `json:"gatewayIP,omitempty"`
+	CIDR            string `json:"cidr,omitempty"`
+	IPv6AddressMode string `json:"ipv6AddressMode,omitempty"`
+	IPv6RAMode      string `json:"ipv6RAMode,omitempty"`
+
+	FilterByNeutronTags `json:",inline"`
 }
 
 // Release represents the metadata for an OCP release payload image.

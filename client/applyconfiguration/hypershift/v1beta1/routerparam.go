@@ -20,7 +20,8 @@ package v1beta1
 // RouterParamApplyConfiguration represents an declarative configuration of the RouterParam type for use
 // with apply.
 type RouterParamApplyConfiguration struct {
-	ID *string `json:"id,omitempty"`
+	ID     *string                         `json:"id,omitempty"`
+	Filter *RouterFilterApplyConfiguration `json:"filter,omitempty"`
 }
 
 // RouterParamApplyConfiguration constructs an declarative configuration of the RouterParam type for use with
@@ -34,5 +35,13 @@ func RouterParam() *RouterParamApplyConfiguration {
 // If called multiple times, the ID field is set to the value of the last call.
 func (b *RouterParamApplyConfiguration) WithID(value string) *RouterParamApplyConfiguration {
 	b.ID = &value
+	return b
+}
+
+// WithFilter sets the Filter field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Filter field is set to the value of the last call.
+func (b *RouterParamApplyConfiguration) WithFilter(value *RouterFilterApplyConfiguration) *RouterParamApplyConfiguration {
+	b.Filter = value
 	return b
 }

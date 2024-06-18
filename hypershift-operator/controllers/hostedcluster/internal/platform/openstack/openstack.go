@@ -52,7 +52,8 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference(openStackPlatform.IdentityRef)
 
 	if _, err := createOrUpdate(ctx, client, openStackCluster, func() error {
-		reconcileOpenStackCluster(hcluster, openStackCluster, openStackPlatform)
+		reconcileOpenStackClusterSpec(hcluster, &openStackCluster.Spec)
+
 		return nil
 	}); err != nil {
 		return nil, err
@@ -60,28 +61,41 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 	return openStackCluster, nil
 }
 
-func reconcileOpenStackCluster(hcluster *hyperv1.HostedCluster, openStackCluster *capo.OpenStackCluster, openStackPlatform *hyperv1.OpenStackPlatformSpec) {
-
+func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClusterSpec *capo.OpenStackClusterSpec) {
+	openStackPlatform := hcluster.Spec.Platform.OpenStack
 	if len(openStackPlatform.Subnets) > 0 {
-		openStackCluster.Spec.Subnets = make([]capo.SubnetParam, len(openStackPlatform.Subnets))
+		openStackClusterSpec.Subnets = make([]capo.SubnetParam, len(openStackPlatform.Subnets))
 		for i := range openStackPlatform.Subnets {
-			openStackCluster.Spec.Subnets[i] = capo.SubnetParam{
-				ID: openStackPlatform.Subnets[i].ID,
+			subnet := openStackPlatform.Subnets[i]
+			openStackClusterSpec.Subnets[i] = capo.SubnetParam{ID: subnet.ID}
+			subnetFilter := subnet.Filter
+			if subnetFilter != nil {
+				openStackClusterSpec.Subnets[i].Filter = &capo.SubnetFilter{
+					Name:                subnetFilter.Name,
+					Description:         subnetFilter.Description,
+					ProjectID:           subnetFilter.ProjectID,
+					IPVersion:           subnetFilter.IPVersion,
+					GatewayIP:           subnetFilter.GatewayIP,
+					CIDR:                subnetFilter.CIDR,
+					IPv6AddressMode:     subnetFilter.IPv6AddressMode,
+					IPv6RAMode:          subnetFilter.IPv6RAMode,
+					FilterByNeutronTags: createCAPOFilterTags(subnetFilter.Tags, subnetFilter.TagsAny, subnetFilter.NotTags, subnetFilter.NotTagsAny),
+				}
 			}
 		}
 	} else {
 		machineNetworks := hcluster.Spec.Networking.MachineNetwork
-		openStackCluster.Spec.ManagedSubnets = make([]capo.SubnetSpec, len(machineNetworks))
+		openStackClusterSpec.ManagedSubnets = make([]capo.SubnetSpec, len(machineNetworks))
 		// Only one Subnet is supported in CAPO
-		openStackCluster.Spec.ManagedSubnets[0] = capo.SubnetSpec{
+		openStackClusterSpec.ManagedSubnets[0] = capo.SubnetSpec{
 			CIDR: hcluster.Spec.Networking.MachineNetwork[0].CIDR.String(),
 		}
 		for i := range openStackPlatform.ManagedSubnets {
-			openStackCluster.Spec.ManagedSubnets[i].DNSNameservers = openStackPlatform.ManagedSubnets[i].DNSNameservers
+			openStackClusterSpec.ManagedSubnets[i].DNSNameservers = openStackPlatform.ManagedSubnets[i].DNSNameservers
 			allocationPools := openStackPlatform.ManagedSubnets[i].AllocationPools
-			openStackCluster.Spec.ManagedSubnets[i].AllocationPools = make([]capo.AllocationPool, len(allocationPools))
+			openStackClusterSpec.ManagedSubnets[i].AllocationPools = make([]capo.AllocationPool, len(allocationPools))
 			for j := range allocationPools {
-				openStackCluster.Spec.ManagedSubnets[i].AllocationPools[j] = capo.AllocationPool{
+				openStackClusterSpec.ManagedSubnets[i].AllocationPools[j] = capo.AllocationPool{
 					Start: allocationPools[j].Start,
 					End:   allocationPools[j].End,
 				}
@@ -89,23 +103,65 @@ func reconcileOpenStackCluster(hcluster *hyperv1.HostedCluster, openStackCluster
 		}
 	}
 	if openStackPlatform.Router != nil {
-		openStackCluster.Spec.Router = &capo.RouterParam{ID: openStackPlatform.Router.ID}
+		openStackClusterSpec.Router = &capo.RouterParam{ID: openStackPlatform.Router.ID}
+		if openStackPlatform.Router.Filter != nil {
+			routerFilter := openStackPlatform.Router.Filter
+			openStackClusterSpec.Router.Filter = &capo.RouterFilter{
+				Name:                routerFilter.Name,
+				Description:         routerFilter.Description,
+				ProjectID:           routerFilter.ProjectID,
+				FilterByNeutronTags: createCAPOFilterTags(routerFilter.Tags, routerFilter.TagsAny, routerFilter.NotTags, routerFilter.NotTagsAny),
+			}
+
+		}
 	}
 	if openStackPlatform.Network != nil {
-		openStackCluster.Spec.Network = &capo.NetworkParam{ID: openStackPlatform.Network.ID}
+		openStackClusterSpec.Network = &capo.NetworkParam{ID: openStackPlatform.Network.ID}
+		if openStackPlatform.Network.Filter != nil {
+			openStackClusterSpec.Network.Filter = createCAPONetworkFilter(openStackPlatform.Network.Filter)
+		}
 	}
 
 	if openStackPlatform.NetworkMTU != nil {
-		openStackCluster.Spec.NetworkMTU = openStackPlatform.NetworkMTU
+		openStackClusterSpec.NetworkMTU = openStackPlatform.NetworkMTU
 	}
 	if openStackPlatform.ExternalNetwork != nil {
-		openStackCluster.Spec.ExternalNetwork = &capo.NetworkParam{ID: openStackPlatform.ExternalNetwork.ID}
+		openStackClusterSpec.ExternalNetwork = &capo.NetworkParam{ID: openStackPlatform.ExternalNetwork.ID}
+		if openStackPlatform.ExternalNetwork.Filter != nil {
+			openStackClusterSpec.ExternalNetwork.Filter = createCAPONetworkFilter(openStackPlatform.ExternalNetwork.Filter)
+		}
 	}
 	if openStackPlatform.DisableExternalNetwork != nil {
-		openStackCluster.Spec.DisableExternalNetwork = openStackPlatform.DisableExternalNetwork
+		openStackClusterSpec.DisableExternalNetwork = openStackPlatform.DisableExternalNetwork
 	}
-	openStackCluster.Spec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{}
-	openStackCluster.Spec.Tags = openStackPlatform.Tags
+	openStackClusterSpec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{}
+	openStackClusterSpec.Tags = openStackPlatform.Tags
+}
+
+func convertHypershiftTagToCAPOTag(tags []hyperv1.NeutronTag) []capo.NeutronTag {
+	var capoTags []capo.NeutronTag
+	for i := range tags {
+		capoTags = append(capoTags, capo.NeutronTag(tags[i]))
+	}
+	return capoTags
+}
+
+func createCAPOFilterTags(tags, tagsAny, NotTags, NotTagsAny []hyperv1.NeutronTag) capo.FilterByNeutronTags {
+	return capo.FilterByNeutronTags{
+		Tags:       convertHypershiftTagToCAPOTag(tags),
+		TagsAny:    convertHypershiftTagToCAPOTag(tagsAny),
+		NotTags:    convertHypershiftTagToCAPOTag(NotTags),
+		NotTagsAny: convertHypershiftTagToCAPOTag(NotTagsAny),
+	}
+}
+
+func createCAPONetworkFilter(filter *hyperv1.NetworkFilter) *capo.NetworkFilter {
+	return &capo.NetworkFilter{
+		Name:                filter.Name,
+		Description:         filter.Description,
+		ProjectID:           filter.ProjectID,
+		FilterByNeutronTags: createCAPOFilterTags(filter.Tags, filter.TagsAny, filter.NotTags, filter.NotTagsAny),
+	}
 }
 
 func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {

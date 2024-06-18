@@ -20,7 +20,8 @@ package v1beta1
 // NetworkParamApplyConfiguration represents an declarative configuration of the NetworkParam type for use
 // with apply.
 type NetworkParamApplyConfiguration struct {
-	ID *string `json:"id,omitempty"`
+	ID     *string                          `json:"id,omitempty"`
+	Filter *NetworkFilterApplyConfiguration `json:"filter,omitempty"`
 }
 
 // NetworkParamApplyConfiguration constructs an declarative configuration of the NetworkParam type for use with
@@ -34,5 +35,13 @@ func NetworkParam() *NetworkParamApplyConfiguration {
 // If called multiple times, the ID field is set to the value of the last call.
 func (b *NetworkParamApplyConfiguration) WithID(value string) *NetworkParamApplyConfiguration {
 	b.ID = &value
+	return b
+}
+
+// WithFilter sets the Filter field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Filter field is set to the value of the last call.
+func (b *NetworkParamApplyConfiguration) WithFilter(value *NetworkFilterApplyConfiguration) *NetworkParamApplyConfiguration {
+	b.Filter = value
 	return b
 }

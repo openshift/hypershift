@@ -3654,6 +3654,86 @@ string
 </tr>
 </tbody>
 </table>
+###FilterByNeutronTags { #hypershift.openshift.io/v1beta1.FilterByNeutronTags }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NetworkFilter">NetworkFilter</a>, 
+<a href="#hypershift.openshift.io/v1beta1.RouterFilter">RouterFilter</a>, 
+<a href="#hypershift.openshift.io/v1beta1.SubnetFilter">SubnetFilter</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>tags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NeutronTag">
+[]NeutronTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Tags is a list of tags to filter by. If specified, the resource must
+have all of the tags specified to be included in the result.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tagsAny</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NeutronTag">
+[]NeutronTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>TagsAny is a list of tags to filter by. If specified, the resource
+must have at least one of the tags specified to be included in the
+result.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>notTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NeutronTag">
+[]NeutronTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NotTags is a list of tags to filter by. If specified, resources which
+contain all of the given tags will be excluded from the result.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>notTagsAny</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NeutronTag">
+[]NeutronTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NotTagsAny is a list of tags to filter by. If specified, resources
+which contain any of the given tags will be excluded from the result.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###HostedClusterSpec { #hypershift.openshift.io/v1beta1.HostedClusterSpec }
 <p>
 (<em>Appears on:</em>
@@ -6403,13 +6483,76 @@ is empty.</p>
 <td></td>
 </tr></tbody>
 </table>
+###NetworkFilter { #hypershift.openshift.io/v1beta1.NetworkFilter }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NetworkParam">NetworkParam</a>)
+</p>
+<p>
+<p>NetworkFilter specifies a query to select an OpenStack network. At least one property must be set.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>description</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>projectID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>FilterByNeutronTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.FilterByNeutronTags">
+FilterByNeutronTags
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>FilterByNeutronTags</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###NetworkParam { #hypershift.openshift.io/v1beta1.NetworkParam }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
 </p>
 <p>
-<p>NetworkParam specifies an OpenStack network. It may be specified by ID.</p>
+<p>NetworkParam specifies an OpenStack network. It may be specified by either ID or Filter, but not both.</p>
 </p>
 <table>
 <thead>
@@ -6429,6 +6572,20 @@ string
 <td>
 <em>(Optional)</em>
 <p>ID is the ID of the network to use. If ID is provided, the other filters cannot be provided. Must be in UUID format.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>filter</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NetworkFilter">
+NetworkFilter
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Filter specifies a filter to select an OpenStack network. If provided, cannot be empty.</p>
 </td>
 </tr>
 </tbody>
@@ -6462,6 +6619,15 @@ string
 </td>
 </tr></tbody>
 </table>
+###NeutronTag { #hypershift.openshift.io/v1beta1.NeutronTag }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.FilterByNeutronTags">FilterByNeutronTags</a>)
+</p>
+<p>
+<p>NeutronTag represents a tag on a Neutron resource.
+It may not be empty and may not contain commas.</p>
+</p>
 ###NodePoolAutoScaling { #hypershift.openshift.io/v1beta1.NodePoolAutoScaling }
 <p>
 (<em>Appears on:</em>
@@ -8396,13 +8562,76 @@ string
 </tr>
 </tbody>
 </table>
+###RouterFilter { #hypershift.openshift.io/v1beta1.RouterFilter }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.RouterParam">RouterParam</a>)
+</p>
+<p>
+<p>RouterFilter specifies a query to select an OpenStack router. At least one property must be set.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>description</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>projectID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>FilterByNeutronTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.FilterByNeutronTags">
+FilterByNeutronTags
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>FilterByNeutronTags</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###RouterParam { #hypershift.openshift.io/v1beta1.RouterParam }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
 </p>
 <p>
-<p>RouterParam specifies an OpenStack router to use. It may be specified by either ID.</p>
+<p>RouterParam specifies an OpenStack router to use. It may be specified by either ID or filter, but not both.</p>
 </p>
 <table>
 <thead>
@@ -8422,6 +8651,19 @@ string
 <td>
 <em>(Optional)</em>
 <p>ID is the ID of the router to use. If ID is provided, the other filters cannot be provided. Must be in UUID format.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>filter</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.RouterFilter">
+RouterFilter
+</a>
+</em>
+</td>
+<td>
+<p>Filter specifies a filter to select an OpenStack router. If provided, cannot be empty.</p>
 </td>
 </tr>
 </tbody>
@@ -8666,13 +8908,126 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SubnetFilter { #hypershift.openshift.io/v1beta1.SubnetFilter }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.SubnetParam">SubnetParam</a>)
+</p>
+<p>
+<p>SubnetFilter specifies a filter to select a subnet. At least one parameter must be specified.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>description</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>projectID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipVersion</code></br>
+<em>
+int
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>gatewayIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>cidr</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipv6AddressMode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipv6RAMode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>FilterByNeutronTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.FilterByNeutronTags">
+FilterByNeutronTags
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>FilterByNeutronTags</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SubnetParam { #hypershift.openshift.io/v1beta1.SubnetParam }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
 </p>
 <p>
-<p>SubnetParam specifies an OpenStack subnet to use. It may be specified by ID.</p>
+<p>SubnetParam specifies an OpenStack subnet to use. It may be specified by either ID or filter, but not both.</p>
 </p>
 <table>
 <thead>
@@ -8692,6 +9047,20 @@ string
 <td>
 <em>(Optional)</em>
 <p>ID is the uuid of the subnet. It will not be validated.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>filter</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SubnetFilter">
+SubnetFilter
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Filter specifies a filter to select the subnet. It must match exactly one subnet.</p>
 </td>
 </tr>
 </tbody>
