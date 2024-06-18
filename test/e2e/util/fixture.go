@@ -205,11 +205,13 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		awsSession := awsutil.NewSession("cleanup-validation", awsCreds, "", "", awsRegion)
 		awsConfig := awsutil.NewConfig()
 		taggingClient := resourcegroupstaggingapi.New(awsSession, awsConfig)
+		var output *resourcegroupstaggingapi.GetResourcesOutput
 
 		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
-		err := wait.PollImmediate(5*time.Second, 15*time.Minute, func() (bool, error) {
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
 			// Filter get cluster resources.
-			output, err := taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
+			var err error
+			output, err = taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 				ResourceTypeFilters: []*string{
 					awssdk.String("elasticloadbalancing:loadbalancer"),
 					awssdk.String("ec2:volume"),
@@ -223,31 +225,38 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 				},
 			})
 			if err != nil {
-				t.Logf("WARNING: failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
-				return true, nil
+				return true, err
 			}
 
-			// Log resources that still exists
 			if hasGuestResources(t, output.ResourceTagMappingList) {
-				t.Logf("WARNING: found %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
-				for i := 0; i < len(output.ResourceTagMappingList); i++ {
-					resourceARN, err := arn.Parse(awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN))
-					if err != nil {
-						t.Logf("WARNING: failed to parse resource: %v. Not verifying cluster is cleaned up.", err)
-						return false, nil
-					}
-					t.Logf("Resource: %s, tags: %s, service: %s",
-						awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags), resourceARN.Service)
-				}
 				return false, nil
 			}
 
-			t.Log("SUCCESS: found no remaining guest resources")
 			return true, nil
 		})
 
-		if err != nil {
+		if wait.Interrupted(err) {
 			t.Errorf("Failed to wait for infra resources in guest cluster to be deleted: %v", err)
+		} else if err != nil {
+			// Failing to list tagged resource is not fatal, but we should log it
+			t.Logf("Failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
+			return
+		}
+
+		// Log resources that still exists
+		if hasGuestResources(t, output.ResourceTagMappingList) {
+			t.Logf("Failed to clean up %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
+			for i := 0; i < len(output.ResourceTagMappingList); i++ {
+				resourceARN, err := arn.Parse(awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN))
+				if err != nil {
+					// We are only decoding for additional information, proceed on error
+					continue
+				}
+				t.Logf("Resource: %s, tags: %s, service: %s",
+					awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags), resourceARN.Service)
+			}
+		} else {
+			t.Log("SUCCESS: found no remaining guest resources")
 		}
 	}
 }
