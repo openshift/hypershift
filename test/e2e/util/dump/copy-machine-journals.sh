@@ -49,7 +49,7 @@ fi
 
 function retryonfailure {
   for i in $(seq 1 10); do
-    echo "Attempt #${i}: $@"
+    #echo "Attempt #${i}: $@"
     if ! "$@"; then
       sleep 1
     else 
@@ -60,9 +60,9 @@ function retryonfailure {
 }
 
 function dump_config {
-  echo "Failed to ssh to AWS instance, dumping ssh configuration"
   machine_ip="${1:-}"
   config_file="${2:-}"
+  echo "Failed to ssh to AWS instance ${machine_ip}, dumping ssh configuration"
   cat "${config_file}" > "${DEST_DIR}/ssh-config-${machine_ip}.txt"
   return 1
 }
@@ -80,6 +80,7 @@ Host bastion
     StrictHostKeyChecking  no
     PasswordAuthentication no
     UserKnownHostsFile     /dev/null
+    LogLevel               ERROR
 Host machine
     User                   core
     Hostname               ${machine_ip}
@@ -87,6 +88,7 @@ Host machine
     PasswordAuthentication no
     UserKnownHostsFile     /dev/null
     ProxyJump              bastion
+    LogLevel               ERROR
 EOF
 
   if retryonfailure ssh -F "${config_file}" -n machine "sudo journalctl > /tmp/journal.log && gzip -f /tmp/journal.log" || dump_config "${machine_ip}" "${config_file}"; then
