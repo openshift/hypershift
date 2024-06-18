@@ -20,7 +20,8 @@ package v1beta1
 // SubnetParamApplyConfiguration represents an declarative configuration of the SubnetParam type for use
 // with apply.
 type SubnetParamApplyConfiguration struct {
-	ID *string `json:"id,omitempty"`
+	ID     *string                         `json:"id,omitempty"`
+	Filter *SubnetFilterApplyConfiguration `json:"filter,omitempty"`
 }
 
 // SubnetParamApplyConfiguration constructs an declarative configuration of the SubnetParam type for use with
@@ -34,5 +35,13 @@ func SubnetParam() *SubnetParamApplyConfiguration {
 // If called multiple times, the ID field is set to the value of the last call.
 func (b *SubnetParamApplyConfiguration) WithID(value string) *SubnetParamApplyConfiguration {
 	b.ID = &value
+	return b
+}
+
+// WithFilter sets the Filter field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Filter field is set to the value of the last call.
+func (b *SubnetParamApplyConfiguration) WithFilter(value *SubnetFilterApplyConfiguration) *SubnetParamApplyConfiguration {
+	b.Filter = value
 	return b
 }

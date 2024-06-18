@@ -288,6 +288,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.EtcdTLSConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Filter"):
 		return &hypershiftv1beta1.FilterApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("FilterByNeutronTags"):
+		return &hypershiftv1beta1.FilterByNeutronTagsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedCluster"):
 		return &hypershiftv1beta1.HostedClusterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedClusterSpec"):
@@ -356,6 +358,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("NetworkFilter"):
+		return &hypershiftv1beta1.NetworkFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkParam"):
 		return &hypershiftv1beta1.NetworkParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePool"):
@@ -400,6 +404,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RollingUpdateApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RoutePublishingStrategy"):
 		return &hypershiftv1beta1.RoutePublishingStrategyApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("RouterFilter"):
+		return &hypershiftv1beta1.RouterFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RouterParam"):
 		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
@@ -410,6 +416,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ServicePublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServicePublishingStrategyMapping"):
 		return &hypershiftv1beta1.ServicePublishingStrategyMappingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SubnetFilter"):
+		return &hypershiftv1beta1.SubnetFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SubnetParam"):
 		return &hypershiftv1beta1.SubnetParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SubnetSpec"):
