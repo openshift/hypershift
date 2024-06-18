@@ -275,7 +275,6 @@ func admissionPlugins() []string {
 		"NodeRestriction",
 		"OwnerReferencesPermissionEnforcement",
 		"PersistentVolumeClaimResize",
-		"PersistentVolumeLabel",
 		"PodNodeSelector",
 		"PodTolerationRestriction",
 		"Priority",
