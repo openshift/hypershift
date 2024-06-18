@@ -24,16 +24,16 @@ import (
 // OpenStackPlatformSpecApplyConfiguration represents an declarative configuration of the OpenStackPlatformSpec type for use
 // with apply.
 type OpenStackPlatformSpecApplyConfiguration struct {
-	CloudsYamlSecret       *v1.LocalObjectReference        `json:"cloudsYamlSecret,omitempty"`
-	CACertSecret           *v1.LocalObjectReference        `json:"caCertSecret,omitempty"`
-	ManagedSubnets         []SubnetSpecApplyConfiguration  `json:"managedSubnets,omitempty"`
-	Router                 *RouterParamApplyConfiguration  `json:"router,omitempty"`
-	Network                *NetworkParamApplyConfiguration `json:"network,omitempty"`
-	Subnets                []SubnetParamApplyConfiguration `json:"subnets,omitempty"`
-	NetworkMTU             *int                            `json:"networkMTU,omitempty"`
-	ExternalNetwork        *NetworkParamApplyConfiguration `json:"externalNetwork,omitempty"`
-	DisableExternalNetwork *bool                           `json:"disableExternalNetwork,omitempty"`
-	Tags                   []string                        `json:"tags,omitempty"`
+	IdentityRef            *OpenStackIdentityReferenceApplyConfiguration `json:"identityRef,omitempty"`
+	CACertSecret           *v1.LocalObjectReference                      `json:"caCertSecret,omitempty"`
+	ManagedSubnets         []SubnetSpecApplyConfiguration                `json:"managedSubnets,omitempty"`
+	Router                 *RouterParamApplyConfiguration                `json:"router,omitempty"`
+	Network                *NetworkParamApplyConfiguration               `json:"network,omitempty"`
+	Subnets                []SubnetParamApplyConfiguration               `json:"subnets,omitempty"`
+	NetworkMTU             *int                                          `json:"networkMTU,omitempty"`
+	ExternalNetwork        *NetworkParamApplyConfiguration               `json:"externalNetwork,omitempty"`
+	DisableExternalNetwork *bool                                         `json:"disableExternalNetwork,omitempty"`
+	Tags                   []string                                      `json:"tags,omitempty"`
 }
 
 // OpenStackPlatformSpecApplyConfiguration constructs an declarative configuration of the OpenStackPlatformSpec type for use with
@@ -42,11 +42,11 @@ func OpenStackPlatformSpec() *OpenStackPlatformSpecApplyConfiguration {
 	return &OpenStackPlatformSpecApplyConfiguration{}
 }
 
-// WithCloudsYamlSecret sets the CloudsYamlSecret field in the declarative configuration to the given value
+// WithIdentityRef sets the IdentityRef field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CloudsYamlSecret field is set to the value of the last call.
-func (b *OpenStackPlatformSpecApplyConfiguration) WithCloudsYamlSecret(value v1.LocalObjectReference) *OpenStackPlatformSpecApplyConfiguration {
-	b.CloudsYamlSecret = &value
+// If called multiple times, the IdentityRef field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithIdentityRef(value *OpenStackIdentityReferenceApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
+	b.IdentityRef = value
 	return b
 }
 

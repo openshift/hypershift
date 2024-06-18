@@ -67,7 +67,7 @@ func addVolumes(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane) 
 			Name: credentialsSecretVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: hcp.Spec.Platform.OpenStack.CloudsYamlSecret.Name,
+					SecretName: hcp.Spec.Platform.OpenStack.IdentityRef.Name,
 				},
 			},
 		},

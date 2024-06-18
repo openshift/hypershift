@@ -1840,12 +1840,10 @@ type AzurePlatformSpec struct {
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.
 type OpenStackPlatformSpec struct {
 
-	// Name of the secret that contains OpenStack credentials needed for creating and managing cloud
-	// infrastructure resources.
-	//
+	// IdentityRef is a reference to a secret holding OpenStack credentials
+	// to be used when reconciling the hosted cluster.
 	// +kubebuilder:validation:Required
-	// +required
-	CloudsYamlSecret corev1.LocalObjectReference `json:"cloudsYamlSecret"`
+	IdentityRef OpenStackIdentityReference `json:"identityRef"`
 
 	// Name of the secret that contains the CA cert needed to connect to the OpenStack cloud.
 	// +optional
@@ -1912,6 +1910,20 @@ type OpenStackPlatformSpec struct {
 	// +listType=set
 	// +optional
 	Tags []string `json:"tags,omitempty"`
+}
+
+// OpenStackIdentityReference is a reference to an infrastructure
+// provider identity to be used to provision cluster resources.
+type OpenStackIdentityReference struct {
+	// Name is the name of a secret in the same namespace as the resource being provisioned.
+	// The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
+	// The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// CloudName specifies the name of the entry in the clouds.yaml file to use.
+	// +kubebuilder:validation:Required
+	CloudName string `json:"cloudName"`
 }
 
 type SubnetSpec struct {

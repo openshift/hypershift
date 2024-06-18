@@ -18,12 +18,12 @@ func ReconcileCloudConfig(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane
 	}
 	config := string(credentialsSecret.Data[CloudConfigKey]) // TODO(dulek): Missing key handling
 
-	// XXX(mdbooth): Don't hard-code 'openstack' cloud name. It should be in the platform config.
 	config += `
 [Global]
 use-clouds=true
-clouds-file=/etc/openstack/credentials/clouds.yaml
-cloud=openstack`
+clouds-file=/etc/openstack/credentials/clouds.yaml`
+
+	config += "\ncloud=" + hcp.Spec.Platform.OpenStack.IdentityRef.CloudName
 
 	// FIXME(dulek): This is specific to CCM, we might want to have 2 versions.
 	// FIXME(dulek): Is it really a good idea to have it here?

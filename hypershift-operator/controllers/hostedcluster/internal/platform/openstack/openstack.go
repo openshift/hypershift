@@ -49,10 +49,7 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 		return nil, fmt.Errorf("failed to reconcile OpenStack CAPI cluster. Empty OpenStack platform spec.")
 	}
 
-	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference{
-		Name:      openStackPlatform.CloudsYamlSecret.Name,
-		CloudName: cloudName,
-	}
+	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference(openStackPlatform.IdentityRef)
 
 	if _, err := createOrUpdate(ctx, client, openStackCluster, func() error {
 		reconcileOpenStackCluster(hcluster, openStackCluster, openStackPlatform)
@@ -192,21 +189,21 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 
 func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return errors.Join(
-		a.reconcileCloudsYaml(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.CloudsYamlSecret),
+		a.reconcileCloudsYaml(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.IdentityRef.Name),
 		a.reconcileCACert(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.CACertSecret),
 	)
 }
 
-func (a OpenStack) reconcileCloudsYaml(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string, clusterNamespace string, cloudsYamlSecret corev1.LocalObjectReference) error {
+func (a OpenStack) reconcileCloudsYaml(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string, clusterNamespace string, identityRefName string) error {
 	var source corev1.Secret
 
 	// Sync user cloud.conf secret
-	name := client.ObjectKey{Namespace: clusterNamespace, Name: cloudsYamlSecret.Name}
+	name := client.ObjectKey{Namespace: clusterNamespace, Name: identityRefName}
 	if err := c.Get(ctx, name, &source); err != nil {
 		return fmt.Errorf("failed to get secret %s: %w", name, err)
 	}
 
-	clouds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: cloudsYamlSecret.Name}}
+	clouds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: identityRefName}}
 	_, err := createOrUpdate(ctx, c, clouds, func() error {
 		if clouds.Data == nil {
 			clouds.Data = map[string][]byte{}

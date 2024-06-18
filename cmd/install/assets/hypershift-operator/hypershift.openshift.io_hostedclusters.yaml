@@ -8490,24 +8490,6 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
-                      cloudsYamlSecret:
-                        description: |-
-                          Name of the secret that contains OpenStack credentials needed for creating and managing cloud
-                          infrastructure resources.
-                        properties:
-                          name:
-                            default: ""
-                            description: |-
-                              Name of the referent.
-                              This field is effectively required, but due to backwards compatibility is
-                              allowed to be empty. Instances of this type with an empty value here are
-                              almost certainly wrong.
-                              TODO: Add other useful fields. apiVersion, kind, uid?
-                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
-                            type: string
-                        type: object
-                        x-kubernetes-map-type: atomic
                       disableExternalNetwork:
                         description: |-
                           DisableExternalNetwork specifies whether or not to attempt to connect the cluster
@@ -8540,6 +8522,25 @@ spec:
                               be in UUID format.
                             format: uuid
                             type: string
+                        type: object
+                      identityRef:
+                        description: |-
+                          IdentityRef is a reference to a secret holding OpenStack credentials
+                          to be used when reconciling the hosted cluster.
+                        properties:
+                          cloudName:
+                            description: CloudName specifies the name of the entry
+                              in the clouds.yaml file to use.
+                            type: string
+                          name:
+                            description: |-
+                              Name is the name of a secret in the same namespace as the resource being provisioned.
+                              The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
+                              The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
+                            type: string
+                        required:
+                        - cloudName
+                        - name
                         type: object
                       managedSubnets:
                         description: |-
@@ -8646,7 +8647,7 @@ spec:
                         type: array
                         x-kubernetes-list-type: set
                     required:
-                    - cloudsYamlSecret
+                    - identityRef
                     type: object
                   powervs:
                     description: |-

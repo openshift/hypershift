@@ -7208,6 +7208,49 @@ the management cluster.</p>
 </td>
 </tr></tbody>
 </table>
+###OpenStackIdentityReference { #hypershift.openshift.io/v1beta1.OpenStackIdentityReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
+</p>
+<p>
+<p>OpenStackIdentityReference is a reference to an infrastructure
+provider identity to be used to provision cluster resources.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Name is the name of a secret in the same namespace as the resource being provisioned.
+The secret must contain a key named <code>clouds.yaml</code> which contains an OpenStack clouds.yaml file.
+The secret may optionally contain a key named <code>cacert</code> containing a PEM-encoded CA certificate.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cloudName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>CloudName specifies the name of the entry in the clouds.yaml file to use.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OpenStackPlatformSpec { #hypershift.openshift.io/v1beta1.OpenStackPlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -7226,16 +7269,16 @@ the management cluster.</p>
 <tbody>
 <tr>
 <td>
-<code>cloudsYamlSecret</code></br>
+<code>identityRef</code></br>
 <em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
+<a href="#hypershift.openshift.io/v1beta1.OpenStackIdentityReference">
+OpenStackIdentityReference
 </a>
 </em>
 </td>
 <td>
-<p>Name of the secret that contains OpenStack credentials needed for creating and managing cloud
-infrastructure resources.</p>
+<p>IdentityRef is a reference to a secret holding OpenStack credentials
+to be used when reconciling the hosted cluster.</p>
 </td>
 </tr>
 <tr>
