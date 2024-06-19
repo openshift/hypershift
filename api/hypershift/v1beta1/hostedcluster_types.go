@@ -1845,10 +1845,6 @@ type OpenStackPlatformSpec struct {
 	// +kubebuilder:validation:Required
 	IdentityRef OpenStackIdentityReference `json:"identityRef"`
 
-	// Name of the secret that contains the CA cert needed to connect to the OpenStack cloud.
-	// +optional
-	CACertSecret *corev1.LocalObjectReference `json:"caCertSecret,omitempty"`
-
 	// ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
 	// and a subnet with the defined DNSNameservers, AllocationPools and the CIDR defined in the HostedCluster
 	// MachineNetwork, and a router connected to the subnet. Currently only one IPv4

@@ -2621,24 +2621,21 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 			return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
 		}
+		caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
+		hasCACert := caCertData != nil
 
 		cfg := manifests.OpenStackProviderConfig(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, cfg, func() error {
-			return openstack.ReconcileCloudConfig(cfg, hcp, credentialsSecret)
+			return openstack.ReconcileCloudConfig(cfg, hcp, credentialsSecret, hasCACert)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
 		}
 
-		caCertSecret := hcp.Spec.Platform.OpenStack.CACertSecret
-		if caCertSecret != nil {
-			caConfigMap := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: caCertSecret.Name}}
-			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(caConfigMap), caConfigMap); err != nil {
-				return fmt.Errorf("failed to get OpenStack CA certificates: %w", err)
-			}
-
+		// This is for CCM to use the CA cert for OpenStack.
+		if caCertData != nil {
 			ca := manifests.OpenStackTrustedCA(hcp.Namespace)
 			if _, err := createOrUpdate(ctx, r, ca, func() error {
-				return openstack.ReconcileTrustedCA(ca, hcp, caConfigMap)
+				return openstack.ReconcileTrustedCA(ca, hcp, caCertData)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile OpenStack cloud CA: %w", err)
 			}
@@ -4473,9 +4470,17 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		}
 
 		p := openstack.NewOpenStackParams(hcp)
+
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.OpenStack.IdentityRef.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
+		}
+		caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
+		hasCACert := caCertData != nil
+
 		deployment := openstack.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
-			return openstack.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider)
+			return openstack.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider, hasCACert)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}

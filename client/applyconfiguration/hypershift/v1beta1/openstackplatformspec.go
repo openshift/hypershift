@@ -17,15 +17,10 @@ limitations under the License.
 
 package v1beta1
 
-import (
-	v1 "k8s.io/api/core/v1"
-)
-
 // OpenStackPlatformSpecApplyConfiguration represents an declarative configuration of the OpenStackPlatformSpec type for use
 // with apply.
 type OpenStackPlatformSpecApplyConfiguration struct {
 	IdentityRef            *OpenStackIdentityReferenceApplyConfiguration `json:"identityRef,omitempty"`
-	CACertSecret           *v1.LocalObjectReference                      `json:"caCertSecret,omitempty"`
 	ManagedSubnets         []SubnetSpecApplyConfiguration                `json:"managedSubnets,omitempty"`
 	Router                 *RouterParamApplyConfiguration                `json:"router,omitempty"`
 	Network                *NetworkParamApplyConfiguration               `json:"network,omitempty"`
@@ -47,14 +42,6 @@ func OpenStackPlatformSpec() *OpenStackPlatformSpecApplyConfiguration {
 // If called multiple times, the IdentityRef field is set to the value of the last call.
 func (b *OpenStackPlatformSpecApplyConfiguration) WithIdentityRef(value *OpenStackIdentityReferenceApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
 	b.IdentityRef = value
-	return b
-}
-
-// WithCACertSecret sets the CACertSecret field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CACertSecret field is set to the value of the last call.
-func (b *OpenStackPlatformSpecApplyConfiguration) WithCACertSecret(value v1.LocalObjectReference) *OpenStackPlatformSpecApplyConfiguration {
-	b.CACertSecret = &value
 	return b
 }
 

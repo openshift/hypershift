@@ -7449,20 +7449,6 @@ to be used when reconciling the hosted cluster.</p>
 </tr>
 <tr>
 <td>
-<code>caCertSecret</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Name of the secret that contains the CA cert needed to connect to the OpenStack cloud.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>managedSubnets</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.SubnetSpec">

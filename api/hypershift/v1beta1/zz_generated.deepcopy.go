@@ -2323,11 +2323,6 @@ func (in *OpenStackIdentityReference) DeepCopy() *OpenStackIdentityReference {
 func (in *OpenStackPlatformSpec) DeepCopyInto(out *OpenStackPlatformSpec) {
 	*out = *in
 	out.IdentityRef = in.IdentityRef
-	if in.CACertSecret != nil {
-		in, out := &in.CACertSecret, &out.CACertSecret
-		*out = new(corev1.LocalObjectReference)
-		**out = **in
-	}
 	if in.ManagedSubnets != nil {
 		in, out := &in.ManagedSubnets, &out.ManagedSubnets
 		*out = make([]SubnetSpec, len(*in))
