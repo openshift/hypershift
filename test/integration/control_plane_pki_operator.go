@@ -15,6 +15,7 @@ import (
 	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/test/e2e/util"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -174,48 +175,17 @@ func validateInvalidCN(t *testing.T, ctx context.Context, hostedCluster *hypersh
 		t.Fatalf("failed to create CSRA: %v", err)
 	}
 
-	t.Logf("waiting for CSR %q to have invalid CN exposed in status", wrongCSRName)
-	var lastResourceVersion string
-	lastTimestamp := time.Now()
-	if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		csr, err := mgmt.KubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, wrongCSRName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			t.Logf("CSR %q does not exist yet", wrongCSRName)
-			return false, nil
-		}
-		if err != nil && !apierrors.IsNotFound(err) {
-			return true, err
-		}
-		var markedInvalid bool
-		if csr.ObjectMeta.ResourceVersion != lastResourceVersion {
-			t.Logf("CSR %q observed at RV %s after %s", wrongCSRName, csr.ObjectMeta.ResourceVersion, time.Since(lastTimestamp))
-			for _, condition := range csr.Status.Conditions {
-				if condition.Type == certificatesv1.CertificateFailed &&
-					condition.Status == corev1.ConditionTrue &&
-					condition.Reason == "SignerValidationFailure" {
-					markedInvalid = true
-				}
-				msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
-				if condition.Reason != "" {
-					msg += ": " + condition.Reason
-				}
-				if condition.Message != "" {
-					msg += "(" + condition.Message + ")"
-				}
-				t.Logf("CSR %q status: %s", csr.Name, msg)
-			}
-			lastResourceVersion = csr.ObjectMeta.ResourceVersion
-			lastTimestamp = time.Now()
-		}
-
-		if markedInvalid {
-			return true, nil
-		}
-
-		return false, nil
-	}); err != nil {
-		t.Fatalf("never saw CSR marked as invalid: %v", err)
-	}
+	util.EventuallyObject(
+		t, ctx, fmt.Sprintf("waiting for CSR %q to have invalid CN exposed in status", wrongCSRName),
+		func(ctx context.Context) (*certificatesv1.CertificateSigningRequest, error) {
+			return mgmt.KubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, wrongCSRName, metav1.GetOptions{})
+		},
+		util.ConditionPredicate[*certificatesv1.CertificateSigningRequest](util.Condition{
+			Type:   string(certificatesv1.CertificateFailed),
+			Status: metav1.ConditionTrue,
+			Reason: "SignerValidationFailure",
+		}),
+	)
 }
 
 func validateCSRFlow(t *testing.T, ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients, signer certificates.SignerClass) []byte {
@@ -239,44 +209,20 @@ func validateCSRFlow(t *testing.T, ctx context.Context, hostedCluster *hypershif
 		t.Fatalf("failed to create CSRA: %v", err)
 	}
 
-	t.Logf("waiting for CSR %q to be approved and signed", csrName)
 	var signedCrt []byte
-	var lastResourceVersion string
-	lastTimestamp := time.Now()
-	if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		csr, err := mgmt.KubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, csrName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			t.Logf("CSR %q does not exist yet", csrName)
-			return false, nil
-		}
-		if err != nil && !apierrors.IsNotFound(err) {
-			return true, err
-		}
-		if csr.ObjectMeta.ResourceVersion != lastResourceVersion {
-			t.Logf("CSR %q observed at RV %s after %s", csrName, csr.ObjectMeta.ResourceVersion, time.Since(lastTimestamp))
-			for _, condition := range csr.Status.Conditions {
-				msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
-				if condition.Reason != "" {
-					msg += ": " + condition.Reason
-				}
-				if condition.Message != "" {
-					msg += "(" + condition.Message + ")"
-				}
-				t.Logf("CSR %q status: %s", csr.Name, msg)
+	util.EventuallyObject(
+		t, ctx, fmt.Sprintf("CSR %q to be approved and signed", csrName),
+		func(ctx context.Context) (*certificatesv1.CertificateSigningRequest, error) {
+			return mgmt.KubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, csrName, metav1.GetOptions{})
+		},
+		func(csr *certificatesv1.CertificateSigningRequest) (done bool, reasons []string, err error) {
+			if csr != nil && csr.Status.Certificate != nil {
+				signedCrt = csr.Status.Certificate
+				return true, []string{"certificate present"}, nil
 			}
-			lastResourceVersion = csr.ObjectMeta.ResourceVersion
-			lastTimestamp = time.Now()
-		}
-
-		if csr != nil && csr.Status.Certificate != nil {
-			signedCrt = csr.Status.Certificate
-			return true, nil
-		}
-
-		return false, nil
-	}); err != nil {
-		t.Fatalf("never saw CSR fulfilled: %v", err)
-	}
+			return false, []string{"no certificate present"}, nil
+		},
+	)
 
 	if len(signedCrt) == 0 {
 		t.Fatal("got a zero-length signed cert back")
@@ -304,45 +250,16 @@ func validateRevocation(t *testing.T, ctx context.Context, hostedCluster *hypers
 		t.Fatalf("failed to create CRR: %v", err)
 	}
 
-	t.Logf("waiting for CRR %s/%s to be fulfilled", hostedControlPlaneNamespace, crrName)
-	var lastResourceVersion string
-	lastTimestamp := time.Now()
-	if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		crr, err := mgmt.HyperShiftClient.CertificatesV1alpha1().CertificateRevocationRequests(hostedControlPlaneNamespace).Get(ctx, crrName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			t.Logf("CRR %q does not exist yet", crrName)
-			return false, nil
-		}
-		if err != nil && !apierrors.IsNotFound(err) {
-			return true, err
-		}
-		var complete bool
-		if crr.ObjectMeta.ResourceVersion != lastResourceVersion {
-			t.Logf("CRR observed at RV %s after %s", crr.ObjectMeta.ResourceVersion, time.Since(lastTimestamp))
-			for _, condition := range crr.Status.Conditions {
-				msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
-				if condition.Reason != "" {
-					msg += ": " + condition.Reason
-				}
-				if condition.Message != "" {
-					msg += "(" + condition.Message + ")"
-				}
-				t.Logf("CRR status: %s", msg)
-				if condition.Type == certificatesv1alpha1.PreviousCertificatesRevokedType && condition.Status == metav1.ConditionTrue {
-					complete = true
-				}
-			}
-			lastResourceVersion = crr.ObjectMeta.ResourceVersion
-			lastTimestamp = time.Now()
-		}
-		if complete {
-			t.Log("CRR complete")
-			return true, nil
-		}
-		return false, nil
-	}); err != nil {
-		t.Fatalf("never saw CRR complete: %v", err)
-	}
+	util.EventuallyObject(
+		t, ctx, fmt.Sprintf("CRR %s/%s to complete", hostedControlPlaneNamespace, crrName),
+		func(ctx context.Context) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
+			return mgmt.HyperShiftClient.CertificatesV1alpha1().CertificateRevocationRequests(hostedControlPlaneNamespace).Get(ctx, crrName, metav1.GetOptions{})
+		},
+		util.ConditionPredicate[*certificatesv1alpha1.CertificateRevocationRequest](util.Condition{
+			Type:   certificatesv1alpha1.PreviousCertificatesRevokedType,
+			Status: metav1.ConditionTrue,
+		}),
+	)
 
 	t.Logf("creating a client using the a certificate from the revoked signer")
 	previousCertClient := clientForCertKey(t, guest.Cfg, signedCrt, key)
