@@ -3,7 +3,6 @@ package kms
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"time"
 
@@ -60,14 +59,7 @@ func NewIBMCloudKMSProvider(ibmCloud *hyperv1.IBMCloudKMSSpec, kmsImage string) 
 }
 
 func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error) {
-	keyVersionKeyEntryMap := buildIBMCloudKeyVersionKeyEntryMap(p.ibmCloud.KeyList)
-	keys := make([]int, 0, len(keyVersionKeyEntryMap))
-	for k := range keyVersionKeyEntryMap {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
 
-	// KMS v2 should be first in the list
 	providerConfiguration := []v1.ProviderConfiguration{
 		{
 			KMS: &v1.KMSConfiguration{
@@ -76,24 +68,10 @@ func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfi
 				Endpoint:   ibmCloudKMSUnixSocket,
 				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
+			Identity: &v1.IdentityConfiguration{},
 		},
 	}
 
-	// iterate in reverse because highest version key should be used for new secret encryption
-	for i := len(keys) - 1; i >= 0; i-- {
-		configEntry := v1.ProviderConfiguration{
-			KMS: &v1.KMSConfiguration{
-				Name:      fmt.Sprintf("%s%d", ibmKeyNamePrefix, keyVersionKeyEntryMap[keys[i]].KeyVersion),
-				Endpoint:  ibmCloudKMSUnixSocket,
-				CacheSize: ptr.To[int32](100),
-				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
-			},
-		}
-		providerConfiguration = append(providerConfiguration, configEntry)
-	}
-	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
-		Identity: &v1.IdentityConfiguration{},
-	})
 	encryptionConfig := &v1.EncryptionConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: v1.SchemeGroupVersion.String(),
