@@ -292,7 +292,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 	if openShiftTrustedCABundleConfigMapForCPOExists {
 		util.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
-	if isExternalInfraKv(hcp) {
+	if IsExternalInfraKv(hcp) {
 		// injects the kubevirt credentials secret volume, volume mount path, and appends cli arg.
 		util.DeploymentAddKubevirtInfraCredentials(deployment)
 	}
@@ -421,7 +421,7 @@ func buildHCCClusterSignerCA(v *corev1.Volume) {
 	}
 }
 
-func isExternalInfraKv(hcp *hyperv1.HostedControlPlane) bool {
+func IsExternalInfraKv(hcp *hyperv1.HostedControlPlane) bool {
 	if hcp.Spec.Platform.Kubevirt != nil &&
 		hcp.Spec.Platform.Kubevirt.Credentials != nil &&
 		hcp.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret != nil &&
