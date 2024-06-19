@@ -605,7 +605,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 						{
 							Name:            "init-environment",
 							Image:           image,
-							ImagePullPolicy: corev1.PullAlways,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            []string{"init"},
 							SecurityContext: &corev1.SecurityContext{
@@ -635,7 +635,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								Privileged:             &privileged,
 							},
 							Image:           image,
-							ImagePullPolicy: corev1.PullAlways,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env:             envVars,
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            args,

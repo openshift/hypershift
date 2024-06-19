@@ -2494,7 +2494,7 @@ func reconcileControlPlaneOperatorDeployment(
 					{
 						Name:            "control-plane-operator",
 						Image:           cpoImage,
-						ImagePullPolicy: corev1.PullAlways,
+						ImagePullPolicy: corev1.PullIfNotPresent,
 						Env: []corev1.EnvVar{
 							{
 								Name: "MY_NAMESPACE",

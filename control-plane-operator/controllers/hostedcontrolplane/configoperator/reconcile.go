@@ -381,7 +381,7 @@ func hccVolumeClusterSignerCA() *corev1.Volume {
 func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			hostedClusterConfigOperatorName,
