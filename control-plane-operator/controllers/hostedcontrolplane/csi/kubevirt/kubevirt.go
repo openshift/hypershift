@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
@@ -161,16 +162,21 @@ func reconcileInfraConfigMap(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPla
 	default:
 		storageClassEnforcement = "allowDefault: true\nallowAll: false\n"
 	}
-
+	var infraClusterNamespace string
+	if configoperator.IsExternalInfraKv(hcp) {
+		infraClusterNamespace = hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+	} else {
+		infraClusterNamespace = cm.Namespace
+	}
 	cm.Data = map[string]string{
-		"infraClusterNamespace":        cm.Namespace,
+		"infraClusterNamespace":        infraClusterNamespace,
 		"infraClusterLabels":           fmt.Sprintf("%s=%s", hyperv1.InfraIDLabel, hcp.Spec.InfraID),
 		"infraStorageClassEnforcement": storageClassEnforcement,
 	}
 	return nil
 }
 
-func reconcileController(controller *appsv1.Deployment, componentImages map[string]string, deploymentConfig *config.DeploymentConfig) error {
+func reconcileController(controller *appsv1.Deployment, componentImages map[string]string, deploymentConfig *config.DeploymentConfig, hcp *hyperv1.HostedControlPlane) error {
 	controller.Spec = *controllerDeployment.Spec.DeepCopy()
 
 	csiDriverImage, exists := componentImages["kubevirt-csi-driver"]
@@ -208,6 +214,41 @@ func reconcileController(controller *appsv1.Deployment, componentImages map[stri
 		case "csi-liveness-probe":
 			controller.Spec.Template.Spec.Containers[i].Image = csiLivenessProbeImage
 		}
+	}
+
+	if configoperator.IsExternalInfraKv(hcp) {
+		csiDriverContainerIndex := func() int {
+			for i, container := range controller.Spec.Template.Spec.Containers {
+				if container.Name == "csi-driver" {
+					return i
+				}
+			}
+			return -1
+		}
+		containerIndex := csiDriverContainerIndex()
+		if containerIndex == -1 {
+			return fmt.Errorf("unable to find csi-driver container in %s pod", controllerDeployment.Name)
+		}
+		csiDriverContainer := controller.Spec.Template.Spec.Containers[containerIndex]
+		const infraClusterKubeconfigMount = "/var/run/secrets/infracluster"
+		csiDriverContainer.Args = append(csiDriverContainer.Args, fmt.Sprintf("--infra-cluster-kubeconfig=%s/kubeconfig", infraClusterKubeconfigMount))
+
+		externalKubeconfigVolumeMount := corev1.VolumeMount{
+			Name:      "infracluster",
+			MountPath: infraClusterKubeconfigMount,
+		}
+		csiDriverContainer.VolumeMounts = append(csiDriverContainer.VolumeMounts, externalKubeconfigVolumeMount)
+		controller.Spec.Template.Spec.Containers[containerIndex] = csiDriverContainer
+
+		infraClusterVolume := corev1.Volume{
+			Name: "infracluster",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: hyperv1.KubeVirtInfraCredentialsSecretName,
+				},
+			},
+		}
+		controller.Spec.Template.Spec.Volumes = append(controller.Spec.Template.Spec.Volumes, infraClusterVolume)
 	}
 
 	deploymentConfig.ApplyTo(controller)
@@ -539,7 +580,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	controller := manifests.KubevirtCSIDriverController(infraNamespace)
 	_, err = createOrUpdate(ctx, client, controller, func() error {
-		return reconcileController(controller, releaseImageProvider.ComponentImages(), deploymentConfig)
+		return reconcileController(controller, releaseImageProvider.ComponentImages(), deploymentConfig, hcp)
 	})
 	if err != nil {
 		return err
