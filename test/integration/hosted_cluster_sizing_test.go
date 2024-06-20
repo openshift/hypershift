@@ -269,10 +269,6 @@ func waitForHostedClusterCondition(t *testing.T, ctx context.Context, client hyp
 			return client.HypershiftV1beta1().HostedClusters(namespace).Get(ctx, name, metav1.GetOptions{})
 		},
 		predicates,
-		util.WithFilteredConditionDump(
-			util.Condition{Type: hypershiftv1beta1.ClusterSizeTransitionPending},
-			util.Condition{Type: hypershiftv1beta1.ClusterSizeComputed},
-			util.Condition{Type: hypershiftv1beta1.ClusterSizeTransitionRequired},
-		),
+		util.WithoutConditionDump(),
 	)
 }

@@ -110,16 +110,17 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 			printStatus(t, lastTimestamp, object, done, diffPredicateResults(previousResults, currentResults))
 		}
 
+		previousResults = currentResults
 		lastTimestamp = time.Now()
 		return done, nil
 	})
-	duration := time.Since(start).Round(time.Second)
+	duration := time.Since(start).Round(25 * time.Millisecond)
 
 	if err != nil {
 		// evaluate the predicates one last time to give a summary of *only* the failed ones
-		results, err := evaluatePredicates(object, predicates)
-		if err != nil {
-			t.Errorf("Failed to evaluate predicates: %v", err)
+		results, resultsErr := evaluatePredicates(object, predicates)
+		if resultsErr != nil {
+			t.Errorf("Failed to evaluate predicates: %v", resultsErr)
 		}
 		done := summarizePredicteResults(results)
 		if !done {
@@ -133,9 +134,9 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 		}
 
 		if opts.dumpConditions && !reflect.ValueOf(object).Elem().IsZero() { // can't use != nil here
-			conditions, err := Conditions(object)
-			if err != nil {
-				t.Fatalf("failed to extract conditions from %T %s/%s: %v", object, object.GetNamespace(), object.GetName(), err)
+			conditions, conditionsErr := Conditions(object)
+			if conditionsErr != nil {
+				t.Fatalf("failed to extract conditions from %T %s/%s: %v", object, object.GetNamespace(), object.GetName(), conditionsErr)
 			}
 			t.Logf("%T %s/%s conditions:", object, object.GetNamespace(), object.GetName())
 			for _, condition := range conditions {
@@ -203,7 +204,7 @@ func printStatus[T client.Object](t *testing.T, lastTimestamp time.Time, object 
 	if len(reasons) == 1 {
 		suffix = " " + reasons[0]
 	}
-	t.Logf("observed %T %s/%s %svalid at RV %s after %s:%s", object, object.GetNamespace(), object.GetName(), prefix, object.GetResourceVersion(), time.Since(lastTimestamp), suffix)
+	t.Logf("observed %T %s/%s %svalid at RV %s after %s:%s", object, object.GetNamespace(), object.GetName(), prefix, object.GetResourceVersion(), time.Since(lastTimestamp).Round(25*time.Millisecond), suffix)
 	if len(reasons) > 1 {
 		for _, message := range reasons {
 			t.Log(" - " + message)
@@ -263,13 +264,13 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 		lastTimestamp = time.Now()
 		return done, nil
 	})
-	duration := time.Since(start).Round(time.Second)
+	duration := time.Since(start).Round(25 * time.Millisecond)
 
 	if err != nil {
 		// evaluate the predicates one last time to give a summary of *only* the failed ones
-		finalResults, err := evaluateCollectionPredicates(objects, groupPredicates, predicates)
-		if err != nil {
-			t.Errorf("Failed to evaluate predicates: %v", err)
+		finalResults, resultErr := evaluateCollectionPredicates(objects, groupPredicates, predicates)
+		if resultErr != nil {
+			t.Errorf("Failed to evaluate predicates: %v", resultErr)
 		}
 		done := summarizeCollectionPredicateResults(finalResults)
 		if !done {
@@ -300,9 +301,9 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 		if opts.dumpConditions {
 			for _, object := range invalidObjects {
 				if !reflect.ValueOf(object).Elem().IsZero() { // can't use != nil here
-					conditions, err := Conditions(object)
-					if err != nil {
-						t.Errorf("failed to extract conditions from %T %s/%s: %v", object, object.GetNamespace(), object.GetName(), err)
+					conditions, conditionsErr := Conditions(object)
+					if conditionsErr != nil {
+						t.Errorf("failed to extract conditions from %T %s/%s: %v", object, object.GetNamespace(), object.GetName(), conditionsErr)
 						continue
 					}
 					t.Logf("%T %s/%s conditions:", object, object.GetNamespace(), object.GetName())
@@ -357,7 +358,7 @@ func printCollectionStatus[T client.Object](t *testing.T, lastTimestamp time.Tim
 	if !done {
 		prefix = "in"
 	}
-	t.Logf("observed %svalid %T state after %s", prefix, new(T), time.Since(lastTimestamp))
+	t.Logf("observed %svalid %T state after %s", prefix, new(T), time.Since(lastTimestamp).Round(25*time.Millisecond))
 	for key, result := range reasons {
 		if len(result.reasons) == 0 {
 			continue
@@ -469,7 +470,8 @@ func adaptConditions(in []metav1.Condition) []Condition {
 }
 
 func (needle Condition) Matches(condition Condition) bool {
-	return (needle.Status == "" || needle.Status == condition.Status) &&
+	return (needle.Type == "" || needle.Type == condition.Type) &&
+		(needle.Status == "" || needle.Status == condition.Status) &&
 		(needle.Reason == "" || needle.Reason == condition.Reason) &&
 		(needle.Message == "" || needle.Message == condition.Message)
 }
@@ -493,11 +495,5 @@ func ConditionPredicate[T client.Object](needle Condition) Predicate[T] {
 		}
 
 		return false, fmt.Sprintf("missing condition: wanted %s, did not find condition of this type", needle.String()), nil
-	}
-}
-
-func NoOpPredicate[T any]() Predicate[T] {
-	return func(item T) (bool, string, error) {
-		return true, "", nil
 	}
 }
