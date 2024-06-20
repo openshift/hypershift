@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -76,7 +77,7 @@ func WithFilteredConditionDump(matchers ...Condition) EventuallyOption {
 }
 
 // EventuallyObject polls until the predicate is fulfilled on the object.
-func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, objective string, getter func(context.Context) (T, error), predicate Predicate[T], options ...EventuallyOption) {
+func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, objective string, getter func(context.Context) (T, error), predicates []Predicate[T], options ...EventuallyOption) {
 	t.Helper()
 	opts := defaultOptions()
 	for _, option := range options {
@@ -87,7 +88,7 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 	start := time.Now()
 	lastTimestamp := time.Now()
 	var previousError string
-	var previousReasons []string
+	var previousResults []predicateResult
 	var object T
 	err := wait.PollUntilContextTimeout(ctx, opts.interval, opts.timeout, opts.immediate, func(ctx context.Context) (bool, error) {
 		var getErr error
@@ -100,23 +101,13 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 			return false, nil
 		}
 
-		done, reasons, err := predicate(object)
+		currentResults, err := evaluatePredicates(object, predicates)
 		if err != nil {
 			return false, err
 		}
-		if !done && len(reasons) == 0 {
-			return false, fmt.Errorf("programmer error: predicate returned false with no message")
-		}
-		if diff := cmp.Diff(previousReasons, reasons); diff != "" {
-			prefix := ""
-			if !done {
-				prefix = "in"
-			}
-			t.Logf("observed %T %s/%s %svalid at RV %s after %s:", object, object.GetNamespace(), object.GetName(), prefix, object.GetResourceVersion(), time.Since(lastTimestamp))
-			for _, message := range reasons {
-				t.Log(" - " + message)
-			}
-			previousReasons = reasons
+		done := summarizePredicteResults(currentResults)
+		if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+			printStatus(t, lastTimestamp, object, done, diffPredicateResults(previousResults, currentResults))
 		}
 
 		lastTimestamp = time.Now()
@@ -125,6 +116,22 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 	duration := time.Since(start).Round(time.Second)
 
 	if err != nil {
+		// evaluate the predicates one last time to give a summary of *only* the failed ones
+		results, err := evaluatePredicates(object, predicates)
+		if err != nil {
+			t.Errorf("Failed to evaluate predicates: %v", err)
+		}
+		done := summarizePredicteResults(results)
+		if !done {
+			var reasons []string
+			for _, result := range results {
+				if !result.done {
+					reasons = append(reasons, result.reason)
+				}
+			}
+			printStatus(t, start, object, done, reasons)
+		}
+
 		if opts.dumpConditions && !reflect.ValueOf(object).Elem().IsZero() { // can't use != nil here
 			conditions, err := Conditions(object)
 			if err != nil {
@@ -144,13 +151,73 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 	t.Logf("Successfully waited for %s in %s", objective, duration)
 }
 
+func evaluatePredicates[T any](object T, predicates []Predicate[T]) ([]predicateResult, error) {
+	results := make([]predicateResult, len(predicates))
+	for i, predicate := range predicates {
+		done, reason, err := predicate(object)
+		if err != nil {
+			return nil, err
+		}
+		if !done && len(reason) == 0 {
+			return nil, fmt.Errorf("programmer error: predicate returned false with no message")
+		}
+		results[i] = predicateResult{done: done, reason: reason}
+	}
+	return results, nil
+}
+
+// diffPredicateResults divulges the reasons that changed from before to after. The lists of results must be in the same order
+// and contain the results of the same number of predicates
+func diffPredicateResults(before, after []predicateResult) []string {
+	var diff []string
+	if len(before) != 0 && len(before) != len(after) {
+		panic(fmt.Sprintf("programmer error: predicates are different lengths, before=%d, after=%d", len(before), len(after)))
+	}
+	for i := range after {
+		if len(before) == 0 || before[i].reason != after[i].reason {
+			diff = append(diff, after[i].reason)
+		}
+	}
+	return diff
+}
+
+// summarizePredicteResults summarizes the predicates to determine if the conditions have been met
+func summarizePredicteResults(results []predicateResult) bool {
+	done := true
+	for i := range results {
+		done = done && results[i].done
+	}
+	return done
+}
+
+func printStatus[T client.Object](t *testing.T, lastTimestamp time.Time, object T, done bool, reasons []string) {
+	if len(reasons) == 0 {
+		return
+	}
+
+	prefix := ""
+	if !done {
+		prefix = "in"
+	}
+	suffix := ""
+	if len(reasons) == 1 {
+		suffix = " " + reasons[0]
+	}
+	t.Logf("observed %T %s/%s %svalid at RV %s after %s:%s", object, object.GetNamespace(), object.GetName(), prefix, object.GetResourceVersion(), time.Since(lastTimestamp), suffix)
+	if len(reasons) > 1 {
+		for _, message := range reasons {
+			t.Log(" - " + message)
+		}
+	}
+}
+
 type predicateResult struct {
-	done    bool
-	reasons []string
+	done   bool
+	reason string
 }
 
 // EventuallyObjects polls until the predicate is fulfilled on each of a set of objects.
-func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objective string, getter func(context.Context) ([]T, error), groupPredicate Predicate[[]T], predicate Predicate[T], options ...EventuallyOption) {
+func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objective string, getter func(context.Context) ([]T, error), groupPredicates []Predicate[[]T], predicates []Predicate[T], options ...EventuallyOption) {
 	t.Helper()
 	opts := defaultOptions()
 	for _, option := range options {
@@ -161,10 +228,11 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 	start := time.Now()
 	lastTimestamp := time.Now()
 	var previousError string
-	previousResults := map[types.NamespacedName]predicateResult{}
-	var invalidObjects []T
+	previousResults := map[types.NamespacedName][]predicateResult{}
+	var objects []T
 	err := wait.PollUntilContextTimeout(ctx, opts.interval, opts.timeout, opts.immediate, func(ctx context.Context) (bool, error) {
-		objects, getErr := getter(ctx)
+		var getErr error
+		objects, getErr = getter(ctx)
 		if getErr != nil {
 			if getErr.Error() != previousError {
 				previousError = getErr.Error()
@@ -173,61 +241,24 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 			return false, nil
 		}
 
-		currentResults := map[types.NamespacedName]predicateResult{}
-		done, reasons, err := groupPredicate(objects)
+		currentResults, err := evaluateCollectionPredicates(objects, groupPredicates, predicates)
 		if err != nil {
 			return false, err
 		}
-		if !done && len(reasons) == 0 {
-			return false, fmt.Errorf("programmer error: predicate returned false with no message")
-		}
-		currentResults[types.NamespacedName{ /* empty sentinel */ }] = predicateResult{
-			done:    done,
-			reasons: reasons,
-		}
-
-		for _, object := range objects {
-			objectDone, objectReasons, objectError := predicate(object)
-			if objectError != nil {
-				return false, objectError
-			}
-			if !objectDone && len(objectReasons) == 0 {
-				return false, fmt.Errorf("programmer error: predicate returned false with no message")
-			}
-			currentResults[types.NamespacedName{Namespace: object.GetNamespace(), Name: object.GetName()}] = predicateResult{
-				done:    objectDone,
-				reasons: objectReasons,
-			}
-			if !objectDone {
-				invalidObjects = append(invalidObjects, object)
-			}
-			done = done && objectDone
-		}
-		if diff := cmp.Diff(previousResults, currentResults, cmp.AllowUnexported(predicateResult{})); diff != "" {
-			prefix := ""
-			if !done {
-				prefix = "in"
-			}
-			t.Logf("observed %svalid %T state after %s", prefix, new(T), time.Since(lastTimestamp))
-			for key, result := range currentResults {
-				previous, seen := previousResults[key]
-				if diff := cmp.Diff(previous.reasons, result.reasons); !seen || diff != "" {
-					prefix := ""
-					if !result.done {
-						prefix = "in"
-					}
-					identifier := "collection"
-					if diff := cmp.Diff(key, types.NamespacedName{}); diff != "" {
-						identifier = fmt.Sprintf("%s/%s", key.Namespace, key.Name)
-					}
-					t.Logf(" - observed %T %s %svalid:", new(T), identifier, prefix)
-					for _, message := range result.reasons {
-						t.Log("    - " + message)
+		done := summarizeCollectionPredicateResults(currentResults)
+		if diff := cmp.Diff(previousResults, currentResults, cmp.AllowUnexported(predicateResult{})); diff != "" && os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+			reasons := map[types.NamespacedName]predicateReasons{}
+			for key, results := range currentResults {
+				if diff := diffPredicateResults(previousResults[key], results); len(diff) > 0 {
+					reasons[key] = predicateReasons{
+						done:    summarizePredicteResults(results),
+						reasons: diff,
 					}
 				}
 			}
-			previousResults = currentResults
+			printCollectionStatus[T](t, lastTimestamp, done, reasons)
 		}
+		previousResults = currentResults
 
 		lastTimestamp = time.Now()
 		return done, nil
@@ -235,6 +266,37 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 	duration := time.Since(start).Round(time.Second)
 
 	if err != nil {
+		// evaluate the predicates one last time to give a summary of *only* the failed ones
+		finalResults, err := evaluateCollectionPredicates(objects, groupPredicates, predicates)
+		if err != nil {
+			t.Errorf("Failed to evaluate predicates: %v", err)
+		}
+		done := summarizeCollectionPredicateResults(finalResults)
+		if !done {
+			reasons := map[types.NamespacedName]predicateReasons{}
+			for key, results := range finalResults {
+				var failingReasons []string
+				for _, result := range results {
+					if !result.done {
+						failingReasons = append(failingReasons, result.reason)
+					}
+				}
+				if len(failingReasons) > 0 {
+					reasons[key] = predicateReasons{
+						done:    false,
+						reasons: failingReasons,
+					}
+				}
+			}
+			printCollectionStatus[T](t, start, done, reasons)
+		}
+
+		var invalidObjects []T
+		for _, object := range objects {
+			if !summarizePredicteResults(finalResults[types.NamespacedName{Namespace: object.GetNamespace(), Name: object.GetName()}]) {
+				invalidObjects = append(invalidObjects, object)
+			}
+		}
 		if opts.dumpConditions {
 			for _, object := range invalidObjects {
 				if !reflect.ValueOf(object).Elem().IsZero() { // can't use != nil here
@@ -259,27 +321,72 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 	t.Logf("Successfully waited for %s in %s", objective, duration)
 }
 
+func evaluateCollectionPredicates[T client.Object](objects []T, groupPredicates []Predicate[[]T], predicates []Predicate[T]) (map[types.NamespacedName][]predicateResult, error) {
+	currentResults := map[types.NamespacedName][]predicateResult{}
+	groupResults, err := evaluatePredicates(objects, groupPredicates)
+	if err != nil {
+		return nil, err
+	}
+	currentResults[types.NamespacedName{ /* empty sentinel */ }] = groupResults
+
+	for _, object := range objects {
+		objectResults, objectError := evaluatePredicates(object, predicates)
+		if objectError != nil {
+			return nil, objectError
+		}
+		currentResults[types.NamespacedName{Namespace: object.GetNamespace(), Name: object.GetName()}] = objectResults
+	}
+	return currentResults, nil
+}
+
+func summarizeCollectionPredicateResults(results map[types.NamespacedName][]predicateResult) bool {
+	done := true
+	for _, result := range results {
+		done = done && summarizePredicteResults(result)
+	}
+	return done
+}
+
+type predicateReasons struct {
+	done    bool
+	reasons []string
+}
+
+func printCollectionStatus[T client.Object](t *testing.T, lastTimestamp time.Time, done bool, reasons map[types.NamespacedName]predicateReasons) {
+	prefix := ""
+	if !done {
+		prefix = "in"
+	}
+	t.Logf("observed %svalid %T state after %s", prefix, new(T), time.Since(lastTimestamp))
+	for key, result := range reasons {
+		if len(result.reasons) == 0 {
+			continue
+		}
+		prefix := ""
+		if !result.done {
+			prefix = "in"
+		}
+		identifier := "collection"
+		if diff := cmp.Diff(key, types.NamespacedName{}); diff != "" {
+			identifier = fmt.Sprintf("%s/%s", key.Namespace, key.Name)
+		}
+		suffix := ""
+		if len(result.reasons) == 1 {
+			suffix = " " + result.reasons[0]
+		}
+		t.Logf(" - observed %T %s %svalid:%s", new(T), identifier, prefix, suffix)
+		if len(result.reasons) > 1 {
+			for _, message := range result.reasons {
+				t.Log("    - " + message)
+			}
+		}
+	}
+}
+
 // Predicate evaluates an object. Return whether the object in question matches your predicate, the reasons
 // why or why not, and whether an error occurred. If determining that an object does not match a predicate,
 // a message is required. Returning an error is fatal to the asynchronous assertion using this predicate.
-type Predicate[T any] func(T) (done bool, reasons []string, err error)
-
-// AggregatePredicates closes over a logical AND for all the child predicates.
-func AggregatePredicates[T any](predicates ...Predicate[T]) Predicate[T] {
-	return func(item T) (bool, []string, error) {
-		var allReasons []string
-		allDone := true
-		for _, predicate := range predicates {
-			done, reasons, err := predicate(item)
-			if err != nil {
-				return false, nil, err
-			}
-			allReasons = append(allReasons, reasons...)
-			allDone = allDone && done
-		}
-		return allDone, allReasons, nil
-	}
-}
+type Predicate[T any] func(T) (done bool, reasons string, err error)
 
 // Condition is a generic structure required to adapt all the different concrete condition types into one.
 type Condition struct {
@@ -369,10 +476,10 @@ func (needle Condition) Matches(condition Condition) bool {
 
 // ConditionPredicate returns a predicate that validates that a particular condition type exists and has the requisite status, reason and/or message.
 func ConditionPredicate[T client.Object](needle Condition) Predicate[T] {
-	return func(item T) (bool, []string, error) {
+	return func(item T) (bool, string, error) {
 		haystack, err := Conditions(item)
 		if err != nil {
-			return false, nil, err
+			return false, "", err
 		}
 		for _, condition := range haystack {
 			if needle.Type == condition.Type {
@@ -381,16 +488,16 @@ func ConditionPredicate[T client.Object](needle Condition) Predicate[T] {
 				if !valid {
 					prefix = "in"
 				}
-				return valid, []string{fmt.Sprintf("%scorrect condition: wanted %s, got %s", prefix, needle.String(), condition.String())}, nil
+				return valid, fmt.Sprintf("%scorrect condition: wanted %s, got %s", prefix, needle.String(), condition.String()), nil
 			}
 		}
 
-		return false, []string{fmt.Sprintf("missing condition: wanted %s, did not find condition of this type", needle.String())}, nil
+		return false, fmt.Sprintf("missing condition: wanted %s, did not find condition of this type", needle.String()), nil
 	}
 }
 
 func NoOpPredicate[T any]() Predicate[T] {
-	return func(item T) (bool, []string, error) {
-		return true, nil, nil
+	return func(item T) (bool, string, error) {
+		return true, "", nil
 	}
 }

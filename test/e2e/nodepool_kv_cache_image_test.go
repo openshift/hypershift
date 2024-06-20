@@ -56,11 +56,13 @@ func (k KubeVirtCacheTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []core
 			err := k.client.Get(k.ctx, util.ObjectKey(&nodePool), np)
 			return np, err
 		},
-		func(pool *hyperv1.NodePool) (done bool, reasons []string, err error) {
-			if np.Status.Platform != nil && np.Status.Platform.KubeVirt != nil && np.Status.Platform.KubeVirt.CacheName != "" {
-				return true, nil, nil
-			}
-			return false, []string{"no cache data volume set"}, nil
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				if np.Status.Platform != nil && np.Status.Platform.KubeVirt != nil && np.Status.Platform.KubeVirt.CacheName != "" {
+					return true, "", nil
+				}
+				return false, "no cache data volume set", nil
+			},
 		},
 	)
 

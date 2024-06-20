@@ -56,11 +56,13 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 			err := k.client.Get(k.ctx, util.ObjectKey(&nodePool), np)
 			return np, err
 		},
-		func(pool *hyperv1.NodePool) (done bool, reasons []string, err error) {
-			if np.Spec.Platform.Kubevirt != nil && np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-				return true, nil, nil
-			}
-			return false, []string{fmt.Sprintf("invalid platform type, wanted %s, got %s", hyperv1.KubevirtPlatform, np.Spec.Platform.Type)}, nil
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				if np.Spec.Platform.Kubevirt != nil && np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+					return true, "", nil
+				}
+				return false, fmt.Sprintf("invalid platform type, wanted %s, got %s", hyperv1.KubevirtPlatform, np.Spec.Platform.Type), nil
+			},
 		},
 	)
 
@@ -98,12 +100,16 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 			}
 			return ptrs, err
 		},
-		func(items []*kubevirtv1.VirtualMachineInstance) (done bool, reasons []string, err error) {
-			return len(items) == 1, []string{fmt.Sprintf("wanted one VirtualMachineInstance, got %d", len(items))}, nil
+		[]e2eutil.Predicate[[]*kubevirtv1.VirtualMachineInstance]{
+			func(items []*kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				return len(items) == 1, fmt.Sprintf("wanted one VirtualMachineInstance, got %d", len(items)), nil
+			},
 		},
-		func(instance *kubevirtv1.VirtualMachineInstance) (done bool, reasons []string, err error) {
-			cores := ptr.Deref(instance.Spec.Domain.CPU, kubevirtv1.CPU{}).Cores
-			return cores == uint32(3), []string{fmt.Sprintf("wanted 3 CPU cores, got %d", cores)}, nil
+		[]e2eutil.Predicate[*kubevirtv1.VirtualMachineInstance]{
+			func(instance *kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				cores := ptr.Deref(instance.Spec.Domain.CPU, kubevirtv1.CPU{}).Cores
+				return cores == uint32(3), fmt.Sprintf("wanted 3 CPU cores, got %d", cores), nil
+			},
 		},
 	)
 }
