@@ -112,6 +112,7 @@ spec:
       compute:
         cores: 2
         memory: 4Gi
+      networkInterfaceMultiqueue: Enable
       rootVolume:
         persistent:
           size: 32Gi

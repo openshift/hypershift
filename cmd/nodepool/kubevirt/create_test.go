@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"k8s.io/utils/ptr"
+
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
@@ -78,6 +79,68 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 				},
 			},
 			expectedError: `failed to parse "--additional-network" flag: unknown param(s): badfield:ns2/nad2`,
+		},
+		{
+			name: "should succeed configuring NetworkInterfaceMultiQueue=Enable",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:                1,
+					RootVolumeSize:       16,
+					AttachDefaultNetwork: ptr.To(true),
+				},
+				AdditionalNetworks: []string{
+					"name:ns1/nad1",
+					"name:ns2/nad2",
+				},
+				NetworkInterfaceMultiQueue: "Enable",
+			},
+			output: []hypershiftv1beta1.KubevirtNetwork{
+				{
+					Name: "ns1/nad1",
+				},
+				{
+					Name: "ns2/nad2",
+				},
+			},
+		},
+		{
+			name: "should succeed configuring NetworkInterfaceMultiQueue=Disable",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:                1,
+					RootVolumeSize:       16,
+					AttachDefaultNetwork: ptr.To(true),
+				},
+				AdditionalNetworks: []string{
+					"name:ns1/nad1",
+					"name:ns2/nad2",
+				},
+				NetworkInterfaceMultiQueue: "Disable",
+			},
+			output: []hypershiftv1beta1.KubevirtNetwork{
+				{
+					Name: "ns1/nad1",
+				},
+				{
+					Name: "ns2/nad2",
+				},
+			},
+		},
+		{
+			name: "should fail configuring NetworkInterfaceMultiQueue",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:                1,
+					RootVolumeSize:       16,
+					AttachDefaultNetwork: ptr.To(true),
+				},
+				AdditionalNetworks: []string{
+					"name:ns1/nad1",
+					"name:ns2/nad2",
+				},
+				NetworkInterfaceMultiQueue: "wrong",
+			},
+			expectedError: `wrong value for the --network-multiqueue parameter. Supported values are "Enable" or "Disable"`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
