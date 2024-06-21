@@ -17,7 +17,9 @@ To run the HyperShift Operator locally, follow these steps:
 
 2. Build HyperShift.
 
-    make build
+        # requires go v1.16+
+        $ make build
+
 
 3. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see [Prerequisites](../getting-started.md#prerequisites)):
 
