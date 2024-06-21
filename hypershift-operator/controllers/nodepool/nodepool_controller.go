@@ -104,7 +104,7 @@ const (
 	tuningConfigKey                  = "tuning"
 	tunedConfigMapLabel              = "hypershift.openshift.io/tuned-config"
 	nodeTuningGeneratedConfigLabel   = "hypershift.openshift.io/nto-generated-machine-config"
-	performanceProfileConfigMapLabel = "hypershift.openshift.io/performanceprofile-config"
+	PerformanceProfileConfigMapLabel = "hypershift.openshift.io/performanceprofile-config"
 
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
@@ -1622,7 +1622,7 @@ func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.Co
 	if err := reconcileNodeTuningConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig); err != nil {
 		return err
 	}
-	performanceProfileConfigMap.Labels[performanceProfileConfigMapLabel] = "true"
+	performanceProfileConfigMap.Labels[PerformanceProfileConfigMapLabel] = "true"
 	return nil
 }
 
@@ -2562,7 +2562,7 @@ func isNodePoolGeneratedTuningConfigMap(cm *corev1.ConfigMap) bool {
 	if _, ok := cm.GetLabels()[tunedConfigMapLabel]; ok {
 		return true
 	}
-	_, ok := cm.GetLabels()[performanceProfileConfigMapLabel]
+	_, ok := cm.GetLabels()[PerformanceProfileConfigMapLabel]
 	return ok
 }
 

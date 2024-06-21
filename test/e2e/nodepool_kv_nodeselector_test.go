@@ -5,10 +5,12 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	"time"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -86,19 +88,28 @@ func (k KubeVirtNodeSelectorTest) Run(t *testing.T, nodePool hyperv1.NodePool, _
 	infraClient, err := k.GetInfraClient()
 	g.Expect(err).ShouldNot(HaveOccurred())
 
-	vmis := &kubevirtv1.VirtualMachineInstanceList{}
-	labelSelector := labels.SelectorFromValidatedSet(labels.Set{hyperv1.NodePoolNameLabel: nodePool.Name})
-	g.Eventually(func(gg Gomega) {
-		gg.Expect(
-			infraClient.GetInfraClient().List(k.ctx, vmis, &crclient.ListOptions{Namespace: localInfraNS, LabelSelector: labelSelector}),
-		).To(Succeed())
-
-		gg.Expect(vmis.Items).To(HaveLen(1))
-		vmi := vmis.Items[0]
-
-		gg.Expect(vmi.Spec.NodeSelector).ToNot(BeNil())
-		gg.Expect(vmi.Spec.NodeSelector).To(Equal(k.nodeSelector))
-	}).WithContext(k.ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	e2eutil.EventuallyObjects(t, k.ctx, "one VMI to exist with the correct node selector",
+		func(ctx context.Context) ([]*kubevirtv1.VirtualMachineInstance, error) {
+			list := &kubevirtv1.VirtualMachineInstanceList{}
+			err := infraClient.GetInfraClient().List(ctx, list, &crclient.ListOptions{Namespace: localInfraNS, LabelSelector: labels.SelectorFromValidatedSet(labels.Set{hyperv1.NodePoolNameLabel: nodePool.Name})})
+			vmis := make([]*kubevirtv1.VirtualMachineInstance, len(list.Items))
+			for i := range list.Items {
+				vmis = append(vmis, &list.Items[i])
+			}
+			return vmis, err
+		},
+		[]e2eutil.Predicate[[]*kubevirtv1.VirtualMachineInstance]{
+			func(instances []*kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				return len(instances) == 1, fmt.Sprintf("expected %d VMIs, got %d", 1, len(instances)), nil
+			},
+		},
+		[]e2eutil.Predicate[*kubevirtv1.VirtualMachineInstance]{
+			func(vmi *kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				diff := cmp.Diff(vmi.Spec.NodeSelector, k.nodeSelector)
+				return diff == "", fmt.Sprintf("invalid VMI node selector: %v", diff), nil
+			},
+		},
+	)
 }
 
 func (k KubeVirtNodeSelectorTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {

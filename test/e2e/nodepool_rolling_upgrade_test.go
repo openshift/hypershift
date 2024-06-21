@@ -5,17 +5,16 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	npcontroller "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,35 +68,31 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	})
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// wait until the nodePool starts the rolling upgrade, i.e NodePoolUpdatingPlatformMachineTemplateConditionType is present.
-	err = wait.PollUntilContextTimeout(k.ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool); err != nil {
-			return false, err
-		}
+	e2eutil.EventuallyObject(t, k.ctx, fmt.Sprintf("NodePool %s/%s to start the rolling upgrade", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+			return &nodePool, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type: hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			}),
+		},
+		e2eutil.WithTimeout(2*time.Minute),
+	)
 
-		condition := npcontroller.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
-		if condition == nil {
-			return false, nil
-		}
-
-		return true, nil
-	})
-	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for nodePool to start the rolling upgrade")
-
-	// wait until the rolling upgrade is completed, i.e NodePoolUpdatingPlatformMachineTemplateConditionType is removed.
-	err = wait.PollUntilContextTimeout(k.ctx, 30*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool); err != nil {
-			return false, err
-		}
-
-		condition := npcontroller.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
-		if condition == nil {
-			return true, nil
-		}
-
-		return false, nil
-	})
-	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for the rolling upgrade to complete")
+	e2eutil.EventuallyObject(t, k.ctx, fmt.Sprintf("NodePool %s/%s to finish the rolling upgrade", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+			return &nodePool, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.ConditionMissingPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type: hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			}),
+		},
+		e2eutil.WithTimeout(30*time.Minute),
+	)
 
 	// check all aws machines have the new instance type
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)

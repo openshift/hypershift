@@ -423,6 +423,17 @@ func Conditions(item client.Object) ([]Condition, error) {
 			})
 		}
 		return conditions, nil
+	case *corev1.Pod:
+		conditions := make([]Condition, len(obj.Status.Conditions))
+		for _, condition := range obj.Status.Conditions {
+			conditions = append(conditions, Condition{
+				Type:    string(condition.Type),
+				Status:  metav1.ConditionStatus(condition.Status),
+				Reason:  condition.Reason,
+				Message: condition.Message,
+			})
+		}
+		return conditions, nil
 	case *hyperv1.NodePool:
 		conditions := make([]Condition, len(obj.Status.Conditions))
 		for _, condition := range obj.Status.Conditions {
@@ -495,5 +506,31 @@ func ConditionPredicate[T client.Object](needle Condition) Predicate[T] {
 		}
 
 		return false, fmt.Sprintf("missing condition: wanted %s, did not find condition of this type", needle.String()), nil
+	}
+}
+
+// ConditionMissingPredicate returns a predicate that validates that a particular condition type does not exist or does not have the requisite status, reason and/or message.
+func ConditionMissingPredicate[T client.Object](needle Condition) Predicate[T] {
+	return func(item T) (bool, string, error) {
+		haystack, err := Conditions(item)
+		if err != nil {
+			return false, "", err
+		}
+		valid := true
+		var found *Condition
+		for _, condition := range haystack {
+			if needle.Type == condition.Type {
+				found = &condition
+			}
+		}
+		if found == nil {
+			return true, fmt.Sprintf("correctly missing condition: did not find %s", needle.String()), nil
+		}
+		valid = !needle.Matches(*found)
+		prefix := ""
+		if !valid {
+			prefix = "in"
+		}
+		return valid, fmt.Sprintf("%scorrect condition: wanted to not match %s, found %s", prefix, needle.String(), found.String()), nil
 	}
 }

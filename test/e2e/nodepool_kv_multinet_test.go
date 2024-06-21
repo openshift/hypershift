@@ -5,9 +5,10 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	"time"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,43 +44,71 @@ func (k KubeVirtMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []c
 	g := NewWithT(t)
 
 	np := &hyperv1.NodePool{}
-	g.Eventually(func(gg Gomega) {
-		gg.Expect(k.infra.MGMTClient().Get(k.infra.Ctx(), util.ObjectKey(&nodePool), np)).Should(Succeed())
-		gg.Expect(np.Spec.Platform).ToNot(BeNil())
-		gg.Expect(np.Spec.Platform.Type).To(Equal(hyperv1.KubevirtPlatform))
-		gg.Expect(np.Spec.Platform.Kubevirt).ToNot(BeNil())
-		gg.Expect(np.Spec.Platform.Kubevirt.AdditionalNetworks).To(Equal([]hyperv1.KubevirtNetwork{{
-			Name: k.infra.Namespace() + "/" + k.infra.NADName(),
-		}}))
-	}).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
+	e2eutil.EventuallyObject(t, k.infra.Ctx(), "NodePool to have additional networks configured",
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := k.infra.MGMTClient().Get(ctx, util.ObjectKey(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(nodePool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				want, got := hyperv1.KubevirtPlatform, nodePool.Spec.Platform.Type
+				return want == got, fmt.Sprintf("expected NodePool to have platform %s, got %s", want, got), nil
+			},
+			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				diff := cmp.Diff([]hyperv1.KubevirtNetwork{{
+					Name: k.infra.Namespace() + "/" + k.infra.NADName(),
+				}}, ptr.Deref(np.Spec.Platform.Kubevirt, hyperv1.KubevirtNodePoolPlatform{}).AdditionalNetworks)
+				return diff == "", fmt.Sprintf("incorrect additional networks: %v", diff), nil
+			},
+		},
+	)
 
 	infraClient, err := k.infra.DiscoverClient()
 	g.Expect(err).ShouldNot(HaveOccurred())
 
-	vmis := &kubevirtv1.VirtualMachineInstanceList{}
-	labelSelector := labels.SelectorFromValidatedSet(labels.Set{hyperv1.NodePoolNameLabel: np.Name})
-	g.Eventually(func(gg Gomega) {
-		gg.Expect(
-			infraClient.List(k.infra.Ctx(), vmis, &crclient.ListOptions{Namespace: k.infra.Namespace(), LabelSelector: labelSelector}),
-		).To(Succeed())
-
-		gg.Expect(vmis.Items).To(HaveLen(1))
-		vmi := vmis.Items[0]
-		// Use gomega HaveField so we can skip "Mac" matching
-		matchingInterface := &kubevirtv1.Interface{}
-		gg.Expect(vmi.Spec.Domain.Devices.Interfaces).To(ContainElement(
-			HaveField("Name", "iface1_"+k.infra.Namespace()+"-"+k.infra.NADName()), matchingInterface),
-		)
-		gg.Expect(matchingInterface.InterfaceBindingMethod.Bridge).ToNot(BeNil())
-		gg.Expect(vmi.Spec.Networks).To(ContainElement(kubevirtv1.Network{
-			Name: "iface1_" + k.infra.Namespace() + "-" + k.infra.NADName(),
-			NetworkSource: kubevirtv1.NetworkSource{
-				Multus: &kubevirtv1.MultusNetwork{
-					NetworkName: k.infra.Namespace() + "/" + k.infra.NADName(),
-				},
+	e2eutil.EventuallyObjects(t, k.infra.Ctx(), "only one VMI to exist with the correct bridge interface and multus network",
+		func(ctx context.Context) ([]*kubevirtv1.VirtualMachineInstance, error) {
+			list := &kubevirtv1.VirtualMachineInstanceList{}
+			err := infraClient.List(ctx, list, &crclient.ListOptions{Namespace: k.infra.Namespace(), LabelSelector: labels.SelectorFromValidatedSet(labels.Set{hyperv1.NodePoolNameLabel: np.Name})})
+			vmis := make([]*kubevirtv1.VirtualMachineInstance, len(list.Items))
+			for i := range list.Items {
+				vmis = append(vmis, &list.Items[i])
+			}
+			return vmis, err
+		},
+		[]e2eutil.Predicate[[]*kubevirtv1.VirtualMachineInstance]{
+			func(instances []*kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				return len(instances) == 1, fmt.Sprintf("expected %d VMIs, got %d", 1, len(instances)), nil
 			},
-		}))
-	}).WithContext(k.infra.Ctx()).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+		},
+		[]e2eutil.Predicate[*kubevirtv1.VirtualMachineInstance]{
+			func(vmi *kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				var ifaceFound bool
+				ifaceName := "iface1_" + k.infra.Namespace() + "-" + k.infra.NADName()
+				for _, iface := range vmi.Spec.Domain.Devices.Interfaces {
+					if iface.Name == ifaceName {
+						ifaceFound = iface.Bridge != nil
+					}
+				}
+				return ifaceFound, fmt.Sprintf("expected to find device interface %s with bridge", ifaceName), nil
+			},
+			func(vmi *kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				expectedNetwork := kubevirtv1.Network{
+					Name: "iface1_" + k.infra.Namespace() + "-" + k.infra.NADName(),
+					NetworkSource: kubevirtv1.NetworkSource{
+						Multus: &kubevirtv1.MultusNetwork{
+							NetworkName: k.infra.Namespace() + "/" + k.infra.NADName(),
+						},
+					},
+				}
+				var networkFound bool
+				for _, network := range vmi.Spec.Networks {
+					networkFound = networkFound || cmp.Diff(expectedNetwork, network) == ""
+				}
+				return networkFound, fmt.Sprintf("expected to find multus network, had %#v", vmi.Spec.Networks), nil
+			},
+		},
+	)
 }
 
 func (k KubeVirtMultinetTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {

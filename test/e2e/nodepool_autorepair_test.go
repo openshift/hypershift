@@ -5,9 +5,9 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -17,7 +17,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/labels"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -79,17 +79,39 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 	numNodes := *nodePool.Spec.Replicas
 
 	// Wait for nodes to be ready again, without the node that was terminated
-	t.Logf("Waiting for %d available nodes without %s", numNodes, nodeToReplace)
-	err = wait.PollUntilContextTimeout(ar.ctx, 30*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ar.ctx, ar.hostedClusterClient, numNodes, ar.hostedCluster.Spec.Platform.Type, nodePool.Name)
-		for _, node := range nodes {
-			if node.Name == nodeToReplace {
-				return false, nil
+	e2eutil.EventuallyObjects(t, ar.ctx, fmt.Sprintf("%d available nodes without %s", numNodes, nodeToReplace),
+		func(ctx context.Context) ([]*corev1.Node, error) {
+			list := &corev1.NodeList{}
+			err = ar.hostedClusterClient.List(ctx, list, crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: nodePool.Name})})
+			nodes := make([]*corev1.Node, len(list.Items))
+			for i := range list.Items {
+				nodes = append(nodes, &list.Items[i])
 			}
-		}
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
+			return nodes, err
+		},
+		[]e2eutil.Predicate[[]*corev1.Node]{
+			// we want the number of nodes to heal back up to the specified number of replicas
+			func(nodes []*corev1.Node) (done bool, reasons string, err error) {
+				return len(nodes) == int(numNodes), fmt.Sprintf("expected %d nodes, got %d", numNodes, len(nodes)), nil
+			},
+			// we don't want the replaced node to exist
+			func(nodes []*corev1.Node) (done bool, reasons string, err error) {
+				for _, node := range nodes {
+					if node.Name == nodeToReplace {
+						return false, fmt.Sprintf("node %s not yet replaced", nodeToReplace), nil
+					}
+				}
+				return true, fmt.Sprintf("node %s replaced", nodeToReplace), nil
+			},
+		},
+		[]e2eutil.Predicate[*corev1.Node]{
+			// all nodes need to be ready
+			e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
+				Type:   string(corev1.NodeReady),
+				Status: metav1.ConditionTrue,
+			}),
+		},
+	)
 
 }
 

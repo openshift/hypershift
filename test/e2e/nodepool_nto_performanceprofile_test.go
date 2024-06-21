@@ -5,10 +5,12 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	"time"
 
-	. "github.com/onsi/gomega"
+	"github.com/google/go-cmp/cmp"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -74,7 +76,6 @@ func (mc *NTOPerformanceProfileTest) BuildNodePoolManifest(defaultNodepool hyper
 
 func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	t.Log("Entering NTO PerformanceProfile test")
-	g := NewWithT(t)
 
 	ctx := mc.ctx
 
@@ -106,37 +107,42 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(mc.hostedCluster.Namespace, mc.hostedCluster.Name)
 	t.Logf("Hosted control plane namespace is %s", controlPlaneNamespace)
 
-	ppConfigMapLabels := map[string]string{
-		controllerGeneratedPPConfig: "true",
-	}
-	g.Eventually(func(gg Gomega) {
-		cms := &corev1.ConfigMapList{}
-		err := mc.managementClient.List(ctx, cms, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(ppConfigMapLabels))
-		gg.Expect(err).ToNot(HaveOccurred(), "unable to find configmaps in namespace %q with label %q: %v", controlPlaneNamespace, controllerGeneratedPPConfig, err)
-
-		//Looking for the matching configmap for this nodepool in the list
-		cmName := ppConfigMapNamePrefix + nodePool.Name
-		t.Logf("Looking for Configmap %s ...", cmName)
-		ppCMs := []corev1.ConfigMap{}
-		for _, cm := range cms.Items {
-			if cm.Name == cmName {
-				ppCMs = append(ppCMs, cm)
+	e2eutil.EventuallyObjects(t, ctx, "performance profile ConfigMap to exist with correct labels and annotations",
+		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
+			list := &corev1.ConfigMapList{}
+			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
+				controllerGeneratedPPConfig: "true",
+			}))
+			configMaps := make([]*corev1.ConfigMap, len(list.Items))
+			for i := range list.Items {
+				configMaps[i] = &list.Items[i]
 			}
-		}
-		gg.Expect(ppCMs).To(HaveLen(1), "failed to find performance profile configmap for nodepool %q", nodePool.Name)
-
-		cm := ppCMs[0]
-		t.Logf("Configmap %s/%s found. Checking Labels and Annotations...", cm.Namespace, cm.Name)
-		//Checking basic label
-		gg.Expect(controllerGeneratedPPConfig).To(BeKeyOf(cm.Labels), "Unable to find %q label in PerformanceProfile ConfigMap %q", controllerGeneratedPPConfig, cm.Name)
-
-		gg.Expect(nodePoolNameLabel).To(BeKeyOf(cm.Labels), "Unable to find %q label in PerformanceProfile ConfigMap %q", nodePoolNameLabel, cm.Name)
-		gg.Expect(cm.Labels[nodePoolNameLabel]).To(Equal(nodePool.Name))
-
-		gg.Expect(nodePoolNsNameAnnotation).To(BeKeyOf(cm.Annotations), "Unable to find %q annotation in PerformanceProfile ConfigMap %q", nodePoolNsNameAnnotation, cm.Name)
-		gg.Expect(cm.Annotations[nodePoolNsNameAnnotation]).To(Equal(nodePool.Namespace + "/" + nodePool.Name))
-	}).WithContext(ctx).Within(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-	t.Log("... configmap found with proper metadata.")
+			return configMaps, err
+		},
+		[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+			func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
+				want, got := 1, len(configMaps)
+				return want == got, fmt.Sprintf("expected %d performance profile ConfigMaps, got %d", want, got), nil
+			},
+		},
+		[]e2eutil.Predicate[*corev1.ConfigMap]{
+			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
+				if diff := cmp.Diff(map[string]string{
+					nodepool.PerformanceProfileConfigMapLabel: configMap.Labels[nodepool.PerformanceProfileConfigMapLabel],
+					hyperv1.NodePoolLabel:                     configMap.Labels[hyperv1.NodePoolLabel],
+				}, map[string]string{
+					nodepool.PerformanceProfileConfigMapLabel: "true",
+					hyperv1.NodePoolLabel:                     nodePool.Name,
+				}); diff != "" {
+					return false, fmt.Sprintf("incorrect labels: %v", diff), nil
+				}
+				if want, got := nodePool.Namespace+"/"+nodePool.Name, configMap.Annotations[hyperv1.NodePoolLabel]; want != got {
+					return false, fmt.Sprintf("incorrect annotation %v: wanted %v, got %v", hyperv1.NodePoolLabel, want, got), nil
+				}
+				return true, "labels and annotations correct", nil
+			},
+		},
+	)
 
 	t.Log("Deleting configmap reference from nodepool ...")
 	baseNP := nodePool.DeepCopy()
@@ -145,23 +151,24 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		t.Fatalf("failed to update nodepool %s after removing PerformanceProfile config: %v", nodePool.Name, err)
 	}
 
-	g.Eventually(func(gg Gomega) {
-		cms := &corev1.ConfigMapList{}
-		err := mc.managementClient.List(ctx, cms, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(ppConfigMapLabels))
-		gg.Expect(err).ToNot(HaveOccurred(), "unable to find configmaps in namespace %q with label %q: %v", controlPlaneNamespace, controllerGeneratedPPConfig, err)
-
-		//Looking for the matching configmap for this nodepool in the list
-		cmName := ppConfigMapNamePrefix + nodePool.Name
-		t.Logf("Looking for Configmap %s ...", cmName)
-		ppCMs := []corev1.ConfigMap{}
-		for _, cm := range cms.Items {
-			if cm.Name == cmName {
-				ppCMs = append(ppCMs, cm)
+	e2eutil.EventuallyObjects(t, ctx, "performance profile ConfigMap to be deleted",
+		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
+			list := &corev1.ConfigMapList{}
+			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
+				controllerGeneratedPPConfig: "true",
+			}))
+			configMaps := make([]*corev1.ConfigMap, len(list.Items))
+			for i := range list.Items {
+				configMaps[i] = &list.Items[i]
 			}
-		}
-		gg.Expect(ppCMs).To(BeEmpty(), "Performance Profile ConfigMap '%s/%s' for nodepool %q found. It should be deleted", controlPlaneNamespace, cmName, nodePool.Name)
-	}).WithContext(ctx).Within(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-	t.Log("... configmap reference deleted")
-
+			return configMaps, err
+		},
+		[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+			func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
+				want, got := 0, len(configMaps)
+				return want == got, fmt.Sprintf("expected %d performance profile ConfigMaps, got %d", want, got), nil
+			},
+		}, nil,
+	)
 	t.Log("Ending NTO PerformanceProfile test: OK")
 }
