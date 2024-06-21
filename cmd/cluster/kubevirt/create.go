@@ -2,21 +2,288 @@ package kubevirt
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
-	apifixtures "github.com/openshift/hypershift/examples/fixtures"
-	"github.com/openshift/hypershift/support/infraid"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
 )
+
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
+		ServicePublishingStrategy: IngressServicePublishingStrategy,
+		NodePoolOpts:              kubevirtnodepool.DefaultOptions(),
+	}
+}
+
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+	kubevirtnodepool.BindOptions(opts.NodePoolOpts, flags)
+}
+
+func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.InfraKubeConfigFile, "infra-kubeconfig-file", opts.InfraKubeConfigFile, "Path to a kubeconfig file of an external infra cluster to be used to create the guest clusters nodes onto")
+	flags.StringVar(&opts.InfraNamespace, "infra-namespace", opts.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
+	flags.StringArrayVar(&opts.InfraStorageClassMappings, "infra-storage-class-mapping", opts.InfraStorageClassMappings, "KubeVirt CSI mapping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
+}
+
+func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+
+	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The API server address that should be used for components outside the control plane")
+	flags.StringVar(&opts.ServicePublishingStrategy, "service-publishing-strategy", opts.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
+	flags.StringArrayVar(&opts.InfraVolumeSnapshotClassMappings, "infra-volumesnapshot-class-mapping", opts.InfraVolumeSnapshotClassMappings, "KubeVirt CSI mapping of an infra VolumeSnapshotClass to a guest cluster VolumeSnapshotCluster. Mapping is structured as <infra volume snapshot class>/<guest volume snapshot class>. Example, mapping the infra volume snapshot class ocs-storagecluster-rbd-snap to a guest volume snapshot class called rdb-snap. --infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
+
+	kubevirtnodepool.BindDeveloperOptions(opts.NodePoolOpts, flags)
+}
+
+type RawCreateOptions struct {
+	ServicePublishingStrategy        string
+	APIServerAddress                 string
+	InfraKubeConfigFile              string
+	InfraNamespace                   string
+	InfraStorageClassMappings        []string
+	InfraVolumeSnapshotClassMappings []string
+
+	NodePoolOpts *kubevirtnodepool.RawKubevirtPlatformCreateOptions
+}
+
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+
+	*kubevirtnodepool.ValidatedKubevirtPlatformCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.ServicePublishingStrategy != IngressServicePublishingStrategy {
+		return nil, fmt.Errorf("service publish strategy %s is not supported, supported options: %s, %s", o.ServicePublishingStrategy, IngressServicePublishingStrategy, NodePortServicePublishingStrategy)
+	}
+	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.APIServerAddress != "" {
+		return nil, fmt.Errorf("external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", o.ServicePublishingStrategy)
+	}
+	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && (!opts.Render || opts.RenderInto != "") {
+		var err error
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, mapping := range o.InfraStorageClassMappings {
+		split := strings.Split(mapping, "/")
+		if len(split) != 2 {
+			return nil, fmt.Errorf("invalid infra storageclass mapping [%s]", mapping)
+		}
+	}
+
+	for _, mapping := range o.InfraVolumeSnapshotClassMappings {
+		split := strings.Split(mapping, "/")
+		if len(split) != 2 {
+			return nil, fmt.Errorf("invalid infra volume snapshot class mapping [%s]", mapping)
+		}
+	}
+
+	if o.InfraKubeConfigFile == "" && o.InfraNamespace != "" {
+		return nil, fmt.Errorf("external infra cluster namespace was provided but a kubeconfig is missing")
+	}
+
+	if o.InfraNamespace == "" && o.InfraKubeConfigFile != "" {
+		return nil, fmt.Errorf("external infra cluster kubeconfig was provided but an infra namespace is missing")
+	}
+
+	validOpts := &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}
+	var err error
+	validOpts.ValidatedKubevirtPlatformCreateOptions, err = o.NodePoolOpts.Validate()
+
+	return validOpts, err
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
+
+	CompletedNodePoolOpts *kubevirtnodepool.KubevirtPlatformCreateOptions
+
+	externalDNSDomain string
+
+	name, namespace                                 string
+	baseDomainPassthrough                           bool
+	allowUnsupportedKubeVirtRHCOSVariantsAnnotation string
+}
+
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
+}
+
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+			baseDomainPassthrough:  opts.BaseDomain == "",
+			name:                   opts.Name,
+			namespace:              opts.Namespace,
+		},
+	}
+
+	completed, err := o.ValidatedKubevirtPlatformCreateOptions.Complete()
+	output.CompletedNodePoolOpts = completed
+	return output, err
+}
+
+func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
+	// TODO: this is a very weird way to pass input in, would be best to have it explicit
+	if val, exists := cluster.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]; exists {
+		o.allowUnsupportedKubeVirtRHCOSVariantsAnnotation = val
+	}
+
+	cluster.Spec.Platform = hyperv1.PlatformSpec{
+		Type:     hyperv1.KubevirtPlatform,
+		Kubevirt: &hyperv1.KubevirtPlatformSpec{},
+	}
+
+	if len(o.InfraKubeConfigFile) > 0 {
+		cluster.Spec.Platform.Kubevirt.Credentials = &hyperv1.KubevirtPlatformCredentials{
+			InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+				Name: infraKubeconfigSecret(cluster.Namespace, cluster.Name).Name,
+				Key:  "kubeconfig",
+			},
+		}
+	}
+
+	switch o.ServicePublishingStrategy {
+	case "NodePort":
+		cluster.Spec.Services = core.GetServicePublishingStrategyMappingByAPIServerAddress(o.APIServerAddress, cluster.Spec.Networking.NetworkType)
+	case "Ingress":
+		cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
+	default:
+		panic(fmt.Sprintf("service publishing type %s is not supported", o.ServicePublishingStrategy))
+	}
+
+	if o.InfraNamespace != "" {
+		cluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace = o.InfraNamespace
+	}
+
+	if o.baseDomainPassthrough {
+		cluster.Spec.Platform.Kubevirt.BaseDomainPassthrough = &o.baseDomainPassthrough
+	}
+
+	if len(o.InfraStorageClassMappings) > 0 {
+		cluster.Spec.Platform.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{
+			Type:   hyperv1.ManualKubevirtStorageDriverConfigType,
+			Manual: &hyperv1.KubevirtManualStorageDriverConfig{},
+		}
+
+		for _, mapping := range o.InfraStorageClassMappings {
+			split := strings.Split(mapping, "/")
+			if len(split) != 2 {
+				// This is sanity checked by the hypershift cli as well, so this error should
+				// not be encountered here. This check is left here as a safety measure.
+				panic(fmt.Sprintf("invalid KubeVirt infra storage class mapping [%s]", mapping))
+			}
+			guestName, groupName := parseTenantClassString(split[1])
+			newMap := hyperv1.KubevirtStorageClassMapping{
+				InfraStorageClassName: split[0],
+				GuestStorageClassName: guestName,
+				Group:                 groupName,
+			}
+			cluster.Spec.Platform.Kubevirt.StorageDriver.Manual.StorageClassMapping =
+				append(cluster.Spec.Platform.Kubevirt.StorageDriver.Manual.StorageClassMapping, newMap)
+		}
+	}
+	if len(o.InfraVolumeSnapshotClassMappings) > 0 {
+		if cluster.Spec.Platform.Kubevirt.StorageDriver == nil {
+			cluster.Spec.Platform.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{
+				Type:   hyperv1.ManualKubevirtStorageDriverConfigType,
+				Manual: &hyperv1.KubevirtManualStorageDriverConfig{},
+			}
+		}
+		for _, mapping := range o.InfraVolumeSnapshotClassMappings {
+			split := strings.Split(mapping, "/")
+			if len(split) != 2 {
+				// This is sanity checked by the hypershift cli as well, so this error should
+				// not be encountered here. This check is left here as a safety measure.
+				panic(fmt.Sprintf("invalid KubeVirt infra volume snapshot class mapping [%s]", mapping))
+			}
+			guestName, groupName := parseTenantClassString(split[1])
+			newMap := hyperv1.KubevirtVolumeSnapshotClassMapping{
+				InfraVolumeSnapshotClassName: split[0],
+				GuestVolumeSnapshotClassName: guestName,
+				Group:                        groupName,
+			}
+			cluster.Spec.Platform.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping =
+				append(cluster.Spec.Platform.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping, newMap)
+		}
+	}
+	return nil
+}
+
+func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	nodePool := constructor(hyperv1.KubevirtPlatform, "")
+	if nodePool.Spec.Management.UpgradeType == "" {
+		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+	}
+	nodePool.Spec.Platform.Kubevirt = o.CompletedNodePoolOpts.NodePoolPlatform()
+	if o.allowUnsupportedKubeVirtRHCOSVariantsAnnotation != "" {
+		if nodePool.Annotations == nil {
+			nodePool.Annotations = map[string]string{}
+		}
+		nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation] = o.allowUnsupportedKubeVirtRHCOSVariantsAnnotation
+	}
+	return []*hyperv1.NodePool{nodePool}
+}
+
+func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
+	if len(o.InfraKubeConfigFile) > 0 {
+		infraKubeConfigContents, err := os.ReadFile(o.InfraKubeConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read external infra cluster kubeconfig file: %w", err)
+		}
+		infraKubeConfigSecret := infraKubeconfigSecret(o.namespace, o.name)
+		infraKubeConfigSecret.Data = map[string][]byte{
+			"kubeconfig": infraKubeConfigContents,
+		}
+		return []client.Object{infraKubeConfigSecret}, nil
+	}
+
+	return nil, nil
+}
+
+func infraKubeconfigSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name + "-infra-credentials",
+			Namespace: namespace,
+			Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+}
+
+var _ core.Platform = (*CreateOptions)(nil)
 
 type NetworkOpts struct {
 	Name string `param:"name"`
@@ -27,47 +294,15 @@ const (
 	IngressServicePublishingStrategy  = "Ingress"
 )
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
 		Short:        "Creates basic functional HostedCluster resources on KubeVirt platform",
 		SilenceUsage: true,
 	}
 
-	opts.KubevirtPlatform = core.KubevirtPlatformCreateOptions{
-		ServicePublishingStrategy:  IngressServicePublishingStrategy,
-		APIServerAddress:           "",
-		Memory:                     "8Gi",
-		Cores:                      2,
-		ContainerDiskImage:         "",
-		RootVolumeSize:             32,
-		InfraKubeConfigFile:        "",
-		CacheStrategyType:          "",
-		NetworkInterfaceMultiQueue: "",
-		QoSClass:                   "Burstable",
-		AttachDefaultNetwork:       pointer.Bool(true),
-	}
-
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.APIServerAddress, "api-server-address", opts.KubevirtPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.Memory, "memory", opts.KubevirtPlatform.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
-	cmd.Flags().Uint32Var(&opts.KubevirtPlatform.Cores, "cores", opts.KubevirtPlatform.Cores, "The number of cores inside the vmi, Must be a value greater than or equal to 1")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.RootVolumeStorageClass, "root-volume-storage-class", opts.KubevirtPlatform.RootVolumeStorageClass, "The storage class to use for machines in the NodePool")
-	cmd.Flags().Uint32Var(&opts.KubevirtPlatform.RootVolumeSize, "root-volume-size", opts.KubevirtPlatform.RootVolumeSize, "The size of the root volume for machines in the NodePool in Gi")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.RootVolumeAccessModes, "root-volume-access-modes", opts.KubevirtPlatform.RootVolumeAccessModes, "The access modes of the root volume to use for machines in the NodePool (comma-delimited list)")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.RootVolumeVolumeMode, "root-volume-volume-mode", opts.KubevirtPlatform.RootVolumeVolumeMode, "The volume mode of the root volume to use for machines in the NodePool. Supported values are \"Block\", \"Filesystem\"")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.ContainerDiskImage, "containerdisk", opts.KubevirtPlatform.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.ServicePublishingStrategy, "service-publishing-strategy", opts.KubevirtPlatform.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraKubeConfigFile, "infra-kubeconfig-file", opts.KubevirtPlatform.InfraKubeConfigFile, "Path to a kubeconfig file of an external infra cluster to be used to create the guest clusters nodes onto")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraNamespace, "infra-namespace", opts.KubevirtPlatform.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.CacheStrategyType, "root-volume-cache-strategy", opts.KubevirtPlatform.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
-	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI mapping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
-	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings, "infra-volumesnapshot-class-mapping", opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings, "KubeVirt CSI mapping of an infra VolumeSnapshotClass to a guest cluster VolumeSnapshotCluster. Mapping is structured as <infra volume snapshot class>/<guest volume snapshot class>. Example, mapping the infra volume snapshot class ocs-storagecluster-rbd-snap to a guest volume snapshot class called rdb-snap. --infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.NetworkInterfaceMultiQueue, "network-multiqueue", opts.KubevirtPlatform.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
-	cmd.Flags().StringVar(&opts.KubevirtPlatform.QoSClass, "qos-class", opts.KubevirtPlatform.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
-	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.AdditionalNetworks, "additional-network", opts.KubevirtPlatform.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
-	cmd.Flags().BoolVar(opts.KubevirtPlatform.AttachDefaultNetwork, "attach-default-network", *opts.KubevirtPlatform.AttachDefaultNetwork, `Specify if the default pod network should be attached to the nodes. This can only be set if --additional-network is configured`)
-	cmd.Flags().StringToStringVar(&opts.KubevirtPlatform.VmNodeSelector, "vm-node-selector", opts.KubevirtPlatform.VmNodeSelector, "A comma separated list of key=value pairs to use as the node selector for the KubeVirt VirtualMachines to be scheduled onto. (e.g. role=kubevirt,size=large)")
-
+	kubevirtOpts := DefaultOptions()
+	BindDeveloperOptions(kubevirtOpts, cmd.Flags())
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -78,7 +313,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err := core.CreateCluster(ctx, opts, kubevirtOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -88,144 +323,24 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	return core.CreateCluster(ctx, opts, ApplyPlatformSpecificsValues)
+func parseTenantClassString(optionString string) (string, string) {
+	guestName := optionString
+	optionsSplit := strings.Split(optionString, ",")
+	if len(optionsSplit) > 1 {
+		guestName = optionsSplit[0]
+		for i := 1; i < len(optionsSplit); i++ {
+			optionSplit := strings.Split(optionsSplit[i], "=")
+			if len(optionSplit) != 2 {
+				panic(fmt.Sprintf("invalid KubeVirt infra storage class mapping option [%s]", optionsSplit[i]))
+			}
+			if isValidGroupOption(optionSplit[0]) {
+				return guestName, optionSplit[1]
+			}
+		}
+	}
+	return guestName, ""
 }
 
-func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	if opts.KubevirtPlatform.ServicePublishingStrategy != NodePortServicePublishingStrategy && opts.KubevirtPlatform.ServicePublishingStrategy != IngressServicePublishingStrategy {
-		return fmt.Errorf("service publish strategy %s is not supported, supported options: %s, %s", opts.KubevirtPlatform.ServicePublishingStrategy, IngressServicePublishingStrategy, NodePortServicePublishingStrategy)
-	}
-	if opts.KubevirtPlatform.ServicePublishingStrategy != NodePortServicePublishingStrategy && opts.KubevirtPlatform.APIServerAddress != "" {
-		return fmt.Errorf("external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", opts.KubevirtPlatform.ServicePublishingStrategy)
-	}
-	if opts.KubevirtPlatform.APIServerAddress == "" && opts.KubevirtPlatform.ServicePublishingStrategy == NodePortServicePublishingStrategy && (!opts.Render || opts.RenderInto != "") {
-		if opts.KubevirtPlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
-			return err
-		}
-	}
-
-	if opts.KubevirtPlatform.Cores < 1 {
-		return errors.New("the number of cores inside the machine must be a value greater than or equal to 1")
-	}
-
-	if opts.KubevirtPlatform.RootVolumeSize < 16 {
-		return fmt.Errorf("the root volume size [%d] must be greater than or equal to 16", opts.KubevirtPlatform.RootVolumeSize)
-	}
-
-	for _, mapping := range opts.KubevirtPlatform.InfraStorageClassMappings {
-		split := strings.Split(mapping, "/")
-		if len(split) != 2 {
-			return fmt.Errorf("invalid infra storageclass mapping [%s]", mapping)
-		}
-	}
-
-	for _, mapping := range opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings {
-		split := strings.Split(mapping, "/")
-		if len(split) != 2 {
-			return fmt.Errorf("invalid infra volume snapshot class mapping [%s]", mapping)
-		}
-	}
-
-	infraID := opts.InfraID
-	if len(infraID) == 0 {
-		exampleOptions.InfraID = infraid.New(opts.Name)
-	} else {
-		exampleOptions.InfraID = infraID
-	}
-
-	var infraKubeConfigContents []byte
-	infraKubeConfigFile := opts.KubevirtPlatform.InfraKubeConfigFile
-	if len(infraKubeConfigFile) > 0 {
-		infraKubeConfigContents, err = os.ReadFile(infraKubeConfigFile)
-		if err != nil {
-			return fmt.Errorf("failed to read external infra cluster kubeconfig file: %w", err)
-		}
-	} else {
-		infraKubeConfigContents = nil
-	}
-
-	if opts.KubevirtPlatform.InfraKubeConfigFile == "" && opts.KubevirtPlatform.InfraNamespace != "" {
-		return fmt.Errorf("external infra cluster namespace was provided but a kubeconfig is missing")
-	}
-
-	if opts.KubevirtPlatform.RootVolumeVolumeMode != "" &&
-		opts.KubevirtPlatform.RootVolumeVolumeMode != string(corev1.PersistentVolumeBlock) &&
-		opts.KubevirtPlatform.RootVolumeVolumeMode != string(corev1.PersistentVolumeFilesystem) {
-
-		return fmt.Errorf(`unsupported value for the --root-volume-volume-mode parameter. May be only "Filesystem" or "Block"`)
-	}
-
-	if opts.KubevirtPlatform.InfraNamespace == "" && opts.KubevirtPlatform.InfraKubeConfigFile != "" {
-		return fmt.Errorf("external infra cluster kubeconfig was provided but an infra namespace is missing")
-	}
-
-	if opts.KubevirtPlatform.CacheStrategyType != "" &&
-		opts.KubevirtPlatform.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyNone) &&
-		opts.KubevirtPlatform.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyPVC) {
-		return fmt.Errorf(`wrong value for the --root-volume-cache-strategy parameter. May be only "None" or "PVC"`)
-	}
-
-	var multiQueue *hyperv1.MultiQueueSetting
-	switch value := hyperv1.MultiQueueSetting(opts.KubevirtPlatform.NetworkInterfaceMultiQueue); value {
-	case "": // do nothing; value is nil
-	case hyperv1.MultiQueueEnable, hyperv1.MultiQueueDisable:
-		multiQueue = &value
-	default:
-		return fmt.Errorf(`wrong value for the --network-multiqueue parameter. May be only "enable" or "disable"`)
-	}
-
-	var qosClass *hyperv1.QoSClass
-	switch value := hyperv1.QoSClass(opts.KubevirtPlatform.QoSClass); value {
-	case "": // do nothing; value is nil
-	case hyperv1.QoSClassBurstable, hyperv1.QoSClassGuaranteed:
-		qosClass = &value
-	default:
-		return fmt.Errorf(`wrong value for the --qos-class parameter. Supported values are "Burstable" are "Guaranteed"`)
-	}
-
-	if len(opts.KubevirtPlatform.AdditionalNetworks) == 0 && opts.KubevirtPlatform.AttachDefaultNetwork != nil && !*opts.KubevirtPlatform.AttachDefaultNetwork {
-		return fmt.Errorf(`missing --additional-network. when --attach-default-network is false configuring an additional network is mandatory`)
-	}
-
-	additionalNetworks := []hyperv1.KubevirtNetwork{}
-	for _, additionalNetworkOptsRaw := range opts.KubevirtPlatform.AdditionalNetworks {
-		additionalNetworkOpts := NetworkOpts{}
-		if err := params.Map("additional-network", additionalNetworkOptsRaw, &additionalNetworkOpts); err != nil {
-			return err
-		}
-		additionalNetworks = append(additionalNetworks, hyperv1.KubevirtNetwork{
-			Name: additionalNetworkOpts.Name,
-		})
-	}
-
-	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
-		ServicePublishingStrategy:        opts.KubevirtPlatform.ServicePublishingStrategy,
-		APIServerAddress:                 opts.KubevirtPlatform.APIServerAddress,
-		Memory:                           opts.KubevirtPlatform.Memory,
-		Cores:                            opts.KubevirtPlatform.Cores,
-		Image:                            opts.KubevirtPlatform.ContainerDiskImage,
-		RootVolumeSize:                   opts.KubevirtPlatform.RootVolumeSize,
-		RootVolumeStorageClass:           opts.KubevirtPlatform.RootVolumeStorageClass,
-		RootVolumeAccessModes:            opts.KubevirtPlatform.RootVolumeAccessModes,
-		RootVolumeVolumeMode:             opts.KubevirtPlatform.RootVolumeVolumeMode,
-		InfraKubeConfig:                  infraKubeConfigContents,
-		InfraNamespace:                   opts.KubevirtPlatform.InfraNamespace,
-		CacheStrategyType:                opts.KubevirtPlatform.CacheStrategyType,
-		InfraStorageClassMappings:        opts.KubevirtPlatform.InfraStorageClassMappings,
-		InfraVolumeSnapshotClassMappings: opts.KubevirtPlatform.InfraVolumeSnapshotClassMappings,
-		NetworkInterfaceMultiQueue:       multiQueue,
-		QoSClass:                         qosClass,
-		AdditionalNetworks:               additionalNetworks,
-		AttachDefaultNetwork:             opts.KubevirtPlatform.AttachDefaultNetwork,
-		VmNodeSelector:                   opts.KubevirtPlatform.VmNodeSelector,
-	}
-
-	if opts.BaseDomain != "" {
-		exampleOptions.BaseDomain = opts.BaseDomain
-	} else {
-		exampleOptions.Kubevirt.BaseDomainPassthrough = true
-	}
-
-	return nil
+func isValidGroupOption(input string) bool {
+	return strings.TrimSpace(strings.ToLower(input)) == "group"
 }

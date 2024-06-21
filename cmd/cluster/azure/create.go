@@ -10,41 +10,320 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
-	apifixtures "github.com/openshift/hypershift/examples/fixtures"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/spf13/pflag"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 )
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:               "azure",
-		Short:             "Creates basic functional HostedCluster resources on Azure",
-		SilenceUsage:      true,
-		PersistentPreRunE: validateFlags,
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
+		Location:     "eastus",
+		InstanceType: "Standard_D4s_v4",
+		DiskSizeGB:   120,
+	}
+}
+
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+}
+
+func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required)")
+	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the cluster")
+	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
+	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "The instance type to use for nodes")
+	flags.Int32Var(&opts.DiskSizeGB, "root-disk-size", opts.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
+	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
+	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "An existing VNET ID.")
+	flags.StringVar(&opts.DiskEncryptionSetID, "disk-encryption-set-id", opts.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
+	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
+	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
+	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
+	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+}
+
+func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	bindCoreOptions(opts, flags)
+
+	flags.StringVar(&opts.RHCOSImage, "rhcos-image", opts.RHCOSImage, "The RHCOS image to use.")
+}
+
+type RawCreateOptions struct {
+	CredentialsFile        string
+	Location               string
+	EncryptionKeyID        string
+	InstanceType           string
+	DiskSizeGB             int32
+	AvailabilityZones      []string
+	ResourceGroupName      string
+	VnetID                 string
+	DiskEncryptionSetID    string
+	NetworkSecurityGroupID string
+	EnableEphemeralOSDisk  bool
+	DiskStorageAccountType string
+	ResourceGroupTags      map[string]string
+	SubnetID               string
+	RHCOSImage             string
+}
+
+type AzureEncryptionKey struct {
+	KeyVaultName string
+	KeyName      string
+	KeyVersion   string
+}
+
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	// Check if the network security group is set and the resource group is not
+	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
+		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
-	opts.AzurePlatform.Location = "eastus"
-	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
-	opts.AzurePlatform.DiskSizeGB = 120
+	// Validate a resource group is provided when using the disk encryption set id flag
+	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
+		return nil, fmt.Errorf("--resource-group-name is required when using --disk-encryption-set-id")
+	}
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}, nil
+}
 
-	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
-	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
-	cmd.Flags().StringVar(&opts.AzurePlatform.EncryptionKeyID, "encryption-key-id", opts.AzurePlatform.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
-	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
-	cmd.Flags().Int32Var(&opts.AzurePlatform.DiskSizeGB, "root-disk-size", opts.AzurePlatform.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
-	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availability-zones", opts.AzurePlatform.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
-	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
-	cmd.Flags().StringVar(&opts.AzurePlatform.VnetID, "vnet-id", opts.AzurePlatform.VnetID, "An existing VNET ID.")
-	cmd.Flags().StringVar(&opts.AzurePlatform.DiskEncryptionSetID, "disk-encryption-set-id", opts.AzurePlatform.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
-	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroupID, "network-security-group-id", opts.AzurePlatform.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
-	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
-	cmd.Flags().StringVar(&opts.AzurePlatform.DiskStorageAccountType, "disk-storage-account-type", opts.AzurePlatform.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
-	cmd.Flags().StringToStringVarP(&opts.AzurePlatform.ResourceGroupTags, "resource-group-tags", "t", opts.AzurePlatform.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
-	cmd.Flags().StringVar(&opts.AzurePlatform.SubnetID, "subnet-id", opts.AzurePlatform.SubnetID, "The subnet ID where the VMs will be placed.")
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
 
-	_ = cmd.MarkFlagRequired("azure-creds")
+	externalDNSDomain string
+	name, namespace   string
+
+	infra         *azureinfra.CreateInfraOutput
+	encryptionKey *AzureEncryptionKey
+	creds         util.AzureCreds
+}
+
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
+}
+
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			name:                   opts.Name,
+			namespace:              opts.Namespace,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+		},
+	}
+
+	if opts.InfrastructureJSON != "" {
+		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read infra json file: %w", err)
+		}
+		if err := yaml.Unmarshal(rawInfra, &output.infra); err != nil {
+			return nil, fmt.Errorf("failed to deserialize infra json file: %w", err)
+		}
+	} else {
+		infraOpts, err := CreateInfraOptions(ctx, o, opts)
+		if err != nil {
+			return nil, err
+		}
+		output.infra, err = infraOpts.Run(ctx, opts.Log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create infra: %w", err)
+		}
+	}
+
+	if o.EncryptionKeyID != "" {
+		parsedKeyId, err := url.Parse(o.EncryptionKeyID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid encryption key identifier: %v", err)
+		}
+
+		key := strings.Split(strings.TrimPrefix(parsedKeyId.Path, "/keys/"), "/")
+		if len(key) != 2 {
+			return nil, fmt.Errorf("invalid encryption key identifier, couldn't retrieve key name and version: %v", err)
+		}
+
+		output.encryptionKey = &AzureEncryptionKey{
+			KeyVaultName: strings.Split(parsedKeyId.Hostname(), ".")[0],
+			KeyName:      key[0],
+			KeyVersion:   key[1],
+		}
+	}
+
+	azureCredsRaw, err := os.ReadFile(o.CredentialsFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read --azure-creds file %s: %w", o.CredentialsFile, err)
+	}
+	if err := yaml.Unmarshal(azureCredsRaw, &output.creds); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
+	}
+
+	return output, nil
+}
+
+func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
+	cluster.Spec.DNS = hyperv1.DNSSpec{
+		BaseDomain:    o.infra.BaseDomain,
+		PublicZoneID:  o.infra.PublicZoneID,
+		PrivateZoneID: o.infra.PrivateZoneID,
+	}
+
+	cluster.Spec.Platform = hyperv1.PlatformSpec{
+		Type: hyperv1.AzurePlatform,
+		Azure: &hyperv1.AzurePlatformSpec{
+			Credentials:       corev1.LocalObjectReference{Name: credentialSecret(cluster.Namespace, cluster.Name).Name},
+			SubscriptionID:    o.creds.SubscriptionID,
+			Location:          o.infra.Location,
+			ResourceGroupName: o.infra.ResourceGroupName,
+			VnetID:            o.infra.VNetID,
+			SubnetID:          o.infra.SubnetID,
+			MachineIdentityID: o.infra.MachineIdentityID,
+			SecurityGroupID:   o.infra.SecurityGroupID,
+		},
+	}
+
+	if o.encryptionKey != nil {
+		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
+			Type: hyperv1.KMS,
+			KMS: &hyperv1.KMSSpec{
+				Provider: hyperv1.AZURE,
+				Azure: &hyperv1.AzureKMSSpec{
+					ActiveKey: hyperv1.AzureKMSKey{
+						KeyVaultName: o.encryptionKey.KeyVaultName,
+						KeyName:      o.encryptionKey.KeyName,
+						KeyVersion:   o.encryptionKey.KeyVersion,
+					},
+				},
+			},
+		}
+	}
+
+	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
+	if o.externalDNSDomain != "" {
+		for i, svc := range cluster.Spec.Services {
+			switch svc.Service {
+			case hyperv1.APIServer:
+				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: fmt.Sprintf("api-%s.%s", cluster.Name, o.externalDNSDomain),
+				}
+
+			case hyperv1.OAuthServer:
+				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: fmt.Sprintf("oauth-%s.%s", cluster.Name, o.externalDNSDomain),
+				}
+
+			case hyperv1.Konnectivity:
+				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: fmt.Sprintf("konnectivity-%s.%s", cluster.Name, o.externalDNSDomain),
+				}
+			case hyperv1.Ignition:
+				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: fmt.Sprintf("ignition-%s.%s", cluster.Name, o.externalDNSDomain),
+				}
+			case hyperv1.OVNSbDb:
+				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: fmt.Sprintf("ovn-sbdb-%s.%s", cluster.Name, o.externalDNSDomain),
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func credentialSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name + "-cloud-credentials",
+			Namespace: namespace,
+		},
+	}
+}
+
+func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	if len(o.AvailabilityZones) > 0 {
+		var nodePools []*hyperv1.NodePool
+		for _, availabilityZone := range o.AvailabilityZones {
+			nodePool := constructor(hyperv1.AzurePlatform, availabilityZone)
+			if nodePool.Spec.Management.UpgradeType == "" {
+				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+			}
+			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+				VMSize:                 o.InstanceType,
+				ImageID:                o.infra.BootImageID,
+				DiskSizeGB:             o.DiskSizeGB,
+				AvailabilityZone:       availabilityZone,
+				DiskEncryptionSetID:    o.DiskEncryptionSetID,
+				EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
+				DiskStorageAccountType: o.DiskStorageAccountType,
+				SubnetID:               o.infra.SubnetID,
+			}
+			nodePools = append(nodePools, nodePool)
+		}
+		return nodePools
+	}
+	nodePool := constructor(hyperv1.AzurePlatform, "")
+	if nodePool.Spec.Management.UpgradeType == "" {
+		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+	}
+	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+		VMSize:                 o.InstanceType,
+		ImageID:                o.infra.BootImageID,
+		DiskSizeGB:             o.DiskSizeGB,
+		DiskEncryptionSetID:    o.DiskEncryptionSetID,
+		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
+		DiskStorageAccountType: o.DiskStorageAccountType,
+		SubnetID:               o.infra.SubnetID,
+	}
+	return []*hyperv1.NodePool{nodePool}
+}
+
+func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
+	secret := credentialSecret(o.namespace, o.name)
+	secret.Data = map[string][]byte{
+		"AZURE_SUBSCRIPTION_ID": []byte(o.creds.SubscriptionID),
+		"AZURE_TENANT_ID":       []byte(o.creds.TenantID),
+		"AZURE_CLIENT_ID":       []byte(o.creds.ClientID),
+		"AZURE_CLIENT_SECRET":   []byte(o.creds.ClientSecret),
+	}
+	return []client.Object{secret}, nil
+}
+
+var _ core.Platform = (*CreateOptions)(nil)
+
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "azure",
+		Short:        "Creates basic functional HostedCluster resources on Azure",
+		SilenceUsage: true,
+	}
+
+	azureOpts := DefaultOptions()
+	BindOptions(azureOpts, cmd.Flags())
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -55,7 +334,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err := core.CreateCluster(ctx, opts, azureOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -65,103 +344,28 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	if err := core.Validate(ctx, opts); err != nil {
-		return err
-	}
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) error {
-	var infra *azureinfra.CreateInfraOutput
-	var err error
-	if opts.InfrastructureJSON != "" {
-		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
+func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
+	rhcosImage := azureOpts.RHCOSImage
+	if rhcosImage == "" {
+		var err error
+		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
 		if err != nil {
-			return fmt.Errorf("failed to read infra json file: %w", err)
+			return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
-		if err := yaml.Unmarshal(rawInfra, &infra); err != nil {
-			return fmt.Errorf("failed to deserialize infra json file: %w", err)
-		}
-	} else {
-		infraOpts, err := CreateInfraOptions(ctx, opts)
-		if err != nil {
-			return err
-		}
-
-		infra, err = infraOpts.Run(ctx, opts.Log)
-		if err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
-		}
-	}
-
-	exampleOptions.BaseDomain = infra.BaseDomain
-	exampleOptions.PublicZoneID = infra.PublicZoneID
-	exampleOptions.PrivateZoneID = infra.PrivateZoneID
-	exampleOptions.InfraID = infra.InfraID
-	exampleOptions.ExternalDNSDomain = opts.ExternalDNSDomain
-	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
-		Location:               infra.Location,
-		ResourceGroupName:      infra.ResourceGroupName,
-		VnetID:                 infra.VNetID,
-		SubnetID:               infra.SubnetID,
-		BootImageID:            infra.BootImageID,
-		MachineIdentityID:      infra.MachineIdentityID,
-		InstanceType:           opts.AzurePlatform.InstanceType,
-		SecurityGroupID:        infra.SecurityGroupID,
-		DiskSizeGB:             opts.AzurePlatform.DiskSizeGB,
-		AvailabilityZones:      opts.AzurePlatform.AvailabilityZones,
-		DiskEncryptionSetID:    opts.AzurePlatform.DiskEncryptionSetID,
-		EnableEphemeralOSDisk:  opts.AzurePlatform.EnableEphemeralOSDisk,
-		DiskStorageAccountType: opts.AzurePlatform.DiskStorageAccountType,
-	}
-
-	if opts.AzurePlatform.EncryptionKeyID != "" {
-		parsedKeyId, err := url.Parse(opts.AzurePlatform.EncryptionKeyID)
-		if err != nil {
-			return fmt.Errorf("invalid encryption key identifier: %v", err)
-		}
-
-		key := strings.Split(strings.TrimPrefix(parsedKeyId.Path, "/keys/"), "/")
-		if len(key) != 2 {
-			return fmt.Errorf("invalid encryption key identifier, couldn't retrieve key name and version: %v", err)
-		}
-
-		exampleOptions.Azure.EncryptionKey = &apifixtures.AzureEncryptionKey{
-			KeyVaultName: strings.Split(parsedKeyId.Hostname(), ".")[0],
-			KeyName:      key[0],
-			KeyVersion:   key[1],
-		}
-	}
-
-	azureCredsRaw, err := os.ReadFile(opts.AzurePlatform.CredentialsFile)
-	if err != nil {
-		return fmt.Errorf("failed to read --azure-creds file %s: %w", opts.AzurePlatform.CredentialsFile, err)
-	}
-	if err := yaml.Unmarshal(azureCredsRaw, &exampleOptions.Azure.Creds); err != nil {
-		return fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
-	}
-	return nil
-}
-
-func CreateInfraOptions(ctx context.Context, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
-	rhcosImage, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
-	if err != nil {
-		return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 	}
 
 	return azureinfra.CreateInfraOptions{
 		Name:                   opts.Name,
-		Location:               opts.AzurePlatform.Location,
+		Location:               azureOpts.Location,
 		InfraID:                opts.InfraID,
-		CredentialsFile:        opts.AzurePlatform.CredentialsFile,
+		CredentialsFile:        azureOpts.CredentialsFile,
 		BaseDomain:             opts.BaseDomain,
 		RHCOSImage:             rhcosImage,
-		VnetID:                 opts.AzurePlatform.VnetID,
-		ResourceGroupName:      opts.AzurePlatform.ResourceGroupName,
-		NetworkSecurityGroupID: opts.AzurePlatform.NetworkSecurityGroupID,
-		ResourceGroupTags:      opts.AzurePlatform.ResourceGroupTags,
-		SubnetID:               opts.AzurePlatform.SubnetID,
+		VnetID:                 azureOpts.VnetID,
+		ResourceGroupName:      azureOpts.ResourceGroupName,
+		NetworkSecurityGroupID: azureOpts.NetworkSecurityGroupID,
+		ResourceGroupTags:      azureOpts.ResourceGroupTags,
+		SubnetID:               azureOpts.SubnetID,
 	}, nil
 }
 
@@ -172,53 +376,24 @@ func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecret
 
 	pullSecret, err := os.ReadFile(pullSecretFile)
 	if err != nil {
-		return "", fmt.Errorf("lookupRHCOSImage: failed to read pull secret file")
+		return "", fmt.Errorf("failed to read pull secret file: %w", err)
 	}
 
 	releaseImage, err := releaseProvider.Lookup(ctx, image, pullSecret)
 	if err != nil {
-		return "", fmt.Errorf("lookupRHCOSImage: failed to lookup release image")
+		return "", fmt.Errorf("failed to lookup release image: %w", err)
 	}
 
 	// We need to translate amd64 to x86_64 and arm64 to aarch64 since that is what is in the release image stream
 	if _, ok := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]]; !ok {
-		return "", fmt.Errorf("lookupRHCOSImage: arch does not exist in release image, arch: %s", arch)
+		return "", fmt.Errorf("arch does not exist in release image, arch: %s", arch)
 	}
 
 	rhcosImage = releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]].RHCOS.AzureDisk.URL
 
 	if rhcosImage == "" {
-		return "", fmt.Errorf("lookupRHCOSImage: RHCOS VHD image is empty")
+		return "", fmt.Errorf("RHCOS VHD image is empty: %w", err)
 	}
 
 	return rhcosImage, nil
-}
-
-// validateFlags validates the core create option flags passed in by the user
-func validateFlags(cmd *cobra.Command, _ []string) error {
-	// Check if the network security group is set and the resource group is not
-	nsg, err := cmd.Flags().GetString("network-security-group-id")
-	if err != nil {
-		return err
-	}
-	rg, err := cmd.Flags().GetString("resource-group-name")
-	if err != nil {
-		return err
-	}
-
-	if nsg != "" && rg == "" {
-		return fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
-	}
-
-	// Validate a resource group is provided when using the disk encryption set id flag
-	desID, err := cmd.Flags().GetString("disk-encryption-set-id")
-	if err != nil {
-		return err
-	}
-
-	if desID != "" && rg == "" {
-		return fmt.Errorf("resource-group-name is required when using disk-encryption-set-id")
-	}
-
-	return nil
 }

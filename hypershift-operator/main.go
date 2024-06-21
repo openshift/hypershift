@@ -21,15 +21,6 @@ import (
 	"strings"
 	"time"
 
-	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/globalconfig"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -37,26 +28,33 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
+	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -67,6 +65,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 func main() {
@@ -437,6 +436,15 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		log.Info("UWM telemetry remote write controller enabled")
 	} else {
 		log.Info("UWM telemetry remote write controller disabled")
+	}
+
+	if sharedingress.UseSharedIngress() {
+		sharedIngress := sharedingress.SharedIngressReconciler{
+			Namespace: opts.Namespace,
+		}
+		if err := sharedIngress.SetupWithManager(mgr, createOrUpdate); err != nil {
+			return fmt.Errorf("unable to create dedicated sharedingress controller: %w", err)
+		}
 	}
 
 	// Start controllers to manage dedicated request serving isolation

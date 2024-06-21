@@ -5,9 +5,10 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	"time"
 
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/gomega"
@@ -49,12 +50,21 @@ func (k KubeVirtCacheTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []core
 	g := NewWithT(t)
 
 	np := &hyperv1.NodePool{}
-	g.Eventually(func(gg Gomega) {
-		gg.Expect(k.client.Get(k.ctx, util.ObjectKey(&nodePool), np)).Should(Succeed())
-		gg.Expect(np.Status.Platform).ToNot(BeNil())
-		gg.Expect(np.Status.Platform.KubeVirt).ToNot(BeNil())
-		gg.Expect(np.Status.Platform.KubeVirt.CacheName).ToNot(BeEmpty(), "cache DataVolume name should be populated")
-	}).WithContext(k.ctx).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
+	e2eutil.EventuallyObject(
+		t, k.ctx, fmt.Sprintf("waiting for NodePool %s/%s to have a cache data volume", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := k.client.Get(k.ctx, util.ObjectKey(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				if np.Status.Platform != nil && np.Status.Platform.KubeVirt != nil && np.Status.Platform.KubeVirt.CacheName != "" {
+					return true, "", nil
+				}
+				return false, "no cache data volume set", nil
+			},
+		},
+	)
 
 	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 	var guestNamespace string

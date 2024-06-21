@@ -5,10 +5,11 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -49,12 +50,21 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 	g := NewWithT(t)
 
 	np := &hyperv1.NodePool{}
-	g.Eventually(func(gg Gomega) {
-		gg.Expect(k.client.Get(k.ctx, util.ObjectKey(&nodePool), np)).Should(Succeed())
-		gg.Expect(np.Spec.Platform).ToNot(BeNil())
-		gg.Expect(np.Spec.Platform.Type).To(Equal(hyperv1.KubevirtPlatform))
-		gg.Expect(np.Spec.Platform.Kubevirt).ToNot(BeNil())
-	}).WithContext(k.ctx).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
+	e2eutil.EventuallyObject(
+		t, k.ctx, fmt.Sprintf("waiting for NodePool %s/%s to have a kubevirt platform", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := k.client.Get(k.ctx, util.ObjectKey(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				if np.Spec.Platform.Kubevirt != nil && np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+					return true, "", nil
+				}
+				return false, fmt.Sprintf("invalid platform type, wanted %s, got %s", hyperv1.KubevirtPlatform, np.Spec.Platform.Type), nil
+			},
+		},
+	)
 
 	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 	var guestNamespace string
@@ -78,19 +88,30 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 	infraClient, err := cm.DiscoverKubevirtClusterClient(k.ctx, k.client, k.hostedCluster.Spec.InfraID, creds, localInfraNS, np.GetNamespace())
 	g.Expect(err).ShouldNot(HaveOccurred())
 
-	vmis := &kubevirtv1.VirtualMachineInstanceList{}
 	labelSelector := labels.SelectorFromValidatedSet(labels.Set{hyperv1.NodePoolNameLabel: np.Name})
-	g.Eventually(func(gg Gomega) {
-		gg.Expect(
-			infraClient.GetInfraClient().List(k.ctx, vmis, &crclient.ListOptions{Namespace: guestNamespace, LabelSelector: labelSelector}),
-		).To(Succeed())
-
-		gg.Expect(vmis.Items).To(HaveLen(1))
-		vmi := vmis.Items[0]
-
-		gg.Expect(vmi.Spec.Domain.CPU).ToNot(BeNil())
-		gg.Expect(vmi.Spec.Domain.CPU.Cores).To(Equal(uint32(3)))
-	}).WithContext(k.ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	e2eutil.EventuallyObjects(
+		t, k.ctx, fmt.Sprintf("waiting for one VirtualMachineInstance with 3 CPU cores"),
+		func(ctx context.Context) ([]*kubevirtv1.VirtualMachineInstance, error) {
+			vmis := &kubevirtv1.VirtualMachineInstanceList{}
+			err := infraClient.GetInfraClient().List(k.ctx, vmis, &crclient.ListOptions{Namespace: guestNamespace, LabelSelector: labelSelector})
+			var ptrs []*kubevirtv1.VirtualMachineInstance
+			for i := range vmis.Items {
+				ptrs = append(ptrs, &vmis.Items[i])
+			}
+			return ptrs, err
+		},
+		[]e2eutil.Predicate[[]*kubevirtv1.VirtualMachineInstance]{
+			func(items []*kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				return len(items) == 1, fmt.Sprintf("wanted one VirtualMachineInstance, got %d", len(items)), nil
+			},
+		},
+		[]e2eutil.Predicate[*kubevirtv1.VirtualMachineInstance]{
+			func(instance *kubevirtv1.VirtualMachineInstance) (done bool, reasons string, err error) {
+				cores := ptr.Deref(instance.Spec.Domain.CPU, kubevirtv1.CPU{}).Cores
+				return cores == uint32(3), fmt.Sprintf("wanted 3 CPU cores, got %d", cores), nil
+			},
+		},
+	)
 }
 
 func (k KubeVirtJsonPatchTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {

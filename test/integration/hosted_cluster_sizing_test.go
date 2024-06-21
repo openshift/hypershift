@@ -14,11 +14,9 @@ import (
 	schedulingv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration/framework"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 func noop(in *schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration) *schedulingv1alpha1applyconfigurations.SizeConfigurationApplyConfiguration {
@@ -130,9 +128,9 @@ func TestHostedSizingController(t *testing.T) {
 		t.Logf("expecting hosted cluster %s/%s to delay transition", testCtx.HostedCluster.Namespace, testCtx.HostedCluster.Name)
 		waitForHostedClusterCondition(t, testContext, testCtx.MgmtCluster.HyperShiftClient,
 			testCtx.HostedCluster.Namespace, testCtx.HostedCluster.Name,
-			[]condition{
-				{conditionType: hypershiftv1beta1.ClusterSizeTransitionPending, status: metav1.ConditionTrue, reason: "TransitionDelayNotElapsed"},
-				{conditionType: hypershiftv1beta1.ClusterSizeTransitionRequired, status: metav1.ConditionTrue, reason: "medium"},
+			[]util.Condition{
+				{Type: hypershiftv1beta1.ClusterSizeTransitionPending, Status: metav1.ConditionTrue, Reason: "TransitionDelayNotElapsed"},
+				{Type: hypershiftv1beta1.ClusterSizeTransitionRequired, Status: metav1.ConditionTrue, Reason: "medium"},
 			}, nil,
 		)
 
@@ -178,9 +176,9 @@ func TestHostedSizingController(t *testing.T) {
 		t.Logf("expecting hosted cluster %s/%s to delay transition for concurrency", testCtx.HostedCluster.Namespace, testCtx.HostedCluster.Name)
 		waitForHostedClusterCondition(t, testContext, testCtx.MgmtCluster.HyperShiftClient,
 			testCtx.HostedCluster.Namespace, testCtx.HostedCluster.Name,
-			[]condition{
-				{conditionType: hypershiftv1beta1.ClusterSizeTransitionPending, status: metav1.ConditionTrue, reason: "ConcurrencyLimitReached"},
-				{conditionType: hypershiftv1beta1.ClusterSizeTransitionRequired, status: metav1.ConditionTrue, reason: "large"},
+			[]util.Condition{
+				{Type: hypershiftv1beta1.ClusterSizeTransitionPending, Status: metav1.ConditionTrue, Reason: "ConcurrencyLimitReached"},
+				{Type: hypershiftv1beta1.ClusterSizeTransitionRequired, Status: metav1.ConditionTrue, Reason: "large"},
 			}, nil,
 		)
 
@@ -229,10 +227,10 @@ func waitForHostedClusterToHaveSize(t *testing.T, ctx context.Context, client hy
 	t.Logf("expecting hosted cluster %s/%s to transition to %s size", namespace, name, size)
 	waitForHostedClusterCondition(t, ctx, client,
 		namespace, name,
-		[]condition{
-			{conditionType: hypershiftv1beta1.ClusterSizeComputed, status: metav1.ConditionTrue, reason: size},
-			{conditionType: hypershiftv1beta1.ClusterSizeTransitionPending, status: metav1.ConditionFalse, reason: "ClusterSizeTransitioned"},
-			{conditionType: hypershiftv1beta1.ClusterSizeTransitionRequired, status: metav1.ConditionFalse, reason: hypershiftv1beta1.AsExpectedReason},
+		[]util.Condition{
+			{Type: hypershiftv1beta1.ClusterSizeComputed, Status: metav1.ConditionTrue, Reason: size},
+			{Type: hypershiftv1beta1.ClusterSizeTransitionPending, Status: metav1.ConditionFalse, Reason: "ClusterSizeTransitioned"},
+			{Type: hypershiftv1beta1.ClusterSizeTransitionRequired, Status: metav1.ConditionFalse, Reason: hypershiftv1beta1.AsExpectedReason},
 		},
 		func(hostedCluster *hypershiftv1beta1.HostedCluster) (done bool, reason string, err error) {
 			label, present := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
@@ -247,85 +245,30 @@ func waitForHostedClusterToHaveSize(t *testing.T, ctx context.Context, client hy
 	)
 }
 
-var relevantConditions = sets.New[string](hypershiftv1beta1.ClusterSizeTransitionPending, hypershiftv1beta1.ClusterSizeComputed, hypershiftv1beta1.ClusterSizeTransitionRequired)
-
-type validationFunc func(*hypershiftv1beta1.HostedCluster) (done bool, reason string, err error)
-
-type condition struct {
-	conditionType string
-	status        metav1.ConditionStatus
-	reason        string
-}
-
-func waitForHostedClusterCondition(t *testing.T, ctx context.Context, client hypershiftclient.Interface, namespace, name string, conditions []condition, validate validationFunc) {
+func waitForHostedClusterCondition(t *testing.T, ctx context.Context, client hypershiftclient.Interface, namespace, name string, conditions []util.Condition, validate util.Predicate[*hypershiftv1beta1.HostedCluster]) {
 	var display []string
 	for _, condition := range conditions {
-		display = append(display, fmt.Sprintf("%s=%s: %s", condition.conditionType, condition.status, condition.reason))
+		display = append(display, condition.String())
 	}
 	intent := fmt.Sprintf("hosted cluster %s/%s to have status conditions %s", namespace, name, strings.Join(display, ", "))
 	if validate != nil {
 		intent += " and match validation func"
 	}
-	t.Logf("waiting for %s", intent)
-	var lastResourceVersion string
-	lastTimestamp := time.Now()
-	var lastReason string
-	if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		hostedCluster, err := client.HypershiftV1beta1().HostedClusters(namespace).Get(ctx, name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			t.Logf("hosted cluster %s/%s does not exist yet", namespace, name)
-			return false, nil
-		}
-		if err != nil && !apierrors.IsNotFound(err) {
-			return true, err
-		}
-		if hostedCluster.ObjectMeta.ResourceVersion != lastResourceVersion {
-			t.Logf("hosted cluster %s/%s observed at RV %s after %s", namespace, name, hostedCluster.ObjectMeta.ResourceVersion, time.Since(lastTimestamp))
-			for _, condition := range hostedCluster.Status.Conditions {
-				if !relevantConditions.Has(condition.Type) {
-					continue
-				}
-				msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
-				if condition.Reason != "" {
-					msg += ": " + condition.Reason
-				}
-				if condition.Message != "" {
-					msg += " (" + condition.Message + ")"
-				}
-				t.Logf("hosted cluster %s/%s status: %s", namespace, name, msg)
-			}
-			lastResourceVersion = hostedCluster.ObjectMeta.ResourceVersion
-			lastTimestamp = time.Now()
-		}
 
-		conditionsMet := true
-		for _, expected := range conditions {
-			var conditionMet bool
-			for _, actual := range hostedCluster.Status.Conditions {
-				if actual.Type == expected.conditionType &&
-					actual.Status == expected.status &&
-					actual.Reason == expected.reason {
-					conditionMet = true
-					break
-				}
-			}
-			conditionsMet = conditionsMet && conditionMet
-		}
-		if conditionsMet {
-			if validate != nil {
-				done, validationReason, err := validate(hostedCluster)
-				if validationReason != lastReason {
-					t.Logf("hosted cluster %s/%s validation: %s", namespace, name, validationReason)
-					lastReason = validationReason
-				}
-				return done, err
-			} else {
-				return true, nil
-			}
-		}
-
-		return false, nil
-	}); err != nil {
-		t.Fatalf("never saw %s: %v", intent, err)
+	var predicates []util.Predicate[*hypershiftv1beta1.HostedCluster]
+	for _, condition := range conditions {
+		predicates = append(predicates, util.ConditionPredicate[*hypershiftv1beta1.HostedCluster](condition))
 	}
+	if validate != nil {
+		predicates = append(predicates, validate)
+	}
+
+	util.EventuallyObject(
+		t, ctx, intent,
+		func(ctx context.Context) (*hypershiftv1beta1.HostedCluster, error) {
+			return client.HypershiftV1beta1().HostedClusters(namespace).Get(ctx, name, metav1.GetOptions{})
+		},
+		predicates,
+		util.WithoutConditionDump(),
+	)
 }

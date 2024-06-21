@@ -24,10 +24,15 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
+	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
+	"github.com/openshift/hypershift/cmd/cluster/none"
+	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awscmdutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
@@ -432,95 +437,42 @@ type configurableClusterOptions struct {
 
 var nextAWSZoneIndex = 0
 
-func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
-	createOption := core.CreateOptions{
-		ReleaseImage:                     o.LatestReleaseImage,
-		NodePoolReplicas:                 2,
-		ControlPlaneAvailabilityPolicy:   string(hyperv1.SingleReplica),
-		InfrastructureAvailabilityPolicy: string(hyperv1.SingleReplica),
-		NetworkType:                      string(o.configurableClusterOptions.NetworkType),
-		BaseDomain:                       o.configurableClusterOptions.BaseDomain,
-		PullSecretFile:                   o.configurableClusterOptions.PullSecretFile,
-		ControlPlaneOperatorImage:        o.configurableClusterOptions.ControlPlaneOperatorImage,
-		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
-		NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
-		AWSPlatform: core.AWSPlatformOptions{
-			RootVolumeSize: 64,
-			RootVolumeType: "gp3",
-			Region:         o.configurableClusterOptions.Region,
-			EndpointAccess: o.configurableClusterOptions.AWSEndpointAccess,
-			IssuerURL:      o.IssuerURL,
-			AWSCredentialsOpts: awscmdutil.AWSCredentialsOptions{
-				AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOptions {
+	createOption := e2eutil.PlatformAgnosticOptions{
+		RawCreateOptions: core.RawCreateOptions{
+			ReleaseImage:                     o.LatestReleaseImage,
+			NodePoolReplicas:                 2,
+			ControlPlaneAvailabilityPolicy:   string(hyperv1.SingleReplica),
+			InfrastructureAvailabilityPolicy: string(hyperv1.SingleReplica),
+			NetworkType:                      string(o.configurableClusterOptions.NetworkType),
+			BaseDomain:                       o.configurableClusterOptions.BaseDomain,
+			PullSecretFile:                   o.configurableClusterOptions.PullSecretFile,
+			ControlPlaneOperatorImage:        o.configurableClusterOptions.ControlPlaneOperatorImage,
+			ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
+			NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
+			ServiceCIDR:                      []string{"172.31.0.0/16"},
+			ClusterCIDR:                      []string{"10.132.0.0/14"},
+			BeforeApply:                      o.BeforeApply,
+			Log:                              util.NewLogr(t),
+			Annotations: []string{
+				fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
+				fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
 			},
+			SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
+			EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
 		},
-		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
-			Cores:                     uint32(o.configurableClusterOptions.KubeVirtNodeCores),
-			Memory:                    o.configurableClusterOptions.KubeVirtNodeMemory,
-			InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
-			InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
-			RootVolumeSize:            uint32(o.configurableClusterOptions.KubeVirtRootVolumeSize),
-			RootVolumeVolumeMode:      o.configurableClusterOptions.KubeVirtRootVolumeVolumeMode,
-		},
-		AzurePlatform: core.AzurePlatformOptions{
-			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
-			Location:        o.configurableClusterOptions.AzureLocation,
-			InstanceType:    "Standard_D4s_v4",
-			DiskSizeGB:      120,
-		},
-		PowerVSPlatform: core.PowerVSPlatformOptions{
-			ResourceGroup:          o.configurableClusterOptions.PowerVSResourceGroup,
-			Region:                 o.configurableClusterOptions.PowerVSRegion,
-			Zone:                   o.configurableClusterOptions.PowerVSZone,
-			VPCRegion:              o.configurableClusterOptions.PowerVSVpcRegion,
-			SysType:                o.configurableClusterOptions.PowerVSSysType,
-			ProcType:               o.configurableClusterOptions.PowerVSProcType,
-			Processors:             o.configurableClusterOptions.PowerVSProcessors,
-			Memory:                 int32(o.configurableClusterOptions.PowerVSMemory),
-			CloudInstanceID:        o.configurableClusterOptions.PowerVSCloudInstanceID,
-			CloudConnection:        o.configurableClusterOptions.PowerVSCloudConnection,
-			VPC:                    o.configurableClusterOptions.PowerVSVPC,
-			PER:                    o.configurableClusterOptions.PowerVSPER,
-			TransitGatewayLocation: o.configurableClusterOptions.PowerVSTransitGatewayLocation,
-			TransitGateway:         o.configurableClusterOptions.PowerVSTransitGateway,
-		},
-		ServiceCIDR: []string{"172.31.0.0/16"},
-		ClusterCIDR: []string{"10.132.0.0/14"},
-		BeforeApply: o.BeforeApply,
-		Log:         util.NewLogr(t),
-		Annotations: []string{
-			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
-			fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
-		},
-		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
-		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
+		NonePlatform:     o.DefaultNoneOptions(),
+		AWSPlatform:      o.DefaultAWSOptions(),
+		KubevirtPlatform: o.DefaultKubeVirtOptions(),
+		AzurePlatform:    o.DefaultAzureOptions(),
+		PowerVSPlatform:  o.DefaultPowerVSOptions(),
 	}
 
 	switch o.Platform {
-	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
 		createOption.Arch = hyperv1.ArchitectureAMD64
 	case hyperv1.PowerVSPlatform:
 		createOption.Arch = hyperv1.ArchitecturePPC64LE
-	}
-
-	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
-	if len(o.configurableClusterOptions.Zone) == 0 {
-		// align with default for e2e.aws-region flag
-		createOption.AWSPlatform.Zones = []string{"us-east-1a"}
-	} else {
-		// For AWS, select a single zone for InfrastructureAvailabilityPolicy: SingleReplica guest cluster.
-		// This option is currently not configurable through flags and not set manually
-		// in any test, so we know InfrastructureAvailabilityPolicy is SingleReplica.
-		// If any test changes this in the future, we need to add logic here to make the
-		// guest cluster multi-zone in that case.
-		zones := strings.Split(o.configurableClusterOptions.Zone.String(), ",")
-		awsGuestZone := zones[nextAWSZoneIndex]
-		nextAWSZoneIndex = (nextAWSZoneIndex + 1) % len(zones)
-		createOption.AWSPlatform.Zones = []string{awsGuestZone}
-
-		// Assign all Azure zones to guest cluster
-		createOption.AzurePlatform.AvailabilityZones = zones
 	}
 
 	if o.configurableClusterOptions.SSHKeyFile == "" {
@@ -536,6 +488,94 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 	}
 
 	return createOption
+}
+
+func (o *options) DefaultNoneOptions() none.RawCreateOptions {
+	return none.RawCreateOptions{
+		APIServerAddress:          "",
+		ExposeThroughLoadBalancer: true,
+	}
+}
+
+func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
+	opts := hypershiftaws.RawCreateOptions{
+		RootVolumeSize: 64,
+		RootVolumeType: "gp3",
+		Credentials: awscmdutil.AWSCredentialsOptions{
+			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+		},
+		Region:         o.configurableClusterOptions.Region,
+		EndpointAccess: o.configurableClusterOptions.AWSEndpointAccess,
+		IssuerURL:      o.IssuerURL,
+	}
+	opts.AdditionalTags = append(opts.AdditionalTags, o.additionalTags...)
+	if len(o.configurableClusterOptions.Zone) == 0 {
+		// align with default for e2e.aws-region flag
+		opts.Zones = []string{"us-east-1a"}
+	} else {
+		// For AWS, select a single zone for InfrastructureAvailabilityPolicy: SingleReplica guest cluster.
+		// This option is currently not configurable through flags and not set manually
+		// in any test, so we know InfrastructureAvailabilityPolicy is SingleReplica.
+		// If any test changes this in the future, we need to add logic here to make the
+		// guest cluster multi-zone in that case.
+		zones := strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		awsGuestZone := zones[nextAWSZoneIndex]
+		nextAWSZoneIndex = (nextAWSZoneIndex + 1) % len(zones)
+		opts.Zones = []string{awsGuestZone}
+	}
+
+	return opts
+}
+
+func (o *options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
+	return kubevirt.RawCreateOptions{
+		ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
+		InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
+		InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
+		NodePoolOpts: &kubevirtnodepool.RawKubevirtPlatformCreateOptions{
+			KubevirtPlatformOptions: &kubevirtnodepool.KubevirtPlatformOptions{
+				Cores:                uint32(o.configurableClusterOptions.KubeVirtNodeCores),
+				Memory:               o.configurableClusterOptions.KubeVirtNodeMemory,
+				RootVolumeSize:       uint32(o.configurableClusterOptions.KubeVirtRootVolumeSize),
+				RootVolumeVolumeMode: o.configurableClusterOptions.KubeVirtRootVolumeVolumeMode,
+			},
+		},
+	}
+}
+
+func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
+	opts := azure.RawCreateOptions{
+		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
+		Location:        o.configurableClusterOptions.AzureLocation,
+		InstanceType:    "Standard_D4s_v4",
+		DiskSizeGB:      120,
+	}
+	if len(o.configurableClusterOptions.Zone) != 0 {
+		zones := strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		// Assign all Azure zones to guest cluster
+		opts.AvailabilityZones = zones
+	}
+
+	return opts
+}
+
+func (o *options) DefaultPowerVSOptions() powervs.RawCreateOptions {
+	return powervs.RawCreateOptions{
+		ResourceGroup:          o.configurableClusterOptions.PowerVSResourceGroup,
+		Region:                 o.configurableClusterOptions.PowerVSRegion,
+		Zone:                   o.configurableClusterOptions.PowerVSZone,
+		VPCRegion:              o.configurableClusterOptions.PowerVSVpcRegion,
+		SysType:                o.configurableClusterOptions.PowerVSSysType,
+		ProcType:               o.configurableClusterOptions.PowerVSProcType,
+		Processors:             o.configurableClusterOptions.PowerVSProcessors,
+		Memory:                 int32(o.configurableClusterOptions.PowerVSMemory),
+		CloudInstanceID:        o.configurableClusterOptions.PowerVSCloudInstanceID,
+		CloudConnection:        o.configurableClusterOptions.PowerVSCloudConnection,
+		VPC:                    o.configurableClusterOptions.PowerVSVPC,
+		PER:                    o.configurableClusterOptions.PowerVSPER,
+		TransitGatewayLocation: o.configurableClusterOptions.PowerVSTransitGatewayLocation,
+		TransitGateway:         o.configurableClusterOptions.PowerVSTransitGateway,
+	}
 }
 
 // Complete is intended to be called after flags have been bound and sets

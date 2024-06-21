@@ -1,0 +1,13 @@
+[Unit]
+Description=Sets up local IP for remote KAS SVC to proxy API server requests
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/setup-remote-kas-svc-ip.sh
+ExecStop=/usr/local/bin/teardown-remote-kas-svc-ip.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

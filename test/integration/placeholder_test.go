@@ -4,18 +4,19 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	schedulingv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration/framework"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
-	"k8s.io/apimachinery/pkg/util/wait"
 	corev1applyconfigurations "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -85,7 +86,7 @@ func TestPlaceholders(t *testing.T) {
 		}), metav1.ApplyOptions{FieldManager: "e2e-test"}); err != nil {
 			t.Fatalf("failed to apply labels to node: %v", err)
 		}
-		
+
 		waitForPlaceholders(testContext, t, testCtx.MgmtCluster.KubeClient, config, []string{"first"})
 
 		t.Log("setting the cluster sizing configuration to have 3 small placeholders, to cause scale up")
@@ -147,54 +148,48 @@ func waitForPlaceholders(ctx context.Context, t *testing.T, kubeClient kubernete
 	}
 
 	for size, count := range placeholders {
-		t.Logf("waiting for %d %s placeholders", count, size)
-		var lastResourceVersion string
-		lastTimestamp := time.Now()
-		lastCount := -1
-		if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-			deployments, err := kubeClient.AppsV1().Deployments("request-serving-node-placeholders").List(ctx, metav1.ListOptions{
-				LabelSelector: labels.SelectorFromSet(labels.Set{"hypershift.openshift.io/hosted-cluster-size": size}).Add(*placeholderPresent).String(),
-			})
-			if err != nil {
-				return false, err
-			}
-			if deployments.ResourceVersion != lastResourceVersion {
-				if len(deployments.Items) != lastCount {
-					t.Logf("observed %d %s placeholders at RV %s after %s", len(deployments.Items), size, deployments.ResourceVersion, time.Since(lastTimestamp))
-					lastCount = len(deployments.Items)
+		util.EventuallyObjects(
+			t, ctx, fmt.Sprintf("%d %s placeholders", count, size),
+			func(ctx context.Context) ([]*appsv1.Deployment, error) {
+				deployments, err := kubeClient.AppsV1().Deployments("request-serving-node-placeholders").List(ctx, metav1.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labels.Set{"hypershift.openshift.io/hosted-cluster-size": size}).Add(*placeholderPresent).String(),
+				})
+				var ptrs []*appsv1.Deployment
+				for _, d := range deployments.Items {
+					ptrs = append(ptrs, &d)
 				}
-				lastResourceVersion = deployments.ResourceVersion
-				lastTimestamp = time.Now()
-			}
-			if len(deployments.Items) != count {
-				return false, nil
-			}
-			for _, deployment := range deployments.Items {
-				var expectedAffinity *corev1.NodeAffinity
-				if len(pairedNodes) == 0 {
-					expectedAffinity = nil
-
-				} else {
-					expectedAffinity = &corev1.NodeAffinity{
-						RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-							NodeSelectorTerms: []corev1.NodeSelectorTerm{{
-								MatchExpressions: []corev1.NodeSelectorRequirement{{
-									Key:      "osd-fleet-manager.openshift.io/paired-nodes",
-									Operator: corev1.NodeSelectorOpNotIn,
-									Values:   pairedNodes,
+				return ptrs, err
+			},
+			[]util.Predicate[[]*appsv1.Deployment]{
+				func(deployments []*appsv1.Deployment) (done bool, reasons string, err error) {
+					return len(deployments) == count, fmt.Sprintf("expected %d %s placeholders, found %d", count, size, len(deployments)), nil
+				},
+			},
+			[]util.Predicate[*appsv1.Deployment]{
+				func(deployment *appsv1.Deployment) (done bool, reasons string, err error) {
+					var expectedAffinity *corev1.NodeAffinity
+					if len(pairedNodes) == 0 {
+						expectedAffinity = nil
+					} else {
+						expectedAffinity = &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+									MatchExpressions: []corev1.NodeSelectorRequirement{{
+										Key:      "osd-fleet-manager.openshift.io/paired-nodes",
+										Operator: corev1.NodeSelectorOpNotIn,
+										Values:   pairedNodes,
+									}},
 								}},
-							}},
-						},
+							},
+						}
 					}
-				}
-				if diff := cmp.Diff(deployment.Spec.Template.Spec.Affinity.NodeAffinity, expectedAffinity); diff != "" {
-					t.Logf("placeholder %q had invalid node affinity: %v", deployment.Name, diff)
-					return false, nil
-				}
-			}
-			return true, nil
-		}); err != nil {
-			t.Fatalf("never saw placeholders: %v", err)
-		}
+					if diff := cmp.Diff(deployment.Spec.Template.Spec.Affinity.NodeAffinity, expectedAffinity); diff != "" {
+						return false, fmt.Sprintf("invalid node affinity: %v", diff), nil
+					}
+					return true, "valid node affinity", nil
+				},
+			},
+			util.WithoutConditionDump(),
+		)
 	}
 }

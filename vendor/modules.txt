@@ -883,8 +883,8 @@ github.com/pkg/profile
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
-## explicit; go 1.15
+# github.com/ppc64le-cloud/powervs-utils v0.0.0-20240610070307-1c0d75a5c247
+## explicit; go 1.21
 github.com/ppc64le-cloud/powervs-utils
 # github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.2
 ## explicit; go 1.21

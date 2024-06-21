@@ -2,157 +2,156 @@ package kubevirt
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	"k8s.io/utils/pointer"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	apifixtures "github.com/openshift/hypershift/examples/fixtures"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/test/integration/framework"
+	"github.com/spf13/pflag"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
-func Test_ApplyPlatformSpecificValues(t *testing.T) {
-	tests := map[string]struct {
-		argsOpts             core.CreateOptions
-		expectedPlatformOpts apifixtures.ExampleOptions
-		expectedError        string
+func TestRawCreateOptions_Validate(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		input         RawCreateOptions
+		expectedError string
 	}{
-		"should succeed configuring additional networks": {
-			argsOpts: core.CreateOptions{
-				InfraID: "infra1",
-				KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					AdditionalNetworks: []string{
-						"name:ns1/nad1",
-						"name:ns2/nad2",
-					},
-				},
+		{
+			name: "unsupported publishing strategy",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: "whatever",
 			},
-			expectedPlatformOpts: apifixtures.ExampleOptions{
-				InfraID: "infra1",
-				Kubevirt: &apifixtures.ExampleKubevirtOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					BaseDomainPassthrough:     true,
-					AdditionalNetworks: []hyperv1.KubevirtNetwork{
-						{
-							Name: "ns1/nad1",
-						},
-						{
-							Name: "ns2/nad2",
-						},
-					},
-				},
-			},
+			expectedError: "service publish strategy whatever is not supported, supported options: Ingress, NodePort",
 		},
-		"should succeed configuring additional networks including default one explicitly": {
-			argsOpts: core.CreateOptions{
-				InfraID: "infra1",
-				KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					AdditionalNetworks: []string{
-						"name:ns1/nad1",
-						"name:ns2/nad2",
-					},
-					AttachDefaultNetwork: pointer.Bool(true),
-				},
+		{
+			name: "api server address invalid for ingress",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: IngressServicePublishingStrategy,
+				APIServerAddress:          "whatever",
 			},
-			expectedPlatformOpts: apifixtures.ExampleOptions{
-				InfraID: "infra1",
-				Kubevirt: &apifixtures.ExampleKubevirtOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					BaseDomainPassthrough:     true,
-					AdditionalNetworks: []hyperv1.KubevirtNetwork{
-						{
-							Name: "ns1/nad1",
-						},
-						{
-							Name: "ns2/nad2",
-						},
-					},
-					AttachDefaultNetwork: pointer.Bool(true),
-				},
-			},
+			expectedError: "external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy Ingress is used",
 		},
-		"should succeed configuring additional networks excluding default network": {
-			argsOpts: core.CreateOptions{
-				InfraID: "infra1",
-				KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					AdditionalNetworks: []string{
-						"name:ns1/nad1",
-						"name:ns2/nad2",
-					},
-					AttachDefaultNetwork: pointer.Bool(false),
-				},
+		{
+			name: "invalid infra storage class mappings",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: IngressServicePublishingStrategy,
+				InfraStorageClassMappings: []string{"bad"},
 			},
-			expectedPlatformOpts: apifixtures.ExampleOptions{
-				InfraID: "infra1",
-				Kubevirt: &apifixtures.ExampleKubevirtOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					BaseDomainPassthrough:     true,
-					AdditionalNetworks: []hyperv1.KubevirtNetwork{
-						{
-							Name: "ns1/nad1",
-						},
-						{
-							Name: "ns2/nad2",
-						},
-					},
-					AttachDefaultNetwork: pointer.Bool(false),
-				},
-			},
+			expectedError: "invalid infra storageclass mapping [bad]",
 		},
-		"should fail excluding default network without additional ones": {
-			argsOpts: core.CreateOptions{
-				InfraID: "infra1",
-				KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					AttachDefaultNetwork:      pointer.Bool(false),
-				},
+		{
+			name: "kubeconfig present without namespace",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: IngressServicePublishingStrategy,
+				InfraKubeConfigFile:       "something",
 			},
-			expectedError: "missing --additional-network. when --attach-default-network is false configuring an additional network is mandatory",
+			expectedError: "external infra cluster kubeconfig was provided but an infra namespace is missing",
 		},
-		"should fail with unexpected additional network parameters": {
-			argsOpts: core.CreateOptions{
-				InfraID: "infra1",
-				KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-					ServicePublishingStrategy: "Ingress",
-					Cores:                     1,
-					RootVolumeSize:            16,
-					AdditionalNetworks: []string{
-						"badfield:ns2/nad2",
-					},
-				},
+		{
+			name: "kubeconfig missing with namespace",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: IngressServicePublishingStrategy,
+				InfraNamespace:            "something",
 			},
-			expectedError: `failed to parse "--additional-network" flag: unknown param(s): badfield:ns2/nad2`,
+			expectedError: "external infra cluster namespace was provided but a kubeconfig is missing",
+		},
+	} {
+		var errString string
+		if _, err := test.input.Validate(context.Background(), nil); err != nil {
+			errString = err.Error()
+		}
+		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
+			t.Errorf("got incorrect error: %v", diff)
+		}
+	}
+}
+
+func TestParseTenantClassString(t *testing.T) {
+	testsCases := []struct {
+		name          string
+		optionString  string
+		expectedName  string
+		expectedGroup string
+	}{
+		{
+			name:          "straight class name, no options",
+			optionString:  "tenant1",
+			expectedName:  "tenant1",
+			expectedGroup: "",
+		},
+		{
+			name:          "class name with group option",
+			optionString:  "tenant1,group=group1",
+			expectedName:  "tenant1",
+			expectedGroup: "group1",
+		},
+		{
+			name:          "ignore invalid option",
+			optionString:  "tenant1,invalid=invalid",
+			expectedName:  "tenant1",
+			expectedGroup: "",
+		},
+		{
+			name:          "class name with group option, and ignore invalid options",
+			optionString:  "tenant1, group=group1,invalid=invalid",
+			expectedName:  "tenant1",
+			expectedGroup: "group1",
 		},
 	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			obtainedPlatformOpts := apifixtures.ExampleOptions{InfraID: "infra1"}
-			err := ApplyPlatformSpecificsValues(context.TODO(), &obtainedPlatformOpts, &test.argsOpts)
-			if test.expectedError != "" {
-				g.Expect(err).To(MatchError(test.expectedError))
-			} else {
-				g.Expect(err).To(BeNil())
-				g.Expect(obtainedPlatformOpts).To(Equal(test.expectedPlatformOpts))
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			res, options := parseTenantClassString(tc.optionString)
+			g.Expect(res).To(Equal(tc.expectedName))
+			g.Expect(options).To(Equal(tc.expectedGroup))
+		})
+	}
+}
+
+func TestCreateCluster(t *testing.T) {
+	utilrand.Seed(1234567890)
+	certs.UnsafeSeed(1234567890)
+	ctx := framework.InterruptableContext(context.Background())
+
+	for _, testCase := range []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "minimal flags necessary to render",
+			args: []string{},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
+			coreOpts := core.DefaultOptions()
+			core.BindDeveloperOptions(coreOpts, flags)
+			kubevirtOpts := DefaultOptions()
+			BindDeveloperOptions(kubevirtOpts, flags)
+			if err := flags.Parse(testCase.args); err != nil {
+				t.Fatalf("failed to parse flags: %v", err)
 			}
+
+			tempDir := t.TempDir()
+			manifestsFile := filepath.Join(tempDir, "manifests.yaml")
+			coreOpts.Render = true
+			coreOpts.RenderInto = manifestsFile
+
+			if err := core.CreateCluster(ctx, coreOpts, kubevirtOpts); err != nil {
+				t.Fatalf("failed to create cluster: %v", err)
+			}
+
+			manifests, err := os.ReadFile(manifestsFile)
+			if err != nil {
+				t.Fatalf("failed to read manifests file: %v", err)
+			}
+			testutil.CompareWithFixture(t, manifests)
 		})
 	}
 }

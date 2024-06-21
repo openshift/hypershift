@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -31,10 +30,9 @@ import (
 // know or care about in advance.
 //
 // TODO: Mutates the input, instead should use a copy of the input options
-func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions) (*core.CreateOptions, error) {
+func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) {
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name
-	opts.NonePlatform.ExposeThroughLoadBalancer = true
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -50,13 +48,27 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 
 // createCluster calls the correct cluster create CLI function based on the
 // cluster platform.
-func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions, outputDir string) error {
+func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, outputDir string) error {
+	validCoreOpts, err := opts.RawCreateOptions.Validate(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to validate core options: %w", err)
+	}
+	coreOpts, err := validCoreOpts.Complete()
+	if err != nil {
+		return fmt.Errorf("failed to complete core options: %w", err)
+	}
 	infraFile := filepath.Join(outputDir, "infrastructure.json")
 	iamFile := filepath.Join(outputDir, "iam.json")
 	manifestsFile := filepath.Join(outputDir, "manifests.yaml")
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		infraOpts := aws.CreateInfraOptions(opts)
+		completer, err := opts.AWSPlatform.Validate(ctx, coreOpts)
+		if err != nil {
+			return fmt.Errorf("failed to validate AWS platform options: %w", err)
+		}
+		validOpts := completer.(*aws.ValidatedCreateOptions)
+
+		infraOpts := aws.CreateInfraOptions(validOpts, coreOpts)
 		infraOpts.OutputFile = infraFile
 		infra, err := infraOpts.CreateInfra(ctx, opts.Log)
 		if err != nil {
@@ -70,7 +82,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 		if err != nil {
 			return err
 		}
-		iamOpts := aws.CreateIAMOptions(opts, infra)
+		iamOpts := aws.CreateIAMOptions(validOpts, infra)
 		iamOpts.OutputFile = iamFile
 		iam, err := iamOpts.CreateIAM(ctx, client)
 		if err != nil {
@@ -82,13 +94,19 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 
 		opts.InfrastructureJSON = infraFile
 		opts.AWSPlatform.IAMJSON = iamFile
-		return renderCreate(ctx, opts, manifestsFile, aws.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AWSPlatform, manifestsFile)
 	case hyperv1.NonePlatform:
-		return renderCreate(ctx, opts, manifestsFile, none.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.NonePlatform, manifestsFile)
 	case hyperv1.KubevirtPlatform:
-		return renderCreate(ctx, opts, manifestsFile, kubevirt.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.KubevirtPlatform, manifestsFile)
 	case hyperv1.AzurePlatform:
-		infraOpts, err := azure.CreateInfraOptions(ctx, opts)
+		completer, err := opts.AzurePlatform.Validate(ctx, coreOpts)
+		if err != nil {
+			return fmt.Errorf("failed to validate Azure platform options: %w", err)
+		}
+		validOpts := completer.(*azure.ValidatedCreateOptions)
+
+		infraOpts, err := azure.CreateInfraOptions(ctx, validOpts, coreOpts)
 		if err != nil {
 			return fmt.Errorf("failed to create infra options: %w", err)
 		}
@@ -98,9 +116,15 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 		}
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, opts, manifestsFile, azure.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile)
 	case hyperv1.PowerVSPlatform:
-		infraOpts, infra := powervs.CreateInfraOptions(opts)
+		completer, err := opts.PowerVSPlatform.Validate(ctx, coreOpts)
+		if err != nil {
+			return fmt.Errorf("failed to validate PowerVS platform options: %w", err)
+		}
+		validOpts := completer.(*powervs.ValidatedCreateOptions)
+
+		infraOpts, infra := powervs.CreateInfraOptions(validOpts, coreOpts)
 		infraOpts.OutputFile = infraFile
 		if err := infra.SetupInfra(ctx, infraOpts); err != nil {
 			return fmt.Errorf("failed to setup infra: %w", err)
@@ -108,27 +132,27 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 		infraOpts.Output(infra)
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, opts, manifestsFile, powervs.CreateCluster)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
 }
 
-func renderCreate(ctx context.Context, opts *core.CreateOptions, outputFile string, create func(context.Context, *core.CreateOptions) error) error {
+func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts core.PlatformValidator, outputFile string) error {
 	opts.Render = true
 	opts.RenderInto = outputFile
-	if err := create(ctx, opts); err != nil {
+	if err := core.CreateCluster(ctx, opts, platformOpts); err != nil {
 		return fmt.Errorf("failed to render cluster manifests: %w", err)
 	}
 
 	opts.Render = false
 	opts.RenderInto = ""
-	return create(ctx, opts)
+	return core.CreateCluster(ctx, opts, platformOpts)
 }
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
-func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
+func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *PlatformAgnosticOptions) error {
 	opts := &core.DestroyOptions{
 		Namespace:          hc.Namespace,
 		Name:               hc.Name,
@@ -139,11 +163,11 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		opts.AWSPlatform = core.AWSPlatformDestroyOptions{
-			BaseDomain:         createOpts.BaseDomain,
-			AWSCredentialsOpts: createOpts.AWSPlatform.AWSCredentialsOpts,
-			PreserveIAM:        false,
-			Region:             createOpts.AWSPlatform.Region,
-			PostDeleteAction:   validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile, createOpts.AWSPlatform.Region),
+			BaseDomain:       createOpts.BaseDomain,
+			Credentials:      createOpts.AWSPlatform.Credentials,
+			PreserveIAM:      false,
+			Region:           createOpts.AWSPlatform.Region,
+			PostDeleteAction: validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.Credentials.AWSCredentialsFile, createOpts.AWSPlatform.Region),
 		}
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
@@ -181,11 +205,13 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		awsSession := awsutil.NewSession("cleanup-validation", awsCreds, "", "", awsRegion)
 		awsConfig := awsutil.NewConfig()
 		taggingClient := resourcegroupstaggingapi.New(awsSession, awsConfig)
+		var output *resourcegroupstaggingapi.GetResourcesOutput
 
 		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
-		err := wait.PollImmediate(5*time.Second, 15*time.Minute, func() (bool, error) {
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
 			// Filter get cluster resources.
-			output, err := taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
+			var err error
+			output, err = taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 				ResourceTypeFilters: []*string{
 					awssdk.String("elasticloadbalancing:loadbalancer"),
 					awssdk.String("ec2:volume"),
@@ -199,31 +225,38 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 				},
 			})
 			if err != nil {
-				t.Logf("WARNING: failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
-				return true, nil
+				return true, err
 			}
 
-			// Log resources that still exists
 			if hasGuestResources(t, output.ResourceTagMappingList) {
-				t.Logf("WARNING: found %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
-				for i := 0; i < len(output.ResourceTagMappingList); i++ {
-					resourceARN, err := arn.Parse(awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN))
-					if err != nil {
-						t.Logf("WARNING: failed to parse resource: %v. Not verifying cluster is cleaned up.", err)
-						return false, nil
-					}
-					t.Logf("Resource: %s, tags: %s, service: %s",
-						awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags), resourceARN.Service)
-				}
 				return false, nil
 			}
 
-			t.Log("SUCCESS: found no remaining guest resources")
 			return true, nil
 		})
 
-		if err != nil {
+		if wait.Interrupted(err) {
 			t.Errorf("Failed to wait for infra resources in guest cluster to be deleted: %v", err)
+		} else if err != nil {
+			// Failing to list tagged resource is not fatal, but we should log it
+			t.Logf("Failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
+			return
+		}
+
+		// Log resources that still exists
+		if hasGuestResources(t, output.ResourceTagMappingList) {
+			t.Logf("Failed to clean up %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
+			for i := 0; i < len(output.ResourceTagMappingList); i++ {
+				resourceARN, err := arn.Parse(awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN))
+				if err != nil {
+					// We are only decoding for additional information, proceed on error
+					continue
+				}
+				t.Logf("Resource: %s, tags: %s, service: %s",
+					awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags), resourceARN.Service)
+			}
+		} else {
+			t.Log("SUCCESS: found no remaining guest resources")
 		}
 	}
 }
@@ -265,7 +298,7 @@ func clusterTag(infraID string) string {
 // a cluster based on the cluster's platform. The output directory will be named
 // according to the test name. So, the returned dump function should be called
 // at most once per unique test name.
-func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
+func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, artifactDir string) func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
 	return func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
 		if len(artifactDir) == 0 {
 			t.Logf("Skipping cluster dump because no artifact directory was provided")
@@ -275,7 +308,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
 			var dumpErrors []error
-			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsOpts, artifactDir)
+			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.Credentials, artifactDir)
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
@@ -283,7 +316,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
-			err = dump.DumpJournals(t, ctx, hc, artifactDir, opts.AWSPlatform.AWSCredentialsOpts.AWSCredentialsFile)
+			err = dump.DumpJournals(t, ctx, hc, artifactDir, opts.AWSPlatform.Credentials.AWSCredentialsFile)
 			if err != nil {
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}

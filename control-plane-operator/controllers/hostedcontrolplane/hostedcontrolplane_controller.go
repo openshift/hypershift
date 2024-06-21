@@ -15,14 +15,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	azureutil "github.com/Azure/go-autorest/autorest/azure"
+	awssdk "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cco"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pkioperator"
-	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
-	"k8s.io/apimachinery/pkg/runtime"
-
-	awssdk "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/kms"
@@ -31,6 +26,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cco"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/kubevirt"
@@ -60,11 +56,14 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pkioperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/registryoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/routecm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
+	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
@@ -87,6 +86,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -783,7 +783,14 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
 			return fmt.Errorf("APIServer external route not admitted")
 		}
-		return healthCheckKASEndpoint(externalRoute.Status.Ingress[0].RouterCanonicalHostname, 443)
+
+		endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
+		port := 443
+		if sharedingress.UseSharedIngress() {
+			endpoint = externalRoute.Spec.Host
+			port = sharedingress.ExternalDNSLBPort
+		}
+		return healthCheckKASEndpoint(endpoint, port)
 
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
@@ -928,6 +935,9 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 // which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
 // Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
 func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
+	if sharedingress.UseSharedIngress() {
+		return false
+	}
 	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicKASWithDNS(hostedControlPlane)
 }
 
@@ -1738,6 +1748,9 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	if sharedingress.UseSharedIngress() {
+		return nil
+	}
 	exposeKASThroughRouter := util.IsRouteKAS(hcp)
 	// Create the Service type LB internal for private endpoints.
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
@@ -1875,7 +1888,7 @@ func (r *HostedControlPlaneReconciler) reconcileInternalRouterServiceStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) {
+	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
@@ -1907,6 +1920,10 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	if serviceStrategy == nil {
 		return "", 0, "", errors.New("APIServer service strategy not specified")
+	}
+
+	if sharedingress.UseSharedIngress() {
+		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
 	var svc *corev1.Service

@@ -6,12 +6,10 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/conditions"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
@@ -33,7 +31,7 @@ type HostedClusterNodePoolTestCases struct {
 	setup func(t *testing.T)
 }
 
-type HostedClusterNodePoolTestCasesBuilderFn func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) []NodePoolTestCase
+type HostedClusterNodePoolTestCasesBuilderFn func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase
 
 type NodePoolTestCase struct {
 	name            string
@@ -46,7 +44,7 @@ func TestNodePool(t *testing.T) {
 
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
-			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) []NodePoolTestCase {
+			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{
 					{
 						name: "TestKMSRootVolumeEncryption",
@@ -119,13 +117,8 @@ func TestNodePool(t *testing.T) {
 				if globalOpts.Platform != hyperv1.KubevirtPlatform {
 					t.Skip("tests only supported on platform KubeVirt")
 				}
-				//FIXME: Un-quarentine the kubevirt multinet advanced test when CI has enough
-				//       resources to run it without issues.
-				if os.Getenv("CI") == "true" {
-					t.Skip("Quarentined test 'kubevirt advanced multinet' cannot run at CI")
-				}
 			},
-			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) []NodePoolTestCase {
+			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{{
 					name: "KubeVirtNodeAdvancedMultinetTest",
 					test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster),
