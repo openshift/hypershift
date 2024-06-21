@@ -345,8 +345,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ReleaseProvider:         releaseProviderWithOpenShiftImageRegistryOverrides,
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
-		ImageMetadataProvider:   &hyperutil.RegistryClientImageMetadataProvider{},
-		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
+		ImageMetadataProvider: &hyperutil.RegistryClientImageMetadataProvider{
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+		},
+		KubevirtInfraClients: kvinfra.NewKubevirtInfraClientMap(),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
