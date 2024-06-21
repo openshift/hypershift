@@ -2,9 +2,6 @@
 title: Run the hypershift-operator locally
 ---
 
-# Overview
-The Hypershift operator contains a set of controllers that manage the control plane components of a hosted control plane cluster created with the Hypershift Installer.
-
 ## Run the HyperShift Operator locally
 
 To run the HyperShift Operator locally, follow these steps:
@@ -17,7 +14,7 @@ To run the HyperShift Operator locally, follow these steps:
 
 2. Build HyperShift.
 
-        # requires go v1.16+
+        # requires go v1.22+
         $ make build
 
 
@@ -28,7 +25,7 @@ REGION=us-east-1
 BUCKET_NAME=your-bucket-name
 AWS_CREDS="$HOME/.aws/credentials"
 
-hypershift install \
+./bin/hypershift install \
   --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
   --oidc-storage-provider-s3-credentials $AWS_CREDS \
   --oidc-storage-provider-s3-region $REGION \
