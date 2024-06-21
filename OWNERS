@@ -6,6 +6,7 @@ approvers:
 - muraee
 - bryan-cox
 - jparrill
+- stevekuznetsov
 options: {}
 reviewers:
 - enxebre
@@ -13,4 +14,5 @@ reviewers:
 - sjenning
 - hasueki
 - isco-rodriguez
+- stevekuznetsov
 component: hypershift
