@@ -180,11 +180,13 @@ func validateInvalidCN(t *testing.T, ctx context.Context, hostedCluster *hypersh
 		func(ctx context.Context) (*certificatesv1.CertificateSigningRequest, error) {
 			return mgmt.KubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, wrongCSRName, metav1.GetOptions{})
 		},
-		util.ConditionPredicate[*certificatesv1.CertificateSigningRequest](util.Condition{
-			Type:   string(certificatesv1.CertificateFailed),
-			Status: metav1.ConditionTrue,
-			Reason: "SignerValidationFailure",
-		}),
+		[]util.Predicate[*certificatesv1.CertificateSigningRequest]{
+			util.ConditionPredicate[*certificatesv1.CertificateSigningRequest](util.Condition{
+				Type:   string(certificatesv1.CertificateFailed),
+				Status: metav1.ConditionTrue,
+				Reason: "SignerValidationFailure",
+			}),
+		},
 	)
 }
 
@@ -215,12 +217,14 @@ func validateCSRFlow(t *testing.T, ctx context.Context, hostedCluster *hypershif
 		func(ctx context.Context) (*certificatesv1.CertificateSigningRequest, error) {
 			return mgmt.KubeClient.CertificatesV1().CertificateSigningRequests().Get(ctx, csrName, metav1.GetOptions{})
 		},
-		func(csr *certificatesv1.CertificateSigningRequest) (done bool, reasons []string, err error) {
-			if csr != nil && csr.Status.Certificate != nil {
-				signedCrt = csr.Status.Certificate
-				return true, []string{"certificate present"}, nil
-			}
-			return false, []string{"no certificate present"}, nil
+		[]util.Predicate[*certificatesv1.CertificateSigningRequest]{
+			func(csr *certificatesv1.CertificateSigningRequest) (done bool, reasons string, err error) {
+				if csr != nil && csr.Status.Certificate != nil {
+					signedCrt = csr.Status.Certificate
+					return true, "certificate present", nil
+				}
+				return false, "no certificate present", nil
+			},
 		},
 	)
 
@@ -255,10 +259,12 @@ func validateRevocation(t *testing.T, ctx context.Context, hostedCluster *hypers
 		func(ctx context.Context) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
 			return mgmt.HyperShiftClient.CertificatesV1alpha1().CertificateRevocationRequests(hostedControlPlaneNamespace).Get(ctx, crrName, metav1.GetOptions{})
 		},
-		util.ConditionPredicate[*certificatesv1alpha1.CertificateRevocationRequest](util.Condition{
-			Type:   certificatesv1alpha1.PreviousCertificatesRevokedType,
-			Status: metav1.ConditionTrue,
-		}),
+		[]util.Predicate[*certificatesv1alpha1.CertificateRevocationRequest]{
+			util.ConditionPredicate[*certificatesv1alpha1.CertificateRevocationRequest](util.Condition{
+				Type:   certificatesv1alpha1.PreviousCertificatesRevokedType,
+				Status: metav1.ConditionTrue,
+			}),
+		},
 	)
 
 	t.Logf("creating a client using the a certificate from the revoked signer")

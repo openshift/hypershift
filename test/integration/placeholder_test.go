@@ -160,30 +160,34 @@ func waitForPlaceholders(ctx context.Context, t *testing.T, kubeClient kubernete
 				}
 				return ptrs, err
 			},
-			func(deployments []*appsv1.Deployment) (done bool, reasons []string, err error) {
-				return len(deployments) == count, []string{fmt.Sprintf("expected %d %s placeholders, found %d", count, size, len(deployments))}, nil
+			[]util.Predicate[[]*appsv1.Deployment]{
+				func(deployments []*appsv1.Deployment) (done bool, reasons string, err error) {
+					return len(deployments) == count, fmt.Sprintf("expected %d %s placeholders, found %d", count, size, len(deployments)), nil
+				},
 			},
-			func(deployment *appsv1.Deployment) (done bool, reasons []string, err error) {
-				var expectedAffinity *corev1.NodeAffinity
-				if len(pairedNodes) == 0 {
-					expectedAffinity = nil
-				} else {
-					expectedAffinity = &corev1.NodeAffinity{
-						RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-							NodeSelectorTerms: []corev1.NodeSelectorTerm{{
-								MatchExpressions: []corev1.NodeSelectorRequirement{{
-									Key:      "osd-fleet-manager.openshift.io/paired-nodes",
-									Operator: corev1.NodeSelectorOpNotIn,
-									Values:   pairedNodes,
+			[]util.Predicate[*appsv1.Deployment]{
+				func(deployment *appsv1.Deployment) (done bool, reasons string, err error) {
+					var expectedAffinity *corev1.NodeAffinity
+					if len(pairedNodes) == 0 {
+						expectedAffinity = nil
+					} else {
+						expectedAffinity = &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+									MatchExpressions: []corev1.NodeSelectorRequirement{{
+										Key:      "osd-fleet-manager.openshift.io/paired-nodes",
+										Operator: corev1.NodeSelectorOpNotIn,
+										Values:   pairedNodes,
+									}},
 								}},
-							}},
-						},
+							},
+						}
 					}
-				}
-				if diff := cmp.Diff(deployment.Spec.Template.Spec.Affinity.NodeAffinity, expectedAffinity); diff != "" {
-					return false, []string{fmt.Sprintf("invalid node affinity: %v", diff)}, nil
-				}
-				return true, []string{"valid node affinity"}, nil
+					if diff := cmp.Diff(deployment.Spec.Template.Spec.Affinity.NodeAffinity, expectedAffinity); diff != "" {
+						return false, fmt.Sprintf("invalid node affinity: %v", diff), nil
+					}
+					return true, "valid node affinity", nil
+				},
 			},
 			util.WithoutConditionDump(),
 		)

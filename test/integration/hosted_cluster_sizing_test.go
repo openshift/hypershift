@@ -232,15 +232,15 @@ func waitForHostedClusterToHaveSize(t *testing.T, ctx context.Context, client hy
 			{Type: hypershiftv1beta1.ClusterSizeTransitionPending, Status: metav1.ConditionFalse, Reason: "ClusterSizeTransitioned"},
 			{Type: hypershiftv1beta1.ClusterSizeTransitionRequired, Status: metav1.ConditionFalse, Reason: hypershiftv1beta1.AsExpectedReason},
 		},
-		func(hostedCluster *hypershiftv1beta1.HostedCluster) (done bool, reason []string, err error) {
+		func(hostedCluster *hypershiftv1beta1.HostedCluster) (done bool, reason string, err error) {
 			label, present := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
 			if !present {
-				return false, []string{fmt.Sprintf("hostedCluster.metadata.labels[%s] missing", hypershiftv1beta1.HostedClusterSizeLabel)}, nil
+				return false, fmt.Sprintf("hostedCluster.metadata.labels[%s] missing", hypershiftv1beta1.HostedClusterSizeLabel), nil
 			}
 			if label != size {
-				return false, []string{fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s, wanted %s", hypershiftv1beta1.HostedClusterSizeLabel, label, size)}, nil
+				return false, fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s, wanted %s", hypershiftv1beta1.HostedClusterSizeLabel, label, size), nil
 			}
-			return true, []string{fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s", hypershiftv1beta1.HostedClusterSizeLabel, label)}, nil
+			return true, fmt.Sprintf("hostedCluster.metadata.labels[%s]=%s", hypershiftv1beta1.HostedClusterSizeLabel, label), nil
 		},
 	)
 }
@@ -268,11 +268,7 @@ func waitForHostedClusterCondition(t *testing.T, ctx context.Context, client hyp
 		func(ctx context.Context) (*hypershiftv1beta1.HostedCluster, error) {
 			return client.HypershiftV1beta1().HostedClusters(namespace).Get(ctx, name, metav1.GetOptions{})
 		},
-		util.AggregatePredicates(predicates...),
-		util.WithFilteredConditionDump(
-			util.Condition{Type: hypershiftv1beta1.ClusterSizeTransitionPending},
-			util.Condition{Type: hypershiftv1beta1.ClusterSizeComputed},
-			util.Condition{Type: hypershiftv1beta1.ClusterSizeTransitionRequired},
-		),
+		predicates,
+		util.WithoutConditionDump(),
 	)
 }
