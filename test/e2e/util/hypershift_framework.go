@@ -1,8 +1,11 @@
 package util
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -309,6 +312,21 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	// we should pass dumpDir to the dumpCluster() as <artifactDir>/<testName>_<suffix>
 	dumpCluster := newClusterDumper(hc, opts, artifactDir)
 
+	defer func() {
+		hostedClusterDir := filepath.Join(artifactDir, "hostedcluster-"+hc.Name)
+		if _, err := os.Stat(hostedClusterDir); os.IsNotExist(err) {
+			return
+		}
+		archiveFile := filepath.Join(artifactDir, "hostedcluster.tar.gz")
+		t.Logf("archiving %s to %s", hostedClusterDir, archiveFile)
+		if err := archive(t, hostedClusterDir, archiveFile); err != nil {
+			t.Errorf("failed to archive hosted cluster content: %v", err)
+		}
+		if err := os.RemoveAll(hostedClusterDir); err != nil {
+			t.Errorf("failed to remove hosted cluster directory: %v", err)
+		}
+	}()
+
 	// First, do a dump of the cluster before tearing it down
 	// Save off any error so that we can continue with the teardown
 	dumpErr := dumpCluster(ctx, t, true)
@@ -426,4 +444,90 @@ func (h *hypershiftTest) summarizeHCConditions(hostedCluster *hyperv1.HostedClus
 	} else {
 		h.Logf("HostedCluster %s has no conditions", hostedCluster.Name)
 	}
+}
+
+// archive re-packs the dir into the destination
+func archive(t *testing.T, srcDir, destArchive string) error {
+	// we want the temporary file we use for output to be in the same directory as the real destination, so
+	// we can be certain that our final os.Rename() call will not have to operate across a device boundary
+	output, err := os.CreateTemp(filepath.Dir(destArchive), "tmp-archive")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file for archive: %w", err)
+	}
+
+	zipWriter := gzip.NewWriter(output)
+	tarWriter := tar.NewWriter(zipWriter)
+	defer func() {
+		if err := tarWriter.Close(); err != nil {
+			t.Logf("Could not close tar writer after archiving: %v.", err)
+		}
+		if err := zipWriter.Close(); err != nil {
+			t.Logf("Could not close zip writer after archiving: %v.", err)
+		}
+		if err := output.Close(); err != nil {
+			t.Logf("Could not close output file after archiving: %v.", err)
+		}
+	}()
+
+	if err := filepath.Walk(srcDir, func(absPath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Handle symlinks. See https://stackoverflow.com/a/40003617.
+		var link string
+		if info.Mode()&os.ModeSymlink == os.ModeSymlink {
+			if link, err = os.Readlink(absPath); err != nil {
+				return err
+			}
+		}
+
+		// "link" is only used by FileInfoHeader if "info" here is a symlink.
+		// See https://pkg.go.dev/archive/tar#FileInfoHeader.
+		header, err := tar.FileInfoHeader(info, link)
+		if err != nil {
+			return fmt.Errorf("could not create tar header: %w", err)
+		}
+		// the header won't get nested paths right
+		relpath, shouldNotErr := filepath.Rel(srcDir, absPath)
+		if shouldNotErr != nil {
+			t.Logf("filepath.Rel returned an error, but we assumed there must be a relative path between %s and %s: %v", srcDir, absPath, shouldNotErr)
+		}
+		header.Name = relpath
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return fmt.Errorf("could not write tar header: %w", err)
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		// Nothing more to do for non-regular files (symlinks).
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
+		file, err := os.Open(absPath)
+		if err != nil {
+			return fmt.Errorf("could not open source file: %w", err)
+		}
+		n, err := io.Copy(tarWriter, file)
+		if err != nil {
+			return fmt.Errorf("could not tar file: %w", err)
+		}
+		if n != info.Size() {
+			return fmt.Errorf("only wrote %d bytes from %s; expected %d", n, absPath, info.Size())
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("could not close source file: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("could not walk source files to archive them: %w", err)
+	}
+
+	if err := os.Rename(output.Name(), destArchive); err != nil {
+		return fmt.Errorf("could not overwrite archive: %w", err)
+	}
+
+	return nil
 }
