@@ -168,32 +168,25 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
 	g := NewWithT(t)
-	start := time.Now()
-
 	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
 
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
 
-	t.Logf("Waiting for a successful connection to the guest apiserver")
-	var guestClient crclient.Client
-	// Mulham: increased timeout from 5m to 15m as guest kubeconfig/API server takes longer to report available after switching from private to public
-	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
-	defer cancel()
-	// SOA TTL is 60s. If DNS lookup fails on the api-* name, it is unlikely to succeed in less than 60s.
-	err = wait.PollUntilContextTimeout(waitForGuestClientCtx, 35*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
-		if err != nil {
-			t.Logf("attempt to connect failed: %s", err)
-			return false, nil
-		}
-		guestClient = kubeClient
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), "failed to establish a connection to the guest apiserver")
-
-	t.Logf("Successfully connected to the guest apiserver in %s", time.Since(start).Round(time.Second))
+	kubeClient, err := kubernetes.NewForConfig(guestConfig)
+	if err != nil {
+		t.Fatalf("failed to create kube client for guest cluster: %v", err)
+	}
+	EventuallyObject(t, ctx, "a successful connection to the guest API server",
+		func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
+			return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+		}, nil, WithTimeout(30*time.Minute),
+	)
+	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatalf("could not create client for guest cluster: %v", err)
+	}
 	return guestClient
 }
 
