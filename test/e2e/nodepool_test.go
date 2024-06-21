@@ -6,7 +6,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -117,11 +116,6 @@ func TestNodePool(t *testing.T) {
 			setup: func(t *testing.T) {
 				if globalOpts.Platform != hyperv1.KubevirtPlatform {
 					t.Skip("tests only supported on platform KubeVirt")
-				}
-				//FIXME: Un-quarentine the kubevirt multinet advanced test when CI has enough
-				//       resources to run it without issues.
-				if os.Getenv("CI") == "true" {
-					t.Skip("Quarentined test 'kubevirt advanced multinet' cannot run at CI")
 				}
 			},
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {

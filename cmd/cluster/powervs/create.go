@@ -23,8 +23,8 @@ const (
 	defaultCIDRBlock = "10.0.0.0/16"
 )
 
-func DefaultOptions() *CreateOptions {
-	return &CreateOptions{
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{
 		Region:                 "us-south",
 		Zone:                   "us-south",
 		VPCRegion:              "us-south",
@@ -36,7 +36,7 @@ func DefaultOptions() *CreateOptions {
 	}
 }
 
-func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ResourceGroup, "resource-group", opts.ResourceGroup, "IBM Cloud Resource group")
 	flags.StringVar(&opts.Region, "region", opts.Region, "IBM Cloud region. Default is us-south")
 	flags.StringVar(&opts.Zone, "zone", opts.Zone, "IBM Cloud zone. Default is us-south")
@@ -51,11 +51,12 @@ func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	flags.BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 	flags.BoolVar(&opts.PER, "power-edge-router", opts.PER, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
+	flags.BoolVar(&opts.TransitGatewayGlobalRouting, "transit-gateway-global-routing", opts.TransitGatewayGlobalRouting, "Enabling this flag chooses global routing mode when creating transit gateway")
 	flags.StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
 	flags.StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 }
 
-type CreateOptions struct {
+type RawCreateOptions struct {
 	// ResourceGroup to use in IBM Cloud
 	ResourceGroup string
 	// Region to use in PowerVS service in IBM Cloud
@@ -87,6 +88,10 @@ type CreateOptions struct {
 	// Set this field when reusing existing resources from IBM Cloud
 	TransitGateway string
 
+	// TransitGatewayGlobalRouting flag is to choose global routing while creating transit gateway
+	// If set to false, local routing will be chosen.
+	// Default Value: false
+	TransitGatewayGlobalRouting bool
 	// nodepool related options
 	// SysType of the worker node in PowerVS service
 	SysType string
@@ -96,49 +101,82 @@ type CreateOptions struct {
 	Processors string
 	// Memory of the worker node in PowerVS service
 	Memory int32
+}
+
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
+}
+
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	if opts.BaseDomain == "" && opts.InfrastructureJSON == "" {
+		return nil, fmt.Errorf("base-domain flag is required if infra-json is not provided")
+	}
+
+	if o.ResourceGroup == "" && opts.InfrastructureJSON == "" {
+		return nil, fmt.Errorf("resource-group flag is required if infra-json is not provided")
+	}
+
+	if o.PER && o.TransitGatewayLocation == "" {
+		return nil, fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
+	}
+	if o.TransitGatewayGlobalRouting && !o.PER {
+		return nil, fmt.Errorf("power-edge-router flag to be enabled for global-routing to get configured")
+	}
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}, nil
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
 
 	externalDNSDomain string
 
 	infra *powervsinfra.Infra
 }
 
-func (o *CreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) error {
-	if opts.BaseDomain == "" && opts.InfrastructureJSON == "" {
-		return fmt.Errorf("base-domain flag is required if infra-json is not provided")
-	}
-
-	if o.ResourceGroup == "" && opts.InfrastructureJSON == "" {
-		return fmt.Errorf("resource-group flag is required if infra-json is not provided")
-	}
-
-	if o.PER && o.TransitGatewayLocation == "" {
-		return fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
-	}
-	return nil
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
 }
 
-func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+		},
+	}
 	opts.Arch = hyperv1.ArchitecturePPC64LE
-	o.externalDNSDomain = opts.ExternalDNSDomain
 
 	// Load or create infrastructure for the cluster
 	if len(opts.InfrastructureJSON) > 0 {
 		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
-			return fmt.Errorf("failed to read infra json file: %w", err)
+			return nil, fmt.Errorf("failed to read infra json file: %w", err)
 		}
-		if err = json.Unmarshal(rawInfra, o.infra); err != nil {
-			return fmt.Errorf("failed to load infra json: %w", err)
+		output.infra = &powervsinfra.Infra{}
+		if err = json.Unmarshal(rawInfra, output.infra); err != nil {
+			return nil, fmt.Errorf("failed to load infra json: %w", err)
 		}
 	} else {
 		var opt *powervsinfra.CreateInfraOptions
-		opt, o.infra = CreateInfraOptions(o, opts)
-		if err := o.infra.SetupInfra(ctx, opt); err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
+		opt, output.infra = CreateInfraOptions(o, opts)
+		if err := output.infra.SetupInfra(ctx, opt); err != nil {
+			return nil, fmt.Errorf("failed to create infra: %w", err)
 		}
 	}
 
-	return nil
+	return output, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -211,7 +249,7 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "powervs",
 		Short:        "Creates basic functional HostedCluster resources on PowerVS PowerVS",
@@ -239,7 +277,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			cancel()
 		}()
 
-		if err := CreateCluster(ctx, opts, powerVsOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, powerVsOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			os.Exit(1)
 		}
@@ -248,29 +286,26 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, powerVsOpts *CreateOptions) error {
-	return core.CreateCluster(ctx, opts, powerVsOpts)
-}
-
-func CreateInfraOptions(powerVSOpts *CreateOptions, opts *core.CreateOptions) (*powervsinfra.CreateInfraOptions, *powervsinfra.Infra) {
+func CreateInfraOptions(powerVSOpts *ValidatedCreateOptions, opts *core.CreateOptions) (*powervsinfra.CreateInfraOptions, *powervsinfra.Infra) {
 	return &powervsinfra.CreateInfraOptions{
-			Name:                   opts.Name,
-			Namespace:              opts.Namespace,
-			BaseDomain:             opts.BaseDomain,
-			ResourceGroup:          powerVSOpts.ResourceGroup,
-			InfraID:                opts.InfraID,
-			OutputFile:             opts.InfrastructureJSON,
-			Region:                 powerVSOpts.Region,
-			Zone:                   powerVSOpts.Zone,
-			CloudInstanceID:        powerVSOpts.CloudInstanceID,
-			CloudConnection:        powerVSOpts.CloudConnection,
-			VPCRegion:              powerVSOpts.VPCRegion,
-			VPC:                    powerVSOpts.VPC,
-			Debug:                  powerVSOpts.Debug,
-			RecreateSecrets:        powerVSOpts.RecreateSecrets,
-			PER:                    powerVSOpts.PER,
-			TransitGatewayLocation: powerVSOpts.TransitGatewayLocation,
-			TransitGateway:         powerVSOpts.TransitGateway,
+			Name:                        opts.Name,
+			Namespace:                   opts.Namespace,
+			BaseDomain:                  opts.BaseDomain,
+			ResourceGroup:               powerVSOpts.ResourceGroup,
+			InfraID:                     opts.InfraID,
+			OutputFile:                  opts.InfrastructureJSON,
+			Region:                      powerVSOpts.Region,
+			Zone:                        powerVSOpts.Zone,
+			CloudInstanceID:             powerVSOpts.CloudInstanceID,
+			CloudConnection:             powerVSOpts.CloudConnection,
+			VPCRegion:                   powerVSOpts.VPCRegion,
+			VPC:                         powerVSOpts.VPC,
+			Debug:                       powerVSOpts.Debug,
+			RecreateSecrets:             powerVSOpts.RecreateSecrets,
+			PER:                         powerVSOpts.PER,
+			TransitGatewayLocation:      powerVSOpts.TransitGatewayLocation,
+			TransitGateway:              powerVSOpts.TransitGateway,
+			TransitGatewayGlobalRouting: powerVSOpts.TransitGatewayGlobalRouting,
 		}, &powervsinfra.Infra{
 			ID:            opts.InfraID,
 			BaseDomain:    opts.BaseDomain,

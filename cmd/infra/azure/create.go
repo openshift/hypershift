@@ -76,16 +76,6 @@ func NewCreateCommand() *cobra.Command {
 		Use:          "azure",
 		Short:        "Creates Azure infrastructure resources for a cluster",
 		SilenceUsage: true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// Check if the network security group is set and the resource group is not
-			nsg, _ := cmd.Flags().GetString("network-security-group-id")
-			rg, _ := cmd.Flags().GetString("resource-group-name")
-
-			if nsg != "" && rg == "" {
-				fmt.Println("Error: Flag --resource-group-name is required when using --network-security-group-id")
-				os.Exit(1)
-			}
-		},
 	}
 
 	opts := CreateInfraOptions{

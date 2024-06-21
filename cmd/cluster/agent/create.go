@@ -8,26 +8,52 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/util"
 )
 
-type CreateOptions struct {
+func DefaultOptions() *RawCreateOptions {
+	return &RawCreateOptions{}
+}
+
+type RawCreateOptions struct {
 	APIServerAddress   string
 	AgentNamespace     string
 	AgentLabelSelector string
 }
 
-func (o *CreateOptions) Validate(ctx context.Context, options *core.CreateOptions) error {
-	return nil
+// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
+type validatedCreateOptions struct {
+	*RawCreateOptions
 }
 
-func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) error {
+type ValidatedCreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*validatedCreateOptions
+}
+
+func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	return &ValidatedCreateOptions{
+		validatedCreateOptions: &validatedCreateOptions{
+			RawCreateOptions: o,
+		},
+	}, nil
+}
+
+// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
+type completedCreateOptions struct {
+	*ValidatedCreateOptions
+}
+
+type CreateOptions struct {
+	// Embed a private pointer that cannot be instantiated outside of this package.
+	*completedCreateOptions
+}
+
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
 	if o.APIServerAddress == "" {
 		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
@@ -36,12 +62,16 @@ func (o *CreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) 
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
 		// TODO (jparrill): Refactor this to use a 'forward' instead of a 'backward' logic flow
 		if len(o.AgentNamespace) <= 0 {
-			return fmt.Errorf("--default-dual is only supported on Agent platform")
+			return nil, fmt.Errorf("--default-dual is only supported on Agent platform")
 		}
 		opts.ClusterCIDR = []string{globalconfig.DefaultIPv4ClusterCIDR, globalconfig.DefaultIPv6ClusterCIDR}
 		opts.ServiceCIDR = []string{globalconfig.DefaultIPv4ServiceCIDR, globalconfig.DefaultIPv6ServiceCIDR}
 	}
-	return err
+	return &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+		},
+	}, err
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -98,20 +128,20 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func BindOptions(opts *CreateOptions, flags *pflag.FlagSet) {
+func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset.")
 	flags.StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "The namespace in which to search for Agents")
 	flags.StringVar(&opts.AgentLabelSelector, "agentLabelSelector", opts.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
 }
 
-func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "agent",
 		Short:        "Creates basic functional HostedCluster resources on Agent",
 		SilenceUsage: true,
 	}
 
-	agentOpts := &CreateOptions{}
+	agentOpts := DefaultOptions()
 	BindOptions(agentOpts, cmd.Flags())
 	_ = cmd.MarkFlagRequired("agent-namespace")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -124,7 +154,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts, agentOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, agentOpts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -132,22 +162,4 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	return cmd
-}
-
-func CreateCluster(ctx context.Context, opts *core.CreateOptions, agentOpts *CreateOptions) error {
-	// Validate that the agent namespace exists
-	agentNamespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: agentOpts.AgentNamespace,
-		},
-	}
-	client, err := util.GetClient()
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
-	}
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(agentNamespace), agentNamespace); err != nil {
-		return fmt.Errorf("failed to get agent namespace: %w", err)
-	}
-
-	return core.CreateCluster(ctx, opts, agentOpts)
 }

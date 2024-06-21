@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openshift/hypershift/api/ibmcapi"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"github.com/openshift/hypershift/api/ibmcapi"
 )
 
 const (
@@ -730,6 +731,7 @@ type KubevirtNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:validation:Enum=Enable;Disable
+	// +kubebuilder:default=Enable
 	NetworkInterfaceMultiQueue *MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
 
 	// AdditionalNetworks specify the extra networks attached to the nodes

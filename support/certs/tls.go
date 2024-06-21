@@ -84,7 +84,7 @@ func GenerateSignedCertificate(caKey *rsa.PrivateKey, caCert *x509.Certificate,
 
 	// create a CSR
 	csrTmpl := x509.CertificateRequest{Subject: cfg.Subject, DNSNames: cfg.DNSNames, IPAddresses: cfg.IPAddresses}
-	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &csrTmpl, key)
+	csrBytes, err := x509.CreateCertificateRequest(Reader(), &csrTmpl, key)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to create certificate request")
 	}
@@ -103,7 +103,7 @@ func GenerateSignedCertificate(caKey *rsa.PrivateKey, caCert *x509.Certificate,
 
 // PrivateKey generates an RSA Private key and returns the value
 func PrivateKey() (*rsa.PrivateKey, error) {
-	rsaKey, err := rsa.GenerateKey(rand.Reader, keySize)
+	rsaKey, err := rsa.GenerateKey(Reader(), keySize)
 	if err != nil {
 		return nil, errors.Wrap(err, "error generating RSA private key")
 	}
@@ -113,7 +113,7 @@ func PrivateKey() (*rsa.PrivateKey, error) {
 
 // SelfSignedCertificate creates a self-signed certificate
 func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate, error) {
-	serial, err := rand.Int(rand.Reader, new(big.Int).SetInt64(math.MaxInt64))
+	serial, err := rand.Int(Reader(), new(big.Int).SetInt64(math.MaxInt64))
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 		return nil, errors.Wrap(err, "failed to set subject key identifier")
 	}
 
-	certBytes, err := x509.CreateCertificate(rand.Reader, &cert, &cert, key.Public(), key)
+	certBytes, err := x509.CreateCertificate(Reader(), &cert, &cert, key.Public(), key)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create certificate")
 	}
@@ -151,7 +151,7 @@ func signedCertificate(
 	caCert *x509.Certificate,
 	caKey *rsa.PrivateKey,
 ) (*x509.Certificate, error) {
-	serial, err := rand.Int(rand.Reader, new(big.Int).SetInt64(math.MaxInt64))
+	serial, err := rand.Int(Reader(), new(big.Int).SetInt64(math.MaxInt64))
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func signedCertificate(
 		return nil, errors.Wrap(err, "failed to set subject key identifier")
 	}
 
-	certBytes, err := x509.CreateCertificate(rand.Reader, &certTmpl, caCert, key.Public(), caKey)
+	certBytes, err := x509.CreateCertificate(Reader(), &certTmpl, caCert, key.Public(), caKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create x509 certificate")
 	}

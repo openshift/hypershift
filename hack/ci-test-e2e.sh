@@ -1,20 +1,11 @@
 #!/usr/bin/env bash
-#
-# This script takes the first argument and use it as the input for -test.run.
+
 
 set -euo pipefail
 
 set -o monitor
 
 set -x
-
-CI_TESTS_RUN=${1:-}
-if [ -z  ${CI_TESTS_RUN} ]
-then
-      echo "Running all tests"
-else
-      echo "Running tests matching ${CI_TESTS_RUN}"
-fi
 
 generate_junit() {
   # propagate SIGTERM to the `test-e2e` process

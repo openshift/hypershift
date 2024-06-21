@@ -170,10 +170,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 							totalProviderInstances++
 						}
 					}
-				case hyperv1.IBMCloud:
-					if hcp.Spec.SecretEncryption.KMS.IBMCloud != nil {
-						totalProviderInstances = len(hcp.Spec.SecretEncryption.KMS.IBMCloud.KeyList)
-					}
 				}
 			}
 		}
