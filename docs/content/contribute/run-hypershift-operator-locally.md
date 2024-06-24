@@ -9,7 +9,7 @@ To run the HyperShift Operator locally, follow these steps:
 1. Ensure that the `KUBECONFIG` environment variable is set to a management cluster where HyperShift has not been installed yet.
 
   ```shell linenums="1"
-   export KUBECONFIG=kubeconfig
+   export KUBECONFIG="/path/to/your/kubeconfig"
   ```
 
 2. Build HyperShift.
@@ -26,7 +26,7 @@ hypershift install render | oc delete -f -
 4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see [Prerequisites](../getting-started.md#prerequisites)):
 
 ```shell linenums="1"
-REGION=us-east-1
+REGION=your-region
 BUCKET_NAME=your-bucket-name
 AWS_CREDS="$HOME/.aws/credentials"
 
