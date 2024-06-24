@@ -17,8 +17,13 @@ To run the HyperShift Operator locally, follow these steps:
         # requires go v1.22+
         $ make build
 
+3. Remove previous artifacts (if any). The command below ensures any existing artifacts are cleared before proceeding with installation:
 
-3. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see [Prerequisites](../getting-started.md#prerequisites)):
+```shell linenums="1"
+hypershift install render | oc delete -f -
+```
+
+4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see [Prerequisites](../getting-started.md#prerequisites)):
 
 ```shell linenums="1"
 REGION=us-east-1
@@ -29,13 +34,13 @@ AWS_CREDS="$HOME/.aws/credentials"
   --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
   --oidc-storage-provider-s3-credentials $AWS_CREDS \
   --oidc-storage-provider-s3-region $REGION \
-  --enable-defaulting-webhook=false
-  --enable-conversion-webhook=false
-  --enable-validating-webhook=false
+  --enable-defaulting-webhook=false \
+  --enable-conversion-webhook=false \
+  --enable-validating-webhook=false \
   --development=true
 ```
 
-4. Run the HyperShift operator locally.
+5. Run the HyperShift operator locally.
 
 ```shell linenums="1"
 set -euo pipefail
