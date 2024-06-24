@@ -25,6 +25,10 @@ GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
 OUT_DIR ?= bin
 
+# run the HO locally
+HYPERSHIFT_INSTALL_AWS := ./hack/dev/aws/hypershft-install-aws.sh
+RUN_OPERATOR_LOCALLY_AWS := ./hack/dev/aws/run-operator-locally-aws.sh
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -286,3 +290,11 @@ ci-install-hypershift-private:
 regenerate-pki:
 	REGENERATE_PKI=1 $(GO) test ./control-plane-pki-operator/...
 	REGENERATE_PKI=1 $(GO) test ./test/e2e/... -run TestRegeneratePKI
+
+.PHONY: hypershift-install-aws-dev
+hypershift-install-aws-dev:
+	@$(HYPERSHIFT_INSTALL_AWS)
+
+.PHONY: run-operator-locally-aws-dev
+run-operator-locally-aws-dev:
+	@$(RUN_OPERATOR_LOCALLY_AWS)
