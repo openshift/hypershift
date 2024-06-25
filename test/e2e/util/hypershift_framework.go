@@ -201,8 +201,6 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 }
 
 func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, serviceAccountSigningKey []byte, artifactDir string) *hyperv1.HostedCluster {
-	h.Logf("createHostedCluster()")
-
 	g := NewWithT(h.T)
 	start := time.Now()
 
@@ -288,7 +286,6 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 	// Try and create the cluster. If it fails, mark test as failed and return.
 	opts.Render = false
 	opts.RenderInto = ""
-	h.Logf("Creating a new cluster. Options: %v", opts)
 	if err := createCluster(h.ctx, hc, opts, artifactDir); err != nil {
 		h.Errorf("failed to create cluster, tearing down: %v", err)
 		return hc
@@ -346,9 +343,12 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
 	destroyAttempt := 1
-	t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		t.Logf("Waiting for HostedCluster %s/%s to be destroyed", hc.Namespace, hc.Name)
+	}
+	var previousError string
 	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
-		err := destroyCluster(ctx, t, hc, opts)
+		err := destroyCluster(ctx, t, hc, opts, artifactDir)
 		if err != nil {
 			if strings.Contains(err.Error(), "required inputs are missing") {
 				return false, err
@@ -356,7 +356,10 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 			if strings.Contains(err.Error(), "NoCredentialProviders") {
 				return false, err
 			}
-			t.Logf("Failed to destroy cluster, will retry: %v", err)
+			if previousError != err.Error() {
+				t.Logf("Failed to destroy cluster, will retry: %v", err)
+				previousError = err.Error()
+			}
 			err := dumpCluster(ctx, t, false)
 			if err != nil {
 				t.Logf("Failed to dump cluster during destroy; this is nonfatal: %v", err)

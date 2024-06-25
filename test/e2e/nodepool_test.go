@@ -281,7 +281,6 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)
 
 	// Wait for the rollout to be complete
-	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
 	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 	// run test validations

@@ -98,7 +98,9 @@ func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client c
 // DeleteNamespace deletes and finalizes the given namespace, logging any failures
 // along the way.
 func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) error {
-	t.Logf("Deleting namespace: %s", namespace)
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		t.Logf("Deleting namespace %s", namespace)
+	}
 	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Delete(ctx, ns, &crclient.DeleteOptions{}); err != nil {
@@ -114,7 +116,9 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
-	t.Logf("Waiting for namespace to be finalized. Namespace: %s", namespace)
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		t.Logf("Waiting for namespace %s to be finalized", namespace)
+	}
 	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
@@ -129,50 +133,57 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	if err != nil {
 		return fmt.Errorf("namespace still exists after deletion timeout: %v", err)
 	}
-	t.Logf("Deleted namespace: %s", namespace)
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		t.Logf("Deleted namespace %s", namespace)
+	}
 	return nil
 }
 
-func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
-	start := time.Now()
-	t.Logf("Waiting for hostedcluster kubeconfig to be published. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
-	var guestKubeConfigSecret corev1.Secret
-	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		if err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
-			return false, nil
-		}
-		if hostedCluster.Status.KubeConfig == nil {
-			return false, nil
-		}
-		key := crclient.ObjectKey{
-			Namespace: hostedCluster.Namespace,
-			Name:      hostedCluster.Status.KubeConfig.Name,
-		}
-		if err := client.Get(ctx, key, &guestKubeConfigSecret); err != nil {
-			return false, nil
-		}
-		return true, nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("kubeconfig didn't become available: %w", err)
-	}
-	t.Logf("Found kubeconfig for cluster in %s. Namespace: %s, name: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name)
+func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) []byte {
+	var guestKubeConfigSecretRef crclient.ObjectKey
+	EventuallyObject(t, ctx, fmt.Sprintf("kubeconfig to be published for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			return hostedCluster, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			func(cluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+				guestKubeConfigSecretRef = crclient.ObjectKey{
+					Namespace: hostedCluster.Namespace,
+					Name:      ptr.Deref(hostedCluster.Status.KubeConfig, corev1.LocalObjectReference{}).Name,
+				}
+				return hostedCluster.Status.KubeConfig != nil, fmt.Sprintf("expected a kubeconfig reference in status"), nil
+			},
+		},
+	)
 
-	// TODO: this key should probably be published or an API constant
-	data, hasData := guestKubeConfigSecret.Data["kubeconfig"]
-	if !hasData {
-		return nil, fmt.Errorf("kubeconfig secret is missing kubeconfig key")
-	}
-	return data, nil
+	var data []byte
+	EventuallyObject(t, ctx, "kubeconfig secret to have data",
+		func(ctx context.Context) (*corev1.Secret, error) {
+			var guestKubeConfigSecret corev1.Secret
+			err := client.Get(ctx, guestKubeConfigSecretRef, &guestKubeConfigSecret)
+			return &guestKubeConfigSecret, err
+		},
+		[]Predicate[*corev1.Secret]{
+			func(secret *corev1.Secret) (done bool, reasons string, err error) {
+				var hasData bool
+				data, hasData = secret.Data["kubeconfig"]
+				return hasData, "expected secret to contain kubeconfig in data", nil
+			},
+		},
+	)
+	return data
 }
 
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
 	g := NewWithT(t)
-	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
-	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	// we know we're the only real clients for these test servers, so turn off client-side throttling
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
 
 	kubeClient, err := kubernetes.NewForConfig(guestConfig)
 	if err != nil {
@@ -919,7 +930,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
 		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skip()
+			t.Skipf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
 		}
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1466,7 +1477,7 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 		// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
 		// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
 		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
-			t.Skip()
+			t.Skip("skipping on None platform")
 		}
 
 		g := NewWithT(t)
@@ -1475,7 +1486,7 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Polling to prevent races with prometheus scrape interval.
-		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 			for _, metricName := range metricsNames {
 				// Query fo HC specific metrics by hc.name.
 				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
@@ -1498,15 +1509,12 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 
 				if areMetricsExpectedToBePresent {
 					if len(result.Data.Result) < 1 {
-						t.Logf("Metric not found: %q", metricName)
+						t.Logf("Expected results for metric %q, found none", metricName)
 						return false, nil
-					}
-					for _, series := range result.Data.Result {
-						t.Logf("Time series found: %v", series.String())
 					}
 				} else {
 					if len(result.Data.Result) > 0 {
-						t.Logf("Metric found: %q", metricName)
+						t.Logf("Expected 0 results for metric %q, found %d", metricName, len(result.Data.Result))
 						return false, nil
 					}
 				}
@@ -1523,7 +1531,6 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	g := NewWithT(t)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
-	t.Logf("Waiting for guest client to become available")
 	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
@@ -1532,8 +1539,6 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
-		// Wait for the rollout to be complete
-		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
 		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
 	}
 
@@ -1576,8 +1581,6 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
-		// Wait for the rollout to be complete
-		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
 		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
 	}
 
