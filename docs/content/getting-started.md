@@ -38,7 +38,7 @@ you should adjust to your own environment.
 
 7. An S3 bucket with public access to host OIDC discovery documents for your clusters. To create the bucket in *us-east-1*:
         ```shell linenums="1"
-        BUCKET_NAME=your-bucket-name
+        export BUCKET_NAME=your-bucket-name
         aws s3api create-bucket --bucket $BUCKET_NAME
         aws s3api delete-public-access-block --bucket $BUCKET_NAME
         echo '{
@@ -57,7 +57,7 @@ you should adjust to your own environment.
 
     To create the bucket in a region other than us-east-1:
         ```shell linenums="1"
-        BUCKET_NAME=your-bucket-name
+        export BUCKET_NAME=your-bucket-name
         REGION=us-east-2
         aws s3api create-bucket --bucket $BUCKET_NAME \
           --create-bucket-configuration LocationConstraint=$REGION \
