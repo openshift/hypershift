@@ -104,7 +104,7 @@ const (
 	tuningConfigKey                  = "tuning"
 	tunedConfigMapLabel              = "hypershift.openshift.io/tuned-config"
 	nodeTuningGeneratedConfigLabel   = "hypershift.openshift.io/nto-generated-machine-config"
-	performanceProfileConfigMapLabel = "hypershift.openshift.io/performanceprofile-config"
+	PerformanceProfileConfigMapLabel = "hypershift.openshift.io/performanceprofile-config"
 
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
@@ -484,6 +484,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Message:            fmt.Sprintf("CPU arch %s is not supported for platform: %s, use 'amd64' instead", nodePool.Spec.Arch, nodePool.Spec.Platform.Type),
 			ObservedGeneration: nodePool.Generation,
 		})
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidArchPlatform,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("CPU arch %s is supported for platform: %s", nodePool.Spec.Arch, nodePool.Spec.Platform.Type),
+			ObservedGeneration: nodePool.Generation,
+		})
 	}
 
 	// Validate AWS platform specific input
@@ -618,7 +626,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			"current", nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig],
 			"target", targetConfigHash)
 	} else {
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingConfigConditionType)
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		})
 	}
 
 	// Check if release image version needs to be updated.
@@ -635,7 +648,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("NodePool version is updating",
 			"current", nodePool.Status.Version, "target", targetVersion)
 	} else {
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		})
 	}
 
 	// Signal ignition payload generation
@@ -887,7 +905,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			"current", nodePool.GetAnnotations()[nodePoolAnnotationPlatformMachineTemplate],
 			"target", targetMachineTemplate)
 	} else {
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		})
 	}
 
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
@@ -1622,7 +1645,7 @@ func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.Co
 	if err := reconcileNodeTuningConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig); err != nil {
 		return err
 	}
-	performanceProfileConfigMap.Labels[performanceProfileConfigMapLabel] = "true"
+	performanceProfileConfigMap.Labels[PerformanceProfileConfigMapLabel] = "true"
 	return nil
 }
 
@@ -2562,7 +2585,7 @@ func isNodePoolGeneratedTuningConfigMap(cm *corev1.ConfigMap) bool {
 	if _, ok := cm.GetLabels()[tunedConfigMapLabel]; ok {
 		return true
 	}
-	_, ok := cm.GetLabels()[performanceProfileConfigMapLabel]
+	_, ok := cm.GetLabels()[PerformanceProfileConfigMapLabel]
 	return ok
 }
 
