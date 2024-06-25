@@ -37,7 +37,7 @@ ifeq ("/","${HOME}")
 HOME=/tmp
 endif
 
-all: build e2e
+all: build e2e tests
 
 pre-commit: all verify test
 
@@ -67,6 +67,10 @@ $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
+# Compile all tests
+.PHONY: tests
+tests:
+	$(GO) test -o /dev/null -c ./...
 
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
