@@ -3056,6 +3056,15 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, err
 	}
 
+	shouldKeepOldUserData, err := r.shouldKeepOldUserData(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if shouldKeepOldUserData {
+		log.V(3).Info("Skipping secretJanitor reconciliation and keeping old user data secret")
+		return ctrl.Result{}, nil
+	}
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	expectedCoreConfigResources := expectedCoreConfigResourcesForHostedCluster(hcluster)
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
@@ -3126,6 +3135,44 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 
 	log.WithValues("options", names, "valid", valid).Info("removing secret as it does not match the expected set of names")
 	return ctrl.Result{}, cleanup(ctx, r.Client, secret)
+}
+
+// shouldKeepOldUserData determines if the old user data should be kept.
+// For AWS < 4.16, we keep the old userdata Secret so old Machines during rolled out can be deleted.
+// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
+// TODO (alberto): Drop this check when support for old versions without the fix is not needed anymore.
+func (r *NodePoolReconciler) shouldKeepOldUserData(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+	if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return false, nil
+	}
+
+	// If there's a current version in status, be conservative and assume that one is the one running CAPA.
+	releaseImage := hc.Spec.Release.Image
+	if hc.Status.Version != nil {
+		if len(hc.Status.Version.History) > 0 {
+			releaseImage = hc.Status.Version.History[0].Image
+		}
+	}
+
+	pullSecretBytes, err := r.getPullSecretBytes(ctx, hc)
+	if err != nil {
+		return true, fmt.Errorf("failed to get pull secret bytes: %w", err)
+	}
+
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, releaseImage, pullSecretBytes)
+	if err != nil {
+		return true, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	hostedClusterVersion, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return true, err
+	}
+
+	if hostedClusterVersion.LT(semver.MustParse("4.16.0")) {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
