@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	awssdk "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
+	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -20,6 +22,8 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,8 +62,35 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		return fmt.Errorf("failed to complete core options: %w", err)
 	}
 	infraFile := filepath.Join(outputDir, "infrastructure.json")
+	infraLogFile := filepath.Join(outputDir, "infrastructure.log")
 	iamFile := filepath.Join(outputDir, "iam.json")
+	iamLogFile := filepath.Join(outputDir, "iam.log")
 	manifestsFile := filepath.Join(outputDir, "manifests.yaml")
+	renderLogFile := filepath.Join(outputDir, "render.log")
+	createLogFile := filepath.Join(outputDir, "create.log")
+
+	infraLog, err := os.Create(infraLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to create infra log: %w", err)
+	}
+	infraLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(infraLog), zap.DebugLevel))
+	defer func() {
+		if err := infraLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync infraLogger: %v\n", err)
+		}
+	}()
+
+	iamLog, err := os.Create(iamLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to create iam log: %w", err)
+	}
+	iamLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(iamLog), zap.DebugLevel))
+	defer func() {
+		if err := iamLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync iamLogger: %v\n", err)
+		}
+	}()
+
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		completer, err := opts.AWSPlatform.Validate(ctx, coreOpts)
@@ -70,7 +101,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 
 		infraOpts := aws.CreateInfraOptions(validOpts, coreOpts)
 		infraOpts.OutputFile = infraFile
-		infra, err := infraOpts.CreateInfra(ctx, opts.Log)
+		infra, err := infraOpts.CreateInfra(ctx, zapr.NewLogger(infraLogger))
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
@@ -84,7 +115,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		}
 		iamOpts := aws.CreateIAMOptions(validOpts, infra)
 		iamOpts.OutputFile = iamFile
-		iam, err := iamOpts.CreateIAM(ctx, client)
+		iam, err := iamOpts.CreateIAM(ctx, client, zapr.NewLogger(iamLogger))
 		if err != nil {
 			return fmt.Errorf("failed to create IAM: %w", err)
 		}
@@ -94,11 +125,11 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 
 		opts.InfrastructureJSON = infraFile
 		opts.AWSPlatform.IAMJSON = iamFile
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AWSPlatform, manifestsFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AWSPlatform, manifestsFile, renderLogFile, createLogFile)
 	case hyperv1.NonePlatform:
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.NonePlatform, manifestsFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.NonePlatform, manifestsFile, renderLogFile, createLogFile)
 	case hyperv1.KubevirtPlatform:
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.KubevirtPlatform, manifestsFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.KubevirtPlatform, manifestsFile, renderLogFile, createLogFile)
 	case hyperv1.AzurePlatform:
 		completer, err := opts.AzurePlatform.Validate(ctx, coreOpts)
 		if err != nil {
@@ -111,12 +142,12 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 			return fmt.Errorf("failed to create infra options: %w", err)
 		}
 		infraOpts.OutputFile = infraFile
-		if _, err := infraOpts.Run(ctx, opts.Log); err != nil {
+		if _, err := infraOpts.Run(ctx, zapr.NewLogger(infraLogger)); err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile, renderLogFile, createLogFile)
 	case hyperv1.PowerVSPlatform:
 		completer, err := opts.PowerVSPlatform.Validate(ctx, coreOpts)
 		if err != nil {
@@ -126,39 +157,75 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 
 		infraOpts, infra := powervs.CreateInfraOptions(validOpts, coreOpts)
 		infraOpts.OutputFile = infraFile
-		if err := infra.SetupInfra(ctx, infraOpts); err != nil {
+		if err := infra.SetupInfra(ctx, zapr.NewLogger(infraLogger), infraOpts); err != nil {
 			return fmt.Errorf("failed to setup infra: %w", err)
 		}
-		infraOpts.Output(infra)
+		infraOpts.Output(infra, zapr.NewLogger(infraLogger))
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile, renderLogFile, createLogFile)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
 }
 
-func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts core.PlatformValidator, outputFile string) error {
+func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts core.PlatformValidator, outputFile string, renderLogFile string, createLogFile string) error {
+	renderLog, err := os.Create(renderLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to render render log: %w", err)
+	}
+	renderLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(renderLog), zap.DebugLevel))
+	defer func() {
+		if err := renderLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync renderLogger: %v\n", err)
+		}
+	}()
+
 	opts.Render = true
 	opts.RenderInto = outputFile
+	opts.Log = zapr.NewLogger(renderLogger)
 	if err := core.CreateCluster(ctx, opts, platformOpts); err != nil {
 		return fmt.Errorf("failed to render cluster manifests: %w", err)
 	}
 
+	createLog, err := os.Create(createLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to create create log: %w", err)
+	}
+	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
+	defer func() {
+		if err := createLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync createLogger: %v\n", err)
+		}
+	}()
+
 	opts.Render = false
 	opts.RenderInto = ""
+	opts.Log = zapr.NewLogger(createLogger)
 	return core.CreateCluster(ctx, opts, platformOpts)
 }
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
-func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *PlatformAgnosticOptions) error {
+func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *PlatformAgnosticOptions, outputDir string) error {
+	destroyLogFile := filepath.Join(outputDir, "destroy.log")
+	destroyLog, err := os.Create(destroyLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to destroy destroy log: %w", err)
+	}
+	destroyLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(destroyLog), zap.DebugLevel))
+	defer func() {
+		if err := destroyLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync destroyLogger: %v\n", err)
+		}
+	}()
+
 	opts := &core.DestroyOptions{
 		Namespace:          hc.Namespace,
 		Name:               hc.Name,
 		InfraID:            createOpts.InfraID,
 		ClusterGracePeriod: 15 * time.Minute,
-		Log:                NewLogr(t),
+		Log:                zapr.NewLogger(destroyLogger),
 	}
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
