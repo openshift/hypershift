@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -16,8 +17,20 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"go.uber.org/zap/zaptest"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,19 +47,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/api/util/ipnet"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
-	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 )
 
 func TestIsUpdatingConfig(t *testing.T) {
@@ -3598,6 +3598,108 @@ spec:
 					t.Errorf("got unexpected object after reconcile: %v", diff)
 				}
 			}
+		})
+	}
+}
+
+func TestShouldKeepOldUserData(t *testing.T) {
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test"},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte("whatever"),
+		},
+	}
+
+	testCases := []struct {
+		name            string
+		hc              *hyperv1.HostedCluster
+		releaseProvider releaseinfo.Provider
+		expected        bool
+	}{
+		{
+			name: "when hosted cluster is not aws it should NOT keep old user data",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: pullSecret.Namespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{
+						Name: pullSecret.Name,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AgentPlatform,
+					},
+					Release: hyperv1.Release{
+						Image: "fake-release-image",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{},
+			},
+			expected: false,
+		},
+		{
+			name: "when hosted cluster is less than 4.16 it should keep user data",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: pullSecret.Namespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{
+						Name: pullSecret.Name,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					Release: hyperv1.Release{
+						Image: "fake-release-image",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{},
+			},
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.15.0").String()},
+			expected:        true,
+		},
+		{
+			name: "when hosted cluster is equal or greater than 4.16 it should NOT keep user data",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: pullSecret.Namespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{
+						Name: pullSecret.Name,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					Release: hyperv1.Release{
+						Image: "fake-release-image",
+					},
+				},
+			},
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.16.0").String()},
+			expected:        false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				pullSecret,
+			).Build()
+
+			r := &NodePoolReconciler{
+				Client:          c,
+				ReleaseProvider: tc.releaseProvider,
+			}
+
+			shouldKeepOldUserData, err := r.shouldKeepOldUserData(context.Background(), tc.hc)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(shouldKeepOldUserData).To(Equal(tc.expected))
 		})
 	}
 }
