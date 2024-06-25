@@ -205,7 +205,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 			})
 			var items []*corev1.Pod
 			for i := range pods.Items {
-				items = append(items, &pods.Items[i])
+				items[i] = &pods.Items[i]
 			}
 			return items, err
 		}, nil, []e2eutil.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (done bool, reasons string, err error) {

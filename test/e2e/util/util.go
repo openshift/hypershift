@@ -22,7 +22,6 @@ import (
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	support "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/library-go/test/library/metrics"
 	promapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -37,17 +36,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	kapierror "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -202,11 +200,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 }
 
 func GetGuestKubeconfigHost(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
-	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
-	if err != nil {
-		return "", fmt.Errorf("couldn't get guest kubeconfig: %v", err)
-	}
-
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	if err != nil {
 		return "", fmt.Errorf("couldn't load guest kubeconfig: %v", err)
@@ -244,85 +238,51 @@ func WaitForGuestKubeconfigHostUpdate(t *testing.T, ctx context.Context, client 
 }
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
-	// waitTimeout for nodes to become Ready
-	waitTimeout := 30 * time.Minute
-	switch platform {
-	case hyperv1.PowerVSPlatform:
-		waitTimeout = 60 * time.Minute
-	case hyperv1.KubevirtPlatform:
-		waitTimeout = 60 * time.Minute
-	}
-
-	t.Logf("waiting for %d nodes to become ready", n)
-	start := time.Now()
-	var previousError string
-	previousResourceVersion := ""                // RV of the list, for quick short-circuits
-	previousConditions := map[string]condition{} // node name mapped to their ready condition
-	nodes := &corev1.NodeList{}
-	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, waitTimeout, true, func(ctx context.Context) (done bool, err error) {
-		err = client.List(ctx, nodes)
-		if err != nil {
-			if err.Error() != previousError {
-				t.Logf("failed to list nodes: %v", err)
-				previousError = err.Error()
-			}
-			return false, nil
-		}
-
-		if nodes.ResourceVersion == previousResourceVersion {
-			return false, nil
-		}
-		previousResourceVersion = nodes.ResourceVersion
-
-		currentConditions := map[string]condition{}
-		for _, node := range nodes.Items {
-			for _, cond := range node.Status.Conditions {
-				if cond.Type == corev1.NodeReady {
-					currentConditions[node.Name] = conditionForNode(cond)
-				}
-			}
-		}
-
-		previouslyReady, currentlyReady := readyNodes(previousConditions), readyNodes(currentConditions)
-		if !previouslyReady.Equal(currentlyReady) {
-			t.Logf("found %d/%d ready nodes: %v", len(currentlyReady), n, strings.Join(currentlyReady.UnsortedList(), ", "))
-		}
-		for node, ready := range currentConditions {
-			if !conditionsIdentical(ready, previousConditions[node]) {
-				prefix := ""
-				if ready.Status != metav1.ConditionTrue {
-					prefix = "un"
-				}
-				msg := fmt.Sprintf("%sready node %s: %s", prefix, node, formatCondition(ready))
-				t.Log(msg)
-			}
-		}
-		previousConditions = currentConditions
-		return len(currentlyReady) == int(n), nil
-	})
-	duration := time.Since(start).Round(time.Second)
-
-	if err != nil {
-		t.Fatalf("Failed to wait for %d ready nodes in %s: %v", n, duration, err)
-	}
-	t.Logf("Successfully waited for %d ready nodes in %s", n, duration)
-	return nodes.Items
+	return WaitForNReadyNodesWithOptions(t, ctx, client, n, platform, "")
 }
 
-func readyNodes(conditions map[string]condition) sets.Set[string] {
-	ready := sets.New[string]()
-	for node, cond := range conditions {
-		if cond.Status == metav1.ConditionTrue {
-			ready.Insert(node)
-		}
-	}
-	return ready
+func WaitForReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType, opts ...NodePoolPollOption) []corev1.Node {
+	return WaitForNReadyNodesWithOptions(t, ctx, client, *np.Spec.Replicas, platform, fmt.Sprintf("for NodePool %s/%s", np.Namespace, np.Name), append(opts, WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: np.Name})}))...)
 }
 
-func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePoolName string) []corev1.Node {
-	g := NewWithT(t)
-	start := time.Now()
+type NodePoolPollOptions struct {
+	collectionPredicates []Predicate[[]*corev1.Node]
+	predicates           []Predicate[*corev1.Node]
+	clientOpts           []crclient.ListOption
+	suffix               string
+}
 
+type NodePoolPollOption func(*NodePoolPollOptions)
+
+func WithCollectionPredicates(predicates ...Predicate[[]*corev1.Node]) NodePoolPollOption {
+	return func(options *NodePoolPollOptions) {
+		options.collectionPredicates = predicates
+	}
+}
+
+func WithPredicates(predicates ...Predicate[*corev1.Node]) NodePoolPollOption {
+	return func(options *NodePoolPollOptions) {
+		options.predicates = predicates
+	}
+}
+
+func WithClientOptions(clientOpts ...crclient.ListOption) NodePoolPollOption {
+	return func(options *NodePoolPollOptions) {
+		options.clientOpts = clientOpts
+	}
+}
+
+func WithSuffix(suffix string) NodePoolPollOption {
+	return func(options *NodePoolPollOptions) {
+		options.suffix = suffix
+	}
+}
+
+func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, suffix string, opts ...NodePoolPollOption) []corev1.Node {
+	options := &NodePoolPollOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
 	// waitTimeout for nodes to become Ready
 	waitTimeout := 30 * time.Minute
 	switch platform {
@@ -331,180 +291,119 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 	case hyperv1.PowerVSPlatform:
 		waitTimeout = 60 * time.Minute
 	}
-
-	t.Logf("Waiting for nodes to become ready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
-	nodesFromNodePool := []corev1.Node{}
-	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, waitTimeout, true, func(ctx context.Context) (done bool, err error) {
-		nodes := &corev1.NodeList{}
-		err = client.List(ctx, nodes)
-		if err != nil {
-			return false, nil
-		}
-		if len(nodes.Items) == 0 {
-			return false, nil
-		}
-		for _, node := range nodes.Items {
-			if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
-				for _, cond := range node.Status.Conditions {
-					if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
-						nodesFromNodePool = append(nodesFromNodePool, node)
-					}
-				}
+	nodes := &corev1.NodeList{}
+	if suffix != "" {
+		suffix = " " + suffix
+	}
+	if options.suffix != "" {
+		suffix += " " + options.suffix
+	}
+	EventuallyObjects(t, ctx, fmt.Sprintf("%d nodes to become ready%s", n, suffix),
+		func(ctx context.Context) ([]*corev1.Node, error) {
+			err := client.List(ctx, nodes, options.clientOpts...)
+			items := make([]*corev1.Node, len(nodes.Items))
+			for i := range nodes.Items {
+				items[i] = &nodes.Items[i]
 			}
-		}
-		if len(nodesFromNodePool) != int(n) {
-			nodesFromNodePool = nil
-			return false, nil
-		}
-		t.Logf("All nodes are ready. Count: %v", len(nodesFromNodePool))
-
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", len(nodesFromNodePool), n))
-	t.Logf("All nodes for NodePool %s appear to be ready in %s. Count: %v", nodePoolName, time.Since(start).Round(time.Second), n)
-
-	return nodesFromNodePool
+			return items, err
+		},
+		append([]Predicate[[]*corev1.Node]{
+			func(nodes []*corev1.Node) (done bool, reasons string, err error) {
+				want, got := int(n), len(nodes)
+				return want == got, fmt.Sprintf("expected %d nodes, got %d", want, got), nil
+			},
+		}, options.collectionPredicates...),
+		append([]Predicate[*corev1.Node]{
+			ConditionPredicate[*corev1.Node](Condition{
+				Type:   string(corev1.NodeReady),
+				Status: metav1.ConditionTrue,
+			}),
+		}, options.predicates...),
+		WithTimeout(waitTimeout),
+	)
+	return nodes.Items
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
-	start := time.Now()
-	g := NewWithT(t)
-
-	var rolloutIncompleteReason, prevRolloutIncompleteReason string
-	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		latest := hostedCluster.DeepCopy()
-		err = client.Get(ctx, crclient.ObjectKeyFromObject(latest), latest)
-		if err != nil {
-			t.Errorf("Failed to get hostedcluster: %v", err)
-			return false, nil
-		}
-
-		available := meta.FindStatusCondition(latest.Status.Conditions, string(hyperv1.HostedClusterAvailable))
-		progressing := meta.FindStatusCondition(latest.Status.Conditions, string(hyperv1.HostedClusterProgressing))
-		switch {
-		case available == nil:
-			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] does not exist", hyperv1.HostedClusterAvailable)
-		case available.Status != metav1.ConditionTrue:
-			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] %q (expected %q): %s %s: %s", available.Type, available.Status, metav1.ConditionTrue, available.LastTransitionTime, available.Reason, available.Message)
-		case progressing == nil:
-			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] does not exist", hyperv1.HostedClusterProgressing)
-		case progressing.Status != metav1.ConditionFalse:
-			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] %q (expected %q): %s %s: %s", progressing.Type, progressing.Status, metav1.ConditionFalse, progressing.LastTransitionTime, progressing.Reason, progressing.Message)
-		case latest.Status.Version == nil:
-			rolloutIncompleteReason = "nil status.version"
-		case latest.Status.Version.Desired.Image != image:
-			rolloutIncompleteReason = fmt.Sprintf("status.version.desired.image is %q, but we want %q", latest.Status.Version.Desired.Image, image)
-		case len(latest.Status.Version.History) == 0:
-			rolloutIncompleteReason = "status.version.history has no entries"
-		case latest.Status.Version.History[0].Image != latest.Status.Version.Desired.Image:
-			rolloutIncompleteReason = fmt.Sprintf("status.version.history[0].image is %q, but we want %q", latest.Status.Version.History[0].Image, latest.Status.Version.Desired.Image)
-		case latest.Status.Version.History[0].State != configv1.CompletedUpdate:
-			rolloutIncompleteReason = fmt.Sprintf("status.version.history[0].state is %q, but we want %q", latest.Status.Version.History[0].State, configv1.CompletedUpdate)
-		default:
-			rolloutIncompleteReason = ""
-		}
-
-		if rolloutIncompleteReason != "" {
-			if rolloutIncompleteReason != prevRolloutIncompleteReason {
-				prevRolloutIncompleteReason = rolloutIncompleteReason
-				t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
-			}
-			return false, nil
-		}
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for hostedcluster image rollout: %s", rolloutIncompleteReason))
-
-	t.Logf("Observed hostedcluster to have successfully rolled out image in %s. Namespace: %s, name: %s, image: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name, image)
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to rollout image %s", hostedCluster.Namespace, hostedCluster.Name, image),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(hyperv1.HostedClusterAvailable),
+				Status: metav1.ConditionTrue,
+			}),
+			ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(hyperv1.HostedClusterProgressing),
+				Status: metav1.ConditionFalse,
+			}),
+			func(hostedCluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+				if wanted, got := image, ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).Desired.Image; wanted != got {
+					return false, fmt.Sprintf("wanted HostedCluster to desire image %s, got %s", wanted, got), nil
+				}
+				if len(ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).History) == 0 {
+					return false, "HostedCluster has no version history", nil
+				}
+				if wanted, got := hostedCluster.Status.Version.Desired.Image, hostedCluster.Status.Version.History[0].Image; wanted != got {
+					return false, fmt.Sprintf("desired image %s doesn't match most recent image in history %s", wanted, got), nil
+				}
+				if wanted, got := configv1.CompletedUpdate, hostedCluster.Status.Version.History[0].State; wanted != got {
+					return false, fmt.Sprintf("wanted most recent version history to have state %s, has state %s", wanted, got), nil
+				}
+				return true, fmt.Sprintf("image %s rolled out", image), nil
+			},
+		},
+		WithTimeout(30*time.Minute),
+	)
 }
 
 func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
-	g := NewWithT(t)
-	start := time.Now()
-	conditions := []hyperv1.ConditionType{
+	var predicates []Predicate[*hyperv1.HostedControlPlane]
+	for _, conditionType := range []hyperv1.ConditionType{
 		hyperv1.HostedControlPlaneAvailable,
 		hyperv1.EtcdAvailable,
 		hyperv1.KubeAPIServerAvailable,
 		hyperv1.InfrastructureReady,
 		hyperv1.ValidHostedControlPlaneConfiguration,
+	} {
+		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedControlPlane](Condition{
+			Type:   string(conditionType),
+			Status: metav1.ConditionTrue,
+		}))
 	}
-	var rolloutIncompleteReasons []string
+
 	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-
-	t.Logf("Waiting for hostedcontrolplane to rollout image. Namespace: %s, name: %s, image: %s", namespace, hostedCluster.Name, image)
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		cp := &hyperv1.HostedControlPlane{}
-		err = client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, cp)
-		if err != nil {
-			t.Logf("Failed to get hostedcontrolplane: %v", err)
-			return false, nil
-		}
-
-		rolloutIncompleteReasons = make([]string, 0, len(conditions))
-		for _, conditionType := range conditions {
-			condition := meta.FindStatusCondition(cp.Status.Conditions, string(conditionType))
-			switch {
-			case condition == nil:
-				rolloutIncompleteReasons = append(rolloutIncompleteReasons, fmt.Sprintf("status.conditions[type==%s] does not exist", conditionType))
-			case condition.Status != metav1.ConditionTrue:
-				rolloutIncompleteReasons = append(rolloutIncompleteReasons, fmt.Sprintf("status.conditions[type==%s] %q (expected %q): %s %s: %s", condition.Type, condition.Status, metav1.ConditionTrue, condition.LastTransitionTime, condition.Reason, condition.Message))
-			}
-		}
-
-		if len(rolloutIncompleteReasons) > 0 {
-			t.Logf("Waiting for hostedcontrolplane rollout. Image: %s\n%s", image, strings.Join(rolloutIncompleteReasons, "\n"))
-			return false, nil
-		}
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for hostedcontrolplane image rollout\n%s", strings.Join(rolloutIncompleteReasons, "\n")))
-
-	t.Logf("Observed hostedcontrolplane to have successfully rolled out image in %s. Namespace: %s, name: %s, image: %s", time.Since(start).Round(time.Second), namespace, hostedCluster.Name, image)
-}
-
-// WaitForNodePoolVersion blocks until the NodePool status indicates the given
-// version. If the context is closed before the version is observed, the given
-// test will get an error.
-func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, version string) {
-	g := NewWithT(t)
-	start := time.Now()
-
-	t.Logf("Waiting for nodepool %s/%s to report version %s (currently %s)", nodePool.Namespace, nodePool.Name, version, nodePool.Status.Version)
-	// TestInPlaceUpgradeNodePool must update nodes in the pool sequentially and it takes about 5m per node
-	// TestInPlaceUpgradeNodePool currently uses a single nodepool with 2 replicas so 20m should be enough time (2x expected)
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		latest := nodePool.DeepCopy()
-		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
-		if err != nil {
-			t.Logf("Failed to get nodepool: %v", err)
-			return false, nil
-		}
-		return latest.Status.Version == version, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool version")
-
-	t.Logf("Observed nodepool %s/%s to report version %s in %s", nodePool.Namespace, nodePool.Name, version, time.Since(start).Round(time.Second))
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedControlPlane %s/%s to be ready", namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
+			hcp := &hyperv1.HostedControlPlane{}
+			err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, hcp)
+			return hcp, err
+		}, predicates, WithTimeout(30*time.Minute),
+	)
 }
 
 func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	g := NewWithT(t)
-
-	waitTimeout := 30 * time.Minute
-	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, waitTimeout, true, func(ctx context.Context) (done bool, err error) {
-		var nodePoolList hyperv1.NodePoolList
-		if err := client.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: hostedCluster.Namespace}); err != nil {
-			t.Fatalf("failed to list nodepools: %v", err)
-		}
-		for _, nodePool := range nodePoolList.Items {
-			if *nodePool.Spec.Replicas != nodePool.Status.Replicas {
-				t.Logf("Waiting. NodePool %q wants %v replicas but has %v", nodePool.Name, *nodePool.Spec.Replicas, nodePool.Status.Replicas)
-				return false, nil
+	EventuallyObjects(t, ctx, fmt.Sprintf("NodePools for HostedCluster %s/%s to have all of their desired nodes", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) ([]*hyperv1.NodePool, error) {
+			list := &hyperv1.NodePoolList{}
+			err := client.List(ctx, list, crclient.InNamespace(hostedCluster.Namespace))
+			nodePools := make([]*hyperv1.NodePool, len(list.Items))
+			for i := range list.Items {
+				nodePools[i] = &list.Items[i]
 			}
-		}
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure all NodePools' nodes ready")
+			return nodePools, err
+		}, nil,
+		[]Predicate[*hyperv1.NodePool]{
+			func(nodePool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				want, got := ptr.Deref(nodePool.Spec.Replicas, 0), nodePool.Status.Replicas
+				return want == got, fmt.Sprintf("expected %d replicas, got %d", want, got), nil
+			},
+		},
+		WithTimeout(30*time.Minute),
+	)
 }
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -645,67 +544,17 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 	})
 }
 
-func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolNamespace string) {
+func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, platform hyperv1.PlatformType, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
-		t.Log("Waiting for NodePool to have Nodes matching replica counts")
-		start := time.Now()
-		var previousError string
-		previousAutoScalingNodes := sets.Set[string]{} // which nodes are we skipping?
-		previousNodes := map[string]sets.Set[string]{} // map of nodepool name to node names
-		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-			var nodePoolList hyperv1.NodePoolList
-			if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
-				if err.Error() != previousError {
-					t.Logf("Failed to list NodePools: %v", err)
-					previousError = err.Error()
-				}
-				return false, nil
-			}
-
-			allMatch := true
-			currentAutoScalingNodes := sets.Set[string]{}
-			currentNodes := map[string]sets.Set[string]{}
-			for _, nodePool := range nodePoolList.Items {
-				if nodePool.Spec.Replicas == nil {
-					currentAutoScalingNodes.Insert(nodePool.Name)
-					if !previousAutoScalingNodes.Has(nodePool.Name) {
-						t.Logf("Skipping replica check for NodePool %s/%s as it's auto-scaling", nodePool.Namespace, nodePool.Name)
-					}
-					continue
-				}
-				var nodes corev1.NodeList
-				if err := guestClient.List(ctx, &nodes, crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: nodePool.Name})}); err != nil {
-					msg := fmt.Sprintf("Failed to list Nodes in guest cluster for NodePool %s/%s: %v", nodePool.Namespace, nodePool.Name, err)
-					if msg != previousError {
-						t.Log(msg)
-						previousError = msg
-					}
-					return false, nil
-				}
-				names := sets.Set[string]{}
-				for _, node := range nodes.Items {
-					names.Insert(node.Name)
-				}
-				currentNodes[nodePool.Name] = names
-				allMatch = allMatch && len(names) == int(*nodePool.Spec.Replicas)
-
-				if names.Equal(previousNodes[nodePool.Name]) {
-					continue
-				}
-
-				t.Logf("NodePool %s/%s has %d/%d Nodes: %v", nodePool.Namespace, nodePool.Name, len(names), *nodePool.Spec.Replicas, strings.Join(names.UnsortedList(), ", "))
-			}
-
-			previousAutoScalingNodes = currentAutoScalingNodes
-			previousNodes = currentNodes
-			return allMatch, nil
-		})
-		duration := time.Since(start).Round(time.Second)
-
-		if err != nil {
-			t.Errorf("Failed to wait for NodePool replicas to match Node count in %s: %v", duration, err)
+		var nodePoolList hyperv1.NodePoolList
+		if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
+			t.Errorf("Failed to list NodePools: %v", err)
+			return
 		}
-		t.Logf("Successfully waited for NodePool replicas to match Node count in %s", duration)
+
+		for i := range nodePoolList.Items {
+			WaitForReadyNodesByNodePool(t, ctx, guestClient, &nodePoolList.Items[i], platform)
+		}
 	})
 }
 
@@ -1212,39 +1061,6 @@ func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedClus
 	})
 }
 
-// WaitForNodePoolConditionsNotToBePresent blocks until the given conditions are
-// not present in the NodePool.
-func WaitForNodePoolConditionsNotToBePresent(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, conditions ...string) {
-	g := NewWithT(t)
-
-	t.Logf("Waiting for nodepool %s conditions to not be present: %v", nodePool.Name, conditions)
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		latest := nodePool.DeepCopy()
-		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
-		if err != nil {
-			t.Logf("Failed to get nodepool: %v", err)
-			return false, nil
-		}
-
-		var exists []hyperv1.NodePoolCondition
-		for _, actual := range nodePool.Status.Conditions {
-			for _, cond := range conditions {
-				if actual.Type == cond {
-					exists = append(exists, actual)
-					break
-				}
-			}
-		}
-		if len(exists) == 0 {
-			return true, nil
-		}
-
-		t.Logf("Waiting for nodepool conditions to not be present: %v", exists)
-		return false, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool conditions")
-}
-
 func createK8sClient() (*k8s.Clientset, error) {
 	config, err := GetConfig()
 	if err != nil {
@@ -1554,9 +1370,9 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
-	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
+	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureGuestWebhooksValidated(t, ctx, guestClient)
 
@@ -1572,8 +1388,8 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	g := NewWithT(t)
 
-	_, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
-	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+	// We can't wait for a guest client since we don't have connectivity to the API server
+	WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 
 	// Ensure NodePools have all Nodes ready.
 	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
@@ -1584,7 +1400,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
 	}
 
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
 	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
@@ -1596,7 +1412,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 
@@ -1606,143 +1422,28 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 }
 
-func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
-	expectedConditions := conditions.ExpectedHCConditions()
-
-	switch hostedCluster.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
-			// AWS KMS is not configured
-			expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
-		}
-	case hyperv1.AzurePlatform:
-		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.Azure == nil {
-			// Azure KMS is not configured
-			expectedConditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
-		}
-	}
-
-	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
-	if kasExternalHostname == "" {
-		// ExternalDNS is not configured
-		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
-	} else {
-		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
-	}
+func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
+	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 	if !hasWorkerNodes {
 		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 	}
 
-	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
-		hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
-		if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AWSPlatform) {
-			// AWS platform supports Jumbo frames
-			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
-		} else if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
-			// Azure platform doesn't support Jumbo frames
-			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionFalse
-		}
+	var predicates []Predicate[*hyperv1.HostedCluster]
+	for conditionType, conditionStatus := range expectedConditions {
+		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{
+			Type:   string(conditionType),
+			Status: conditionStatus,
+		}))
 	}
-
-	t.Logf("validating status for hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
-	start := time.Now()
-	previousResourceVersion := ""
-	previousConditions := map[string]condition{}
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
-		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
-			t.Logf("Failed to get hostedcluster: %v", err)
-			return false, nil
-		}
-
-		if hostedCluster.ResourceVersion == previousResourceVersion {
-			// nothing's changed since the last time we checked
-			return false, nil
-		}
-		previousResourceVersion = hostedCluster.ResourceVersion
-
-		currentConditions := map[string]condition{}
-		conditionsValid := true
-		for _, cond := range hostedCluster.Status.Conditions {
-			condition := conditionFor(cond)
-			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
-				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
-				t.Logf("unchecked condition: %s", formatCondition(condition))
-				continue
-			}
-
-			expectedStatus, known := expectedConditions[hyperv1.ConditionType(condition.Type)]
-			if !known {
-				return false, fmt.Errorf("unknown condition %s", condition.Type)
-			}
-
-			conditionsValid = conditionsValid && (condition.Status == expectedStatus)
-
-			currentConditions[condition.Type] = condition
-			if conditionsIdentical(currentConditions[condition.Type], previousConditions[condition.Type]) {
-				// no need to spam anything, we already said it when we processed this last time
-				continue
-			}
-			prefix := ""
-			if condition.Status != expectedStatus {
-				prefix = "in"
-			}
-			msg := fmt.Sprintf("%scorrect condition: wanted %s=%s, got %s", prefix, condition.Type, expectedStatus, formatCondition(condition))
-			t.Log(msg)
-		}
-		previousConditions = currentConditions
-
-		return conditionsValid, nil
-	})
-	duration := time.Since(start).Round(time.Second)
-
-	if err != nil {
-		t.Fatalf("Failed to validate HostedCluster conditions in %s: %v", duration, err)
-	}
-	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
-}
-
-type condition = struct {
-	Type    string
-	Status  metav1.ConditionStatus
-	Reason  string
-	Message string
-}
-
-// n.b. we can't use structural typing and the condition alias for a subset of fields
-func conditionForNode(in corev1.NodeCondition) condition {
-	return condition{
-		Type:    string(in.Type),
-		Status:  metav1.ConditionStatus(in.Status),
-		Reason:  in.Reason,
-		Message: in.Message,
-	}
-}
-
-// n.b. we can't use structural typing and the condition alias for a subset of fields
-func conditionFor(in metav1.Condition) condition {
-	return condition{
-		Type:    in.Type,
-		Status:  in.Status,
-		Reason:  in.Reason,
-		Message: in.Message,
-	}
-}
-
-func formatCondition(condition condition) string {
-	msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
-	if condition.Reason != "" {
-		msg += ": " + condition.Reason
-	}
-	if condition.Message != "" {
-		msg += "(" + condition.Message + ")"
-	}
-	return msg
-}
-
-func conditionsIdentical(a, b condition) bool {
-	return a.Type == b.Type && a.Status == b.Status && a.Reason == b.Reason && a.Message == b.Message
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have valid conditions", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		}, predicates, WithTimeout(timeout), WithoutConditionDump(),
+	)
 }
 
 func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -1848,7 +1549,6 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 		}
 
 		for _, pod := range podList.Items {
-			t.Logf("checking pod %s/%s for tolerations and node affinities", pod.Namespace, pod.Name)
 			// Skip KubeVirt VM worker node related pods
 			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
 				continue

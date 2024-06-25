@@ -73,10 +73,12 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 		})
 		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
 
-		guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 		g.Expect(err).ToNot(HaveOccurred())
+		// we know we're the only real clients for these test servers, so turn off client-side throttling
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
 
 		// wait for oauth route to be ready
 		oauthRoute := WaitForOAuthRouteReady(t, ctx, client, guestConfig, hostedCluster)

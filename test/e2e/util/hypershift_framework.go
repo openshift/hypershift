@@ -24,8 +24,6 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
-	conditionsUtil "github.com/openshift/hypershift/support/conditions"
-	support "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -108,7 +106,9 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	h.after(hostedCluster, platform)
 
 	if h.Failed() {
-		h.summarizeHCConditions(hostedCluster, opts)
+		numNodes := opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
+		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
+		validateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
 	}
 }
 
@@ -395,57 +395,6 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 
 	if dumpErr != nil {
 		t.Errorf("Failed to dump cluster: %v", dumpErr)
-	}
-}
-
-func (h *hypershiftTest) summarizeHCConditions(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) {
-	conditions := hostedCluster.Status.Conditions
-	expectedConditions := conditionsUtil.ExpectedHCConditions()
-
-	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
-		// AWS KMS is not configured
-		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
-	} else {
-		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionTrue
-	}
-
-	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
-	if kasExternalHostname == "" {
-		// ExternalDNS is not configured
-		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
-	} else {
-		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
-	}
-	if opts.NodePoolReplicas*int32(len(opts.AWSPlatform.Zones)) < 1 {
-		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
-	}
-
-	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
-		hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
-		expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
-	}
-
-	if conditions != nil {
-		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
-		for _, condition := range conditions {
-			expectedStatus, known := expectedConditions[hyperv1.ConditionType(condition.Type)]
-			if !known {
-				h.Logf("Unknown condition %s", condition.Type)
-				continue
-			}
-
-			if condition.Status != expectedStatus {
-				msg := fmt.Sprintf("%s, Reason: %s", condition.Type, condition.Reason)
-				if condition.Message != "" {
-					msg += fmt.Sprintf(", Message: %s", condition.Message)
-				}
-				h.Logf(msg)
-			}
-		}
-	} else {
-		h.Logf("HostedCluster %s has no conditions", hostedCluster.Name)
 	}
 }
 

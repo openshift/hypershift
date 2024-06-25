@@ -51,7 +51,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 		// Sanity check the cluster by waiting for the nodes to report ready
 		guestClient = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgtClient, guestClient, hostedCluster.Namespace)
+		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgtClient, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 		e2eutil.EnsureNoCrashingPods(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureMachineDeploymentGeneration(t, ctx, mgtClient, hostedCluster, 1)
 		// TODO (cewong): enable this test once the fix for KAS->Kubelet communication has merged

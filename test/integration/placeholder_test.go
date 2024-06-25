@@ -154,9 +154,9 @@ func waitForPlaceholders(ctx context.Context, t *testing.T, kubeClient kubernete
 				deployments, err := kubeClient.AppsV1().Deployments("request-serving-node-placeholders").List(ctx, metav1.ListOptions{
 					LabelSelector: labels.SelectorFromSet(labels.Set{"hypershift.openshift.io/hosted-cluster-size": size}).Add(*placeholderPresent).String(),
 				})
-				var ptrs []*appsv1.Deployment
-				for _, d := range deployments.Items {
-					ptrs = append(ptrs, &d)
+				ptrs := make([]*appsv1.Deployment, len(deployments.Items))
+				for i := range deployments.Items {
+					ptrs[i] = &deployments.Items[i]
 				}
 				return ptrs, err
 			},

@@ -6,9 +6,7 @@ package e2e
 import (
 	"context"
 	_ "embed"
-	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -20,7 +18,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -133,36 +130,8 @@ func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePo
 		}
 	}
 
-	timeout := time.Duration(15 * time.Minute)
-	if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		timeout = time.Duration(25 * time.Minute)
-	}
-
-	t.Logf("waiting for rollout of NodePools with NTO-generated config")
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
-		if ctx.Err() != nil {
-			return false, ctx.Err()
-		}
-		pods := &corev1.PodList{}
-		if err := mc.hostedClusterClient.List(ctx, pods, crclient.InNamespace(ds.Namespace), crclient.MatchingLabels(ds.Spec.Selector.MatchLabels)); err != nil {
-			t.Logf("WARNING: failed to list pods, will retry: %v", err)
-			return false, nil
-		}
-
-		if len(pods.Items) != len(nodes) {
-			return false, nil
-		}
-
-		for _, pod := range pods.Items {
-			if !isPodReady(&pod) {
-				return false, nil
-			}
-		}
-
-		return true, nil
-	})
-
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the NTO MachineConfig update verification DS to be ready: %v", err))
+	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
+	e2eutil.WaitForReadyNodesByNodePool(t, ctx, mc.hostedClusterClient, &nodePool, mc.hostedCluster.Spec.Platform.Type)
 	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
 	e2eutil.EnsureNoCrashingPods(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mc.mgmtClient, mc.hostedCluster)

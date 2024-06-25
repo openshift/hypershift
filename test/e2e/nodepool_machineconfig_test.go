@@ -24,7 +24,6 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/wait"
 	utilpointer "k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -142,35 +141,7 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 		t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
 	}
 
-	timeout := time.Duration(15 * time.Minute)
-	if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		timeout = time.Duration(25 * time.Minute)
-	}
-
-	t.Logf("waiting for rollout of updated nodepools")
-	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
-		if ctx.Err() != nil {
-			return false, ctx.Err()
-		}
-		pods := &corev1.PodList{}
-		if err := mc.hostedClusterClient.List(ctx, pods, crclient.InNamespace(ds.Namespace), crclient.MatchingLabels(ds.Spec.Selector.MatchLabels)); err != nil {
-			t.Logf("WARNING: failed to list pods, will retry: %v", err)
-			return false, nil
-		}
-
-		if len(pods.Items) != len(nodes) {
-			return false, nil
-		}
-
-		for _, pod := range pods.Items {
-			if !isPodReady(&pod) {
-				return false, nil
-			}
-		}
-
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the MachineConfig update verification DS to be ready: %v", err))
+	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
 	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, mc.mgmtClient, mc.hostedCluster)
@@ -190,12 +161,34 @@ var machineConfigUpdatedVerificationDS = func() *appsv1.DaemonSet {
 	return ds
 }()
 
-func isPodReady(pod *corev1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady {
-			return condition.Status == corev1.ConditionTrue
-		}
+func eventuallyDaemonSetRollsOut(t *testing.T, ctx context.Context, client crclient.Client, expectedCount int, np *hyperv1.NodePool, ds *appsv1.DaemonSet) {
+	timeout := 15 * time.Minute
+	if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		timeout = 25 * time.Minute
 	}
 
-	return false
+	e2eutil.EventuallyObjects(t, ctx, fmt.Sprintf("all pods in the DaemonSet %s/%s to be ready", ds.Namespace, ds.Name),
+		func(ctx context.Context) ([]*corev1.Pod, error) {
+			list := &corev1.PodList{}
+			err := client.List(ctx, list, crclient.InNamespace(ds.Namespace), crclient.MatchingLabels(ds.Spec.Selector.MatchLabels))
+			pods := make([]*corev1.Pod, len(list.Items))
+			for i := range list.Items {
+				pods[i] = &list.Items[i]
+			}
+			return pods, err
+		},
+		[]e2eutil.Predicate[[]*corev1.Pod]{
+			func(pods []*corev1.Pod) (done bool, reasons string, err error) {
+				want, got := expectedCount, len(pods)
+				return want == got, fmt.Sprintf("expected %d Pods, got %d", want, got), nil
+			},
+		},
+		[]e2eutil.Predicate[*corev1.Pod]{
+			e2eutil.ConditionPredicate[*corev1.Pod](e2eutil.Condition{
+				Type:   string(corev1.PodReady),
+				Status: metav1.ConditionTrue,
+			}),
+		},
+		e2eutil.WithTimeout(timeout),
+	)
 }

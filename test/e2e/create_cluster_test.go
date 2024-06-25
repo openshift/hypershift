@@ -50,8 +50,7 @@ func TestCreateCluster(t *testing.T) {
 		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
 
-		guestKubeConfigSecretData, err := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't get guest kubeconfig")
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
 
 		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
