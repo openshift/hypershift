@@ -35,6 +35,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	opts.AWSPlatform.Credentials.BindFlags(cmd.Flags())
 
+	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace)
 		if err != nil {
@@ -42,7 +43,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		}
 
 		if err = DestroyCluster(cmd.Context(), opts); err != nil {
-			log.Log.Error(err, "Failed to destroy cluster")
+			logger.Error(err, "Failed to destroy cluster")
 			return err
 		}
 

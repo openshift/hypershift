@@ -10,20 +10,20 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	"github.com/go-logr/logr"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
 
-func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, client route53iface.Route53API) (string, error) {
+func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API) (string, error) {
 	name := o.BaseDomain
 	id, err := lookupZone(ctx, client, name, false)
 	if err != nil {
-		log.Log.Error(err, "Public zone not found", "name", name)
+		logger.Error(err, "Public zone not found", "name", name)
 		return "", err
 	}
-	log.Log.Info("Found existing public zone", "name", name, "id", id)
+	logger.Info("Found existing public zone", "name", name, "id", id)
 	return id, nil
 }
 
@@ -52,10 +52,10 @@ func lookupZone(ctx context.Context, client route53iface.Route53API, name string
 	return cleanZoneID(*res.Id), nil
 }
 
-func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route53iface.Route53API, name, vpcID string) (string, error) {
+func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API, name, vpcID string) (string, error) {
 	id, err := lookupZone(ctx, client, name, true)
 	if err == nil {
-		log.Log.Info("Found existing private zone", "name", name, "id", id)
+		logger.Info("Found existing private zone", "name", name, "id", id)
 		err := setSOAMinimum(ctx, client, id, name)
 		if err != nil {
 			return "", err
@@ -89,7 +89,7 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route
 		return "", fmt.Errorf("unexpected output from hosted zone creation")
 	}
 	id = cleanZoneID(*res.HostedZone.Id)
-	log.Log.Info("Created private zone", "name", name, "id", id)
+	logger.Info("Created private zone", "name", name, "id", id)
 
 	err = setSOAMinimum(ctx, client, id, name)
 	if err != nil {
@@ -117,10 +117,10 @@ func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, client ro
 	var errs []error
 	for _, zone := range output.HostedZoneSummaries {
 		id := cleanZoneID(*zone.HostedZoneId)
-		if err := deleteZone(ctx, id, client); err != nil {
+		if err := deleteZone(ctx, id, client, o.Log); err != nil {
 			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", *vpcID, err)}
 		}
-		log.Log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)
+		o.Log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)
 	}
 
 	return errs
@@ -174,8 +174,8 @@ func setSOAMinimum(ctx context.Context, client route53iface.Route53API, id, name
 	return err
 }
 
-func deleteZone(ctx context.Context, id string, client route53iface.Route53API) error {
-	err := deleteRecords(ctx, client, id)
+func deleteZone(ctx context.Context, id string, client route53iface.Route53API, logger logr.Logger) error {
+	err := deleteRecords(ctx, client, id, logger)
 	if err != nil {
 		return fmt.Errorf("failed to delete hosted zone records: %v", err)
 	}
@@ -187,7 +187,7 @@ func deleteZone(ctx context.Context, id string, client route53iface.Route53API) 
 	return nil
 }
 
-func deleteRecords(ctx context.Context, client route53iface.Route53API, id string) error {
+func deleteRecords(ctx context.Context, client route53iface.Route53API, id string, logger logr.Logger) error {
 	lrrsi := &route53.ListResourceRecordSetsInput{
 		HostedZoneId: aws.String(id),
 	}
@@ -226,7 +226,7 @@ func deleteRecords(ctx context.Context, client route53iface.Route53API, id strin
 	for _, changeBatch := range changeBatch.Changes {
 		deletedRecordNames = append(deletedRecordNames, *changeBatch.ResourceRecordSet.Name)
 	}
-	log.Log.Info("Deleted records from private hosted zone", "id", id, "names", deletedRecordNames)
+	logger.Info("Deleted records from private hosted zone", "id", id, "names", deletedRecordNames)
 	return nil
 }
 

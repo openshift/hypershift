@@ -31,6 +31,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 
+	logger := log.Log
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -43,7 +44,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		}()
 
 		if err := DestroyCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to destroy cluster")
+			logger.Error(err, "Failed to destroy cluster")
 			os.Exit(1)
 		}
 	}
@@ -75,7 +76,7 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	// Verify a user provided resource group name is correct by trying to retrieve it before carrying on with deleting things
 	if o.AzurePlatform.ResourceGroupName != "" {
 		// Setup subscription ID and Azure credential information
-		subscriptionID, azureCreds, err := util.SetupAzureCredentials(log.Log, nil, o.AzurePlatform.CredentialsFile)
+		subscriptionID, azureCreds, err := util.SetupAzureCredentials(o.Log, nil, o.AzurePlatform.CredentialsFile)
 		if err != nil {
 			return fmt.Errorf("failed to setup Azure credentials: %w", err)
 		}
@@ -103,5 +104,5 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		InfraID:           o.InfraID,
 		CredentialsFile:   o.AzurePlatform.CredentialsFile,
 		ResourceGroupName: o.AzurePlatform.ResourceGroupName,
-	}).Run(ctx)
+	}).Run(ctx, o.Log)
 }

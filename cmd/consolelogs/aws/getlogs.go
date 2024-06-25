@@ -48,16 +48,17 @@ func NewCommand() *cobra.Command {
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("output-dir")
 
+	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
 			return err
 		}
 		if err := opts.Run(cmd.Context()); err != nil {
-			log.Log.Error(err, "Failed to get console logs")
+			logger.Error(err, "Failed to get console logs")
 			return err
 		}
-		log.Log.Info("Successfully retrieved console logs")
+		logger.Info("Successfully retrieved console logs")
 		return nil
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
@@ -43,12 +44,13 @@ func NewDestroyCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("name")
 
+	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := opts.Run(cmd.Context()); err != nil {
-			log.Log.Error(err, "Failed to destroy infrastructure")
+		if err := opts.Run(cmd.Context(), logger); err != nil {
+			logger.Error(err, "Failed to destroy infrastructure")
 			return err
 		}
-		log.Log.Info("Successfully destroyed infrastructure")
+		logger.Info("Successfully destroyed infrastructure")
 		return nil
 	}
 
@@ -56,11 +58,11 @@ func NewDestroyCommand() *cobra.Command {
 
 }
 
-func (o *DestroyInfraOptions) Run(ctx context.Context) error {
+func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
 	var destroyFuture *runtime.Poller[armresources.ResourceGroupsClientDeleteResponse]
 
 	// Setup subscription ID and Azure credential information
-	subscriptionID, azureCreds, err := util.SetupAzureCredentials(log.Log, o.Credentials, o.CredentialsFile)
+	subscriptionID, azureCreds, err := util.SetupAzureCredentials(logger, o.Credentials, o.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}

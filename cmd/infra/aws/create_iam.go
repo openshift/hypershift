@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,6 +85,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("oidc-bucket-name")
 	cmd.MarkFlagRequired("oidc-bucket-region")
 
+	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
@@ -91,11 +93,11 @@ func NewCreateIAMCommand() *cobra.Command {
 		}
 		client, err := util.GetClient()
 		if err != nil {
-			log.Log.Error(err, "failed to create client")
+			logger.Error(err, "failed to create client")
 			return err
 		}
-		if err := opts.Run(cmd.Context(), client); err != nil {
-			log.Log.Error(err, "Failed to create infrastructure")
+		if err := opts.Run(cmd.Context(), client, logger); err != nil {
+			logger.Error(err, "Failed to create infrastructure")
 			return err
 		}
 		return nil
@@ -104,8 +106,8 @@ func NewCreateIAMCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *CreateIAMOptions) Run(ctx context.Context, client crclient.Client) error {
-	results, err := o.CreateIAM(ctx, client)
+func (o *CreateIAMOptions) Run(ctx context.Context, client crclient.Client, logger logr.Logger) error {
+	results, err := o.CreateIAM(ctx, client, logger)
 	if err != nil {
 		return err
 	}
@@ -134,7 +136,7 @@ func (o *CreateIAMOptions) Output(results *CreateIAMOutput) error {
 	return nil
 }
 
-func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client) (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client, logger logr.Logger) (*CreateIAMOutput, error) {
 	var err error
 	if err = o.ParseAdditionalTags(); err != nil {
 		return nil, err
@@ -170,18 +172,18 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
-	results, err := o.CreateOIDCResources(iamClient)
+	results, err := o.CreateOIDCResources(iamClient, logger)
 	if err != nil {
 		return nil, err
 	}
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
 	results.KMSKeyARN = o.KMSKeyARN
-	err = o.CreateWorkerInstanceProfile(iamClient, profileName)
+	err = o.CreateWorkerInstanceProfile(iamClient, profileName, logger)
 	if err != nil {
 		return nil, err
 	}
-	log.Log.Info("Created IAM profile", "name", profileName, "region", o.Region)
+	logger.Info("Created IAM profile", "name", profileName, "region", o.Region)
 
 	return results, nil
 }

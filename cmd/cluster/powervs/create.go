@@ -171,7 +171,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	} else {
 		var opt *powervsinfra.CreateInfraOptions
 		opt, output.infra = CreateInfraOptions(o, opts)
-		if err := output.infra.SetupInfra(ctx, opt); err != nil {
+		if err := output.infra.SetupInfra(ctx, opts.Log, opt); err != nil {
 			return nil, fmt.Errorf("failed to create infra: %w", err)
 		}
 	}
