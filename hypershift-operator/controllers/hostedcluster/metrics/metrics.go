@@ -90,8 +90,6 @@ var (
 
 	knownPlatforms = hyperv1.PlatformTypes()
 
-	knownConditionToExpectedStatus = conditions.ExpectedHCConditions()
-
 	// Metrics descriptions
 	countByIdentityProviderMetricDesc = prometheus.NewDesc(
 		CountByIdentityProviderMetricName,
@@ -184,7 +182,7 @@ func (c *hostedClustersMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	prometheus.DescribeByCollect(c, ch)
 }
 
-func createFailureConditionToHClustersCountMap() *map[string]int {
+func createFailureConditionToHClustersCountMap(knownConditionToExpectedStatus map[hyperv1.ConditionType]metav1.ConditionStatus) *map[string]int {
 	res := make(map[string]int)
 
 	for conditionType, expectedStatus := range knownConditionToExpectedStatus {
@@ -222,7 +220,13 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	platformToFailureConditionToHClustersCount := make(map[hyperv1.PlatformType]*map[string]int)
 
 	for k := range knownPlatforms {
-		platformToFailureConditionToHClustersCount[knownPlatforms[k]] = createFailureConditionToHClustersCountMap()
+		platformToFailureConditionToHClustersCount[knownPlatforms[k]] = createFailureConditionToHClustersCountMap(conditions.ExpectedHCConditions(&hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: knownPlatforms[k],
+				},
+			},
+		}))
 	}
 
 	// MAIN LOOP - Hosted clusters loop
@@ -249,16 +253,17 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 			// countByPlatformAndFailureConditionMetric - aggregation
 			{
+				expectedConditions := conditions.ExpectedHCConditions(hcluster)
 				_, isKnownPlatform := platformToFailureConditionToHClustersCount[platform]
 
 				if !isKnownPlatform {
-					platformToFailureConditionToHClustersCount[platform] = createFailureConditionToHClustersCountMap()
+					platformToFailureConditionToHClustersCount[platform] = createFailureConditionToHClustersCountMap(expectedConditions)
 				}
 
 				failureConditionToHClustersCount := platformToFailureConditionToHClustersCount[platform]
 
 				for _, condition := range hcluster.Status.Conditions {
-					expectedStatus, isKnownCondition := knownConditionToExpectedStatus[hyperv1.ConditionType(condition.Type)]
+					expectedStatus, isKnownCondition := expectedConditions[hyperv1.ConditionType(condition.Type)]
 
 					if isKnownCondition && condition.Status != expectedStatus {
 						failureCondPrefix := ""

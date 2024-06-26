@@ -242,16 +242,16 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	if err != nil {
 		return nil, err
 	}
-	result.PublicZoneID, err = o.LookupPublicZone(ctx, route53Client)
+	result.PublicZoneID, err = o.LookupPublicZone(ctx, l, route53Client)
 	if err != nil {
 		return nil, err
 	}
 
-	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, route53Client, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID)
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, route53Client, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	result.LocalZoneID, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
+	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
 	if err != nil {
 		return nil, err
 	}

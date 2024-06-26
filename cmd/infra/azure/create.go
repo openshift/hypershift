@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"strings"
 	"time"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/go-uuid"
@@ -231,7 +232,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 		if err := os.WriteFile(o.OutputFile, resultSerialized, 0644); err != nil {
 			// Be nice and print the data, so it doesn't get lost
-			log.Log.Error(err, "Writing output file failed", "Output File", o.OutputFile, "data", string(resultSerialized))
+			l.Error(err, "Writing output file failed", "Output File", o.OutputFile, "data", string(resultSerialized))
 			return nil, fmt.Errorf("failed to write result to --output-file: %w", err)
 		}
 	}

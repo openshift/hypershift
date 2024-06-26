@@ -27,7 +27,6 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Sanity check the cluster by waiting for the nodes to report ready
-		t.Logf("Waiting for guest client to become available")
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		// Update the cluster image
@@ -45,16 +44,14 @@ func TestUpgradeControlPlane(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
 		// Wait for the new rollout to be complete
-		t.Logf("waiting for updated cluster image rollout. Image: %s", globalOpts.LatestReleaseImage)
 		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster, globalOpts.LatestReleaseImage)
 		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
 		// Sanity check the cluster by waiting for the nodes to report ready
-		t.Logf("Waiting for guest client to become available after upgrade")
 		guestClient = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgtClient, guestClient, hostedCluster.Namespace)
+		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgtClient, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 		e2eutil.EnsureNoCrashingPods(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureMachineDeploymentGeneration(t, ctx, mgtClient, hostedCluster, 1)
 		// TODO (cewong): enable this test once the fix for KAS->Kubelet communication has merged

@@ -213,6 +213,13 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 			Message:            message,
 			Reason:             reason,
 		})
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
+			Status:             corev1.ConditionFalse,
+			ObservedGeneration: nodePool.Generation,
+			Reason:             hyperv1.AsExpectedReason,
+		})
 	}
 
 	if isUpdatingConfig {
@@ -223,6 +230,13 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 			ObservedGeneration: nodePool.Generation,
 			Message:            message,
 			Reason:             reason,
+		})
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			ObservedGeneration: nodePool.Generation,
+			Reason:             hyperv1.AsExpectedReason,
 		})
 	}
 

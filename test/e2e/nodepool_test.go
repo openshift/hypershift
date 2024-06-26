@@ -14,6 +14,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -275,13 +276,9 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 		g.Expect(nodePoolTest.TeardownInfra(t)).To(Succeed(), "should succeed cleaning up infra customizations")
 	}()
 
-	numNodes := *nodePool.Spec.Replicas
-	t.Logf("Waiting for Nodes %d\n", numNodes)
-	nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, hcClient, numNodes, hostedCluster.Spec.Platform.Type, nodePool.Name)
-	t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)
+	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be complete
-	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
 	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 	// run test validations
@@ -291,79 +288,20 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 }
 
 func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
-	expectedConditions := conditions.ExpectedNodePoolConditions()
-
-	if nodePool.Spec.AutoScaling != nil {
-		expectedConditions[hyperv1.NodePoolAutoscalingEnabledConditionType] = corev1.ConditionTrue
-	} else {
-		expectedConditions[hyperv1.NodePoolAutoscalingEnabledConditionType] = corev1.ConditionFalse
+	expectedConditions := conditions.ExpectedNodePoolConditions(nodePool)
+	var predicates []e2eutil.Predicate[*hyperv1.NodePool]
+	for conditionType, conditionStatus := range expectedConditions {
+		predicates = append(predicates, e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			Type:   conditionType,
+			Status: metav1.ConditionStatus(conditionStatus),
+		}))
 	}
 
-	if nodePool.Spec.Management.AutoRepair {
-		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionTrue
-	} else {
-		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionFalse
-	}
-
-	if nodePool.Spec.Arch != "" && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
-		expectedConditions[hyperv1.NodePoolValidArchPlatform] = corev1.ConditionFalse
-	}
-
-	t.Logf("validating status for nodepool %s/%s", nodePool.Namespace, nodePool.Name)
-	start := time.Now()
-	previousResourceVersion := ""
-	previousConditions := map[string]hyperv1.NodePoolCondition{}
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
-		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
-			t.Logf("Failed to get nodepool: %v", err)
-			return false, nil
-		}
-
-		if nodePool.ResourceVersion == previousResourceVersion {
-			// nothing's changed since the last time we checked
-			return false, nil
-		}
-		previousResourceVersion = nodePool.ResourceVersion
-
-		currentConditions := map[string]hyperv1.NodePoolCondition{}
-		conditionsValid := true
-		for i, condition := range nodePool.Status.Conditions {
-			expectedStatus, known := expectedConditions[condition.Type]
-			if !known {
-				return false, fmt.Errorf("unknown condition %s", condition.Type)
-			}
-			conditionsValid = conditionsValid && (condition.Status == expectedStatus)
-
-			currentConditions[condition.Type] = nodePool.Status.Conditions[i]
-			if conditionsIdentical(currentConditions[condition.Type], previousConditions[condition.Type]) {
-				// no need to spam anything, we already said it when we processed this last time
-				continue
-			}
-			prefix := ""
-			if condition.Status != expectedStatus {
-				prefix = "in"
-			}
-			msg := fmt.Sprintf("%scorrect condition: wanted %s=%s, got %s=%s", prefix, condition.Type, expectedStatus, condition.Type, condition.Status)
-			if condition.Reason != "" {
-				msg += ": " + condition.Reason
-			}
-			if condition.Message != "" {
-				msg += "(" + condition.Message + ")"
-			}
-			t.Log(msg)
-		}
-		previousConditions = currentConditions
-
-		return conditionsValid, nil
-	})
-	duration := time.Since(start).Round(time.Second)
-
-	if err != nil {
-		t.Fatalf("Failed to validate NodePool conditions in %s: %v", duration, err)
-	}
-	t.Logf("Successfully validated all expected NodePool conditions in %s", duration)
-}
-
-func conditionsIdentical(a, b hyperv1.NodePoolCondition) bool {
-	return a.Type == b.Type && a.Status == b.Status && a.Reason == b.Reason && a.Message == b.Message
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have correct status", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+			return nodePool, err
+		},
+		predicates, e2eutil.WithoutConditionDump(),
+	)
 }

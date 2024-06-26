@@ -15,7 +15,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -137,27 +136,28 @@ func (k KubeVirtAdvancedMultinetTest) SetupInfra(t *testing.T) error {
 		hcpmanifests.IngressDefaultIngressPassthroughServiceName,
 		k.infra.HostedCluster().Spec.Platform.Kubevirt.GenerateID)
 
-	t.Logf("Waiting for the default ingresss service to appear...")
-	findPassthroughServiceRetryConfig := wait.Backoff{
-		Steps:    60,
-		Duration: 5 * time.Second,
-	}
-	if err := retry.OnError(findPassthroughServiceRetryConfig, apierrors.IsNotFound, func() error {
-		return infraClient.Get(k.infra.Ctx(), client.ObjectKeyFromObject(passthroughService), passthroughService)
-	}); err != nil {
-		return err
-	}
+	e2eutil.EventuallyObject(t, k.infra.Ctx(), "the default ingresss service to appear",
+		func(ctx context.Context) (*corev1.Service, error) {
+			err := infraClient.Get(ctx, client.ObjectKeyFromObject(passthroughService), passthroughService)
+			return passthroughService, err
+		},
+		nil, // no predicate necessary, getter will stop returning not-found error when we're done
+	)
 
-	t.Logf("Waiting for dnsmasq pod to have an address...")
-	err = wait.PollUntilContextTimeout(k.infra.Ctx(), 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		if err := infraClient.Get(ctx, client.ObjectKeyFromObject(dnsmasqPod), dnsmasqPod); err != nil {
-			return false, err
-		}
-		return dnsmasqPod.Status.PodIP != "", nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed waitting for dnsmasq pod to have an address: %w", err)
-	}
+	e2eutil.EventuallyObject(t, k.infra.Ctx(), "dnsmasq pod to have an address",
+		func(ctx context.Context) (*corev1.Pod, error) {
+			err := infraClient.Get(ctx, client.ObjectKeyFromObject(dnsmasqPod), dnsmasqPod)
+			return dnsmasqPod, err
+		},
+		[]e2eutil.Predicate[*corev1.Pod]{
+			func(pod *corev1.Pod) (done bool, reasons string, err error) {
+				if pod.Status.PodIP != "" {
+					return true, "pod had a PodIP", nil
+				}
+				return false, "pod had no PodIP", nil
+			},
+		},
+	)
 
 	ports := []discoveryv1.EndpointPort{}
 	for _, port := range passthroughService.Spec.Ports {

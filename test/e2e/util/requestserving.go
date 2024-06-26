@@ -116,7 +116,7 @@ func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconf
 	mgmtClient, err := GetClient()
 	g.Expect(err).ToNot(HaveOccurred(), "failed to get management cluster client")
 	for _, np := range []*hyperv1.NodePool{reqServingNodePoolA, reqServingNodePoolB, nonReqServingNodePoolA, nonReqServingNodePoolB, nonReqServingNodePoolC} {
-		_ = WaitForNReadyNodesByNodePool(t, ctx, mgmtClient, 1, hyperv1.AWSPlatform, np.Name)
+		_ = WaitForReadyNodesByNodePool(t, ctx, mgmtClient, np, hyperv1.AWSPlatform)
 	}
 
 	return result

@@ -12,6 +12,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -69,6 +72,30 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		return err
 	}
 
+	createLogFile := filepath.Join(artifactDir, "create-bastion.log")
+	createLog, err := os.Create(createLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to create create log: %w", err)
+	}
+	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
+	defer func() {
+		if err := createLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync createLogger: %v\n", err)
+		}
+	}()
+
+	destroyLogFile := filepath.Join(artifactDir, "destroy-bastion.log")
+	destroyLog, err := os.Create(destroyLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to create destroy log: %w", err)
+	}
+	destroyLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(destroyLog), zap.DebugLevel))
+	defer func() {
+		if err := destroyLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync destroyLogger: %v\n", err)
+		}
+	}()
+
 	// Create a bastion
 	createBastion := bastionaws.CreateBastionOpts{
 		Namespace:          hc.Namespace,
@@ -76,7 +103,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		AWSCredentialsFile: awsCreds,
 		Wait:               true,
 	}
-	_, bastionIP, err := createBastion.Run(ctx)
+	_, bastionIP, err := createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger))
 	if err != nil {
 		return err
 	}
@@ -86,7 +113,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 			Name:               hc.Name,
 			AWSCredentialsFile: awsCreds,
 		}
-		if err := destroyBastion.Run(ctx); err != nil {
+		if err := destroyBastion.Run(ctx, zapr.NewLoggerWithOptions(destroyLogger)); err != nil {
 			t.Logf("error destroying bastion: %v", err)
 		}
 	}()
@@ -136,6 +163,12 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	}
 
 	// Invoke script
+	dumpJournalsLogFile := filepath.Join(artifactDir, "dump-machine-journals.log")
+	dumpJournalsLog, err := os.Create(dumpJournalsLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to create dumpJournals log: %w", err)
+	}
+
 	outputDir := filepath.Join(artifactDir, "machine-journals")
 	scriptCmd := exec.Command(copyJournalFile.Name(), outputDir)
 	env := os.Environ()
@@ -143,8 +176,8 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	env = append(env, fmt.Sprintf("INSTANCE_IPS=%s", strings.Join(machineIPs, " ")))
 	env = append(env, fmt.Sprintf("SSH_PRIVATE_KEY=%s", privateKeyFile))
 	scriptCmd.Env = env
-	scriptCmd.Stdout = os.Stdout
-	scriptCmd.Stderr = os.Stderr
+	scriptCmd.Stdout = dumpJournalsLog
+	scriptCmd.Stderr = dumpJournalsLog
 	err = scriptCmd.Run()
 	if err != nil {
 		t.Logf("Error copying machine journals to artifacts directory: %v", err)

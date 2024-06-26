@@ -1209,7 +1209,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %w", err)
 		}
-		if meta.IsStatusConditionFalse(hcluster.Status.Conditions, string(hyperv1.PlatformCredentialsFound)) {
+		if !meta.IsStatusConditionTrue(hcluster.Status.Conditions, string(hyperv1.PlatformCredentialsFound)) {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 				Type:               string(hyperv1.PlatformCredentialsFound),
 				Status:             metav1.ConditionTrue,

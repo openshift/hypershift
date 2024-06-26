@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -38,11 +39,12 @@ import (
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	apierr "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -58,7 +60,7 @@ var (
 	// be cancelled if a SIGINT or SIGTERM is received. It's set up in TestMain.
 	testContext context.Context
 
-	log = zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	log = crzap.New(crzap.UseDevMode(true), crzap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 )
@@ -173,7 +175,7 @@ func main(m *testing.M) int {
 	defer alertSLOs(testContext)
 
 	if globalOpts.Platform == hyperv1.AWSPlatform {
-		if err := setupSharedOIDCProvider(); err != nil {
+		if err := setupSharedOIDCProvider(globalOpts.ArtifactDir); err != nil {
 			log.Error(err, "failed to setup shared OIDC provider")
 			return -1
 		}
@@ -186,7 +188,7 @@ func main(m *testing.M) int {
 }
 
 // setup a shared OIDC provider to be used by all HostedClusters
-func setupSharedOIDCProvider() error {
+func setupSharedOIDCProvider(artifactDir string) error {
 	if globalOpts.configurableClusterOptions.AWSOidcS3BucketName == "" {
 		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
 	}
@@ -247,7 +249,19 @@ func setupSharedOIDCProvider() error {
 	}
 	iamOptions.ParseAdditionalTags()
 
-	if _, err := iamOptions.CreateOIDCProvider(iamClient); err != nil {
+	createLogFile := filepath.Join(artifactDir, "create-oidc-provider.log")
+	createLog, err := os.Create(createLogFile)
+	if err != nil {
+		return fmt.Errorf("failed to create create log: %w", err)
+	}
+	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
+	defer func() {
+		if err := createLogger.Sync(); err != nil {
+			fmt.Printf("failed to sync createLogger: %v\n", err)
+		}
+	}()
+
+	if _, err := iamOptions.CreateOIDCProvider(iamClient, zapr.NewLogger(createLogger)); err != nil {
 		return fmt.Errorf("failed to create OIDC provider: %w", err)
 	}
 

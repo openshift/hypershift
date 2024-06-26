@@ -72,8 +72,6 @@ var (
 
 	knownPlatforms = hyperv1.PlatformTypes()
 
-	knownConditionToExpectedStatus = conditions.ExpectedNodePoolConditions()
-
 	// Metrics descriptions
 	countByPlatformMetricDesc = prometheus.NewDesc(
 		CountByPlatformMetricName,
@@ -175,7 +173,7 @@ type hclusterData struct {
 	vCpusCountErrorReason string
 }
 
-func createFailureConditionToNodePoolsCountMap() *map[string]int {
+func createFailureConditionToNodePoolsCountMap(knownConditionToExpectedStatus map[string]corev1.ConditionStatus) *map[string]int {
 	res := make(map[string]int)
 
 	for conditionType, expectedStatus := range knownConditionToExpectedStatus {
@@ -339,7 +337,13 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	platformToFailureConditionToNodePoolsCount := make(map[hyperv1.PlatformType]*map[string]int)
 
 	for k := range knownPlatforms {
-		platformToFailureConditionToNodePoolsCount[knownPlatforms[k]] = createFailureConditionToNodePoolsCountMap()
+		platformToFailureConditionToNodePoolsCount[knownPlatforms[k]] = createFailureConditionToNodePoolsCountMap(conditions.ExpectedNodePoolConditions(&hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: knownPlatforms[k],
+				},
+			},
+		}))
 	}
 
 	// MAIN LOOP - node pools loop
@@ -360,10 +364,11 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 			// countByPlatformAndFailureConditionMetric - aggregation
 			{
+				knownConditionToExpectedStatus := conditions.ExpectedNodePoolConditions(nodePool)
 				_, isKnownPlatform := platformToFailureConditionToNodePoolsCount[platform]
 
 				if !isKnownPlatform {
-					platformToFailureConditionToNodePoolsCount[platform] = createFailureConditionToNodePoolsCountMap()
+					platformToFailureConditionToNodePoolsCount[platform] = createFailureConditionToNodePoolsCountMap(knownConditionToExpectedStatus)
 				}
 
 				failureConditionToNodePoolsCount := platformToFailureConditionToNodePoolsCount[platform]

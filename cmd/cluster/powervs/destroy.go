@@ -51,6 +51,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().MarkHidden("vpc")
 	cmd.Flags().MarkHidden("transit-gateway")
 
+	logger := log.Log
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -63,7 +64,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		}()
 
 		if err := DestroyCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to destroy cluster")
+			logger.Error(err, "Failed to destroy cluster")
 			os.Exit(1)
 		}
 	}
@@ -136,5 +137,5 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		PER:                    o.PowerVSPlatform.PER,
 		TransitGatewayLocation: o.PowerVSPlatform.TransitGatewayLocation,
 		TransitGateway:         o.PowerVSPlatform.TransitGateway,
-	}).Run(ctx)
+	}).Run(ctx, o.Log)
 }

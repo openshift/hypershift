@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -170,8 +171,36 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
 
 	// final checks
-	e2eutil.WaitForNodePoolVersion(t, ctx, ru.mgmtClient, &nodePool, latestReleaseInfo.Version())
-	e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, ru.mgmtClient, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
-	nodesFromNodePool := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, *nodePool.Spec.Replicas, ru.hostedCluster.Spec.Platform.Type, nodePool.Name)
-	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodesFromNodePool)))
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to start the upgrade", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type:   hyperv1.NodePoolUpdatingVersionConditionType,
+				Status: metav1.ConditionTrue,
+			}),
+		},
+	)
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have version %s", nodePool.Namespace, nodePool.Name, latestReleaseInfo.Version()),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(nodePool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				want, got := latestReleaseInfo.Version(), nodePool.Status.Version
+				return want == got, fmt.Sprintf("wanted version %s, got %s", want, got), nil
+			},
+			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type:   hyperv1.NodePoolUpdatingVersionConditionType,
+				Status: metav1.ConditionFalse,
+			}),
+		},
+		e2eutil.WithTimeout(20*time.Minute),
+	)
+	e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
 }

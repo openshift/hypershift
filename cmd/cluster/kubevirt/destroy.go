@@ -15,9 +15,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := none.DestroyCluster(cmd.Context(), opts); err != nil {
-			log.Log.Error(err, "Failed to destroy cluster")
+			logger.Error(err, "Failed to destroy cluster")
 			return err
 		}
 		return nil

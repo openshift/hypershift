@@ -119,8 +119,6 @@ var (
 	powerVsDefaultUrl = func(region string) string { return fmt.Sprintf("https://%s.power-iaas.cloud.ibm.com", region) }
 	vpcDefaultUrl     = func(region string) string { return fmt.Sprintf("https://%s.iaas.cloud.ibm.com/v1", region) }
 
-	log = func(name string) logr.Logger { return hypershiftLog.Log.WithName(name) }
-
 	customEpEnvNameMapping = map[string]string{
 		powerVsService:  "IBMCLOUD_POWER_API_ENDPOINT",
 		vpcService:      "IBMCLOUD_VPC_API_ENDPOINT",
@@ -246,12 +244,13 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("resource-group")
 	cmd.MarkFlagRequired("infra-id")
 
+	logger := hypershiftLog.Log.WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := opts.Run(cmd.Context()); err != nil {
-			log(opts.InfraID).Error(err, "Failed to create infrastructure")
+		if err := opts.Run(cmd.Context(), logger); err != nil {
+			logger.Error(err, "Failed to create infrastructure")
 			return err
 		}
-		log(opts.InfraID).Info("Successfully created infrastructure")
+		logger.Info("Successfully created infrastructure")
 		return nil
 	}
 
@@ -259,7 +258,7 @@ func NewCreateCommand() *cobra.Command {
 }
 
 // Run Hypershift Infra Creation
-func (options *CreateInfraOptions) Run(ctx context.Context) error {
+func (options *CreateInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
 	err := checkUnsupportedPowerVSZone(options.Zone)
 	if err != nil {
 		return err
@@ -282,33 +281,33 @@ func (options *CreateInfraOptions) Run(ctx context.Context) error {
 	}
 
 	defer func() {
-		options.Output(infra)
+		options.Output(infra, logger)
 	}()
 
-	if err := infra.SetupInfra(ctx, options); err != nil {
+	if err := infra.SetupInfra(ctx, logger, options); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (options *CreateInfraOptions) Output(infra *Infra) {
+func (options *CreateInfraOptions) Output(infra *Infra, logger logr.Logger) {
 	out := os.Stdout
 	if len(options.OutputFile) > 0 {
 		var err error
 		out, err = os.Create(options.OutputFile)
 		if err != nil {
-			log(options.InfraID).Error(err, "cannot create output file")
+			logger.Error(err, "cannot create output file")
 		}
 		defer out.Close()
 	}
 	outputBytes, err := json.MarshalIndent(infra, "", "  ")
 	if err != nil {
-		log(options.InfraID).WithName(options.InfraID).Error(err, "failed to serialize output infra")
+		logger.WithName(options.InfraID).Error(err, "failed to serialize output infra")
 	}
 	_, err = out.Write(outputBytes)
 	if err != nil {
-		log(options.InfraID).Error(err, "failed to write output infra json")
+		logger.Error(err, "failed to write output infra json")
 	}
 }
 
@@ -342,11 +341,11 @@ func GetAPIKey() (string, error) {
 }
 
 // SetupInfra infra creation orchestration
-func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions) error {
+func (infra *Infra) SetupInfra(ctx context.Context, logger logr.Logger, options *CreateInfraOptions) error {
 	startTime := time.Now()
 	var err error
 
-	log(options.InfraID).Info("Setup infra started")
+	logger.Info("Setup infra started")
 
 	cloudApiKey, err = GetAPIKey()
 	if err != nil {
@@ -368,7 +367,7 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error getting id for resource group %s, %w", options.ResourceGroup, err)
 	}
 
-	if err := infra.setupBaseDomain(ctx, options); err != nil {
+	if err := infra.setupBaseDomain(ctx, logger, options); err != nil {
 		return fmt.Errorf("error setup base domain: %w", err)
 	}
 
@@ -377,16 +376,16 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return err
 	}
 
-	v1, err := createVpcService(options.VPCRegion, options.InfraID)
+	v1, err := createVpcService(logger, options.VPCRegion)
 	if err != nil {
 		return fmt.Errorf("error creating vpc service: %w", err)
 	}
 
-	if err := infra.setupVpc(ctx, options, v1, gtag); err != nil {
+	if err := infra.setupVpc(ctx, logger, options, v1, gtag); err != nil {
 		return fmt.Errorf("error setup vpc: %w", err)
 	}
 
-	if err := infra.setupVpcSubnet(ctx, options, v1); err != nil {
+	if err := infra.setupVpcSubnet(ctx, logger, options, v1); err != nil {
 		return fmt.Errorf("error setup vpc subnet: %w", err)
 	}
 
@@ -396,41 +395,41 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error creating powervs session: %w", err)
 	}
 
-	if err := infra.setupPowerVSCloudInstance(ctx, options, gtag); err != nil {
+	if err := infra.setupPowerVSCloudInstance(ctx, logger, options, gtag); err != nil {
 		return fmt.Errorf("error setup powervs cloud instance: %w", err)
 	}
 
 	if options.PER {
-		if err := infra.setupTransitGateway(ctx, options, gtag); err != nil {
+		if err := infra.setupTransitGateway(ctx, logger, options, gtag); err != nil {
 			return fmt.Errorf("error setup transit gateway: %w", err)
 		}
 	} else {
-		if err := infra.setupPowerVSCloudConnection(ctx, options, session, gtag); err != nil {
+		if err := infra.setupPowerVSCloudConnection(ctx, logger, options, session, gtag); err != nil {
 			return fmt.Errorf("error setup powervs cloud connection: %w", err)
 		}
 	}
 
-	if err := infra.setupPowerVSDHCP(ctx, options, session); err != nil {
+	if err := infra.setupPowerVSDHCP(ctx, logger, options, session); err != nil {
 		return fmt.Errorf("error setup powervs dhcp server: %w", err)
 	}
 
 	if !options.PER {
-		if err := infra.isCloudConnectionReady(ctx, options, session); err != nil {
+		if err := infra.isCloudConnectionReady(ctx, logger, options, session); err != nil {
 			return fmt.Errorf("cloud connection is not up: %w", err)
 		}
 	}
 
 	// setupSecrets need parameter cloudInstanceId, hence invoked after setupPowerVSCloudInstance
-	if err := infra.setupSecrets(options); err != nil {
+	if err := infra.setupSecrets(logger, options); err != nil {
 		return fmt.Errorf("error setup secrets: %w", err)
 	}
 
-	log(options.InfraID).Info("Setup infra completed in", "duration", time.Since(startTime).String())
+	logger.Info("Setup infra completed in", "duration", time.Since(startTime).String())
 	return nil
 }
 
 // setupSecrets generate secrets for control plane components
-func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
+func (infra *Infra) setupSecrets(logger logr.Logger, options *CreateInfraOptions) error {
 	var err error
 	var powerVsCloudInstanceID string
 
@@ -446,7 +445,7 @@ func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 		deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
 	}
 
-	log(infra.ID).Info("Creating Secrets ...")
+	logger.Info("Creating Secrets ...")
 
 	infra.Secrets = Secrets{}
 
@@ -492,7 +491,7 @@ func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 		return fmt.Errorf("error setup image registry operator secret: %w", err)
 	}
 
-	log(infra.ID).Info("Secrets Ready")
+	logger.Info("Secrets Ready")
 
 	return nil
 }
@@ -617,7 +616,7 @@ func checkForExistingDNSRecord(ctx context.Context, options *CreateInfraOptions,
 
 // setupBaseDomain get domain id and crn of given base domain
 // TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
-func (infra *Infra) setupBaseDomain(ctx context.Context, options *CreateInfraOptions) error {
+func (infra *Infra) setupBaseDomain(ctx context.Context, logger logr.Logger, options *CreateInfraOptions) error {
 	var err error
 	infra.CISCRN, infra.CISDomainID, err = getCISDomainDetails(ctx, options.BaseDomain)
 
@@ -629,7 +628,7 @@ func (infra *Infra) setupBaseDomain(ctx context.Context, options *CreateInfraOpt
 		return err
 	}
 
-	log(options.InfraID).Info("BaseDomain Info Ready", "CRN", infra.CISCRN, "DomainID", infra.CISDomainID)
+	logger.Info("BaseDomain Info Ready", "CRN", infra.CISCRN, "DomainID", infra.CISDomainID)
 	return nil
 }
 
@@ -732,7 +731,7 @@ func getResourceGroupID(ctx context.Context, resourceGroup string, accountID str
 }
 
 // createCloudInstance creating powervs cloud instance
-func (infra *Infra) createCloudInstance(ctx context.Context, options *CreateInfraOptions) (*resourcecontrollerv2.ResourceInstance, error) {
+func (infra *Infra) createCloudInstance(ctx context.Context, logger logr.Logger, options *CreateInfraOptions) (*resourcecontrollerv2.ResourceInstance, error) {
 
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
 		Authenticator: getIAMAuth(),
@@ -763,11 +762,11 @@ func (infra *Infra) createCloudInstance(ctx context.Context, options *CreateInfr
 			err = fmt.Errorf("already a PowerVS instance exist with the infraID but it is not in usable state: %v", err.Error())
 			return nil, err
 		}
-		log(options.InfraID).Info("Using existing PowerVS Cloud Instance", "name", cloudInstanceName)
+		logger.Info("Using existing PowerVS Cloud Instance", "name", cloudInstanceName)
 		return resourceInstance, nil
 	}
 
-	log(options.InfraID).Info("Creating PowerVS Cloud Instance ...")
+	logger.Info("Creating PowerVS Cloud Instance ...")
 	target := options.Zone
 
 	resourceInstanceOpt := resourcecontrollerv2.CreateResourceInstanceOptions{Name: &cloudInstanceName,
@@ -791,7 +790,7 @@ func (infra *Infra) createCloudInstance(ctx context.Context, options *CreateInfr
 
 	f := func() (bool, error) {
 		resourceInstance, _, err = rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: resourceInstance.ID})
-		log(options.InfraID).Info("Waiting for cloud instance to up", "id", resourceInstance.ID, "state", *resourceInstance.State)
+		logger.Info("Waiting for cloud instance to up", "id", resourceInstance.ID, "state", *resourceInstance.State)
 
 		if err != nil {
 			return false, err
@@ -852,22 +851,22 @@ func createPowerVSSession(accountID string, powerVSRegion string, powerVSZone st
 }
 
 // createVpcService creates VpcService of type *vpcv1.VpcV1
-func createVpcService(region string, infraID string) (*vpcv1.VpcV1, error) {
+func createVpcService(logger logr.Logger, region string) (*vpcv1.VpcV1, error) {
 	v1, err := vpcv1.NewVpcV1(&vpcv1.VpcV1Options{
 		ServiceName:   "vpcs",
 		Authenticator: getIAMAuth(),
 		URL:           getCustomEndpointUrl(vpcService, vpcDefaultUrl(region)),
 	})
-	log(infraID).Info("Created VPC Service for", "URL", v1.GetServiceURL())
+	logger.Info("Created VPC Service for", "URL", v1.GetServiceURL())
 	return v1, err
 }
 
 // setupPowerVSCloudInstance takes care of setting up powervs cloud instance
-func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *CreateInfraOptions, gtag *globaltaggingv1.GlobalTaggingV1) error {
-	log(options.InfraID).Info("Setting up PowerVS Cloud Instance ...")
+func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, gtag *globaltaggingv1.GlobalTaggingV1) error {
+	logger.Info("Setting up PowerVS Cloud Instance ...")
 	var cloudInstance *resourcecontrollerv2.ResourceInstance
 	if options.CloudInstanceID != "" {
-		log(options.InfraID).Info("Validating PowerVS Cloud Instance", "id", options.CloudInstanceID)
+		logger.Info("Validating PowerVS Cloud Instance", "id", options.CloudInstanceID)
 		var err error
 		cloudInstance, err = validateCloudInstanceByID(ctx, options.CloudInstanceID)
 		if err != nil {
@@ -875,7 +874,7 @@ func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *Crea
 		}
 	} else {
 		var err error
-		cloudInstance, err = infra.createCloudInstance(ctx, options)
+		cloudInstance, err = infra.createCloudInstance(ctx, logger, options)
 		if err != nil {
 			return fmt.Errorf("error creating cloud instance: %w", err)
 		}
@@ -893,27 +892,27 @@ func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *Crea
 	}
 
 	if err := attachTag(gtag, options.InfraID, cloudInstance.CRN, fmt.Sprintf("%s-%s", infra.ID, cloudInstanceNameSuffix)); err != nil {
-		log(options.InfraID).Error(err, "error attaching tags to powervs cloud instance")
+		logger.Error(err, "error attaching tags to powervs cloud instance")
 	}
 
-	log(options.InfraID).Info("PowerVS Cloud Instance Ready", "id", infra.CloudInstanceID)
+	logger.Info("PowerVS Cloud Instance Ready", "id", infra.CloudInstanceID)
 	return nil
 }
 
 // setupVpc takes care of setting up vpc
-func (infra *Infra) setupVpc(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1, gtag *globaltaggingv1.GlobalTaggingV1) error {
-	log(options.InfraID).Info("Setting up VPC ...")
+func (infra *Infra) setupVpc(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, v1 *vpcv1.VpcV1, gtag *globaltaggingv1.GlobalTaggingV1) error {
+	logger.Info("Setting up VPC ...")
 	var vpc *vpcv1.VPC
 	if options.VPC != "" {
 		var err error
-		log(options.InfraID).Info("Validating VPC", "name", options.VPC)
+		logger.Info("Validating VPC", "name", options.VPC)
 		vpc, err = validateVpc(ctx, options.VPC, infra.ResourceGroupID, v1)
 		if err != nil {
 			return err
 		}
 	} else {
 		var err error
-		vpc, err = infra.createVpc(ctx, options, infra.ResourceGroupID, v1)
+		vpc, err = infra.createVpc(ctx, logger, options, infra.ResourceGroupID, v1)
 		if err != nil {
 			return err
 		}
@@ -932,26 +931,26 @@ func (infra *Infra) setupVpc(ctx context.Context, options *CreateInfraOptions, v
 	}
 
 	if err := attachTag(gtag, options.InfraID, &infra.VPCCRN, fmt.Sprintf("%s-%s", infra.ID, vpcNameSuffix)); err != nil {
-		log(options.InfraID).Error(err, "error attaching tags to vpc")
+		logger.Error(err, "error attaching tags to vpc")
 	}
 
-	log(options.InfraID).Info("VPC Ready", "ID", infra.VPCID)
+	logger.Info("VPC Ready", "ID", infra.VPCID)
 	return nil
 }
 
 // createVpc creates a new vpc with the infra name or will return an existing vpc
-func (infra *Infra) createVpc(ctx context.Context, options *CreateInfraOptions, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
+func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
 	var startTime time.Time
 	vpcName := fmt.Sprintf("%s-%s", options.InfraID, vpcNameSuffix)
 	vpc, err := validateVpc(ctx, vpcName, resourceGroupID, v1)
 
 	// if vpc already exist use it or proceed with creating a new one, no need to validate err
 	if vpc != nil && *vpc.Name == vpcName {
-		log(options.InfraID).Info("Using existing VPC", "name", vpcName)
+		logger.Info("Using existing VPC", "name", vpcName)
 		return vpc, nil
 	}
 
-	log(options.InfraID).Info("Creating VPC ...")
+	logger.Info("Creating VPC ...")
 	addressPrefixManagement := "auto"
 
 	vpcOption := &vpcv1.CreateVPCOptions{
@@ -1009,10 +1008,10 @@ func (infra *Infra) createVpc(ctx context.Context, options *CreateInfraOptions, 
 }
 
 // setupVpcSubnet takes care of setting up subnet in the vpc
-func (infra *Infra) setupVpcSubnet(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1) error {
-	log(options.InfraID).Info("Setting up VPC Subnet ...")
+func (infra *Infra) setupVpcSubnet(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, v1 *vpcv1.VpcV1) error {
+	logger.Info("Setting up VPC Subnet ...")
 
-	log(options.InfraID).Info("Getting existing VPC Subnet info ...")
+	logger.Info("Getting existing VPC Subnet info ...")
 	var subnet *vpcv1.Subnet
 	f := func(start string) (bool, string, error) {
 		// check for existing subnets
@@ -1052,7 +1051,7 @@ func (infra *Infra) setupVpcSubnet(ctx context.Context, options *CreateInfraOpti
 
 	if infra.VPCSubnetID == "" {
 		var err error
-		subnet, err = infra.createVpcSubnet(ctx, options, v1)
+		subnet, err = infra.createVpcSubnet(ctx, logger, options, v1)
 		if err != nil {
 			return err
 		}
@@ -1064,13 +1063,13 @@ func (infra *Infra) setupVpcSubnet(ctx context.Context, options *CreateInfraOpti
 		infra.Stats.VPCSubnet.Status = *subnet.Status
 	}
 
-	log(options.InfraID).Info("VPC Subnet Ready", "ID", infra.VPCSubnetID)
+	logger.Info("VPC Subnet Ready", "ID", infra.VPCSubnetID)
 	return nil
 }
 
 // createVpcSubnet creates a new subnet in vpc with the infra name or will return an existing subnet in the vpc
-func (infra *Infra) createVpcSubnet(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1) (*vpcv1.Subnet, error) {
-	log(options.InfraID).Info("Create VPC Subnet ...")
+func (infra *Infra) createVpcSubnet(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, v1 *vpcv1.VpcV1) (*vpcv1.Subnet, error) {
+	logger.Info("Create VPC Subnet ...")
 	var subnet *vpcv1.Subnet
 	var startTime time.Time
 	vpcIdent := &vpcv1.VPCIdentity{CRN: &infra.VPCCRN}
@@ -1146,19 +1145,19 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, options *CreateInfraOpt
 }
 
 // setupPowerVSCloudConnection takes care of setting up cloud connection in powervs
-func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession, gtag *globaltaggingv1.GlobalTaggingV1) error {
-	log(options.InfraID).Info("Setting up PowerVS Cloud Connection ...")
+func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, session *ibmpisession.IBMPISession, gtag *globaltaggingv1.GlobalTaggingV1) error {
+	logger.Info("Setting up PowerVS Cloud Connection ...")
 	var err error
 	client := instance.NewIBMPICloudConnectionClient(ctx, session, infra.CloudInstanceID)
 	var cloudConnID string
 	if options.CloudConnection != "" {
-		log(options.InfraID).Info("Validating PowerVS Cloud Connection", "name", options.CloudConnection)
+		logger.Info("Validating PowerVS Cloud Connection", "name", options.CloudConnection)
 		cloudConnID, err = validateCloudConnectionByName(options.CloudConnection, client)
 		if err != nil {
 			return err
 		}
 	} else {
-		cloudConnID, err = infra.createCloudConnection(options, client)
+		cloudConnID, err = infra.createCloudConnection(logger, options, client)
 		if err != nil {
 			return err
 		}
@@ -1186,12 +1185,12 @@ func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, options *Cr
 		return err
 	}
 
-	log(options.InfraID).Info("PowerVS Cloud Connection Ready", "id", infra.CloudConnectionID)
+	logger.Info("PowerVS Cloud Connection Ready", "id", infra.CloudConnectionID)
 	return nil
 }
 
 // createCloudConnection creates a new cloud connection with the infra name or will return an existing cloud connection
-func (infra *Infra) createCloudConnection(options *CreateInfraOptions, client *instance.IBMPICloudConnectionClient) (string, error) {
+func (infra *Infra) createCloudConnection(logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPICloudConnectionClient) (string, error) {
 	cloudConnName := fmt.Sprintf("%s-%s", options.InfraID, cloudConnNameSuffix)
 
 	// validating existing cloud connection with the infra
@@ -1200,11 +1199,11 @@ func (infra *Infra) createCloudConnection(options *CreateInfraOptions, client *i
 		return "", err
 	} else if cloudConnID != "" {
 		// if exists, use that and from func isCloudConnectionReady() make the connection to dhcp private network and vpc if not exists already
-		log(options.InfraID).Info("Using existing PowerVS Cloud Connection", "name", cloudConnName)
+		logger.Info("Using existing PowerVS Cloud Connection", "name", cloudConnName)
 		return cloudConnID, nil
 	}
 
-	log(options.InfraID).Info("Creating PowerVS Cloud Connection ...")
+	logger.Info("Creating PowerVS Cloud Connection ...")
 
 	var speed int64 = defaultCloudConnSpeed
 	var vpcL []*models.CloudConnectionVPC
@@ -1240,8 +1239,8 @@ func useExistingDHCP(dhcpServers models.DHCPServers) (string, error) {
 }
 
 // setupPowerVSDHCP takes care of setting up dhcp in powervs
-func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
-	log(infra.ID).Info("Setting up PowerVS DHCP ...")
+func (infra *Infra) setupPowerVSDHCP(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+	logger.Info("Setting up PowerVS DHCP ...")
 	client := instance.NewIBMPIDhcpClient(ctx, session, infra.CloudInstanceID)
 
 	var dhcpServer *models.DHCPServerDetail
@@ -1254,7 +1253,7 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 	// only one dhcp server is allowed per cloud instance
 	// if already a dhcp server existing in cloud instance use that instead of creating a new one
 	if len(dhcpServers) > 0 {
-		log(infra.ID).Info("Using existing DHCP server present in cloud instance")
+		logger.Info("Using existing DHCP server present in cloud instance")
 		var dhcpServerID string
 		dhcpServerID, err = useExistingDHCP(dhcpServers)
 		if err != nil {
@@ -1265,7 +1264,7 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 		if *dhcpServer.Status != dhcpServiceActiveState {
 			var isActive bool
 			f := func() (bool, error) {
-				dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, dhcpServerID)
+				dhcpServer, isActive, err = isDHCPServerActive(logger, client, dhcpServerID)
 				return isActive, err
 			}
 
@@ -1274,8 +1273,8 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 			}
 		}
 	} else {
-		log(infra.ID).Info("Creating PowerVS DHCPServer...")
-		dhcpServer, err = infra.createPowerVSDhcp(options, client)
+		logger.Info("Creating PowerVS DHCPServer...")
+		dhcpServer, err = infra.createPowerVSDhcp(logger, options, client)
 	}
 
 	if err != nil {
@@ -1295,7 +1294,7 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 		return fmt.Errorf("unable to setup powervs dhcp server, dhcp server id or subnet id returned is empty. dhcpServerId: %s, dhcpPrivateSubnetId: %s", infra.DHCPID, infra.DHCPSubnetID)
 	}
 
-	log(infra.ID).Info("PowerVS DHCP Server and Private Subnet Ready", "id", infra.DHCPID, "subnetId", infra.DHCPSubnetID)
+	logger.Info("PowerVS DHCP Server and Private Subnet Ready", "id", infra.DHCPID, "subnetId", infra.DHCPSubnetID)
 	return nil
 }
 
@@ -1311,7 +1310,7 @@ func isNotRetryableError(err error, retryableErrorKeywords []string) error {
 
 // isDHCPServerActive monitors DHCP status to reach either ACTIVE or ERROR status which indicates it reaches a final state
 // returns an instance of DHCPServerDetail for further processing and true if it reaches ACTIVE status
-func isDHCPServerActive(client *instance.IBMPIDhcpClient, infraID string, dhcpID string) (*models.DHCPServerDetail, bool, error) {
+func isDHCPServerActive(logger logr.Logger, client *instance.IBMPIDhcpClient, dhcpID string) (*models.DHCPServerDetail, bool, error) {
 	var err error
 	dhcpServer, err := client.Get(dhcpID)
 	if err != nil {
@@ -1322,7 +1321,7 @@ func isDHCPServerActive(client *instance.IBMPIDhcpClient, infraID string, dhcpID
 	}
 
 	if dhcpServer != nil {
-		log(infraID).Info("Waiting for DHCPServer to up", "id", *dhcpServer.ID, "status", *dhcpServer.Status)
+		logger.Info("Waiting for DHCPServer to up", "id", *dhcpServer.ID, "status", *dhcpServer.Status)
 		if *dhcpServer.Status == dhcpServiceActiveState {
 			return dhcpServer, true, nil
 		}
@@ -1336,7 +1335,7 @@ func isDHCPServerActive(client *instance.IBMPIDhcpClient, infraID string, dhcpID
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
-func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
+func (infra *Infra) createPowerVSDhcp(logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
 	startTime := time.Now()
 	var dhcpServer *models.DHCPServerDetail
 
@@ -1357,7 +1356,7 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 
 	var isActive bool
 	f := func() (bool, error) {
-		dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, *dhcp.ID)
+		dhcpServer, isActive, err = isDHCPServerActive(logger, client, *dhcp.ID)
 		return isActive, err
 	}
 
@@ -1372,8 +1371,8 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 }
 
 // isCloudConnectionReady make sure cloud connection is connected with dhcp server private network and vpc, and it is in established state
-func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
-	log(infra.ID).Info("Making sure PowerVS Cloud Connection is ready ...")
+func (infra *Infra) isCloudConnectionReady(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+	logger.Info("Making sure PowerVS Cloud Connection is ready ...")
 	var err error
 
 	client := instance.NewIBMPICloudConnectionClient(ctx, session, infra.CloudInstanceID)
@@ -1405,7 +1404,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 	}
 
 	if !cloudConnVpcOk {
-		log(infra.ID).Info("Updating VPC to cloud connection")
+		logger.Info("Updating VPC to cloud connection")
 		cloudConnUpdateOpt := models.CloudConnectionUpdate{}
 
 		vpcL := cloudConn.Vpc.Vpcs
@@ -1417,25 +1416,25 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 
 		_, job, err := client.Update(*cloudConn.CloudConnectionID, &cloudConnUpdateOpt)
 		if err != nil {
-			log(infra.ID).Error(err, "error updating cloud connection with vpc")
+			logger.Error(err, "error updating cloud connection with vpc")
 			return fmt.Errorf("error updating cloud connection with vpc %w", err)
 		}
-		err = monitorPowerVsJob(*job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout)
+		err = monitorPowerVsJob(logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout)
 		if err != nil {
-			log(infra.ID).Error(err, "error attaching cloud connection with vpc")
+			logger.Error(err, "error attaching cloud connection with vpc")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
 		}
 	}
 
 	if !cloudConnNwOk {
-		log(infra.ID).Info("Adding DHCP private network to cloud connection")
+		logger.Info("Adding DHCP private network to cloud connection")
 		_, job, err := client.AddNetwork(*cloudConn.CloudConnectionID, infra.DHCPSubnetID)
 		if err != nil {
-			log(infra.ID).Error(err, "error attaching cloud connection with dhcp subnet")
+			logger.Error(err, "error attaching cloud connection with dhcp subnet")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
 		}
-		if err = monitorPowerVsJob(*job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout); err != nil {
-			log(infra.ID).Error(err, "error attaching cloud connection with dhcp subnet")
+		if err = monitorPowerVsJob(logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout); err != nil {
+			logger.Error(err, "error attaching cloud connection with dhcp subnet")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
 		}
 	}
@@ -1457,7 +1456,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 		}
 
 		if cloudConn != nil {
-			log(infra.ID).Info("Waiting for Cloud Connection to up", "id", cloudConn.CloudConnectionID, "status", cloudConn.LinkStatus)
+			logger.Info("Waiting for Cloud Connection to up", "id", cloudConn.CloudConnectionID, "status", cloudConn.LinkStatus)
 			if *cloudConn.LinkStatus == cloudConnectionEstablishedState {
 				return true, nil
 			}
@@ -1468,7 +1467,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 			return false, err
 		}
 
-		log(infra.ID).Info("Status from Direct Link", "BGP", resp.Result)
+		logger.Info("Status from Direct Link", "BGP", resp.Result)
 
 		return false, nil
 	}
@@ -1484,7 +1483,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 		return fmt.Errorf("could not update cloud connection status, cloud connection is nil")
 	}
 
-	log(infra.ID).Info("PowerVS Cloud Connection ready")
+	logger.Info("PowerVS Cloud Connection ready")
 	return nil
 }
 
@@ -1504,8 +1503,8 @@ func attachTag(gtag *globaltaggingv1.GlobalTaggingV1, infraID string, resourceId
 }
 
 // setupTransitGateway set up the transit gateway for the cluster infra
-func (infra *Infra) setupTransitGateway(ctx context.Context, options *CreateInfraOptions, gtag *globaltaggingv1.GlobalTaggingV1) error {
-	log(options.InfraID).Info("Setting up Transit Gateway ...")
+func (infra *Infra) setupTransitGateway(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, gtag *globaltaggingv1.GlobalTaggingV1) error {
+	logger.Info("Setting up Transit Gateway ...")
 
 	tgapisv1, err := transitgatewayapisv1.NewTransitGatewayApisV1(&transitgatewayapisv1.TransitGatewayApisV1Options{
 		Authenticator: getIAMAuth(),
@@ -1517,13 +1516,13 @@ func (infra *Infra) setupTransitGateway(ctx context.Context, options *CreateInfr
 	}
 	var transitGateway *transitgatewayapisv1.TransitGateway
 	if options.TransitGateway != "" {
-		log(options.InfraID).Info("Validating Transit Gateway", "name", options.TransitGateway)
+		logger.Info("Validating Transit Gateway", "name", options.TransitGateway)
 		transitGateway, err = validateTransitGatewayByName(ctx, tgapisv1, options.TransitGateway, true)
 		if err != nil {
 			return fmt.Errorf("error validating transit gateway by name %s, %w", options.TransitGateway, err)
 		}
 	} else {
-		transitGateway, err = infra.createTransitGateway(ctx, options, tgapisv1)
+		transitGateway, err = infra.createTransitGateway(ctx, logger, options, tgapisv1)
 		if err != nil {
 			return fmt.Errorf("error creating transit gateway: %w", err)
 		}
@@ -1537,15 +1536,15 @@ func (infra *Infra) setupTransitGateway(ctx context.Context, options *CreateInfr
 	infra.Stats.TransitGatewayState.Status = *transitGateway.Status
 
 	if err := attachTag(gtag, options.InfraID, transitGateway.Crn, fmt.Sprintf("%s-%s", infra.ID, transitGatewayNameSuffix)); err != nil {
-		log(options.InfraID).Error(err, "error attaching tags to transit gateway")
+		logger.Error(err, "error attaching tags to transit gateway")
 	}
 
-	log(options.InfraID).Info("Transit Gateway Ready", "id", infra.TransitGatewayID)
+	logger.Info("Transit Gateway Ready", "id", infra.TransitGatewayID)
 	return nil
 }
 
 // createTransitGateway creates transit gateway and connections
-func (infra *Infra) createTransitGateway(ctx context.Context, options *CreateInfraOptions, tgapisv1 *transitgatewayapisv1.TransitGatewayApisV1) (*transitgatewayapisv1.TransitGateway, error) {
+func (infra *Infra) createTransitGateway(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, tgapisv1 *transitgatewayapisv1.TransitGatewayApisV1) (*transitgatewayapisv1.TransitGateway, error) {
 
 	transitGatewayName := fmt.Sprintf("%s-%s", options.InfraID, transitGatewayNameSuffix)
 
@@ -1555,11 +1554,11 @@ func (infra *Infra) createTransitGateway(ctx context.Context, options *CreateInf
 	}
 
 	if tg != nil {
-		log(options.InfraID).Info("Using existing transit gateway ...")
+		logger.Info("Using existing transit gateway ...")
 		return tg, nil
 	}
 
-	log(options.InfraID).Info("Creating Transit Gateway ...")
+	logger.Info("Creating Transit Gateway ...")
 	// Checking if global routing required for transit gateway.
 	globalRouting := regionutils.IsGlobalRoutingRequiredForTG(options.Region, options.VPCRegion)
 	tg, _, err = tgapisv1.CreateTransitGatewayWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayOptions{
@@ -1616,17 +1615,17 @@ func (infra *Infra) createTransitGateway(ctx context.Context, options *CreateInf
 		return nil
 	}
 
-	log(infra.ID).Info("Checking VPC Connection status ...")
+	logger.Info("Checking VPC Connection status ...")
 	if err = isConnectionUp(*tgVPCCon.ID); err != nil {
 		return nil, fmt.Errorf("error checking vpc connection's status: %w", err)
 	}
-	log(infra.ID).Info("Transit gateway VPC connection OK")
+	logger.Info("Transit gateway VPC connection OK")
 
-	log(infra.ID).Info("Checking PowerVS Connection status ...")
+	logger.Info("Checking PowerVS Connection status ...")
 	if err = isConnectionUp(*tgPVSCon.ID); err != nil {
 		return nil, fmt.Errorf("error checking powervs connection's status: %w", err)
 	}
-	log(infra.ID).Info("Transit gateway PowerVS connection OK")
+	logger.Info("Transit gateway PowerVS connection OK")
 
 	return tg, nil
 }

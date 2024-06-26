@@ -19,8 +19,7 @@ func EnsureNodeCommunication(t *testing.T, ctx context.Context, client crclient.
 	t.Run("EnsureNodeCommunication", func(t *testing.T) {
 		g := NewWithT(t)
 
-		guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 
 		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")

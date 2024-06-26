@@ -19,7 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,30 +51,20 @@ func TestOLM(t *testing.T) {
 		guestNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
-		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
-		defer cancel()
-
-		t.Logf("Retrieving Red Hat catalogSource deployment image")
 		redhatCatalogDeployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      redhatOperatorsDeploymentName,
 				Namespace: guestNamespace,
 			},
 		}
-		var previousGetError string
-		err := wait.PollUntilContextTimeout(waitCtx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
-			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment); err != nil {
-				if err.Error() != previousGetError {
-					t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
-					previousGetError = err.Error()
-				}
-				return false, nil
-			}
-			return true, nil
-		})
-		if err != nil {
-			t.Fatalf("failed to get Red Hat Catalog deployment: %v", err)
-		}
+		e2eutil.EventuallyObject(t, ctx, "Red Hat catalogSource deployment image to exist",
+			func(ctx context.Context) (*appsv1.Deployment, error) {
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment)
+				return redhatCatalogDeployment, err
+			},
+			nil,
+			e2eutil.WithTimeout(15*time.Minute),
+		)
 
 		t.Logf("Creating guest cluster catalogSource using the Red Hat operators image from the hosted control plane")
 		guestClusterCatalogSource := &operatorsv1alpha1.CatalogSource{
@@ -89,64 +79,33 @@ func TestOLM(t *testing.T) {
 				DisplayName: "OLM HyperShift Test CatalogSource",
 			},
 		}
-		var previousCreateError string
-		err = wait.PollUntilContextTimeout(waitCtx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
-			if err := guestClient.Create(ctx, guestClusterCatalogSource); err != nil && !apierrors.IsAlreadyExists(err) {
-				if err.Error() != previousCreateError {
-					t.Logf("failed to get guest cluster catalogSource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
-					previousCreateError = err.Error()
-				}
-				return false, nil
-			}
-			return true, nil
-		})
-		g.Expect(err).NotTo(HaveOccurred(), "unable to create guest cluster catalogSource")
+		if err := guestClient.Create(ctx, guestClusterCatalogSource); err != nil && !apierrors.IsAlreadyExists(err) {
+			t.Fatalf("failed to create guest cluster catalogSource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
+		}
 		t.Logf("guest cluster catalogSource created")
 
 		defer func() {
-			err = guestClient.Delete(ctx, guestClusterCatalogSource)
+			err := guestClient.Delete(ctx, guestClusterCatalogSource)
 			g.Expect(err != nil && !apierrors.IsNotFound(err)).To(BeFalse(), fmt.Sprintf("failed to delete guest cluster catalogSource %s/%s: %v", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err))
 		}()
 
-		t.Run("Guest cluster catalogSources serve content", testGuestClusterCatalogReady(waitCtx, guestClient))
-		t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, redhatOperatorsCatalogSourceName))
-		t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, guestClusterCatalogSourceName))
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-}
-
-// testGuestClusterCatalogReady ensures that Catalog Operator is able to connect to the CatalogSource created on the guestCluster.
-func testGuestClusterCatalogReady(parentCtx context.Context, client crclient.Client) func(t *testing.T) {
-	return func(t *testing.T) {
-		g := NewWithT(t)
-		ctx, cancel := context.WithCancel(parentCtx)
-		defer cancel()
-
-		guestClusterCatalogSource := &operatorsv1alpha1.CatalogSource{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      guestClusterCatalogSourceName,
-				Namespace: openshiftMarketplaceNamespace,
+		e2eutil.EventuallyObject(t, ctx, "guest cluster catalogSources to serve content",
+			func(ctx context.Context) (*operatorsv1alpha1.CatalogSource, error) {
+				err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(guestClusterCatalogSource), guestClusterCatalogSource)
+				return guestClusterCatalogSource, err
 			},
-		}
+			[]e2eutil.Predicate[*operatorsv1alpha1.CatalogSource]{
+				func(catalogSource *operatorsv1alpha1.CatalogSource) (done bool, reasons string, err error) {
+					want, got := "READY", ptr.Deref(catalogSource.Status.GRPCConnectionState, operatorsv1alpha1.GRPCConnectionState{}).LastObservedState
+					return want == got, fmt.Sprintf("expected GRPC connection state %s, got %s", want, got), nil
+				},
+			},
+			e2eutil.WithTimeout(15*time.Minute),
+		)
 
-		// The guest cluster catalogSource should eventually become available
-		var previousError string
-		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
-			if err := client.Get(ctx, crclient.ObjectKeyFromObject(guestClusterCatalogSource), guestClusterCatalogSource); err != nil {
-				if err.Error() != previousError {
-					t.Logf("failed to get guestcluster catalogsource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
-					previousError = err.Error()
-				}
-				return false, nil
-			}
-			if guestClusterCatalogSource.Status.GRPCConnectionState == nil {
-				return false, nil
-			}
-
-			return guestClusterCatalogSource.Status.GRPCConnectionState.LastObservedState == "READY", nil
-		})
-		g.Expect(err).NotTo(HaveOccurred(), "guestCluster catalogSource never became READY")
-		t.Logf("guestCluster catalogSource became available")
-	}
+		t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(ctx, guestClient, redhatOperatorsCatalogSourceName))
+		t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(ctx, guestClient, guestClusterCatalogSourceName))
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // testOperatorInstallationFromSource ensures that an operator can be installed from a catalogSource in the openshift-marketplace namespace.
@@ -200,26 +159,17 @@ func testOperatorInstallationFromSource(parentCtx context.Context, client crclie
 		err = client.Create(ctx, subscription)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create guest cluster subscription")
 		t.Logf("Created subscription %s/%s for test", subscription.Namespace, subscription.Name)
-
-		// Wait for successful csv installation
-		t.Logf("Waiting for csv to be installed by subscription")
-		var previousSubscriptionError string
-		var previousInstalledCSV string
-		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
-			if err := client.Get(ctx, crclient.ObjectKeyFromObject(subscription), subscription); err != nil {
-				if err.Error() != previousSubscriptionError {
-					t.Logf("failed to get guestcluster subscription %s/%s: %s", subscription.Namespace, subscription.Name, err)
-					previousSubscriptionError = err.Error()
-				}
-				return false, nil
-			}
-			if subscription.Status.InstalledCSV != previousInstalledCSV {
-				t.Logf("subscription %s/%s installedCSV %s", subscription.Namespace, subscription.Name, subscription.Status.InstalledCSV)
-			}
-			previousInstalledCSV = subscription.Status.InstalledCSV
-			return subscription.Status.InstalledCSV != "", nil
-		})
-		g.Expect(err).NotTo(HaveOccurred(), "csv never installed")
+		e2eutil.EventuallyObject(t, ctx, "CSV to be installed by Subscription",
+			func(ctx context.Context) (*operatorsv1alpha1.Subscription, error) {
+				err := client.Get(ctx, crclient.ObjectKeyFromObject(subscription), subscription)
+				return subscription, err
+			},
+			[]e2eutil.Predicate[*operatorsv1alpha1.Subscription]{
+				func(subscription *operatorsv1alpha1.Subscription) (done bool, reasons string, err error) {
+					return subscription.Status.InstalledCSV != "", fmt.Sprintf("have installed CSV: %v", subscription.Status.InstalledCSV), nil
+				},
+			},
+		)
 		t.Logf("subscription created csv %s/%s", subscription.Namespace, subscription.Status.InstalledCSV)
 
 		// Wait for the CSV to enter the succeeded phase
@@ -230,25 +180,17 @@ func testOperatorInstallationFromSource(parentCtx context.Context, client crclie
 				Name:      subscription.Status.InstalledCSV,
 			},
 		}
-
-		var previousCSVError string
-		var previousPhase operatorsv1alpha1.ClusterServiceVersionPhase
-		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
-			if err := client.Get(ctx, crclient.ObjectKeyFromObject(csv), csv); err != nil {
-				if err.Error() != previousCSVError {
-					t.Logf("failed to get guestcluster CSV %s/%s: %s", csv.Namespace, csv.Name, err)
-					previousCSVError = err.Error()
-				}
-				return false, nil
-			}
-			if csv.Status.Phase != previousPhase {
-				t.Logf("CSV %s/%s phase is %s", csv.Namespace, csv.Name, csv.Status.Phase)
-			}
-			previousPhase = csv.Status.Phase
-			return csv.Status.Phase == operatorsv1alpha1.CSVPhaseSucceeded, nil
-		})
-		if err != nil {
-			t.Fatalf("failed to wait for successful CSV: %v", err)
-		}
+		e2eutil.EventuallyObject(t, ctx, "CSV to enter the succeeded phase",
+			func(ctx context.Context) (*operatorsv1alpha1.ClusterServiceVersion, error) {
+				err := client.Get(ctx, crclient.ObjectKeyFromObject(csv), csv)
+				return csv, err
+			},
+			[]e2eutil.Predicate[*operatorsv1alpha1.ClusterServiceVersion]{
+				func(csv *operatorsv1alpha1.ClusterServiceVersion) (done bool, reasons string, err error) {
+					want, got := operatorsv1alpha1.CSVPhaseSucceeded, csv.Status.Phase
+					return want == got, fmt.Sprintf("expected CSV to be in phase %q, got %q", want, got), nil
+				},
+			},
+		)
 	}
 }

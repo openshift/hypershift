@@ -96,7 +96,7 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 			err := infraClient.GetInfraClient().List(k.ctx, vmis, &crclient.ListOptions{Namespace: guestNamespace, LabelSelector: labelSelector})
 			var ptrs []*kubevirtv1.VirtualMachineInstance
 			for i := range vmis.Items {
-				ptrs = append(ptrs, &vmis.Items[i])
+				ptrs[i] = &vmis.Items[i]
 			}
 			return ptrs, err
 		},

@@ -62,7 +62,6 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
 		// Get a client for the cluster
-		t.Logf("Waiting for guest client to become available")
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 		// Create data in the cluster which should survive the ensuring chaos
@@ -147,7 +146,6 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
 		// Get a client for the cluster
-		t.Logf("Waiting for guest client to become available")
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 		// Create data in the cluster which should survive the ensuring chaos
@@ -207,7 +205,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 			})
 			var items []*corev1.Pod
 			for i := range pods.Items {
-				items = append(items, &pods.Items[i])
+				items[i] = &pods.Items[i]
 			}
 			return items, err
 		}, nil, []e2eutil.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (done bool, reasons string, err error) {
@@ -253,7 +251,6 @@ func testSingleMemberRecovery(parentCtx context.Context, client crclient.Client,
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
 		// Wait for a guest client to become available
-		t.Logf("Waiting for guest client to become available")
 		_ = e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 		// Find etcd pods in the control plane namespace

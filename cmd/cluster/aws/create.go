@@ -168,7 +168,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		}
 	} else {
 		opt := CreateIAMOptions(o, infra)
-		iamInfo, err = opt.CreateIAM(ctx, client)
+		iamInfo, err = opt.CreateIAM(ctx, client, opts.Log)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create iam: %w", err)
 		}

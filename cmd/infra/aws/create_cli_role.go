@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -171,9 +172,10 @@ func NewCreateCLIRoleCommand() *cobra.Command {
 
 	cmd.MarkFlagRequired("aws-creds")
 
+	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := opts.Run(cmd.Context()); err != nil {
-			log.Log.Error(err, "failed to create cli role")
+		if err := opts.Run(cmd.Context(), logger); err != nil {
+			logger.Error(err, "failed to create cli role")
 			return err
 		}
 		return nil
@@ -182,7 +184,7 @@ func NewCreateCLIRoleCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *CreateCLIRoleOptions) Run(ctx context.Context) error {
+func (o *CreateCLIRoleOptions) Run(ctx context.Context, logger logr.Logger) error {
 	tags, err := o.ParseAdditionalTags()
 	if err != nil {
 		return err
@@ -205,7 +207,7 @@ func (o *CreateCLIRoleOptions) Run(ctx context.Context) error {
 		additionalIAMTags: tags,
 	}
 
-	roleArn, err := createIAMRoleOpts.CreateRoleWithInlinePolicy(ctx, iamClient)
+	roleArn, err := createIAMRoleOpts.CreateRoleWithInlinePolicy(ctx, logger, iamClient)
 	if err != nil {
 		return err
 	}

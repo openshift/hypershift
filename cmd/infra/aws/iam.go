@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/openshift/hypershift/cmd/log"
+	"github.com/go-logr/logr"
 )
 
 type policyBinding struct {
@@ -435,17 +435,17 @@ func DefaultProfileName(infraID string) string {
 
 // inputs: none
 // outputs rsa keypair
-func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger logr.Logger) (*CreateIAMOutput, error) {
 	var providerName string
 	var providerARN string
 	if o.IssuerURL == "" {
 		o.IssuerURL = oidcDiscoveryURL(o.OIDCStorageProviderS3BucketName, o.OIDCStorageProviderS3Region, o.InfraID)
-		log.Log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
+		logger.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
 		providerName = strings.TrimPrefix(o.IssuerURL, "https://")
 
 		// Create the OIDC provider
-		arn, err := o.CreateOIDCProvider(iamClient)
+		arn, err := o.CreateOIDCProvider(iamClient, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -492,7 +492,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 
 	for into, binding := range bindings {
 		trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
-		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy)
+		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create OIDC Role %q: with trust policy %s and permission policy %s: %v", binding.name, trustPolicy, binding.policy, err)
 		}
@@ -502,7 +502,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	return output, nil
 }
 
-func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI) (string, error) {
+func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI, logger logr.Logger) (string, error) {
 	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
 		return "", err
@@ -515,10 +515,10 @@ func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI) (string
 				OpenIDConnectProviderArn: provider.Arn,
 			})
 			if err != nil {
-				log.Log.Error(err, "Failed to remove existing OIDC provider", "provider", *provider.Arn)
+				logger.Error(err, "Failed to remove existing OIDC provider", "provider", *provider.Arn)
 				return "", err
 			}
-			log.Log.Info("Removing existing OIDC provider", "provider", *provider.Arn)
+			logger.Info("Removing existing OIDC provider", "provider", *provider.Arn)
 			break
 		}
 	}
@@ -541,13 +541,13 @@ func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI) (string
 	}
 
 	providerARN := *oidcOutput.OpenIDConnectProviderArn
-	log.Log.Info("Created OIDC provider", "provider", providerARN)
+	logger.Info("Created OIDC provider", "provider", providerARN)
 
 	return providerARN, nil
 }
 
 // CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
-func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string) (string, error) {
+func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string, logger logr.Logger) (string, error) {
 	createIAMRoleOpts := CreateIAMRoleOptions{
 		RoleName:          fmt.Sprintf("%s-%s", o.InfraID, name),
 		TrustPolicy:       trustPolicy,
@@ -555,10 +555,10 @@ func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPol
 		additionalIAMTags: o.additionalIAMTags,
 	}
 
-	return createIAMRoleOpts.CreateRoleWithInlinePolicy(context.Background(), client)
+	return createIAMRoleOpts.CreateRoleWithInlinePolicy(context.Background(), logger, client)
 }
 
-func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string) error {
+func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string, logger logr.Logger) error {
 	const (
 		assumeRolePolicy = `{
     "Version": "2012-10-17",
@@ -602,9 +602,9 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot create worker role: %w", err)
 		}
-		log.Log.Info("Created role", "name", roleName)
+		logger.Info("Created role", "name", roleName)
 	} else {
-		log.Log.Info("Found existing role", "name", roleName)
+		logger.Info("Found existing role", "name", roleName)
 	}
 	instanceProfile, err := existingInstanceProfile(client, profileName)
 	if err != nil {
@@ -620,9 +620,9 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 			return fmt.Errorf("cannot create instance profile: %w", err)
 		}
 		instanceProfile = result.InstanceProfile
-		log.Log.Info("Created instance profile", "name", profileName)
+		logger.Info("Created instance profile", "name", profileName)
 	} else {
-		log.Log.Info("Found existing instance profile", "name", profileName)
+		logger.Info("Found existing instance profile", "name", profileName)
 	}
 	hasRole := false
 	for _, role := range instanceProfile.Roles {
@@ -638,7 +638,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot add role to instance profile: %w", err)
 		}
-		log.Log.Info("Added role to instance profile", "role", roleName, "profile", profileName)
+		logger.Info("Added role to instance profile", "role", roleName, "profile", profileName)
 	}
 	rolePolicyName := fmt.Sprintf("%s-policy", profileName)
 	hasPolicy, err := existingRolePolicy(client, roleName, rolePolicyName)
@@ -654,7 +654,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot create profile policy: %w", err)
 		}
-		log.Log.Info("Created role policy", "name", rolePolicyName)
+		logger.Info("Created role policy", "name", rolePolicyName)
 	}
 	return nil
 }
@@ -667,7 +667,7 @@ type CreateIAMRoleOptions struct {
 	additionalIAMTags []*iam.Tag
 }
 
-func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, client iamiface.IAMAPI) (string, error) {
+func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, logger logr.Logger, client iamiface.IAMAPI) (string, error) {
 	role, err := existingRole(client, o.RoleName)
 	var arn string
 	if err != nil {
@@ -682,10 +682,10 @@ func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, c
 		if err != nil {
 			return "", err
 		}
-		log.Log.Info("Created role", "name", o.RoleName)
+		logger.Info("Created role", "name", o.RoleName)
 		arn = *output.Role.Arn
 	} else {
-		log.Log.Info("Found existing role", "name", o.RoleName)
+		logger.Info("Found existing role", "name", o.RoleName)
 		arn = *role.Arn
 	}
 
@@ -699,7 +699,7 @@ func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, c
 	if err != nil {
 		return "", err
 	}
-	log.Log.Info("Added/Updated role policy", "name", rolePolicyName)
+	logger.Info("Added/Updated role policy", "name", rolePolicyName)
 
 	return arn, nil
 }

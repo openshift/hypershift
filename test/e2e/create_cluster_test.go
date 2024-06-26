@@ -39,7 +39,6 @@ func TestCreateCluster(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Sanity check the cluster by waiting for the nodes to report ready
-		t.Logf("Waiting for guest client to become available")
 		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		t.Logf("fetching mgmt kubeconfig")
@@ -51,9 +50,7 @@ func TestCreateCluster(t *testing.T) {
 		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
 
-		t.Logf("fetching guest kubeconfig")
-		guestKubeConfigSecretData, err := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't get guest kubeconfig")
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
 
 		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
@@ -147,7 +144,6 @@ func TestNoneCreateCluster(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Wait for the rollout to be reported complete
-		t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
 		// Since the None platform has no workers, CVO will not have expectations set,
 		// which in turn means that the ClusterVersion object will never be populated.
 		// Therefore only test if the control plane comes up (etc, apiserver, ...)
