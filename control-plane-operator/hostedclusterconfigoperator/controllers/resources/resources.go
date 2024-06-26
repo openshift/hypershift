@@ -739,6 +739,13 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile authentication config: %w", err))
 	}
 
+	apiServerConfig := globalconfig.APIServerConfiguration()
+	if _, err := r.CreateOrUpdate(ctx, r.client, apiServerConfig, func() error {
+		return globalconfig.ReconcileAPIServerConfiguration(apiServerConfig, hcp.Spec.Configuration)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile apiserver config: %w", err))
+	}
+
 	return errors.NewAggregate(errs)
 }
 
