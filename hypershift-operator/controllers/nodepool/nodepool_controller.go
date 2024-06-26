@@ -813,8 +813,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetPayloadConfigHash)
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, targetPayloadConfigHash, globalconfig.ProxyConfig())
+		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, targetPayloadConfigHash, proxy)
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
