@@ -2217,6 +2217,7 @@ sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
 # sigs.k8s.io/cluster-api-provider-openstack v0.10.3
 ## explicit; go 1.22
+sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional
 # sigs.k8s.io/controller-runtime v0.18.3

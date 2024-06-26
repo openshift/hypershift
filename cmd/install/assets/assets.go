@@ -54,6 +54,7 @@ var capiResources = map[string]string{
 	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusters.yaml":          "v1beta1",
 	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachines.yaml":          "v1beta1",
 	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachinetemplates.yaml":  "v1beta1",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackfloatingippools.yaml":   "v1alpha1",
 }
 
 func getContents(fs embed.FS, file string) []byte {
