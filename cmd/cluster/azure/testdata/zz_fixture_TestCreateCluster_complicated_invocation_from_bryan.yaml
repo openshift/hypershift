@@ -135,8 +135,7 @@ spec:
       enableEphemeralOSDisk: true
       image:
         azureImageType: ImageID
-        imageID:
-          imageID: fakeBootImageID
+        imageID: fakeBootImageID
       subnetID: fakeSubnetID
       vmsize: Standard_DS2_v2
     type: Azure

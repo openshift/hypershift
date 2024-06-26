@@ -14,14 +14,14 @@ metadata:
   creationTimestamp: null
   labels:
     hypershift.openshift.io/safe-to-delete-with-cluster: "true"
-  name: example-pull-secret
+  name: bryans-cluster-pull-secret
   namespace: clusters
 ---
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
   creationTimestamp: null
-  name: example
+  name: bryans-cluster
   namespace: clusters
 spec:
   autoscaling: {}
@@ -39,7 +39,7 @@ spec:
         type: PersistentVolume
     managementType: Managed
   fips: false
-  infraID: example-sffhb
+  infraID: bryans-cluster-mbm2m
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
@@ -50,7 +50,7 @@ spec:
   platform:
     azure:
       credentials:
-        name: example-cloud-credentials
+        name: bryans-cluster-cloud-credentials
       location: fakeLocation
       machineIdentityID: fakeMachineIdentityID
       resourceGroup: fakeResourceGroupName
@@ -60,13 +60,13 @@ spec:
       vnetID: fakeVNetID
     type: Azure
   pullSecret:
-    name: example-pull-secret
+    name: bryans-cluster-pull-secret
   release:
-    image: ""
+    image: fake-release-image
   secretEncryption:
     aescbc:
       activeKey:
-        name: example-etcd-encryption-key
+        name: bryans-cluster-etcd-encryption-key
     type: aescbc
   services:
   - service: APIServer
@@ -99,18 +99,18 @@ data:
 kind: Secret
 metadata:
   creationTimestamp: null
-  name: example-cloud-credentials
+  name: bryans-cluster-cloud-credentials
   namespace: clusters
 ---
 apiVersion: v1
 data:
-  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
+  key: P8a3Bz4jwHkAy5iAltw86/9a6wx/PWBFIsUtOt5jvQI=
 kind: Secret
 metadata:
   creationTimestamp: null
   labels:
     hypershift.openshift.io/safe-to-delete-with-cluster: "true"
-  name: example-etcd-encryption-key
+  name: bryans-cluster-etcd-encryption-key
   namespace: clusters
 type: Opaque
 ---
@@ -118,11 +118,11 @@ apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
   creationTimestamp: null
-  name: example
+  name: bryans-cluster
   namespace: clusters
 spec:
   arch: amd64
-  clusterName: example
+  clusterName: bryans-cluster
   management:
     autoRepair: false
     upgradeType: Replace
@@ -131,15 +131,22 @@ spec:
   platform:
     azure:
       diskSizeGB: 120
+      diskStorageAccountType: Standard_LRS
+      enableEphemeralOSDisk: true
       image:
-        azureImageType: ImageID
-        imageID: fakeBootImageID
+        azureImageType: AzureMarketplace
+        marketplaceImage:
+          offer: aro4
+          publisher: azureopenshift
+          sku: aro_414
+          thirdPartyImage: false
+          version: 414.92.2024021
       subnetID: fakeSubnetID
-      vmsize: Standard_D4s_v4
+      vmsize: Standard_DS2_v2
     type: Azure
   release:
-    image: ""
-  replicas: 0
+    image: fake-release-image
+  replicas: 312
 status:
   replicas: 0
 ---
