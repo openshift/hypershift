@@ -1092,7 +1092,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	r.Log.Info("Reconciling ClusterNetworkOperator")
-	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute), createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
 	}
 
@@ -2938,7 +2938,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, hasRouteCap bool, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
 	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
@@ -2979,6 +2979,23 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	networkNodeIdentityDeployment := manifests.NetworkNodeIdentityDeployment(hcp.Namespace)
 	if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, p.DeploymentConfig); err != nil {
 		return fmt.Errorf("failed to restart network node identity: %w", err)
+	}
+
+	// Clean up ovnkube-sbdb Route if exists
+	if hasRouteCap {
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.OVNKubeSBDBRoute(hcp.Namespace)); err != nil {
+			return fmt.Errorf("failed to clean up ovnkube-sbdb route: %w", err)
+		}
+	}
+
+	// Clean up ovnkube-master-external Service if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterExternalService(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-master-external service: %w", err)
+	}
+
+	// Clean up ovnkube-master-internal Service if exists
+	if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.MasterInternalService(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to clean up ovnkube-master-internal service: %w", err)
 	}
 
 	return nil
