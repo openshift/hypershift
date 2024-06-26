@@ -25,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -92,7 +93,7 @@ func convertIdentityProviders(ctx context.Context, identityProviders []configv1.
 		if _, ok := providerOverrides[idp.Name]; ok {
 			providerConfigOverride = providerOverrides[idp.Name]
 		}
-		data, err := convertProviderConfigToIDPData(ctx, &idp.IdentityProviderConfig, providerConfigOverride, i, volumeMountInfo, kclient, namespace)
+		data, err := convertProviderConfigToIDPData(ctx, &idp.IdentityProviderConfig, providerConfigOverride, i, volumeMountInfo, kclient, namespace, false)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to apply IDP %s config: %v", idp.Name, err))
 			continue
@@ -135,6 +136,7 @@ func convertProviderConfigToIDPData(
 	idpVolumeMounts *IDPVolumeMountInfo,
 	kclient crclient.Client,
 	namespace string,
+	skipSocks5Proxy bool,
 ) (*idpData, error) {
 	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
 
@@ -345,7 +347,7 @@ func convertProviderConfigToIDPData(
 			openIDProvider.URLs = configOverride.URLs
 			openIDProvider.Claims = configOverride.Claims
 		} else {
-			urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA)
+			urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA, skipSocks5Proxy)
 			if err != nil {
 				return nil, err
 			}
@@ -385,6 +387,7 @@ func convertProviderConfigToIDPData(
 				namespace,
 				openIDConfig.CA,
 				openIDConfig.ClientSecret,
+				skipSocks5Proxy,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("error attempting password grant flow: %v", err)
@@ -422,7 +425,7 @@ func convertProviderConfigToIDPData(
 
 // discoverOpenIDURLs retrieves basic information about an OIDC server with hostname
 // given by the `issuer` argument
-func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, key, namespace string, ca configv1.ConfigMapNameReference) (*osinv1.OpenIDURLs, error) {
+func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, key, namespace string, ca configv1.ConfigMapNameReference, skipSocks5Proxy bool) (*osinv1.OpenIDURLs, error) {
 	issuer = strings.TrimRight(issuer, "/") // TODO make impossible via validation and remove
 	wellKnown := issuer + "/.well-known/openid-configuration"
 
@@ -440,11 +443,20 @@ func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, ke
 	}
 	req = req.WithContext(reqCtx)
 
-	rt, err := transportForCARef(ctx, kclient, namespace, ca.Name, key)
+	// Use socks5 proxy to reach the OIDC server through the data plane network.
+	proxyURL, err := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort))
 	if err != nil {
 		return nil, err
 	}
+	// skipSocks5Proxy is used by unit tests where the socks5 proxy is not running.
+	if skipSocks5Proxy {
+		proxyURL = nil
 
+	}
+	rt, err := transportForCARef(ctx, kclient, namespace, ca.Name, key, proxyURL)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := rt.RoundTrip(req)
 	if err != nil {
 		return nil, err
@@ -497,6 +509,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 	namespace string,
 	caRererence configv1.ConfigMapNameReference,
 	clientSecretReference configv1.SecretNameReference,
+	skipSocks5Proxy bool,
 ) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	secret := &corev1.Secret{
@@ -522,7 +535,18 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 		return false, fmt.Errorf("the referenced secret does not contain a value for the 'clientSecret' key")
 	}
 
-	transport, err := transportForCARef(ctx, kclient, namespace, caRererence.Name, corev1.ServiceAccountRootCAKey)
+	// Use socks5 proxy to reach the OIDC server through the data plane network.
+	proxyURL, err := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort))
+	if err != nil {
+		return false, err
+	}
+	// skipSocks5Proxy is used by unit tests where the socks5 proxy is not running.
+	if skipSocks5Proxy {
+		proxyURL = nil
+
+	}
+
+	transport, err := transportForCARef(ctx, kclient, namespace, caRererence.Name, corev1.ServiceAccountRootCAKey, proxyURL)
 	if err != nil {
 		return false, fmt.Errorf("couldn't get a transport for the referenced CA: %v", err)
 	}
@@ -596,11 +620,14 @@ func isValidURL(rawurl string, optional bool) bool {
 	return u.Scheme == "https" && len(u.Host) > 0 && len(u.Fragment) == 0
 }
 
-func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, name, key string) (http.RoundTripper, error) {
+func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, name, key string, proxyURL *url.URL) (http.RoundTripper, error) {
 	// copy default transport
 	transport := net.SetTransportDefaults(&http.Transport{
 		TLSClientConfig: &tls.Config{},
 	})
+	if proxyURL != nil {
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
 
 	if len(name) == 0 {
 		return transport, nil
