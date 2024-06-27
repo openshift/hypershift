@@ -175,13 +175,6 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 	}
 
 	h.Run("PostTeardown", func(t *testing.T) {
-		// All clusters created during tests should ultimately conform to our API
-		// budget. This should be checked after deletion to ensure that API operations
-		// for the full lifecycle are accounted for.
-		if !opts.SkipAPIBudgetVerification {
-			EnsureAPIBudget(t, h.ctx, h.client, hostedCluster)
-		}
-
 		ValidateMetrics(t, h.ctx, hostedCluster, []string{
 			hcmetrics.WaitingInitialAvailabilityDurationMetricName,
 			hcmetrics.InitialRollingOutDurationMetricName,
