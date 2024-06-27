@@ -145,6 +145,11 @@ func TestGenerateConfig(t *testing.T) {
 		return []string{svc.Name}
 	}
 
+	ipsMapping := map[string]string{
+		testNamespace1: "172.0.0.1",
+		testNamespace2: "172.0.0.2",
+	}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
@@ -163,9 +168,9 @@ func TestGenerateConfig(t *testing.T) {
 				Client:         fakeClient,
 				createOrUpdate: upsert.New(false).CreateOrUpdate,
 			}
-			config, _, err := r.generateConfig(ctx.Background())
+			config, _, err := r.generateConfig(ctx.Background(), ipsMapping)
 			g.Expect(err).ToNot(HaveOccurred())
-			testutil.CompareWithFixture(t, config)
+			testutil.CompareWithFixture(t, config, testutil.WithExtension(".cfg"))
 		})
 	}
 }

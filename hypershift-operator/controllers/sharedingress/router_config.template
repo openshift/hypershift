@@ -22,7 +22,7 @@ frontend dataplane-kas-svc
   tcp-request content accept if { req_ssl_hello_type 1 }
 
   {{- range .Backends }}
-  acl is_{{ .Name }} dst {{ .SVCIP }}
+  acl is_{{ .Name }} dst {{ .DataPlaneStaticIP }}
   {{- end }}
   {{- range .Backends }}
   use_backend {{ .Name }} if is_{{ .Name }}

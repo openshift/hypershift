@@ -74,6 +74,12 @@ type options struct {
 
 type option func(*options)
 
+func WithExtension(extension string) option {
+	return func(opts *options) {
+		opts.Extension = extension
+	}
+}
+
 // golden determines the golden file to use
 func golden(t *testing.T, opts *options) (string, error) {
 	if opts.Extension == "" {

@@ -69,14 +69,19 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if err := r.reconcileRouter(ctx); err != nil {
+	hostedClustersList := &hyperv1.HostedClusterList{}
+	if err := r.Client.List(ctx, hostedClustersList); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list hosted clusters: %w", err)
+	}
+
+	if err := r.reconcileRouter(ctx, hostedClustersList); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, []routev1.Route, error) {
+func (r *SharedIngressReconciler) generateConfig(ctx context.Context, routerStaticIPsMapping map[string]string) (string, []routev1.Route, error) {
 	hcList := &hyperv1.HostedClusterList{}
 	if err := r.Client.List(ctx, hcList); err != nil {
 		return "", nil, fmt.Errorf("failed to list HCs: %w", err)
@@ -119,7 +124,7 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 		return "", nil, err
 	}
 
-	config, err := generateRouterConfig(svcList, routes, svcsNameToIP)
+	config, err := generateRouterConfig(svcList, routerStaticIPsMapping, routes, svcsNameToIP)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate router config: %w", err)
 	}
@@ -127,12 +132,19 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 	return config, routes, nil
 }
 
-func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context) error {
+func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, hostedClustersList *hyperv1.HostedClusterList) error {
 	if err := r.reconcileDefaultServiceAccount(ctx); err != nil {
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
-	config, routes, err := r.generateConfig(ctx)
+	routerStaticIPsMapping := RouterStaticIPsMappingConfigMap()
+	if _, err := r.createOrUpdate(ctx, r.Client, routerStaticIPsMapping, func() error {
+		return ReconcileStaticIPsMapping(routerStaticIPsMapping, hostedClustersList)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router static ips mapping: %w", err)
+	}
+
+	config, routes, err := r.generateConfig(ctx, routerStaticIPsMapping.Data)
 	if err != nil {
 		return fmt.Errorf("failed to generate router config: %w", err)
 	}

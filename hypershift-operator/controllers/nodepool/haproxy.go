@@ -16,7 +16,6 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -142,7 +141,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		clusterNetworkCIDR = hcluster.Spec.Networking.ClusterNetwork[0].CIDR.String()
 	}
 
-	kasSVCIP := ""
+	assignedStaticIP := ""
 	if sharedingress.UseSharedIngress() {
 		sharedIngressRouteSVC := &corev1.Service{
 			TypeMeta: metav1.TypeMeta{},
@@ -160,20 +159,21 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		apiServerExternalAddress = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
 		apiServerExternalPort = sharedingress.KASSVCLBPort
 
-		// Get KAS SVC info.
-		kasSVC := cpomanifests.KubeAPIServerService(hcluster.Namespace + "-" + hcluster.Name)
-		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(kasSVC), kasSVC); err != nil {
+		routerStaticIPsMapping := sharedingress.RouterStaticIPsMappingConfigMap()
+		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(routerStaticIPsMapping), routerStaticIPsMapping); err != nil {
 			return "", true, err
 		}
-		if len(kasSVC.Spec.Ports) < 1 || kasSVC.Spec.ClusterIP == "" {
-			return "", true, fmt.Errorf("kas SVC %s has no ports or clusterIP", crclient.ObjectKeyFromObject(kasSVC))
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		if _, exist := routerStaticIPsMapping.Data[hcpNamespace]; !exist {
+			return "", true, fmt.Errorf("waiting for sharedIngress controller to assign a static IP for HostedCluster %s", crclient.ObjectKeyFromObject(hcluster))
 		}
 
-		kasSVCIP = kasSVC.Spec.ClusterIP
+		assignedStaticIP = routerStaticIPsMapping.Data[hcpNamespace]
 	}
 
 	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage,
-		apiServerExternalAddress, apiServerInternalAddress, kasSVCIP,
+		apiServerExternalAddress, apiServerInternalAddress, assignedStaticIP,
 		apiServerExternalPort, apiServerInternalPort,
 		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
 	if err != nil {
@@ -246,7 +246,7 @@ var (
 )
 
 func apiServerProxyConfig(haProxyImage, cpoImage,
-	externalAPIAddress, internalAPIAddress, remoteKASSVCAdress string,
+	externalAPIAddress, internalAPIAddress, clusterStaticAssignedIP string,
 	externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
@@ -277,7 +277,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 				name:     "/usr/local/bin/setup-remote-kas-svc-ip.sh",
 				mode:     0755,
 				params: map[string]string{
-					"RemoteKASSVCAdress": remoteKASSVCAdress,
+					"RemoteKASSVCAdress": clusterStaticAssignedIP,
 				},
 			},
 			{
@@ -285,7 +285,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 				name:     "/usr/local/bin/teardown-remote-kas-svc-ip.sh",
 				mode:     0755,
 				params: map[string]string{
-					"RemoteKASSVCAdress": remoteKASSVCAdress,
+					"RemoteKASSVCAdress": clusterStaticAssignedIP,
 				},
 			},
 		}...)
@@ -303,7 +303,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 		apiserverProxyForwardPort := externalAPIPort
 
 		if sharedingress.UseSharedIngress() {
-			apiserverProxyForwardIP = remoteKASSVCAdress
+			apiserverProxyForwardIP = clusterStaticAssignedIP
 			apiserverProxyForwardPort = localPortToRemoteKASSVCPort
 
 			filesToAdd = append(filesToAdd, []fileToAdd{
@@ -312,14 +312,14 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 					name:     "/etc/kubernetes/remote-kas-svc-proxy/haproxy.cfg",
 					mode:     0644,
 					params: map[string]string{
-						"RemoteKASSVCAddress":         remoteKASSVCAdress,
+						"RemoteKASSVCAddress":         clusterStaticAssignedIP,
 						"LocalPortToRemoteKASSVCPort": strconv.FormatInt(int64(localPortToRemoteKASSVCPort), 10),
 						"ExternalAPIAddress":          externalAPIAddress,
 						"ExternalAPIPort":             strconv.FormatInt(int64(externalAPIPort), 10),
 					},
 				},
 				{
-					source: generateHAProxyStaticPod("remote-kas-svc-proxy", haProxyImage, remoteKASSVCAdress, "/etc/kubernetes/remote-kas-svc-proxy", localPortToRemoteKASSVCPort),
+					source: generateHAProxyStaticPod("remote-kas-svc-proxy", haProxyImage, clusterStaticAssignedIP, "/etc/kubernetes/remote-kas-svc-proxy", localPortToRemoteKASSVCPort),
 					name:   "/etc/kubernetes/manifests/remote-kas-svc-proxy.yaml",
 					mode:   0644,
 				},
