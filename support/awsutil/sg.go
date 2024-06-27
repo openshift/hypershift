@@ -18,28 +18,11 @@ func DefaultWorkerSGEgressRules() []*ec2.IpPermission {
 	}
 }
 
-func DefaultWorkerSGIngressRules(vpcCIDRBlock, sgGroupID, sgUserID string) []*ec2.IpPermission {
-	return []*ec2.IpPermission{
-		{
-			IpProtocol: aws.String("icmp"),
-			IpRanges: []*ec2.IpRange{
-				{
-					CidrIp: aws.String(vpcCIDRBlock),
-				},
-			},
-			FromPort: aws.Int64(-1),
-			ToPort:   aws.Int64(-1),
-		},
-		{
-			IpProtocol: aws.String("tcp"),
-			IpRanges: []*ec2.IpRange{
-				{
-					CidrIp: aws.String(vpcCIDRBlock),
-				},
-			},
-			FromPort: aws.Int64(22),
-			ToPort:   aws.Int64(22),
-		},
+// DefaultWorkerSGIngressRules templates out the required inbound security group rules for the default worker security
+// group. This AWS security group is attached to worker node EC2 instances and the PrivateLink VPC Endpoint for the
+// Hosted Control Plane.
+func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID string) []*ec2.IpPermission {
+	inboundRules := []*ec2.IpPermission{
 		{
 			FromPort:   aws.Int64(4789),
 			ToPort:     aws.Int64(4789),
@@ -139,49 +122,80 @@ func DefaultWorkerSGIngressRules(vpcCIDRBlock, sgGroupID, sgUserID string) []*ec
 				},
 			},
 		},
-		{
-			// This is for the private link endpoint.
-			IpProtocol: aws.String("tcp"),
-			IpRanges: []*ec2.IpRange{
-				{
-					CidrIp: aws.String(vpcCIDRBlock),
-				},
-			},
-			FromPort: aws.Int64(6443),
-			ToPort:   aws.Int64(6443),
-		},
-		{
-			// This is for the private link endpoint.
-			IpProtocol: aws.String("tcp"),
-			IpRanges: []*ec2.IpRange{
-				{
-					CidrIp: aws.String(vpcCIDRBlock),
-				},
-			},
-			FromPort: aws.Int64(443),
-			ToPort:   aws.Int64(443),
-		},
-		{
-			// This is for the private link endpoint.
-			IpProtocol: aws.String("udp"),
-			IpRanges: []*ec2.IpRange{
-				{
-					CidrIp: aws.String(vpcCIDRBlock),
-				},
-			},
-			FromPort: aws.Int64(6443),
-			ToPort:   aws.Int64(6443),
-		},
-		{
-			// This is for the private link endpoint.
-			IpProtocol: aws.String("udp"),
-			IpRanges: []*ec2.IpRange{
-				{
-					CidrIp: aws.String(vpcCIDRBlock),
-				},
-			},
-			FromPort: aws.Int64(443),
-			ToPort:   aws.Int64(443),
-		},
 	}
+
+	// Typically, only one machineCIDR is provided, however we handle many machineCIDRs because it is allowed by
+	// OpenShift.
+	for _, cidr := range machineCIDRs {
+		machineCIDRInboundRules := []*ec2.IpPermission{
+			{
+				IpProtocol: aws.String("icmp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp: aws.String(cidr),
+					},
+				},
+				FromPort: aws.Int64(-1),
+				ToPort:   aws.Int64(-1),
+			},
+			{
+				IpProtocol: aws.String("tcp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp: aws.String(cidr),
+					},
+				},
+				FromPort: aws.Int64(22),
+				ToPort:   aws.Int64(22),
+			},
+			{
+				// This is for the private link endpoint.
+				IpProtocol: aws.String("tcp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp: aws.String(cidr),
+					},
+				},
+				FromPort: aws.Int64(6443),
+				ToPort:   aws.Int64(6443),
+			},
+			{
+				// This is for the private link endpoint.
+				IpProtocol: aws.String("tcp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp: aws.String(cidr),
+					},
+				},
+				FromPort: aws.Int64(443),
+				ToPort:   aws.Int64(443),
+			},
+			{
+				// This is for the private link endpoint.
+				IpProtocol: aws.String("udp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp: aws.String(cidr),
+					},
+				},
+				FromPort: aws.Int64(6443),
+				ToPort:   aws.Int64(6443),
+			},
+			{
+				// This is for the private link endpoint.
+				IpProtocol: aws.String("udp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp: aws.String(cidr),
+					},
+				},
+				FromPort: aws.Int64(443),
+				ToPort:   aws.Int64(443),
+			},
+		}
+
+		inboundRules = append(inboundRules, machineCIDRInboundRules...)
+	}
+
+	return inboundRules
 }
