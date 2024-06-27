@@ -117,6 +117,46 @@ hypershift install \
 --external-dns-domain-filter ${DNS_ZONE_NAME} \
 --managed-service ARO-HCP
 ```
+## Setup Azure Infra
+First setup some constants
+```
+MANAGED_RG_NAME="managed-aks-rg"
+CUSTOMER_RG_NAME="customer-aks-rg"
+CUSTOMER_NSG_RG_NAME="customer-nsg-rg"
+CUSTOMER_VNET_NAME="customer-vnet"
+CUSTOMER_VNET_SUBNET1="customer-subnet-1"
+CUSTOMER_NSG="customer-nsg"
+```
+
+# Create a managed resource group
+az group create --name "${MANAGED_RG_NAME}" --location ${LOCATION}
+
+# Create a customer VNET resource group
+az group create --name "${CUSTOMER_RG_NAME}" --location ${LOCATION}
+
+# Create a customer NSG resource group
+az group create --name "${CUSTOMER_NSG_RG_NAME}" --location ${LOCATION}
+
+# Create a customer network security group
+az network nsg create --resource-group "${CUSTOMER_NSG_RG_NAME}" --name "${CUSTOMER_NSG}"
+
+# Get customer nsg ID
+GetNsgID=$(az network nsg list --query "[?name=='${CUSTOMER_NSG}'].id" -o tsv)
+
+# Create customer VNET in the customer resource group
+az network vnet create \
+--name "${CUSTOMER_VNET_NAME}" \
+--resource-group "${CUSTOMER_RG_NAME}" \
+--address-prefix 10.0.0.0/16 \
+--subnet-name "${CUSTOMER_VNET_SUBNET1}" \
+--subnet-prefixes 10.0.0.0/24 \
+--nsg "${GetNsgID}"
+
+# Get customer vnet ID
+GetVnetID=$(az network vnet list --query "[?name=='${CUSTOMER_VNET_NAME}'].id" -o tsv)
+
+# Get customer subnet ID
+GetSubnetID=$(az network vnet subnet show --vnet-name "${CUSTOMER_VNET_NAME}" --name "${CUSTOMER_VNET_SUBNET1}" --resource-group "${CUSTOMER_RG_NAME}" --query id --output tsv)
 
 ## Create the Azure Hosted Cluster
 Run the following command to create an Azure Hosted Cluster
@@ -132,7 +172,10 @@ hypershift create cluster azure \
 --generate-ssh \
 --release-image quay.io/openshift-release-dev/ocp-release-nightly@sha256:b619707647800f7c382e7cb36e7b1026d82a576661274baffaf0585dd257fd1d \
 --external-dns-domain ${DNS_ZONE_NAME} \
---resource-group-name ${RG} \
+--resource-group-name "${MANAGED_RG_NAME}" \
+--vnet-id "${GetVnetID}" \
+--subnet-id "${GetSubnetID}" \
+--network-security-group-id "${GetNsgID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
 --annotations hypershift.openshift.io/certified-operators-catalog-image=registry.redhat.io/redhat/certified-operator-index@sha256:fc68a3445d274af8d3e7d27667ad3c1e085c228b46b7537beaad3d470257be3e \
 --annotations hypershift.openshift.io/community-operators-catalog-image=registry.redhat.io/redhat/community-operator-index@sha256:4a2e1962688618b5d442342f3c7a65a18a2cb014c9e66bb3484c687cfb941b90 \
