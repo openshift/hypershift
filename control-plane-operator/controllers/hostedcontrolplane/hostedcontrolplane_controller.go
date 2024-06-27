@@ -4471,6 +4471,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 
 		p := openstack.NewOpenStackParams(hcp)
 
+		// It might be worth handling the this block, including GetCACertFromCredentialsSecret in the ReconcileDeployment as this is specific to openstack
+		// and would maintain the pattern of same function signature for all platforms
 		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.OpenStack.IdentityRef.Name}}
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 			return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
