@@ -127,7 +127,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Create an Azure resource group
-	resourceGroupID, resourceGroupName, msg, err := createResourceGroup(ctx, o, azureCreds, subscriptionID)
+	resourceGroupID, resourceGroupName, msg, err := createResourceGroup(ctx, o, azureCreds, "", subscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a resource group: %w", err)
 	}
@@ -161,8 +161,16 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.SecurityGroupID = o.NetworkSecurityGroupID
 		l.Info("Using existing network security group", "ID", result.SecurityGroupID)
 	} else {
+		// Create a resource group for network security group
+		nsgResourceGroupName := o.Name + "-nsg"
+		_, nsgRG, msg, err := createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create resource group for network security group: %w", err)
+		}
+		l.Info(msg, "name", nsgResourceGroupName)
+
 		// Create a network security group
-		nsgID, err := createSecurityGroup(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
+		nsgID, err := createSecurityGroup(ctx, subscriptionID, nsgRG, o.Name, o.InfraID, o.Location, azureCreds)
 		if err != nil {
 			return nil, err
 		}
@@ -181,7 +189,16 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.VNetID = o.VnetID
 		l.Info("Using existing vnet", "ID", result.VNetID)
 	} else {
-		vnet, err := createVirtualNetwork(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, o.SubnetID, result.SecurityGroupID, azureCreds)
+		//create a resource group for virtual network
+		vnetResourceGroupName := o.Name + "-vnet"
+		_, vnetRG, msg, err := createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create resource group for virtual network: %w", err)
+		}
+		l.Info(msg, "name", vnetRG)
+
+		// Create a virtual network
+		vnet, err := createVirtualNetwork(ctx, subscriptionID, vnetRG, o.Name, o.InfraID, o.Location, o.SubnetID, result.SecurityGroupID, azureCreds)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +259,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 }
 
 // createResourceGroup creates the Azure resource group used to group all Azure infrastructure resources
-func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds azcore.TokenCredential, subscriptionID string) (string, string, string, error) {
+func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds azcore.TokenCredential, rgName, subscriptionID string) (string, string, string, error) {
 	existingRGSuccessMsg := "Successfully found existing resource group"
 	createdRGSuccessMsg := "Successfully created resource group"
 
@@ -252,7 +269,7 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 	}
 
 	// Use a provided resource group if it was provided
-	if o.ResourceGroupName != "" {
+	if o.ResourceGroupName != "" && rgName == "" {
 		response, err := resourceGroupClient.Get(ctx, o.ResourceGroupName, nil)
 		if err != nil {
 			return "", "", "", fmt.Errorf("failed to get resource group name, '%s': %w", o.ResourceGroupName, err)
@@ -268,6 +285,9 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 
 		// Create a resource group since none was provided
 		resourceGroupName := o.Name + "-" + o.InfraID
+		if rgName != "" {
+			resourceGroupName = rgName + "-" + o.InfraID
+		}
 		parameters := armresources.ResourceGroup{
 			Location: ptr.To(o.Location),
 			Tags:     resourceGroupTags,
