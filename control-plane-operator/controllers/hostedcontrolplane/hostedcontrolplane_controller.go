@@ -156,6 +156,7 @@ type HostedControlPlaneReconciler struct {
 
 	Log                           logr.Logger
 	ReleaseProvider               releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	UserReleaseProvider           releaseinfo.Provider
 	createOrUpdate                func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
 	EnableCIDebugOutput           bool
 	OperateOnReleaseImage         string
@@ -902,7 +903,8 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return err
 	}
-	userReleaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
+	userReleaseImage, err := r.UserReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return fmt.Errorf("failed to get lookup release image: %w", err)
 	}

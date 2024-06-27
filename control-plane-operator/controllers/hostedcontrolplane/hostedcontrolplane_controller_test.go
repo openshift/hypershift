@@ -915,6 +915,7 @@ func TestEventHandling(t *testing.T) {
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
@@ -1260,6 +1261,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
 			return InfrastructureStatus{}, nil
 		},

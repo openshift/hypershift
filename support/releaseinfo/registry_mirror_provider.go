@@ -31,12 +31,18 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 	if err != nil {
 		return nil, err
 	}
-	for i := range releaseImage.ImageStream.Spec.Tags {
+
+	imageStream := releaseImage.ImageStream.DeepCopy() // deepCopy so the cache is not overriden.
+	for i := range imageStream.Spec.Tags {
 		for registrySource, registryDest := range p.RegistryOverrides {
-			releaseImage.ImageStream.Spec.Tags[i].From.Name = strings.Replace(releaseImage.ImageStream.Spec.Tags[i].From.Name, registrySource, registryDest, 1)
+			imageStream.Spec.Tags[i].From.Name = strings.Replace(imageStream.Spec.Tags[i].From.Name, registrySource, registryDest, 1)
 		}
 	}
-	return releaseImage, nil
+
+	return &ReleaseImage{
+		ImageStream:    imageStream,
+		StreamMetadata: releaseImage.StreamMetadata,
+	}, nil
 }
 
 func (p *RegistryMirrorProviderDecorator) GetRegistryOverrides() map[string]string {
