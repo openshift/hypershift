@@ -1025,6 +1025,10 @@ func expectedCoreConfigResourcesForHostedCluster(hcluster *hyperv1.HostedCluster
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
+	// additional core config required for powervs platform to enable multi path.
+	if hcluster.Spec.Platform.Type == hyperv1.PowerVSPlatform {
+		expectedCoreConfigResources += 1
+	}
 	return expectedCoreConfigResources
 }
 

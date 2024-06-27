@@ -3964,6 +3964,16 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
 	}
 
+	// enable multi path for powervs platform
+	if hcp.Spec.Platform.Type == hyperv1.PowerVSPlatform {
+		multiPathConfig := manifests.IgnitionMultiPathConfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, multiPathConfig, func() error {
+			return ignition.ReconcileMultiPathIgnitionConfig(multiPathConfig, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile multi path ignition config: %w", err)
+		}
+	}
+
 	// Ensure the imageDigestMirrorSet configmap has been removed if no longer needed
 	imageContentPolicyIgnitionConfig := manifests.ImageContentPolicyIgnitionConfig(hcp.GetNamespace())
 	if !p.HasImageMirrorPolicies {

@@ -23,10 +23,27 @@ func MachineConfigWorkerSSH() *mcfgv1.MachineConfig {
 	}
 }
 
+func MachineConfigMultiPath() *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "99-worker-multipath",
+		},
+	}
+}
+
 func IgnitionWorkerSSHConfig(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ignition-config-worker-ssh",
+			Namespace: ns,
+		},
+	}
+}
+
+func IgnitionMultiPathConfig(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignition-config-multi-path",
 			Namespace: ns,
 		},
 	}
