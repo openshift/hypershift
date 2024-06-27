@@ -2,15 +2,20 @@ package metrics
 
 import (
 	"context"
+	"crypto/x509"
+	"fmt"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/support/conditions"
+	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,6 +23,8 @@ import (
 )
 
 const (
+	ProxyCAConfigMapKey = "ca-bundle.crt"
+
 	HasBeenAvailableAnnotation = "hypershift.openshift.io/HasBeenAvailable"
 
 	// Aggregating metrics - name & help
@@ -58,6 +65,12 @@ const (
 
 	ProxyMetricName = "hypershift_cluster_proxy"
 	proxyMetricHelp = "Indicates if the given HostedCluster is available through a proxy or not"
+
+	ProxyCAValidMetricName = "hypershift_cluster_proxy_ca_valid"
+	proxyCAValidMetricHelp = "Indicates if the given HostedCluster's proxy has a valid CA bundle configured"
+
+	ProxyCAExpiryTimestampName       = "hypershift_cluster_proxy_ca_expiry_timestamp"
+	proxyCAExpiryTimestampMetricHelp = "Shows the earliest timestamp when a certificate in the configured CA will expire."
 
 	InvalidAwsCredsMetricName = "hypershift_cluster_invalid_aws_creds"
 	invalidAwsCredsMetricHelp = "Indicates if the given HostedCluster has valid AWS credentials or not"
@@ -134,6 +147,14 @@ var (
 	proxyMetricDesc = prometheus.NewDesc(
 		ProxyMetricName, proxyMetricHelp,
 		append(hclusterLabels, "proxy_http", "proxy_https", "proxy_trusted_ca"), nil)
+
+	proxyCAMetricDesc = prometheus.NewDesc(
+		ProxyCAValidMetricName, proxyCAValidMetricHelp,
+		hclusterLabels, nil)
+
+	proxyCAExpiryMetricDesc = prometheus.NewDesc(
+		ProxyCAExpiryTimestampName, proxyCAExpiryTimestampMetricHelp,
+		hclusterLabels, nil)
 
 	invalidAwsCredsMetricDesc = prometheus.NewDesc(
 		InvalidAwsCredsMetricName, invalidAwsCredsMetricHelp,
@@ -374,6 +395,8 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			{
 				var proxyHTTP, proxyHTTPS, proxyTrustedCA string
 				proxyValue := 0.0
+				proxyCAValid := 0.0
+				proxyExpiryTime := 0.0
 				if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
 					if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
 						proxyHTTP = "1"
@@ -383,6 +406,36 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 					}
 					if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
 						proxyTrustedCA = "1"
+
+						err := c.validateProxyCAValidity(hcluster)
+						if err != nil {
+							// In case anything goes wrong (loading ConfigMap or certificates) put the CA bundle to invalid
+							log.Info("proxy ca bundle is invalid, due to erroring while validating", "error", err)
+							proxyCAValid = 0.0
+						} else {
+							proxyCAValid = 1.0
+						}
+
+						// Only report CA validity if a CA is actually configured
+						ch <- prometheus.MustNewConstMetric(
+							proxyCAMetricDesc,
+							prometheus.GaugeValue,
+							proxyCAValid,
+							hclusterLabelValues...,
+						)
+
+						expiryTime, err := c.expiryTimeProxyCA(hcluster)
+						if err != nil {
+							log.Info("proxy ca bundle is invalid, due to erroring while fetching expiry", "error", err)
+						} else {
+							proxyExpiryTime = float64(expiryTime.Unix())
+						}
+						ch <- prometheus.MustNewConstMetric(
+							proxyCAExpiryMetricDesc,
+							prometheus.GaugeValue,
+							proxyExpiryTime,
+							hclusterLabelValues...,
+						)
 					}
 					proxyValue = 1.0
 				}
@@ -475,4 +528,75 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	c.transitionDurationMetric.Collect(ch)
 
 	c.lastCollectTime = currentCollectTime
+}
+
+// Load the CA bundle for the hosted cluster and find the earliest expiring certificate time.
+//
+// Returns the time.Time in UTC format.
+func (c *hostedClustersMetricsCollector) expiryTimeProxyCA(hcluster *hyperv1.HostedCluster) (*time.Time, error) {
+	cmName := hcluster.Spec.Configuration.Proxy.TrustedCA.Name
+	caConfigMap := corev1.ConfigMap{}
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Namespace: hcluster.Namespace,
+		Name:      cmName,
+	}, &caConfigMap)
+	if err != nil {
+		return nil, err
+	}
+	certBundle, err := loadCABundle(caConfigMap)
+	if err != nil {
+		return nil, err
+	}
+	var earliest time.Time
+	for i, cert := range certBundle {
+		// First cert to initiate our variable instead of constructing an artificially big time.Time
+		if i == 0 {
+			earliest = cert.NotAfter.UTC()
+		}
+		if cert.NotAfter.UTC().Before(earliest) {
+			earliest = cert.NotAfter.UTC()
+		}
+	}
+	return &earliest, nil
+}
+
+// Load the CA bundle for the hosted cluster and verify the contained certificates are still valid.
+//
+// Return value of nil is considered valid, any error is considered invalid.
+func (c *hostedClustersMetricsCollector) validateProxyCAValidity(hcluster *hyperv1.HostedCluster) error {
+	cmName := hcluster.Spec.Configuration.Proxy.TrustedCA.Name
+	caConfigMap := corev1.ConfigMap{}
+	err := c.Get(context.TODO(), types.NamespacedName{
+		Namespace: hcluster.Namespace,
+		Name:      cmName,
+	}, &caConfigMap)
+	if err != nil {
+		return err
+	}
+	certBundle, err := loadCABundle(caConfigMap)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, cert := range certBundle {
+		if cert.NotAfter.UTC().Before(now) {
+			return fmt.Errorf("a configured certificate in the ca bundle was no longer valid: %s", cert.Subject.CommonName)
+		}
+	}
+	return nil
+}
+
+func loadCABundle(configMap corev1.ConfigMap) ([]*x509.Certificate, error) {
+	if _, ok := configMap.Data[ProxyCAConfigMapKey]; !ok {
+		return nil, fmt.Errorf("ConfigMap %q is missing %q", configMap.Name, ProxyCAConfigMapKey)
+	}
+	trustBundleData := []byte(configMap.Data[ProxyCAConfigMapKey])
+	if len(trustBundleData) == 0 {
+		return nil, fmt.Errorf("data key %q is empty from ConfigMap %q", ProxyCAConfigMapKey, configMap.Name)
+	}
+	certBundle, err := crypto.CertsFromPEM(trustBundleData)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing certificate data from ConfigMap %q: %v", configMap.Name, err)
+	}
+	return certBundle, nil
 }
