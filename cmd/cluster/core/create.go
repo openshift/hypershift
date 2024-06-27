@@ -45,6 +45,7 @@ func DefaultOptions() *RawCreateOptions {
 		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
 		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
 		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
+		MachineCIDR:                    []string{},
 		Log:                            log.Log,
 		Arch:                           "amd64",
 		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
@@ -84,6 +85,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
+	flags.StringArrayVar(&opts.MachineCIDR, "machine-cidr", opts.MachineCIDR, "The CIDR of the machine network. Can be specified multiple times.")
 	flags.BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. Cannot be defined with service-cidr or cluster-cidr flag.")
 	flags.StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
 	flags.BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
@@ -134,6 +136,7 @@ type RawCreateOptions struct {
 	SSHKeyFile                       string
 	ServiceCIDR                      []string
 	ClusterCIDR                      []string
+	MachineCIDR                      []string
 	DefaultDual                      bool
 	ExternalDNSDomain                string
 	Arch                             string
@@ -371,6 +374,12 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		serviceNetworkEntries = append(serviceNetworkEntries, hyperv1.ServiceNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
 	}
 	prototype.Cluster.Spec.Networking.ServiceNetwork = serviceNetworkEntries
+
+	var machineNetworkEntries []hyperv1.MachineNetworkEntry
+	for _, cidr := range opts.MachineCIDR {
+		machineNetworkEntries = append(machineNetworkEntries, hyperv1.MachineNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
+	}
+	prototype.Cluster.Spec.Networking.MachineNetwork = machineNetworkEntries
 
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
