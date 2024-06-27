@@ -44,6 +44,8 @@ spec:
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
+    machineNetwork:
+    - cidr: 192.168.25.0/24
     networkType: OVNKubernetes
     serviceNetwork:
     - cidr: 172.31.0.0/16
