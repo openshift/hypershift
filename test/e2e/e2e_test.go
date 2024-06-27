@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	hypershiftopenstack "github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awscmdutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -98,6 +99,10 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
 	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
+	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackCredentialsFile, "e2e.openstack-credentials-file", "", "Path to the OpenStack credentials file")
+	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackCACertFile, "e2e.openstack-ca-cert-file", "", "Path to the OpenStack CA certificate file")
+	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackExternalNetworkName, "e2e.openstack-external-network-name", "", "Name of the OpenStack external network")
+	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeFlavor, "e2e.openstack-node-flavor", "", "The flavor to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
@@ -413,6 +418,8 @@ type configurableClusterOptions struct {
 	AWSCredentialsFile            string
 	AWSMultiArch                  bool
 	AzureCredentialsFile          string
+	OpenStackCredentialsFile      string
+	OpenStackCACertFile           string
 	AzureLocation                 string
 	Region                        string
 	Zone                          stringSliceVar
@@ -433,6 +440,8 @@ type configurableClusterOptions struct {
 	NodePoolReplicas              int
 	SSHKeyFile                    string
 	NetworkType                   string
+	OpenStackExternalNetworkName  string
+	OpenStackNodeFlavor           string
 	PowerVSResourceGroup          string
 	PowerVSRegion                 string
 	PowerVSZone                   string
@@ -477,11 +486,12 @@ func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOp
 			SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
 			EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
 		},
-		NonePlatform:     o.DefaultNoneOptions(),
-		AWSPlatform:      o.DefaultAWSOptions(),
-		KubevirtPlatform: o.DefaultKubeVirtOptions(),
-		AzurePlatform:    o.DefaultAzureOptions(),
-		PowerVSPlatform:  o.DefaultPowerVSOptions(),
+		NonePlatform:      o.DefaultNoneOptions(),
+		AWSPlatform:       o.DefaultAWSOptions(),
+		KubevirtPlatform:  o.DefaultKubeVirtOptions(),
+		AzurePlatform:     o.DefaultAzureOptions(),
+		PowerVSPlatform:   o.DefaultPowerVSOptions(),
+		OpenStackPlatform: o.DefaultOpenStackOptions(),
 	}
 
 	switch o.Platform {
@@ -511,6 +521,17 @@ func (o *options) DefaultNoneOptions() none.RawCreateOptions {
 		APIServerAddress:          "",
 		ExposeThroughLoadBalancer: true,
 	}
+}
+
+func (p *options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions {
+	opts := hypershiftopenstack.RawCreateOptions{
+		OpenStackCredentialsFile:     p.configurableClusterOptions.OpenStackCredentialsFile,
+		OpenStackCACertFile:          p.configurableClusterOptions.OpenStackCACertFile,
+		OpenStackExternalNetworkName: p.configurableClusterOptions.OpenStackExternalNetworkName,
+		OpenStackNodeFlavor:          p.configurableClusterOptions.OpenStackNodeFlavor,
+	}
+
+	return opts
 }
 
 func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
