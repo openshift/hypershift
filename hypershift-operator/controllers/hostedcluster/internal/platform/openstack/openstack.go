@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -23,6 +24,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
+)
+
+const (
+	defaultCIDRBlock = "10.0.0.0/16"
 )
 
 type OpenStack struct {
@@ -45,7 +50,7 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 	}
 	openStackPlatform := hcluster.Spec.Platform.OpenStack
 	if openStackPlatform == nil {
-		return nil, fmt.Errorf("failed to reconcile OpenStack CAPI cluster. Empty OpenStack platform spec")
+		return nil, fmt.Errorf("failed to reconcile OpenStack CAPI cluster, empty OpenStack platform spec")
 	}
 
 	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference(openStackPlatform.IdentityRef)
@@ -87,11 +92,19 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 			}
 		}
 	} else {
-		machineNetworks := hcluster.Spec.Networking.MachineNetwork
+		var machineNetworks []hyperv1.MachineNetworkEntry
+		// If no MachineNetwork is provided, use a default CIDR block.
+		// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
+		// See https://github.com/openshift/hypershift/pull/4287
+		if hcluster.Spec.Networking.MachineNetwork == nil || len(hcluster.Spec.Networking.MachineNetwork) == 0 {
+			machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
+		} else {
+			machineNetworks = hcluster.Spec.Networking.MachineNetwork
+		}
 		openStackClusterSpec.ManagedSubnets = make([]capo.SubnetSpec, len(machineNetworks))
 		// Only one Subnet is supported in CAPO
 		openStackClusterSpec.ManagedSubnets[0] = capo.SubnetSpec{
-			CIDR: hcluster.Spec.Networking.MachineNetwork[0].CIDR.String(),
+			CIDR: machineNetworks[0].CIDR.String(),
 		}
 		for i := range openStackPlatform.ManagedSubnets {
 			openStackClusterSpec.ManagedSubnets[i].DNSNameservers = openStackPlatform.ManagedSubnets[i].DNSNameservers
