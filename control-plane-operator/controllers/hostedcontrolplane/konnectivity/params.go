@@ -24,7 +24,7 @@ type KonnectivityParams struct {
 
 func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
 	p := &KonnectivityParams{
-		KonnectivityAgentImage: releaseImageProvider.GetImage("konnectivity-agent"),
+		KonnectivityAgentImage: releaseImageProvider.GetImage("apiserver-network-proxy"),
 		OwnerRef:               config.OwnerRefFrom(hcp),
 	}
 
@@ -90,10 +90,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 	// non root security context if scc capability is missing
 	p.AgentDeamonSetConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.AgentDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
-	// check apiserver-network-proxy image in ocp payload and use it
-	if image, exist := releaseImageProvider.ImageExist("apiserver-network-proxy"); exist {
-		p.KonnectivityAgentImage = image
-	}
 
 	if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
 		p.KonnectivityAgentImage = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
