@@ -129,21 +129,32 @@ CUSTOMER_NSG="customer-nsg"
 ```
 
 # Create a managed resource group
+```
 az group create --name "${MANAGED_RG_NAME}" --location ${LOCATION}
+```
 
 # Create a customer VNET resource group
+```
 az group create --name "${CUSTOMER_RG_NAME}" --location ${LOCATION}
+```
 
 # Create a customer NSG resource group
+```
 az group create --name "${CUSTOMER_NSG_RG_NAME}" --location ${LOCATION}
+```
 
 # Create a customer network security group
+```
 az network nsg create --resource-group "${CUSTOMER_NSG_RG_NAME}" --name "${CUSTOMER_NSG}"
+```
 
 # Get customer nsg ID
+```
 GetNsgID=$(az network nsg list --query "[?name=='${CUSTOMER_NSG}'].id" -o tsv)
+```
 
 # Create customer VNET in the customer resource group
+```
 az network vnet create \
 --name "${CUSTOMER_VNET_NAME}" \
 --resource-group "${CUSTOMER_RG_NAME}" \
@@ -151,15 +162,22 @@ az network vnet create \
 --subnet-name "${CUSTOMER_VNET_SUBNET1}" \
 --subnet-prefixes 10.0.0.0/24 \
 --nsg "${GetNsgID}"
+```
 
 # Get customer vnet ID
+```
 GetVnetID=$(az network vnet list --query "[?name=='${CUSTOMER_VNET_NAME}'].id" -o tsv)
+```
 
 # Get customer subnet ID
+```
 GetSubnetID=$(az network vnet subnet show --vnet-name "${CUSTOMER_VNET_NAME}" --name "${CUSTOMER_VNET_SUBNET1}" --resource-group "${CUSTOMER_RG_NAME}" --query id --output tsv)
+```
 
 ## Create the Azure Hosted Cluster
+```
 Run the following command to create an Azure Hosted Cluster
+```
 
 ```
 hypershift create cluster azure \
