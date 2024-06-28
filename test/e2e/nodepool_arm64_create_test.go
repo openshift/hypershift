@@ -22,12 +22,6 @@ func NewNodePoolArm64CreateTest(hostedCluster *hyperv1.HostedCluster) *NodePoolA
 }
 
 func (arm64np *NodePoolArm64CreateTest) Setup(t *testing.T) {
-	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
-	}
-	if arm64np.hostedCluster.Spec.Platform.AWS.MultiArch != true {
-		t.Skip("test only supported on multi-arch clusters")
-	}
 	t.Log("Starting NodePoolArm64CreateTest.")
 }
 
