@@ -1,0 +1,18 @@
+# sourced from https://github.com/openshift/cluster-authentication-operator/blob/master/bindata/oauth-openshift/audit-policy.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit
+  namespace: openshift-authentication
+data:
+  audit.yaml: |
+    apiVersion: audit.k8s.io/v1
+    kind: Policy
+    rules:
+    - level: None
+      nonResourceURLs:
+      - "/healthz*"
+      - "/logs"
+      - "/metrics"
+      - "/version"
+    - level: Metadata
