@@ -259,6 +259,9 @@ const (
 	// This annotation is only set by the hypershift-operator on HosterControlPlanes.
 	// It is not set by the end-user.
 	DisableClusterAutoscalerAnnotation = "hypershift.openshift.io/disable-cluster-autoscaler"
+
+	// KubeAPIServerVerbosityLevelAnnotation allows specifing the log verbosity of kube-apiserver.
+	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

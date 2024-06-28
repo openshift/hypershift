@@ -428,10 +428,19 @@ func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp 
 		c.Command = []string{
 			"hyperkube",
 		}
+
+		kasVerbosityLevel := 2
+		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
+			parsedKASVerbosityValue, err := strconv.Atoi(hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation])
+			if err == nil {
+				kasVerbosityLevel = parsedKASVerbosityValue
+			}
+		}
+
 		c.Args = []string{
 			"kube-apiserver",
 			fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
-			"-v2",
+			fmt.Sprintf("--v=%d", kasVerbosityLevel),
 		}
 
 		c.Env = []corev1.EnvVar{{
