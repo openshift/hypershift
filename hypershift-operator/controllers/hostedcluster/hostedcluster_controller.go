@@ -932,7 +932,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// TODO: (cewong) Remove this hack when we no longer need to support HostedControlPlanes that report
 			// the wrong port for the route strategy.
 			if isAPIServerRoute(hcluster) {
-				hcluster.Status.ControlPlaneEndpoint.Port = 443
+				hcluster.Status.ControlPlaneEndpoint.Port = config.RouterSVCPort
 			}
 			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
 		}

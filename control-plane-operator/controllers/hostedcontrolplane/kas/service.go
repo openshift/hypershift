@@ -153,7 +153,7 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 			return host, port, message, err
 		}
 		host = strategy.Route.Hostname
-		port = 443
+		port = config.RouterSVCPort
 	}
 	return
 }
@@ -353,13 +353,13 @@ func ReconcileKonnectivityServerServiceStatus(svc *corev1.Service, route *routev
 	case hyperv1.Route:
 		if strategy.Route != nil && strategy.Route.Hostname != "" {
 			host = strategy.Route.Hostname
-			port = 443
+			port = config.RouterSVCPort
 			return
 		}
 		if route.Spec.Host == "" {
 			return
 		}
-		port = 443
+		port = config.RouterSVCPort
 		host = route.Spec.Host
 	}
 	return

@@ -785,7 +785,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		}
 
 		endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
-		port := 443
+		port := config.RouterSVCPort
 		if sharedingress.UseSharedIngress() {
 			endpoint = externalRoute.Spec.Host
 			port = sharedingress.ExternalDNSLBPort

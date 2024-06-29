@@ -251,7 +251,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 	for i, port := range svc.Spec.Ports {
 		switch port.Name {
 		case "https":
-			svc.Spec.Ports[i].Port = 443
+			svc.Spec.Ports[i].Port = config.RouterSVCPort
 			svc.Spec.Ports[i].TargetPort = intstr.FromString("https")
 			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
 			foundHTTPS = true
@@ -260,7 +260,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 	if !foundHTTPS {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 			Name:       "https",
-			Port:       443,
+			Port:       config.RouterSVCPort,
 			TargetPort: intstr.FromString("https"),
 			Protocol:   corev1.ProtocolTCP,
 		})
