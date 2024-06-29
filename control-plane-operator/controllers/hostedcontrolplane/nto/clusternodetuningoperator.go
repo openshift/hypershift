@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 
@@ -50,9 +51,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
-		config.NeedManagementKASAccessLabel: "true",
+		constants.NeedManagementKASAccessLabel: "true",
 	}
-	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.DeploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]

@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
@@ -37,9 +38,9 @@ func ReconcileServiceCAPIKubeconfigSecret(secret, cert *corev1.Secret, ca *corev
 
 func InClusterKASURL(platformType hyperv1.PlatformType) string {
 	if platformType == hyperv1.IBMCloudPlatform {
-		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
+		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, constants.KASSVCIBMCloudPort)
 	}
-	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
+	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, constants.KASSVCPort)
 }
 
 func InClusterKASReadyURL(platformType hyperv1.PlatformType) string {

@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -37,7 +38,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.APIServer = hcp.Spec.Configuration.APIServer
 	}
 	params.Scheduling = config.Scheduling{
-		PriorityClass: config.DefaultPriorityClass,
+		PriorityClass: constants.DefaultPriorityClass,
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]

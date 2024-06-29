@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/testutil"
@@ -215,7 +216,7 @@ func TestBuildOAuthVolumeTemplates(t *testing.T) {
 
 func TestReconcileAPIServerService(t *testing.T) {
 	targetNamespace := "test"
-	apiPort := int32(config.KASSVCPort)
+	apiPort := int32(constants.KASSVCPort)
 	kasPort := "client"
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}

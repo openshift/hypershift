@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -109,7 +110,7 @@ func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
 
-	portSpec.Port = int32(config.KASSVCPort)
+	portSpec.Port = int32(constants.KASSVCPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromString("client")
 	if svc.Annotations == nil {
@@ -153,7 +154,7 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 			return host, port, message, err
 		}
 		host = strategy.Route.Hostname
-		port = config.RouterSVCPort
+		port = constants.RouterSVCPort
 	}
 	return
 }
@@ -173,9 +174,9 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
 
-	portSpec.Port = int32(config.KASSVCPort)
+	portSpec.Port = int32(constants.KASSVCPort)
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		portSpec.Port = int32(config.KASSVCIBMCloudPort)
+		portSpec.Port = int32(constants.KASSVCIBMCloudPort)
 	}
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromString("client")
@@ -353,13 +354,13 @@ func ReconcileKonnectivityServerServiceStatus(svc *corev1.Service, route *routev
 	case hyperv1.Route:
 		if strategy.Route != nil && strategy.Route.Hostname != "" {
 			host = strategy.Route.Hostname
-			port = config.RouterSVCPort
+			port = constants.RouterSVCPort
 			return
 		}
 		if route.Spec.Host == "" {
 			return
 		}
-		port = config.RouterSVCPort
+		port = constants.RouterSVCPort
 		host = route.Spec.Host
 	}
 	return

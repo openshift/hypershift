@@ -20,7 +20,7 @@ import (
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
@@ -398,7 +398,7 @@ func NewStartCommand() *cobra.Command {
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
-		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
+		defaultIngressDomain := os.Getenv(constants.DefaultIngressDomainEnvVar)
 
 		metricsSet, err := metrics.MetricsSetFromEnv()
 		if err != nil {
@@ -407,7 +407,7 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
 
-		enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
+		enableCVOManagementClusterMetricsAccess := (os.Getenv(constants.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),

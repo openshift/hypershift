@@ -16,6 +16,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 )
 
 const (
@@ -36,15 +37,15 @@ func ReconcileConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef, profile
 }
 
 func generateConfig(profile configv1.SchedulerProfile) (string, error) {
-	leaseDuration, err := time.ParseDuration(config.RecommendedLeaseDuration)
+	leaseDuration, err := time.ParseDuration(constants.RecommendedLeaseDuration)
 	if err != nil {
 		return "", err
 	}
-	renewDeadline, err := time.ParseDuration(config.RecommendedRenewDeadline)
+	renewDeadline, err := time.ParseDuration(constants.RecommendedRenewDeadline)
 	if err != nil {
 		return "", err
 	}
-	retryPeriod, err := time.ParseDuration(config.RecommendedRetryPeriod)
+	retryPeriod, err := time.ParseDuration(constants.RecommendedRetryPeriod)
 	if err != nil {
 		return "", err
 	}

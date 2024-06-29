@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -35,7 +36,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 	}
 	params.Scheduling = config.Scheduling{
-		PriorityClass: config.DefaultPriorityClass,
+		PriorityClass: constants.DefaultPriorityClass,
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -82,7 +83,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 	}
 
 	params.DeploymentConfig.AdditionalLabels = map[string]string{
-		config.NeedManagementKASAccessLabel: "true",
+		constants.NeedManagementKASAccessLabel: "true",
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))

@@ -68,6 +68,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1160,7 +1161,7 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Con
 func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 
-	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, constants.DefaultAdvertiseIPv4Address, constants.DefaultAdvertiseIPv6Address)
 	kasEndpointsPort := util.KASPodPort(hcp)
 	kasEndpointSlicePort := kasEndpointsPort
 

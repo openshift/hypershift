@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -116,9 +117,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
-		config.NeedManagementKASAccessLabel: "true",
+		constants.NeedManagementKASAccessLabel: "true",
 	}
-	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.DeploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	// No support for multus-admission-controller at the moment. TODO: add support after https://issues.redhat.com/browse/OCPBUGS-7942 is resolved.
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -410,7 +411,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 	// If CP is running on kube cluster, pass user ID for CNO to run its managed services with
 	if params.DeploymentConfig.SetDefaultSecurityContext {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
-			Name: "RUN_AS_USER", Value: strconv.Itoa(config.DefaultSecurityContextUser),
+			Name: "RUN_AS_USER", Value: strconv.Itoa(constants.DefaultSecurityContextUser),
 		})
 	}
 

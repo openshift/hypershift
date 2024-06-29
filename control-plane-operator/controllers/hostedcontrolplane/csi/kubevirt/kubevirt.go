@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -604,7 +605,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 	}
 
 	deploymentConfig := &config.DeploymentConfig{}
-	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	deploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 

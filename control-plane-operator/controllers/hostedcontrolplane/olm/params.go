@@ -4,6 +4,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	"k8s.io/utils/pointer"
 )
@@ -44,7 +45,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseI
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
@@ -56,7 +57,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseI
 
 	params.PackageServerConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.APICriticalPriorityClass,
+			PriorityClass: constants.APICriticalPriorityClass,
 		},
 	}
 	if hcp.Annotations[hyperv1.APICriticalPriorityClass] != "" {

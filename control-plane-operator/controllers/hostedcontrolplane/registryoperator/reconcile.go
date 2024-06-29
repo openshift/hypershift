@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -118,7 +119,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		prunerImage:      userReleaseImageProvider.GetImage("cli"),
 		deploymentConfig: config.DeploymentConfig{
 			Scheduling: config.Scheduling{
-				PriorityClass: config.DefaultPriorityClass,
+				PriorityClass: constants.DefaultPriorityClass,
 			},
 			SetDefaultSecurityContext: setDefaultSecurityContext,
 			Resources: config.ResourcesSpec{

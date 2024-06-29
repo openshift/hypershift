@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -157,9 +157,9 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 }
 
 func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
-	port := intstr.FromInt32(config.KASSVCPort)
+	port := intstr.FromInt32(constants.KASSVCPort)
 	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		port = intstr.FromInt32(config.KASSVCIBMCloudPort)
+		port = intstr.FromInt32(constants.KASSVCIBMCloudPort)
 	}
 	protocol := corev1.ProtocolTCP
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}

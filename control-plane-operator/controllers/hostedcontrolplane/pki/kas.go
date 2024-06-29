@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	utilsnet "k8s.io/utils/net"
 )
@@ -155,9 +156,9 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 
 func inClusterKASURL(platformType hyperv1.PlatformType) string {
 	if platformType == hyperv1.IBMCloudPlatform {
-		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
+		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, constants.KASSVCIBMCloudPort)
 	}
-	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
+	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, constants.KASSVCPort)
 }
 
 // AddBracketsIfIPv6 function is needed to build the serverAPI url for every kubeconfig created.

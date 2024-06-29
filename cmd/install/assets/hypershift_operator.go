@@ -8,7 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/pkg/version"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -451,7 +451,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 
 	if o.EnableCVOManagementClusterMetricsAccess {
 		envVars = append(envVars, corev1.EnvVar{
-			Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
+			Name:  constants.EnableCVOManagementClusterMetricsAccessEnvVar,
 			Value: "1",
 		})
 	}

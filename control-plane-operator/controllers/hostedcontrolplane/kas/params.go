@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
@@ -119,7 +120,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.Scheduler = hcp.Spec.Configuration.Scheduler
 	}
 
-	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, constants.DefaultAdvertiseIPv4Address, constants.DefaultAdvertiseIPv6Address)
 
 	params.KASPodPort = util.KASPodPort(hcp)
 	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
@@ -132,10 +133,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	case hyperv1.Managed:
 		params.EtcdURL = fmt.Sprintf("https://etcd-client.%s.svc:2379", hcp.Namespace)
 	default:
-		params.EtcdURL = config.DefaultEtcdURL
+		params.EtcdURL = constants.DefaultEtcdURL
 	}
 	params.Scheduling = config.Scheduling{
-		PriorityClass: config.APICriticalPriorityClass,
+		PriorityClass: constants.APICriticalPriorityClass,
 	}
 	if hcp.Annotations[hyperv1.APICriticalPriorityClass] != "" {
 		params.Scheduling.PriorityClass = hcp.Annotations[hyperv1.APICriticalPriorityClass]
@@ -420,7 +421,7 @@ func (p *KubeAPIServerParams) AdditionalCORSAllowedOrigins() []string {
 }
 
 func (p *KubeAPIServerParams) InternalRegistryHostName() string {
-	return config.DefaultImageRegistryHostname
+	return constants.DefaultImageRegistryHostname
 }
 
 func (p *KubeAPIServerParams) ExternalRegistryHostNames() []string {
@@ -443,7 +444,7 @@ func (p *KubeAPIServerParams) ServiceAccountIssuerURL() string {
 	if p.ServiceAccountIssuer != "" {
 		return p.ServiceAccountIssuer
 	} else {
-		return config.DefaultServiceAccountIssuer
+		return constants.DefaultServiceAccountIssuer
 	}
 }
 
@@ -468,7 +469,7 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 	if p.Network != nil && len(p.Network.ServiceNodePortRange) > 0 {
 		return p.Network.ServiceNodePortRange
 	} else {
-		return config.DefaultServiceNodePortRange
+		return constants.DefaultServiceNodePortRange
 	}
 }
 

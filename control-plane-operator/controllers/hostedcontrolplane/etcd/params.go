@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/constants"
 
 	"github.com/openshift/hypershift/support/config"
 	hyputils "github.com/openshift/hypershift/support/util"
@@ -65,7 +66,7 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagep
 		p.DeploymentConfig.AdditionalLabels = make(map[string]string)
 	}
 	p.DeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponent] = "etcd"
-	p.DeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
+	p.DeploymentConfig.Scheduling.PriorityClass = constants.EtcdPriorityClass
 	if hcp.Annotations[hyperv1.EtcdPriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.EtcdPriorityClass]
 	}

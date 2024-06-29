@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
@@ -724,16 +725,16 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: utilpointer.Int64(constants.DefaultSecurityContextUser),
 		}
 	}
 
 	deploymentConfig := config.DeploymentConfig{
 		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
+			constants.NeedManagementKASAccessLabel: "true",
 		},
 	}
-	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	deploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
@@ -856,12 +857,12 @@ haproxy -f /tmp/haproxy.conf
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: utilpointer.Int64(constants.DefaultSecurityContextUser),
 		}
 	}
 
 	deploymentConfig := config.DeploymentConfig{}
-	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	deploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}

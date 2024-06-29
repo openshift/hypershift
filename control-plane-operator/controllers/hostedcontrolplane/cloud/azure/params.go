@@ -3,6 +3,7 @@ package azure
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -37,7 +38,7 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 		},
 	}
 	p.DeploymentConfig.AdditionalLabels = additionalLabels()
-	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.DeploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -86,9 +87,9 @@ func buildCCMContainer(p *AzureParams, controllerManagerImage, namespace string)
 			"--leader-elect=true",
 			"--route-reconciliation-period=10s",
 			"--kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig",
-			fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
-			fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
-			fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
+			fmt.Sprintf("--leader-elect-lease-duration=%s", constants.RecommendedLeaseDuration),
+			fmt.Sprintf("--leader-elect-renew-deadline=%s", constants.RecommendedRenewDeadline),
+			fmt.Sprintf("--leader-elect-retry-period=%s", constants.RecommendedRetryPeriod),
 			"--leader-elect-resource-namespace=openshift-cloud-controller-manager",
 			"--v=4",
 		}

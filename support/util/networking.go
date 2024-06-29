@@ -2,7 +2,7 @@ package util
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 )
 
 func MachineCIDRs(machineNetwork []hyperv1.MachineNetworkEntry) []string {
@@ -75,9 +75,9 @@ func KASPodPortFromHostedCluster(hc *hyperv1.HostedCluster) int32 {
 // to communicate with the KAS via the api.<hc-name>.hypershift.local host.
 func APIPortForLocalZone(isLBKAS bool) int32 {
 	if isLBKAS {
-		return config.KASSVCPort
+		return constants.KASSVCPort
 	}
-	return config.RouterSVCPort
+	return constants.RouterSVCPort
 }
 
 func AdvertiseAddress(hcp *hyperv1.HostedControlPlane) *string {

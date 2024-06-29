@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -99,7 +100,7 @@ func generateRouterConfig(svcList *corev1.ServiceList, routes []routev1.Route, s
 		}
 		switch route.Name {
 		case manifests.KubeAPIServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-apiserver", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: config.KASSVCPort})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-apiserver", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: constants.KASSVCPort})
 		case ignitionserver.Route("").Name:
 			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-ignition", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: 443})
 		case manifests.KonnectivityServerRoute("").Name:

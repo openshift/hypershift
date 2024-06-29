@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/proxy"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -102,11 +103,11 @@ func ReconcileDeployment(
 
 	deploymentConfig := config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
+			constants.NeedManagementKASAccessLabel: "true",
 		},
 		Resources: map[string]corev1.ResourceRequirements{
 			"control-plane-pki-operator": {

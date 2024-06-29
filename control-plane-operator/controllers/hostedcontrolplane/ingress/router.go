@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -46,7 +47,7 @@ func HCPRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityContext 
 		},
 	}
 
-	cfg.Scheduling.PriorityClass = config.APICriticalPriorityClass
+	cfg.Scheduling.PriorityClass = constants.APICriticalPriorityClass
 	cfg.SetRequestServingDefaults(hcp, hcpRouterLabels(), nil)
 	cfg.SetRestartAnnotation(hcp.ObjectMeta)
 	cfg.SetDefaultSecurityContext = setDefaultSecurityContext
@@ -116,7 +117,7 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 		}
 	}
 	if p.HasKubeAPI {
-		p.KASSVCPort = config.KASSVCPort
+		p.KASSVCPort = constants.KASSVCPort
 	}
 	out := &bytes.Buffer{}
 	if err := routerConfigTemplate.Execute(out, p); err != nil {
@@ -251,7 +252,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 	for i, port := range svc.Spec.Ports {
 		switch port.Name {
 		case "https":
-			svc.Spec.Ports[i].Port = config.RouterSVCPort
+			svc.Spec.Ports[i].Port = constants.RouterSVCPort
 			svc.Spec.Ports[i].TargetPort = intstr.FromString("https")
 			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
 			foundHTTPS = true
@@ -260,7 +261,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 	if !foundHTTPS {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 			Name:       "https",
-			Port:       config.RouterSVCPort,
+			Port:       constants.RouterSVCPort,
 			TargetPort: intstr.FromString("https"),
 			Protocol:   corev1.ProtocolTCP,
 		})

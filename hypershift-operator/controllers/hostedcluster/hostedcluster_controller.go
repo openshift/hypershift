@@ -97,6 +97,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
@@ -932,7 +933,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// TODO: (cewong) Remove this hack when we no longer need to support HostedControlPlanes that report
 			// the wrong port for the route strategy.
 			if isAPIServerRoute(hcluster) {
-				hcluster.Status.ControlPlaneEndpoint.Port = config.RouterSVCPort
+				hcluster.Status.ControlPlaneEndpoint.Port = constants.RouterSVCPort
 			}
 			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
 		}
@@ -2616,7 +2617,7 @@ func reconcileControlPlaneOperatorDeployment(
 	if len(defaultIngressDomain) > 0 {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
-				Name:  config.DefaultIngressDomainEnvVar,
+				Name:  constants.DefaultIngressDomainEnvVar,
 				Value: defaultIngressDomain,
 			},
 		)
@@ -2625,7 +2626,7 @@ func reconcileControlPlaneOperatorDeployment(
 	if enableCVOManagementClusterMetricsAccess {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
-				Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
+				Name:  constants.EnableCVOManagementClusterMetricsAccessEnvVar,
 				Value: "1",
 			},
 		)
@@ -2722,17 +2723,17 @@ func reconcileControlPlaneOperatorDeployment(
 	// set security context
 	if setDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: k8sutilspointer.Int64(constants.DefaultSecurityContextUser),
 		}
 	}
 
 	deploymentConfig := config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
+			constants.NeedManagementKASAccessLabel: "true",
 		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
@@ -3084,11 +3085,11 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 
 	deploymentConfig := config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
+			constants.NeedManagementKASAccessLabel: "true",
 		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
@@ -3167,9 +3168,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--v=4",
 							"--leader-elect=true",
-							fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
-							fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
-							fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+							fmt.Sprintf("--leader-elect-lease-duration=%s", constants.RecommendedLeaseDuration),
+							fmt.Sprintf("--leader-elect-retry-period=%s", constants.RecommendedRetryPeriod),
+							fmt.Sprintf("--leader-elect-renew-deadline=%s", constants.RecommendedRenewDeadline),
 						},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
@@ -3219,17 +3220,17 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	// set security context
 	if setDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: k8sutilspointer.Int64(constants.DefaultSecurityContextUser),
 		}
 	}
 
 	deploymentConfig := config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
+			constants.NeedManagementKASAccessLabel: "true",
 		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
@@ -4335,11 +4336,11 @@ func findAdvertiseAddress(hc *hyperv1.HostedCluster) (net.IP, *field.Error) {
 	}
 
 	if strings.Contains(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String(), ".") {
-		advertiseAddress = net.ParseIP(config.DefaultAdvertiseIPv4Address)
+		advertiseAddress = net.ParseIP(constants.DefaultAdvertiseIPv4Address)
 	}
 
 	if strings.Contains(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String(), ":") {
-		advertiseAddress = net.ParseIP(config.DefaultAdvertiseIPv6Address)
+		advertiseAddress = net.ParseIP(constants.DefaultAdvertiseIPv6Address)
 	}
 
 	return advertiseAddress, nil

@@ -69,6 +69,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
@@ -772,9 +773,9 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
+			return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, constants.KASSVCIBMCloudPort)
 		}
-		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
+		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, constants.KASSVCPort)
 	case serviceStrategy.Type == hyperv1.Route:
 		externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
@@ -785,7 +786,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		}
 
 		endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
-		port := config.RouterSVCPort
+		port := constants.RouterSVCPort
 		if sharedingress.UseSharedIngress() {
 			endpoint = externalRoute.Spec.Host
 			port = sharedingress.ExternalDNSLBPort
@@ -794,16 +795,16 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
-		port := config.KASSVCPort
+		port := constants.KASSVCPort
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			port = config.KASSVCIBMCloudPort
+			port = constants.KASSVCIBMCloudPort
 		}
 		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 			hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
 			// If Azure or Kubevirt on Azure we get the SVC handling the LB.
 			// TODO(alberto): remove this hack when having proper traffic management for Azure.
 			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
-			port = config.KASSVCLBAzurePort
+			port = constants.KASSVCLBAzurePort
 		}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			return fmt.Errorf("failed to get kube apiserver service: %w", err)
@@ -1506,16 +1507,16 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	}
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
-	kasSVCPort := config.KASSVCPort
+	kasSVCPort := constants.KASSVCPort
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		kasSVCPort = config.KASSVCIBMCloudPort
+		kasSVCPort = constants.KASSVCIBMCloudPort
 	}
 	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
 		// For Azure or Kubevirt on Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
 		// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
 		// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
-		kasSVCPort = config.KASSVCLBAzurePort
+		kasSVCPort = constants.KASSVCLBAzurePort
 		apiServerService = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 	}
 	if _, err := createOrUpdate(ctx, r.Client, apiServerService, func() error {
@@ -1941,15 +1942,15 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		}
 	}
 
-	kasSVCLBPort := config.KASSVCPort
+	kasSVCLBPort := constants.KASSVCPort
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		kasSVCLBPort = config.KASSVCIBMCloudPort
+		kasSVCLBPort = constants.KASSVCIBMCloudPort
 	}
 	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
 		// If Azure or Kubevirt on Azure we get the SVC handling the LB.
 		// TODO(alberto): remove this hack when having proper traffic management for Azure.
-		kasSVCLBPort = config.KASSVCLBAzurePort
+		kasSVCLBPort = constants.KASSVCLBAzurePort
 		svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 	}
 

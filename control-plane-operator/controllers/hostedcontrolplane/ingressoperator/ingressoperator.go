@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -52,7 +53,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Platform:                platform,
 	}
-	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.DeploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}

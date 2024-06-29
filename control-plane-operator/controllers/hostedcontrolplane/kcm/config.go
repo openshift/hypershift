@@ -13,8 +13,8 @@ import (
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 )
 
 const (
@@ -48,8 +48,8 @@ func generateConfig(serviceServingCA *corev1.ConfigMap) (string, error) {
 		},
 		ExtendedArguments: map[string]kcpv1.Arguments{
 			"leader-elect":                []string{"true"},
-			"leader-elect-renew-deadline": []string{config.KCMRecommendedRenewDeadline},
-			"leader-elect-retry-period":   []string{config.KCMRecommendedRetryPeriod},
+			"leader-elect-renew-deadline": []string{constants.KCMRecommendedRenewDeadline},
+			"leader-elect-retry-period":   []string{constants.KCMRecommendedRetryPeriod},
 		},
 		ServiceServingCert: kcpv1.ServiceServingCert{
 			CertFile: serviceServingCAPath,
