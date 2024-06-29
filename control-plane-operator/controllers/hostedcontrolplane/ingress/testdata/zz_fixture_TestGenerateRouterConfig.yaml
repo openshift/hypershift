@@ -57,4 +57,4 @@ backend oauth_private
   server oauth_private 0.0.0.4:6443
 
 backend kube_api
-  server kube_api 0.0.0.7:6443
+  server kube_api 0.0.0.7:443

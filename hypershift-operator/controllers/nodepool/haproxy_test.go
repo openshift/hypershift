@@ -161,7 +161,7 @@ kind: Config`
 					},
 				}
 			}),
-			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
+			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
 		},
 		{
 			name: "public and private cluster uses .local address",
@@ -196,7 +196,7 @@ kind: Config`
 					},
 				}
 			}),
-			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
+			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
 		},
 		{
 			name: "public cluster uses address from kubeconfig",
