@@ -156,30 +156,8 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 						CidrIp: aws.String(cidr),
 					},
 				},
-				FromPort: aws.Int64(6443),
-				ToPort:   aws.Int64(6443),
-			},
-			{
-				// This is for the private link endpoint.
-				IpProtocol: aws.String("tcp"),
-				IpRanges: []*ec2.IpRange{
-					{
-						CidrIp: aws.String(cidr),
-					},
-				},
 				FromPort: aws.Int64(443),
 				ToPort:   aws.Int64(443),
-			},
-			{
-				// This is for the private link endpoint.
-				IpProtocol: aws.String("udp"),
-				IpRanges: []*ec2.IpRange{
-					{
-						CidrIp: aws.String(cidr),
-					},
-				},
-				FromPort: aws.Int64(6443),
-				ToPort:   aws.Int64(6443),
 			},
 			{
 				// This is for the private link endpoint.
