@@ -157,7 +157,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 }
 
 func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
-	port := intstr.FromInt32(constants.KASSVCPort)
+	port := intstr.FromInt32(constants.KASPodDefaultPort)
 	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		port = intstr.FromInt32(constants.KASSVCIBMCloudPort)
 	}
