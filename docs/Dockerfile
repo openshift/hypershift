@@ -1,2 +1,2 @@
-FROM squidfunk/mkdocs-material:8.2.8
+FROM squidfunk/mkdocs-material:9.5.27
 RUN pip install mkdocs-mermaid2-plugin mkdocs-glightbox
