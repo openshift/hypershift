@@ -17,6 +17,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/conditions"
@@ -32,6 +33,7 @@ import (
 	prommodel "github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	k8sadmissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +46,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -1413,6 +1416,113 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 		}
 
 	})
+}
+
+func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
+	const (
+		validatingAdmissionPoliciesGroupVersion = "admissionregistration.k8s.io/v1beta1"
+	)
+
+	config, err := GetConfig()
+	if err != nil {
+		t.Logf("unable to get kubernetes config: %v", err)
+	}
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		t.Logf("failed to get discovery client: %v", err)
+	}
+
+	t.Run("EnsureValidatingAdmissionPoliciesFeatureGate", func(t *testing.T) {
+		g := NewWithT(t)
+		start := time.Now()
+		t.Log("Checking if ValidatingAdmissionPolicies feature gate is enabled")
+		var score int
+		resources, err := discoveryClient.ServerPreferredResources()
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to get api-resources: %v", err))
+		for _, resourceList := range resources {
+			if resourceList.GroupVersion == validatingAdmissionPoliciesGroupVersion {
+				for _, resource := range resourceList.APIResources {
+					if resource.Kind == "ValidatingAdmissionPolicy" {
+						t.Logf("ValidatingAdmissionPolicies api is enabled")
+						score += 1
+					}
+					if resource.Kind == "ValidatingAdmissionPolicyBinding" {
+						t.Logf("ValidatingAdmissionPolicyBinding api is enabled")
+						score += 1
+					}
+				}
+			}
+		}
+		g.Expect(score).To(Equal(2), "ValidatingAdmissionPolicies feature gate is not enabled")
+		duration := time.Since(start).Round(time.Second)
+		t.Logf("Successfully waited checking ValidatingAdmissionPolicies featureGates in %s", duration)
+
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
+		t.Log("Waiting for ValidatingAdmissionPolicies to exist")
+		g := NewWithT(t)
+		start := time.Now()
+		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+
+			if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
+				t.Logf("Failed to list ValidatingAdmissionPolicies: %v", err)
+				return false, nil
+			}
+
+			if len(validatingAdmissionPolicies.Items) == 0 {
+				t.Log("No ValidatingAdmissionPolicies found")
+				return false, nil
+			}
+
+			return true, nil
+		})
+		duration := time.Since(start).Round(time.Second)
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait for ValidatingAdmissionPolicies to exist in %s: %v", duration, err))
+		g.Expect(validatingAdmissionPolicies).To(ContainElement(ContainSubstring(hccokasvap.AdmissionPolicyNameConfig)), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameConfig))
+		g.Expect(validatingAdmissionPolicies).To(ContainElement(ContainSubstring(hccokasvap.AdmissionPolicyNameICSP)), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameICSP))
+		t.Logf("Successfully waited for ValidatingAdmissionPolicies to exist in %s", duration)
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesCheckDeniedRequests", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Log("Checking Denied KAS Requests for ValidatingAdmissionPolicies")
+		netConfig := &configv1.Network{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "cluster",
+			},
+		}
+		err := guestClient.Get(ctx, client.ObjectKeyFromObject(netConfig), netConfig)
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
+		g.Expect(netConfig).NotTo(BeNil(), "Network configuration is nil")
+		if netConfig.Labels != nil {
+			netConfig.Labels = make(map[string]string)
+		}
+		netConfig.SetLabels(map[string]string{"e2e-test-label": "e2e-test-value"})
+		err = guestClient.Update(ctx, netConfig)
+		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block network configuration update: %v", err))
+
+	})
+	if hc.Spec.OLMCatalogPlacement == hyperv1.GuestOLMCatalogPlacement {
+		t.Run("EnsureValidatingAdmissionPoliciesCheckAllowedRequest", func(t *testing.T) {
+			g := NewWithT(t)
+			t.Log("Checking Allowed KAS Requests for ValidatingAdmissionPolicies")
+			operatorHub := &configv1.OperatorHub{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+			}
+			err := guestClient.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub)
+			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
+			g.Expect(operatorHub).NotTo(BeNil(), "OperatorHub configuration is nil")
+			if operatorHub.Labels != nil {
+				operatorHub.Labels = make(map[string]string)
+			}
+			operatorHub.SetLabels(map[string]string{"e2e-test-label": "e2e-test-value"})
+			err = guestClient.Update(ctx, operatorHub)
+			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to update OperatorHub configuration: %v", err))
+		})
+	}
+
 }
 
 const (

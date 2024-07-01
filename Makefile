@@ -45,7 +45,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator hyp
 
 .PHONY: sync
 sync:
-	$(GO) work sync 
+	$(GO) work sync
 
 .PHONY: update
 update: sync api-deps api api-docs deps clients app-sre-saas-template
@@ -241,7 +241,7 @@ staticcheck: $(STATICCHECK)
 # Build the docker image with official golang image
 .PHONY: docker-build
 docker-build:
-	${RUNTIME} build . -t ${IMG}
+	${RUNTIME} build . --platform linux/amd64 -t ${IMG}
 
 .PHONY: fast.Dockerfile.dockerignore
 fast.Dockerfile.dockerignore:

@@ -911,6 +911,7 @@ k8s.io/controller-manager v0.27.4/go.mod h1:5+Fo0k+t3MDyuNLjmXzU/dJcD2c34ii8Wef+
 k8s.io/cri-api v0.28.4/go.mod h1:QaLIWi4Ejw0uHZlGRUIDmc2IlNlwc9Wp4gb6tEjeQCs=
 k8s.io/csi-translation-lib v0.29.2/go.mod h1:vbSYY4c6mVPwTHAvb5V3CHlq/dmQFIZC1SJOsaFiY3I=
 k8s.io/csi-translation-lib v0.29.3/go.mod h1:snAzieA58/oiQXQZr27b0+b6/3+ZzitwI+57cUsMKKQ=
+k8s.io/csi-translation-lib v0.30.2/go.mod h1:jFT8vquP6eSDUwDHk0mKT6uKFWlZp60ecUEUhmlGsOY=
 k8s.io/dynamic-resource-allocation v0.26.2/go.mod h1:LvsFr+Mp6LvEYypFPkB/xq0u+W368qVldQckybgQTgM=
 k8s.io/gengo v0.0.0-20230829151522-9cce18d56c01 h1:pWEwq4Asjm4vjW7vcsmijwBhOr1/shsbSYiWXmNGlks=
 k8s.io/gengo v0.0.0-20230829151522-9cce18d56c01/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
@@ -924,6 +925,7 @@ k8s.io/metrics v0.29.3/go.mod h1:kb3tGGC4ZcIDIuvXyUE291RwJ5WmDu0tB4wAVZM6h2I=
 k8s.io/metrics v0.30.1/go.mod h1:gVAhTTgfNKsn9D1kB7Nmb1T31relBuXzzGUE7klyOkM=
 k8s.io/mount-utils v0.29.2/go.mod h1:9IWJTMe8tG0MYMLEp60xK9GYVeCdA3g4LowmnVi+t9Y=
 k8s.io/mount-utils v0.29.3/go.mod h1:9IWJTMe8tG0MYMLEp60xK9GYVeCdA3g4LowmnVi+t9Y=
+k8s.io/mount-utils v0.30.2/go.mod h1:9sCVmwGLcV1MPvbZ+rToMDnl1QcGozy+jBPd0MsQLIo=
 kubevirt.io/qe-tools v0.1.8/go.mod h1:+Tr/WZGHIDQa/4pQgzM7+4J6YeVbUWAXESXtL2/zxqc=
 mvdan.cc/gofumpt v0.5.0/go.mod h1:HBeVDtMKRZpXyxFciAirzdKklDlGu8aAy1wEbH5Y9js=
 mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed/go.mod h1:Xkxe497xwlCKkIaQYRfC7CSLworTXY9RMqwhhCm+8Nc=
