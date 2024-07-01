@@ -43,8 +43,19 @@ func InClusterKASURL(platformType hyperv1.PlatformType) string {
 	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, constants.KASSVCPort)
 }
 
+func InClusterKASURLOld(platformType hyperv1.PlatformType) string {
+	if platformType == hyperv1.IBMCloudPlatform {
+		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, constants.KASSVCIBMCloudPort)
+	}
+	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, constants.KASSVCPortOld)
+}
+
 func InClusterKASReadyURL(platformType hyperv1.PlatformType) string {
 	return InClusterKASURL(platformType) + "/readyz"
+}
+
+func InClusterKASReadyURLOld(platformType hyperv1.PlatformType) string {
+	return InClusterKASURLOld(platformType) + "/readyz"
 }
 
 func ReconcileLocalhostKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, apiServerPort int32) error {

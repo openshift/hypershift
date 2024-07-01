@@ -32,6 +32,7 @@ const (
 	KASSVCLBAzurePort           = 7443
 	KASSVCIBMCloudPort          = 2040
 	KASSVCPort                  = 443
+	KASSVCPortOld               = 6443
 	KASPodDefaultPort           = 6443
 	RouterSVCPort               = 443
 	DefaultServiceNodePortRange = "30000-32767"
