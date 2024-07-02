@@ -2578,6 +2578,18 @@ func reconcileControlPlaneOperatorDeployment(
 						},
 						Resources: cpoResources,
 					},
+					{
+						Name:    "socks-proxy",
+						Image:   utilitiesImage,
+						Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true", "--resolve-from-management-cluster-dns=true"},
+						Args:    []string{"run"},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("10Mi"),
+							},
+						},
+					},
 				},
 			},
 		},

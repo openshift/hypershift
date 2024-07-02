@@ -174,7 +174,7 @@ func TestOpenIDProviderConversion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			client := fake.NewClientBuilder().WithObjects(idpSecret).Build()
 			outIDP, err := convertProviderConfigToIDPData(context.TODO(),
-				tc.idp, nil, 0, volumeMountInfo, client, namespace)
+				tc.idp, nil, 0, volumeMountInfo, client, namespace, true)
 			g := NewWithT(t)
 			if tc.outErr != nil {
 				g.Expect(err).To(Equal(tc.outErr))
