@@ -58,7 +58,7 @@ const (
 	KubeconfigKey = "kubeconfig"
 )
 
-func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
+func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, cipherSuites []string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -71,7 +71,7 @@ func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(image)),
+					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(image, cipherSuites)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts),
@@ -91,7 +91,7 @@ func konnectivityServerContainer() *corev1.Container {
 	}
 }
 
-func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
+func buildKonnectivityServerContainer(image string, cipherSuites []string) func(c *corev1.Container) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(konnectivityServerContainer().Name, volume), file)
 	}
@@ -128,6 +128,11 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			"--frontend-keepalive-time",
 			"30s",
 		}
+
+		if len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
+
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 )
@@ -24,6 +25,7 @@ type KonnectivityParams struct {
 	ServerDeploymentConfig  config.DeploymentConfig
 	AgentDeploymentConfig   config.DeploymentConfig
 	AgentDeamonSetConfig    config.DeploymentConfig
+	APIServer               *configv1.APIServerSpec
 }
 
 func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
@@ -34,6 +36,11 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		ExternalPort:            externalPort,
 		OwnerRef:                config.OwnerRefFrom(hcp),
 	}
+
+	if hcp.Spec.Configuration != nil {
+		p.APIServer = hcp.Spec.Configuration.APIServer
+	}
+
 	p.ServerDeploymentConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityServerContainer().Name: {
 			ProbeHandler: corev1.ProbeHandler{
@@ -164,4 +171,11 @@ func NewKonnectivityServiceParams(hcp *hyperv1.HostedControlPlane) *Konnectivity
 	return &KonnectivityServiceParams{
 		OwnerRef: config.OwnerRefFrom(hcp),
 	}
+}
+
+func (p *KonnectivityParams) CipherSuites() []string {
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
 }
