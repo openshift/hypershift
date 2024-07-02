@@ -281,6 +281,10 @@ func cleanupSharedOIDCProvider() {
 // alertSLOs creates alert for our SLO/SLIs and log when firing.
 // TODO(alberto): have a global t.Run which runs all tests first then TestAlertSLOs.
 func alertSLOs(ctx context.Context) error {
+	if globalOpts.Platform == hyperv1.AzurePlatform {
+		return fmt.Errorf("Alerting SLOs is not supported on Azure")
+	}
+
 	// Query fairing for SLOs.
 	firingAlertQuery := `
 sort_desc(

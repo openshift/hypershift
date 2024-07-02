@@ -1146,6 +1146,10 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 			t.Skip("skipping on None platform")
 		}
 
+		if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
+			t.Skip("skipping on Azure platform")
+		}
+
 		g := NewWithT(t)
 
 		prometheusClient, err := NewPrometheusClient(ctx)
