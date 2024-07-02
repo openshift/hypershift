@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awscmdutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
@@ -558,8 +559,8 @@ func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
 		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
 		Location:        o.configurableClusterOptions.AzureLocation,
-		InstanceType:    "Standard_D4s_v4",
-		DiskSizeGB:      120,
+
+		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
 	if len(o.configurableClusterOptions.Zone) != 0 {
 		zones := strings.Split(o.configurableClusterOptions.Zone.String(), ",")

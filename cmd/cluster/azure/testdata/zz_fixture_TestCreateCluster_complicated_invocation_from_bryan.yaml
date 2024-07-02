@@ -133,7 +133,9 @@ spec:
       diskSizeGB: 120
       diskStorageAccountType: Standard_LRS
       enableEphemeralOSDisk: true
-      imageID: fakeBootImageID
+      image:
+        azureImageType: ImageID
+        imageID: fakeBootImageID
       subnetID: fakeSubnetID
       vmsize: Standard_DS2_v2
     type: Azure

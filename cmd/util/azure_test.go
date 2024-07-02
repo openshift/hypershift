@@ -90,3 +90,53 @@ func Test_ReadCredentials(t *testing.T) {
 		})
 	}
 }
+
+func Test_ValidateMarketplaceFlags(t *testing.T) {
+	tests := map[string]struct {
+		marketplaceImageInfo map[string]*string
+		expectedError        bool
+	}{
+		"valid marketplace image": {
+			marketplaceImageInfo: map[string]*string{
+				"marketplace-publisher": newStringPtr("publisher"),
+				"marketplace-offer":     newStringPtr("offer"),
+				"marketplace-sku":       newStringPtr("sku"),
+				"marketplace-version":   newStringPtr("version"),
+			},
+			expectedError: false,
+		},
+		"invalid marketplace image": {
+			marketplaceImageInfo: map[string]*string{
+				"marketplace-publisher": newStringPtr("publisher"),
+				"marketplace-offer":     newStringPtr(""),
+				"marketplace-sku":       newStringPtr("sku"),
+				"marketplace-version":   newStringPtr("version"),
+			},
+			expectedError: true,
+		},
+		"empty marketplace image": {
+			marketplaceImageInfo: map[string]*string{
+				"marketplace-publisher": newStringPtr(""),
+				"marketplace-offer":     newStringPtr(""),
+				"marketplace-sku":       nil,
+				"marketplace-version":   nil,
+			},
+			expectedError: false,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := ValidateMarketplaceFlags(test.marketplaceImageInfo)
+			if test.expectedError {
+				g.Expect(err).To(Not(BeNil()))
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+		})
+	}
+}
+
+func newStringPtr(s string) *string {
+	return &s
+}
