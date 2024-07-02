@@ -36,3 +36,6 @@ vendor/**/.dockerignore
 # ignore util binaries
 /contrib/cleanzones/cleanzones
 /contrib/admission-tracer/admission-tracer
+
+# ignore devenv files
+devenv/
