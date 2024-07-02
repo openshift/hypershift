@@ -1,0 +1,19 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 99-worker-multipath
+spec:
+  baseOSExtensionsContainerImage: ""
+  config:
+    ignition:
+      version: 3.2.0
+  extensions: null
+  fips: false
+  kernelArguments:
+  - rd.multipath=default
+  - root=/dev/disk/by-label/dm-mpath-root
+  kernelType: ""
+  osImageURL: ""
