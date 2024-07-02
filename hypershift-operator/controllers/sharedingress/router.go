@@ -4,12 +4,14 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"net/netip"
 	"sort"
 	"text/template"
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	homanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -62,11 +64,12 @@ func (r routeByNamespaceName) Less(i, j int) bool {
 	return r[i].Namespace+r[i].Name < r[j].Namespace+r[j].Name
 }
 
-func generateRouterConfig(svcList *corev1.ServiceList, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
+func generateRouterConfig(svcList *corev1.ServiceList, svcNamespaceToStaticIPMapping map[string]string, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
 	type backendDesc struct {
-		Name    string
-		SVCIP   string
-		SVCPort int32
+		Name              string
+		SVCIP             string
+		SVCPort           int32
+		DataPlaneStaticIP string
 	}
 	type ExternalDNSBackendDesc struct {
 		Name                 string
@@ -83,9 +86,10 @@ func generateRouterConfig(svcList *corev1.ServiceList, routes []routev1.Route, s
 	p.Backends = make([]backendDesc, 0, len(svcList.Items))
 	for _, svc := range svcList.Items {
 		p.Backends = append(p.Backends, backendDesc{
-			Name:    svc.Namespace + "-" + svc.Name,
-			SVCIP:   svc.Spec.ClusterIP,
-			SVCPort: svc.Spec.Ports[0].Port,
+			Name:              svc.Namespace + "-" + svc.Name,
+			SVCIP:             svc.Spec.ClusterIP,
+			SVCPort:           svc.Spec.Ports[0].Port,
+			DataPlaneStaticIP: svcNamespaceToStaticIPMapping[svc.Namespace],
 		})
 	}
 
@@ -99,13 +103,29 @@ func generateRouterConfig(svcList *corev1.ServiceList, routes []routev1.Route, s
 		}
 		switch route.Name {
 		case manifests.KubeAPIServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-apiserver", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: config.KASSVCPort})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-apiserver",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      config.KASSVCPort})
 		case ignitionserver.Route("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-ignition", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: 443})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-ignition",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      443})
 		case manifests.KonnectivityServerRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-konnectivity", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: 8091})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-konnectivity",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      8091})
 		case manifests.OauthServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-oauth", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: 6443})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-oauth",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      6443})
 		}
 	}
 
@@ -122,6 +142,48 @@ func ReconcileRouterConfiguration(cm *corev1.ConfigMap, config string) error {
 	}
 
 	cm.Data[routerConfigKey] = config
+	return nil
+}
+
+func ReconcileStaticIPsMapping(cm *corev1.ConfigMap, hostedClustersList *hyperv1.HostedClusterList) error {
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+
+	var lastAssignedIP netip.Addr
+	for key, value := range cm.Data {
+		addr, err := netip.ParseAddr(value)
+		if err != nil {
+			// delete invalid ip entries so we assign new valid ones later.
+			delete(cm.Data, key)
+			continue
+		}
+
+		if lastAssignedIP.Less(addr) {
+			lastAssignedIP = addr
+		}
+	}
+
+	// no IPs have been assigned yet, select an arbitrary starting ip address.
+	if !lastAssignedIP.IsValid() {
+		lastAssignedIP = netip.MustParseAddr("172.0.0.0")
+	}
+
+	ipsMapping := map[string]string{}
+	for _, hc := range hostedClustersList.Items {
+		hcpNamespace := homanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+		if ip, exist := cm.Data[hcpNamespace]; exist {
+			// if HostedCluster has an assigned IP, use existing ip and continue.
+			ipsMapping[hcpNamespace] = ip
+			continue
+		}
+
+		nextIPAddress := lastAssignedIP.Next()
+		ipsMapping[hcpNamespace] = nextIPAddress.String()
+		lastAssignedIP = nextIPAddress
+	}
+
+	cm.Data = ipsMapping
 	return nil
 }
 

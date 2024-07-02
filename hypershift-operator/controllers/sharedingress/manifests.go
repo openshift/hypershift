@@ -26,6 +26,15 @@ func RouterConfigurationConfigMap() *corev1.ConfigMap {
 	}
 }
 
+func RouterStaticIPsMappingConfigMap() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "static-ips-mapping",
+			Namespace: RouterNamespace,
+		},
+	}
+}
+
 func RouterPublicService() *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
