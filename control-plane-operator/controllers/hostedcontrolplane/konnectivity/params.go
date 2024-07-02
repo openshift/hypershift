@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 )
 
 const (
@@ -36,7 +37,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 			},
 		},
 	}
-	p.AgentDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.AgentDeploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.AgentDeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}

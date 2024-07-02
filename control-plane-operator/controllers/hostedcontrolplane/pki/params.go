@@ -6,6 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -86,9 +87,9 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	// Check this for more info: https://github.com/kubernetes/enhancements/issues/2438
 	ipv4, err := util.IsIPv4(p.ServiceCIDR[0])
 	if err != nil || ipv4 {
-		p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseIPv4Address)
+		p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, constants.DefaultAdvertiseIPv4Address)
 	} else {
-		p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseIPv6Address)
+		p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, constants.DefaultAdvertiseIPv6Address)
 	}
 
 	return p

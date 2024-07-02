@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -102,7 +103,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 	}
 
 	p.Scheduling = config.Scheduling{
-		PriorityClass: config.APICriticalPriorityClass,
+		PriorityClass: constants.APICriticalPriorityClass,
 	}
 	if hcp.Annotations[hyperv1.APICriticalPriorityClass] != "" {
 		p.Scheduling.PriorityClass = hcp.Annotations[hyperv1.APICriticalPriorityClass]

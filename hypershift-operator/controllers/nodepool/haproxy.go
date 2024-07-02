@@ -21,7 +21,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -110,9 +110,9 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 
 	// Set the default
 	if ipv4 {
-		apiServerInternalAddress = config.DefaultAdvertiseIPv4Address
+		apiServerInternalAddress = constants.DefaultAdvertiseIPv4Address
 	} else {
-		apiServerInternalAddress = config.DefaultAdvertiseIPv6Address
+		apiServerInternalAddress = constants.DefaultAdvertiseIPv6Address
 	}
 
 	// TODO (alberto): Technically this should call util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
@@ -197,7 +197,7 @@ func haproxyFrontendListenAddress(hc *hyperv1.HostedCluster) int32 {
 	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
 		return *hc.Spec.Networking.APIServer.Port
 	}
-	return config.KASPodDefaultPort
+	return constants.KASPodDefaultPort
 }
 
 func urlPort(u *url.URL) (int32, error) {
@@ -419,7 +419,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 					},
 				},
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser: pointer.Int64(config.DefaultSecurityContextUser),
+					RunAsUser: pointer.Int64(constants.DefaultSecurityContextUser),
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -487,7 +487,7 @@ func generateKubernetesDefaultProxyPod(image string, listenAddr string, proxyAdd
 						"--apiserver-addr=" + apiserverAddr,
 					},
 					SecurityContext: &corev1.SecurityContext{
-						RunAsUser: pointer.Int64(config.DefaultSecurityContextUser),
+						RunAsUser: pointer.Int64(constants.DefaultSecurityContextUser),
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{

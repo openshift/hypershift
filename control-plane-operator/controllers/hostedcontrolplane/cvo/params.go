@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -41,7 +42,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 
 	if enableCVOManagementClusterMetricsAccess {
 		p.DeploymentConfig.AdditionalLabels = map[string]string{
-			config.NeedMetricsServerAccessLabel: "true",
+			constants.NeedMetricsServerAccessLabel: "true",
 		}
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
@@ -58,7 +59,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 			},
 		},
 	}
-	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.DeploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}

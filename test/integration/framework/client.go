@@ -17,6 +17,7 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	homanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/constants"
 	v1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -115,7 +116,7 @@ func WaitForGuestRestConfig(ctx context.Context, logger logr.Logger, opts *Optio
 		logPath := "apiserver-port-forward.log"
 		cmd := exec.CommandContext(portForwardCtx, opts.OCPath,
 			"port-forward", "service/kube-apiserver", "--namespace", hostedControlPlaneNamespace,
-			fmt.Sprintf("%s:6443", forwardedLocalPort),
+			fmt.Sprintf("%s:%d", forwardedLocalPort, constants.KASSVCPort),
 			"--kubeconfig", opts.Kubeconfig,
 		)
 		if err := StartCommand(logger, opts, logPath, cmd); err != nil {

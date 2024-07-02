@@ -1,4 +1,4 @@
-package config
+package constants
 
 const (
 	// NeedManagementKASAccessLabel is used by network policies
@@ -30,9 +30,11 @@ const (
 	// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
 	// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
 	KASSVCLBAzurePort           = 7443
-	KASSVCPort                  = 6443
-	KASPodDefaultPort           = 6443
 	KASSVCIBMCloudPort          = 2040
+	KASSVCPort                  = 443
+	KASSVCPortOld               = 6443
+	KASPodDefaultPort           = 6443
+	RouterSVCPort               = 443
 	DefaultServiceNodePortRange = "30000-32767"
 	DefaultSecurityContextUser  = 1001
 	RecommendedLeaseDuration    = "137s"

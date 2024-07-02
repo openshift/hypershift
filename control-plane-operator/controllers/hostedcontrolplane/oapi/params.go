@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -74,7 +75,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.APICriticalPriorityClass,
+			PriorityClass: constants.APICriticalPriorityClass,
 		},
 		LivenessProbes: config.LivenessProbes{
 			oasContainerMain().Name: {
@@ -124,7 +125,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.APICriticalPriorityClass,
+			PriorityClass: constants.APICriticalPriorityClass,
 		},
 		LivenessProbes: config.LivenessProbes{
 			oauthContainerMain().Name: {
@@ -178,9 +179,9 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
 	case hyperv1.Managed:
-		params.EtcdURL = config.DefaultEtcdURL
+		params.EtcdURL = constants.DefaultEtcdURL
 	default:
-		params.EtcdURL = config.DefaultEtcdURL
+		params.EtcdURL = constants.DefaultEtcdURL
 	}
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)

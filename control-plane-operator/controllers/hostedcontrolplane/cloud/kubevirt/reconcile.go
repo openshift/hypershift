@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -215,7 +216,7 @@ func newDeploymentConfig() config.DeploymentConfig {
 		},
 	}
 	result.AdditionalLabels = additionalLabels()
-	result.Scheduling.PriorityClass = config.DefaultPriorityClass
+	result.Scheduling.PriorityClass = constants.DefaultPriorityClass
 
 	result.Replicas = 1
 
@@ -230,7 +231,7 @@ func ccmLabels() map[string]string {
 
 func additionalLabels() map[string]string {
 	return map[string]string{
-		hyperv1.ControlPlaneComponent:       "cloud-controller-manager",
-		config.NeedManagementKASAccessLabel: "true",
+		hyperv1.ControlPlaneComponent:          "cloud-controller-manager",
+		constants.NeedManagementKASAccessLabel: "true",
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/library-go/test/library/metrics"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -635,7 +636,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
 			g := NewWithT(t)
-			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
+			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, client.MatchingLabels{constants.NeedManagementKASAccessLabel: "true"})
 			g.Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -716,7 +717,7 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 
 	// Get the component name for each labelled pod and ensure it exists in the components slice
 	for _, pod := range podList.Items {
-		if pod.Labels[suppconfig.NeedManagementKASAccessLabel] == "" {
+		if pod.Labels[constants.NeedManagementKASAccessLabel] == "" {
 			continue
 		}
 		componentName := getComponentName(&pod)

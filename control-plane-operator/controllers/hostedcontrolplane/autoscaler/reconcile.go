@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -54,9 +55,9 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		// we might end up locked with three nodes.
 		"--skip-nodes-with-local-storage=false",
 		"--alsologtostderr",
-		fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
-		fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
-		fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+		fmt.Sprintf("--leader-elect-lease-duration=%s", constants.RecommendedLeaseDuration),
+		fmt.Sprintf("--leader-elect-retry-period=%s", constants.RecommendedRetryPeriod),
+		fmt.Sprintf("--leader-elect-renew-deadline=%s", constants.RecommendedRenewDeadline),
 		"--balance-similar-node-groups=true",
 		"--v=4",
 	}
@@ -195,10 +196,10 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 
 	deploymentConfig := config.DeploymentConfig{
 		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
+			constants.NeedManagementKASAccessLabel: "true",
 		},
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}

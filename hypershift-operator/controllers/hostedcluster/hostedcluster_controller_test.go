@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -2912,7 +2913,7 @@ func TestFindAdvertiseAddress(t *testing.T) {
 		{
 			name:             "given a hc without AdvertiseAddress, it should return the default IPv4 address",
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
-			resultAdvAddress: config.DefaultAdvertiseIPv4Address,
+			resultAdvAddress: constants.DefaultAdvertiseIPv4Address,
 		},
 		{
 			name:             "given an IPv6 hc with defined AdvertiseAddress, it should return that address",
@@ -2923,7 +2924,7 @@ func TestFindAdvertiseAddress(t *testing.T) {
 		{
 			name:             "given an IPv6 hc wihtout AdvertiseAddress, it return IPv6 default address",
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
-			resultAdvAddress: config.DefaultAdvertiseIPv6Address,
+			resultAdvAddress: constants.DefaultAdvertiseIPv6Address,
 		},
 		{
 			name:    "given an invalid IPv4 AdvertiseAddress, it should fail",

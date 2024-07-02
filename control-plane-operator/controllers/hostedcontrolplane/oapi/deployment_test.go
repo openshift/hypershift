@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -58,7 +59,7 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 		oapiDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oapiDeployment.Spec.MinReadySeconds
 		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditConfig, serviceServingCA, tc.deploymentConfig, imageName, "socks5ProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, tc.clusterConf)
+		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditConfig, serviceServingCA, tc.deploymentConfig, imageName, "socks5ProxyImage", constants.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, tc.clusterConf)
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedTermGraceSeconds).To(Equal(oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds))
 		g.Expect(expectedMinReadySeconds).To(Equal(oapiDeployment.Spec.MinReadySeconds))
@@ -155,7 +156,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
 			ownerRef := config.OwnerRefFrom(hcp)
 			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditConfig, nil, tc.deploymentConfig, imageName, "socks5ProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.clusterConf)
+			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditConfig, nil, tc.deploymentConfig, imageName, "socks5ProxyImage", constants.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.clusterConf)
 			g.Expect(err).To(BeNil())
 			if tc.expectProjectedVolumeMounted {
 				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).To(ContainElement(*tc.expectedVolume))

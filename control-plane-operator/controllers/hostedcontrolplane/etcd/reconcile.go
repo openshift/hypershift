@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -114,7 +115,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 		if p.DeploymentConfig.AdditionalLabels == nil {
 			p.DeploymentConfig.AdditionalLabels = make(map[string]string)
 		}
-		p.DeploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
+		p.DeploymentConfig.AdditionalLabels[constants.NeedManagementKASAccessLabel] = "true"
 	}
 
 	ss.Spec.Template.Spec.InitContainers = []corev1.Container{

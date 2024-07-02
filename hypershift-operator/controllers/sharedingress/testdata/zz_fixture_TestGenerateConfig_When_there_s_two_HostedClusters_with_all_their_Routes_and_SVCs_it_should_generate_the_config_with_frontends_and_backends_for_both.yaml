@@ -64,7 +64,7 @@ backend test-hc1-ignition
 backend test-hc1-konnectivity
   server test-hc1-konnectivity 2.2.2.2:8091
 backend test-hc1-apiserver
-  server test-hc1-apiserver 4.4.4.4:6443
+  server test-hc1-apiserver 4.4.4.4:443
 backend test-hc1-oauth
   server test-hc1-oauth 3.3.3.3:6443
 backend test-hc2-ignition
@@ -72,6 +72,6 @@ backend test-hc2-ignition
 backend test-hc2-konnectivity
   server test-hc2-konnectivity 2.2.2.2:8091
 backend test-hc2-apiserver
-  server test-hc2-apiserver 4.4.4.4:6443
+  server test-hc2-apiserver 4.4.4.4:443
 backend test-hc2-oauth
   server test-hc2-oauth 3.3.3.3:6443

@@ -5,6 +5,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,7 +27,7 @@ func ReconcileCollectProfilesCronJob(cronJob *batchv1.CronJob, ownerRef config.O
 	ownerRef.ApplyTo(cronJob)
 	cronJob.Spec = olmCollectProfilesCronJob.DeepCopy().Spec
 	cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta.Labels = map[string]string{
-		config.NeedManagementKASAccessLabel: "true",
+		constants.NeedManagementKASAccessLabel: "true",
 	}
 	cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image = olmImage
 	for i, arg := range cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args {
