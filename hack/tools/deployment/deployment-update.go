@@ -147,22 +147,14 @@ func main() {
 			log.Fatalf("Error adding changes in git: %v", err)
 		}
 
-		// Commit the changes in git
-		log.Printf("Committing changes in git")
-		err = gitCommit(ctx, filepath.Dir(*file), fmt.Sprintf("Bump HyperShift in %s to %s / %s", *env, *newTag, *newCommit))
-		if err != nil {
-			log.Fatalf("Error committing changes in git: %v", err)
-		}
-
 		// Generate MR title and description
 		log.Printf("Generating merge request title and description")
-		mergeRequestTitle := fmt.Sprintf("%s: Bump HyperShift in %s to %s / %s", *jiraTicket, *env, *newTag, *newCommit)
 
 		// Output the changes between tags for the merge request
 		cmd := exec.Command("go", "run", "../release/notes.go", "--from="+*oldTag, "--to="+*newTag, "--token="+*token)
-		cmdOutput, err := cmd.Output()
+		cmdOutput, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Fatalf("Error : %v", err)
+			log.Fatalf("Error : %v", string(cmdOutput))
 		}
 
 		// Attempt to remove any control plane changes from the release notes
@@ -173,18 +165,22 @@ func main() {
 		if len(mergeRequestStrings) < 2 {
 			mergeRequestDescription = string(cmdOutput)
 		} else {
-			// newlines must be escaped in the commit message
 			mergeRequestDescription = "## area/hypershift-operator" + "\n" + mergeRequestStrings[1]
-			mergeRequestDescription = strings.Replace(mergeRequestDescription, "\n", "\\n", -1)
 		}
-
 		mergeRequestDescription = mergeRequestDescription + "\\n/hold"
-
 		log.Printf(mergeRequestDescription)
+
+		// Commit the changes in git
+		log.Printf("Committing changes in git")
+		mergeRequestTitle := fmt.Sprintf("%s: Bump HyperShift in %s to %s / %s", *jiraTicket, *env, *newTag, *newCommit)
+		err = gitCommit(ctx, filepath.Dir(*file), mergeRequestTitle, mergeRequestDescription)
+		if err != nil {
+			log.Fatalf("Error committing changes in git: %v", err)
+		}
 
 		// Push the changes up and create the merge request
 		log.Printf("Pushing changes in git and creating merge request")
-		err = gitPushAndCreateMergeRequest(ctx, filepath.Dir(*file), ptr.Deref(remote, ""), branchName, mergeRequestTitle, mergeRequestDescription)
+		err = gitPushAndCreateMergeRequest(ctx, filepath.Dir(*file), ptr.Deref(remote, ""), branchName, mergeRequestTitle, strings.Replace(mergeRequestDescription, "\n", "\\n", -1))
 		if err != nil {
 			log.Fatalf("Error pushing changes in git: %v", err)
 		}
@@ -296,8 +292,8 @@ func gitAdd(ctx context.Context, repoPath, fileToAdd string) error {
 	return nil
 }
 
-func gitCommit(ctx context.Context, repoPath, message string) error {
-	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message, "--signoff")
+func gitCommit(ctx context.Context, repoPath, message, description string) error {
+	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message, "-m", description, "--signoff")
 	cmd.Dir = repoPath
 	output, err := cmd.CombinedOutput()
 	if err != nil {
