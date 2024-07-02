@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
@@ -132,6 +133,14 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 
 	if len(kvPlatform.AdditionalNetworks) == 0 && kvPlatform.AttachDefaultNetwork != nil && !*kvPlatform.AttachDefaultNetwork {
 		return fmt.Errorf("default network cannot be disabled when no additional networks are configured")
+	}
+
+	if len(kvPlatform.KubevirtHostDevices) > 0 {
+		for _, hostDevice := range kvPlatform.KubevirtHostDevices {
+			if hostDevice.Count < 1 {
+				return fmt.Errorf("host device count must be greater than or equal to 1. received: %d", hostDevice.Count)
+			}
+		}
 	}
 
 	return nil
@@ -269,6 +278,21 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 	if kvPlatform.NodeSelector != nil && len(kvPlatform.NodeSelector) > 0 {
 		template.Spec.Template.Spec.NodeSelector = kvPlatform.NodeSelector
+	}
+
+	if kvPlatform.KubevirtHostDevices != nil && len(kvPlatform.KubevirtHostDevices) > 0 {
+		hostDevices := []kubevirtv1.HostDevice{}
+		for _, hostDevice := range kvPlatform.KubevirtHostDevices {
+			for i := 1; i <= hostDevice.Count; i++ {
+				kvHostDevice := kubevirtv1.HostDevice{
+					Name:       "hostdevice-" + strconv.Itoa(i),
+					DeviceName: hostDevice.DeviceName,
+				}
+				hostDevices = append(hostDevices, kvHostDevice)
+			}
+
+		}
+		template.Spec.Template.Spec.Domain.Devices.HostDevices = hostDevices
 	}
 
 	return template

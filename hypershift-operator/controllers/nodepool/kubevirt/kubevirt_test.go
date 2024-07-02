@@ -190,7 +190,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			name: "NetworkInterfaceMultiQueue is Enable",
+			name: "NetworkInterfaceMultiQueue is Enabled",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
@@ -240,7 +240,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			name: "Addtional networks are configured",
+			name: "Additional networks are configured",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
@@ -340,7 +340,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			name: "Addtional networks are configured excluding default one",
+			name: "Additional networks are configured excluding default one",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
@@ -429,7 +429,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			name: "Excluding default network with addional ones should fail validation",
+			name: "Excluding default network with additional ones should fail validation",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
@@ -464,6 +464,112 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				},
 			},
 			expectedValidationError: "default network cannot be disabled when no additional networks are configured",
+		},
+		{
+			name: "Host Devices are configured properly",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							hostDevicesOption([]hyperv1.KubevirtHostDevice{
+								{
+									DeviceName: "example.com/my-fast-gpu",
+									Count:      2,
+								},
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster-gpu",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							hostDevicesTmpltOpt([]kubevirtv1.HostDevice{
+								{
+									Name:       "hostdevice-1",
+									DeviceName: "example.com/my-fast-gpu",
+								},
+								{
+									Name:       "hostdevice-2",
+									DeviceName: "example.com/my-fast-gpu",
+								},
+							}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "Host Devices count has an invalid value",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							hostDevicesOption([]hyperv1.KubevirtHostDevice{
+								{
+									DeviceName: "example.com/my-fast-gpu",
+									Count:      -7,
+								},
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster-gpu",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+			expectedValidationError: "host device count must be greater than or equal to 1. received: -7",
 		},
 	}
 
@@ -1107,6 +1213,12 @@ func attachDefaultNetworkNPOption(attach bool) nodePoolOption {
 	}
 }
 
+func hostDevicesOption(hostDevices []hyperv1.KubevirtHostDevice) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		kvNodePool.KubevirtHostDevices = hostDevices
+	}
+}
+
 func generateKubevirtPlatform(options ...nodePoolOption) *hyperv1.KubevirtNodePoolPlatform {
 	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{}
 
@@ -1152,6 +1264,12 @@ func storageTmpltOpt(volumeSize string) nodeTemplateOption {
 func networkInterfaceMultiQueueTmpltOpt() nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = pointer.Bool(true)
+	}
+}
+
+func hostDevicesTmpltOpt(hostDevices []kubevirtv1.HostDevice) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Domain.Devices.HostDevices = hostDevices
 	}
 }
 

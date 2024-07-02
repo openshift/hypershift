@@ -142,6 +142,71 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 			},
 			expectedError: `wrong value for the --network-multiqueue parameter. Supported values are "Enable" or "Disable"`,
 		},
+		{
+			name: "should succeed configuring two Host Devices",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:          2,
+					RootVolumeSize: 32,
+				},
+				HostDevices: []string{
+					"my-great-gpu,count:2",
+					"my-soundcard",
+				},
+			},
+		},
+		{
+			name: "should fail configuring Host Devices without misspelled count",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:          2,
+					RootVolumeSize: 32,
+				},
+				HostDevices: []string{
+					"my-fabulous-gpu,cuont:2",
+				},
+			},
+			expectedError: "invalid KubeVirt host device setting: [my-fabulous-gpu,cuont:2]",
+		},
+		{
+			name: "should fail configuring Host Devices with an unsupported option",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:          2,
+					RootVolumeSize: 32,
+				},
+				HostDevices: []string{
+					"my-fabulous-gpu,count:2,speed:100GFLOPS",
+				},
+			},
+			expectedError: "invalid KubeVirt host device setting: [my-fabulous-gpu,count:2,speed:100GFLOPS]",
+		},
+		{
+			name: "should fail configuring Host Devices with a non-integer count",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:          2,
+					RootVolumeSize: 32,
+				},
+				HostDevices: []string{
+					"my-fabulous-gpu,count:1K",
+				},
+			},
+			expectedError: "could not parse host device count: [my-fabulous-gpu,count:1K]",
+		},
+		{
+			name: "should fail configuring Host Devices with a negative count",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:          2,
+					RootVolumeSize: 32,
+				},
+				HostDevices: []string{
+					"my-fabulous-gpu,count:-8",
+				},
+			},
+			expectedError: "host device count must be greater than or equal to 1. received: [-8]",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			validated, err := test.input.Validate()

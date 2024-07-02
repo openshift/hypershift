@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -49,6 +50,7 @@ func bindCoreOptions(opts *RawKubevirtPlatformCreateOptions, flags *pflag.FlagSe
 	flags.StringArrayVar(&opts.AdditionalNetworks, "additional-network", opts.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
 	flags.BoolVar(opts.AttachDefaultNetwork, "attach-default-network", *opts.AttachDefaultNetwork, `Specify if the default pod network should be attached to the nodes. This can only be set if --additional-network is configured`)
 	flags.StringToStringVar(&opts.VmNodeSelector, "vm-node-selector", opts.VmNodeSelector, "A comma separated list of key=value pairs to use as the node selector for the KubeVirt VirtualMachines to be scheduled onto. (e.g. role=kubevirt,size=large)")
+	flags.StringArrayVar(&opts.HostDevices, "host-device-name", opts.HostDevices, "PCI device name to expose from the infra cluster to the guest cluster nodes. Can be specified multiple times for different device names. Example: <device-name>,count:3. count is optional and the default is 1.")
 }
 
 func BindDeveloperOptions(opts *RawKubevirtPlatformCreateOptions, flags *pflag.FlagSet) {
@@ -61,6 +63,7 @@ type RawKubevirtPlatformCreateOptions struct {
 	NetworkInterfaceMultiQueue string
 	QoSClass                   string
 	AdditionalNetworks         []string
+	HostDevices                []string
 }
 
 type KubevirtPlatformOptions struct {
@@ -112,6 +115,7 @@ func (o *RawKubevirtPlatformCreateOptions) Validate() (*ValidatedKubevirtPlatfor
 	if len(o.AdditionalNetworks) == 0 && o.AttachDefaultNetwork != nil && !*o.AttachDefaultNetwork {
 		return nil, fmt.Errorf(`missing --additional-network. when --attach-default-network is false configuring an additional network is mandatory`)
 	}
+
 	return &ValidatedKubevirtPlatformCreateOptions{
 		validatedKubevirtPlatformCreateOptions: &validatedKubevirtPlatformCreateOptions{
 			RawKubevirtPlatformCreateOptions: o,
@@ -123,13 +127,19 @@ type NetworkOpts struct {
 	Name string `param:"name"`
 }
 
+type HostDevicesOpts struct {
+	Name  string `param:"name"`
+	Count int    `param:"count"`
+}
+
 // completedCreateOptions is a private wrapper that enforces a call of Complete() before nodepool creation can be invoked.
 type completetedKubevirtPlatformCreateOptions struct {
 	*KubevirtPlatformOptions
 
-	MultiQueue         *hyperv1.MultiQueueSetting
-	QoSClass           *hyperv1.QoSClass
-	AdditionalNetworks []hyperv1.KubevirtNetwork
+	MultiQueue          *hyperv1.MultiQueueSetting
+	QoSClass            *hyperv1.QoSClass
+	AdditionalNetworks  []hyperv1.KubevirtNetwork
+	KubevirtHostDevices []hyperv1.KubevirtHostDevice
 }
 
 type KubevirtPlatformCreateOptions struct {
@@ -167,12 +177,44 @@ func (o *ValidatedKubevirtPlatformCreateOptions) Complete() (*KubevirtPlatformCr
 		})
 	}
 
+	var hostDevices []hyperv1.KubevirtHostDevice
+	for _, hostDevice := range o.HostDevices {
+		split := strings.Split(hostDevice, ",")
+
+		kubevirtHostDevice := hyperv1.KubevirtHostDevice{
+			DeviceName: split[0],
+		}
+
+		if len(split) == 1 {
+			continue
+		} else if len(split) > 2 {
+			return nil, fmt.Errorf("invalid KubeVirt host device setting: [%s]", hostDevice)
+		}
+
+		// parse options ("count" is the only supported option right now)
+		countSplit := strings.Split(split[1], ":")
+		if countSplit[0] != "count" || len(countSplit) != 2 {
+			return nil, fmt.Errorf("invalid KubeVirt host device setting: [%s]", hostDevice)
+		}
+		count, err := strconv.Atoi(countSplit[1])
+		if err != nil {
+			return nil, fmt.Errorf("could not parse host device count: [%s]", hostDevice)
+		}
+		if count < 1 {
+			return nil, fmt.Errorf("host device count must be greater than or equal to 1. received: [%d]", count)
+		}
+		kubevirtHostDevice.Count = count
+
+		hostDevices = append(hostDevices, kubevirtHostDevice)
+	}
+
 	return &KubevirtPlatformCreateOptions{
 		completetedKubevirtPlatformCreateOptions: &completetedKubevirtPlatformCreateOptions{
 			KubevirtPlatformOptions: o.KubevirtPlatformOptions,
 			MultiQueue:              multiQueue,
 			QoSClass:                qosClass,
 			AdditionalNetworks:      additionalNetworks,
+			KubevirtHostDevices:     hostDevices,
 		},
 	}, nil
 }
@@ -279,6 +321,10 @@ func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNode
 
 	if o.VmNodeSelector != nil && len(o.VmNodeSelector) > 0 {
 		platform.NodeSelector = o.VmNodeSelector
+	}
+
+	if o.KubevirtHostDevices != nil && len(o.KubevirtHostDevices) > 0 {
+		platform.KubevirtHostDevices = o.KubevirtHostDevices
 	}
 	return platform
 }

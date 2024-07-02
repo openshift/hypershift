@@ -24,12 +24,13 @@ import (
 // KubevirtNodePoolPlatformApplyConfiguration represents an declarative configuration of the KubevirtNodePoolPlatform type for use
 // with apply.
 type KubevirtNodePoolPlatformApplyConfiguration struct {
-	RootVolume                 *KubevirtRootVolumeApplyConfiguration `json:"rootVolume,omitempty"`
-	Compute                    *KubevirtComputeApplyConfiguration    `json:"compute,omitempty"`
-	NetworkInterfaceMultiQueue *hypershiftv1beta1.MultiQueueSetting  `json:"networkInterfaceMultiqueue,omitempty"`
-	AdditionalNetworks         []KubevirtNetworkApplyConfiguration   `json:"additionalNetworks,omitempty"`
-	AttachDefaultNetwork       *bool                                 `json:"attachDefaultNetwork,omitempty"`
-	NodeSelector               map[string]string                     `json:"nodeSelector,omitempty"`
+	RootVolume                 *KubevirtRootVolumeApplyConfiguration  `json:"rootVolume,omitempty"`
+	Compute                    *KubevirtComputeApplyConfiguration     `json:"compute,omitempty"`
+	NetworkInterfaceMultiQueue *hypershiftv1beta1.MultiQueueSetting   `json:"networkInterfaceMultiqueue,omitempty"`
+	AdditionalNetworks         []KubevirtNetworkApplyConfiguration    `json:"additionalNetworks,omitempty"`
+	AttachDefaultNetwork       *bool                                  `json:"attachDefaultNetwork,omitempty"`
+	NodeSelector               map[string]string                      `json:"nodeSelector,omitempty"`
+	KubevirtHostDevices        []KubevirtHostDeviceApplyConfiguration `json:"hostDevices,omitempty"`
 }
 
 // KubevirtNodePoolPlatformApplyConfiguration constructs an declarative configuration of the KubevirtNodePoolPlatform type for use with
@@ -93,6 +94,19 @@ func (b *KubevirtNodePoolPlatformApplyConfiguration) WithNodeSelector(entries ma
 	}
 	for k, v := range entries {
 		b.NodeSelector[k] = v
+	}
+	return b
+}
+
+// WithKubevirtHostDevices adds the given value to the KubevirtHostDevices field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the KubevirtHostDevices field.
+func (b *KubevirtNodePoolPlatformApplyConfiguration) WithKubevirtHostDevices(values ...*KubevirtHostDeviceApplyConfiguration) *KubevirtNodePoolPlatformApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithKubevirtHostDevices")
+		}
+		b.KubevirtHostDevices = append(b.KubevirtHostDevices, *values[i])
 	}
 	return b
 }

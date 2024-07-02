@@ -234,6 +234,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 				append(cluster.Spec.Platform.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping, newMap)
 		}
 	}
+
 	return nil
 }
 
