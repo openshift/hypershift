@@ -25,6 +25,10 @@ GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
 OUT_DIR ?= bin
 
+# run the HO locally
+HYPERSHIFT_INSTALL := ./hack/dev/hypershft-install.sh
+RUN_OPERATOR_LOCALLY := ./hack/dev/run-operator-locally
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -290,3 +294,11 @@ ci-install-hypershift-private:
 regenerate-pki:
 	REGENERATE_PKI=1 $(GO) test ./control-plane-pki-operator/...
 	REGENERATE_PKI=1 $(GO) test ./test/e2e/... -run TestRegeneratePKI
+
+.PHONY: install-hypershift-dev
+install-hypershift-dev:
+	@$(HYPERSHIFT_INSTALL)
+
+.PHONY: run-operator-locally-dev
+run-operator-locally-dev:
+	@$(RUN_OPERATOR_LOCALLY)
