@@ -16,6 +16,7 @@ import (
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
+	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
 	"github.com/openshift/hypershift/pkg/version"
@@ -80,6 +81,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = ignitionserver.NewStartCommand()
 	case "konnectivity-socks5-proxy":
 		cmd = konnectivitysocks5proxy.NewStartCommand()
+	case "konnectivity-https-proxy":
+		cmd = konnectivityhttpsproxy.NewStartCommand()
 	case "availability-prober":
 		cmd = availabilityprober.NewStartCommand()
 	case "token-minter":
@@ -128,6 +131,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(hostedclusterconfigoperator.NewCommand())
 	cmd.AddCommand(konnectivitysocks5proxy.NewStartCommand())
+	cmd.AddCommand(konnectivityhttpsproxy.NewStartCommand())
 	cmd.AddCommand(availabilityprober.NewStartCommand())
 	cmd.AddCommand(tokenminter.NewStartCommand())
 	cmd.AddCommand(ignitionserver.NewStartCommand())

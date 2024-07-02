@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -51,7 +51,7 @@ var (
 			oasTrustAnchorVolume().Name:       "/etc/pki/ca-trust/extracted/pem",
 			pullSecretVolume().Name:           "/var/lib/kubelet",
 		},
-		oasSocks5ProxyContainer().Name: {
+		oasKonnectivityProxyContainer().Name: {
 			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
 			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity/proxy-client",
 			oasVolumeKonnectivityProxyCA().Name:   "/etc/konnectivity/proxy-ca",
@@ -83,7 +83,22 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, internalOAuthDisable bool, platformType hyperv1.PlatformType, hcpAdditionalTrustBundle *corev1.LocalObjectReference, clusterConf *hyperv1.ClusterConfiguration) error {
+func ReconcileDeployment(deployment *appsv1.Deployment,
+	auditWebhookRef *corev1.LocalObjectReference,
+	ownerRef config.OwnerRef,
+	config *corev1.ConfigMap,
+	auditConfig *corev1.ConfigMap,
+	serviceServingCA *corev1.ConfigMap,
+	deploymentConfig config.DeploymentConfig,
+	image string,
+	konnectivityProxyImage string,
+	etcdURL string,
+	availabilityProberImage string,
+	internalOAuthDisable bool,
+	platformType hyperv1.PlatformType,
+	hcpAdditionalTrustBundle *corev1.LocalObjectReference,
+	clusterConf *hyperv1.ClusterConfiguration,
+	proxyConfig *configv1.ProxySpec) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main OAS container
@@ -130,11 +145,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 	deployment.Spec.Template.Annotations[configHashAnnotation] = configHash
 	deployment.Spec.Template.Annotations[auditConfigHashAnnotation] = auditConfigHash
 
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	deployment.Spec.Template.Spec.InitContainers = []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))}
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
-		util.BuildContainer(oasSocks5ProxyContainer(), buildOASSocks5ProxyContainer(socks5ProxyImage)),
+		util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(konnectivityProxyImage, proxyConfig)),
 	}
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
 		util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
@@ -151,7 +166,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
 		util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
 			v.Secret = &corev1.SecretVolumeSource{
-				DefaultMode: pointer.Int32(0640),
+				DefaultMode: ptr.To[int32](0640),
 				SecretName:  common.PullSecret(deployment.Namespace).Name,
 				Items:       []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
 			}
@@ -240,9 +255,9 @@ func oasContainerMain() *corev1.Container {
 	}
 }
 
-func oasSocks5ProxyContainer() *corev1.Container {
+func oasKonnectivityProxyContainer() *corev1.Container {
 	return &corev1.Container{
-		Name: "socks5-proxy",
+		Name: "konnectivity-proxy",
 	}
 }
 
@@ -263,11 +278,22 @@ func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 	}
 }
 
-func buildOASSocks5ProxyContainer(socks5ProxyImage string) func(c *corev1.Container) {
+func buildOASKonnectivityProxyContainer(socks5ProxyImage string, proxyConfig *configv1.ProxySpec) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = socks5ProxyImage
-		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"}
+		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"}
 		c.Args = []string{"run"}
+		if proxyConfig != nil {
+			if proxyConfig.HTTPProxy != "" {
+				c.Args = append(c.Args, "--http-proxy", proxyConfig.HTTPProxy)
+			}
+			if proxyConfig.HTTPSProxy != "" {
+				c.Args = append(c.Args, "--https-proxy", proxyConfig.HTTPSProxy)
+			}
+			if proxyConfig.NoProxy != "" {
+				c.Args = append(c.Args, "--no-proxy", proxyConfig.NoProxy)
+			}
+		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
 			corev1.ResourceMemory: resource.MustParse("10Mi"),
@@ -301,20 +327,18 @@ func buildOASContainerMain(image string, etcdHostname string, port int32, intern
 		if internalOAuthDisable {
 			c.Args = append(c.Args, "--internal-oauth-disabled=true")
 		}
-		// this list can be gathered from firewall docs: https://docs.openshift.com/container-platform/4.12/installing/install_config/configuring-firewall.html
-		defaultSampleImportContainerRegistries := "quay.io,cdn03.quay.io,cdn02.quay.io,cdn01.quay.io,cdn.quay.io,registry.redhat.io,registry.access.redhat.com,access.redhat.com,sso.redhat.com"
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "HTTP_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("https://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("https://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: fmt.Sprintf("%s,%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname, defaultSampleImportContainerRegistries),
+				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
@@ -399,7 +423,7 @@ func oasVolumeKubeconfig() *corev1.Volume {
 func buildOASVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oasVolumeEtcdClientCA() *corev1.Volume {
@@ -422,7 +446,7 @@ func oasVolumeServingCert() *corev1.Volume {
 func buildOASVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftAPIServerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oasVolumeEtcdClientCert() *corev1.Volume {
@@ -434,7 +458,7 @@ func oasVolumeEtcdClientCert() *corev1.Volume {
 func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oasVolumeKonnectivityProxyCert() *corev1.Volume {
@@ -487,7 +511,7 @@ func pullSecretVolume() *corev1.Volume {
 func buildOASVolumeKonnectivityProxyCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func buildOASVolumeKonnectivityProxyCA(v *corev1.Volume) {
