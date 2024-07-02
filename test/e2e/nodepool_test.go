@@ -135,6 +135,15 @@ func TestNodePoolMultiArch(t *testing.T) {
 	t.Parallel()
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
+			setup: func(t *testing.T) {
+				if !globalOpts.configurableClusterOptions.AWSMultiArch {
+					t.Skip("test only supported on multi-arch clusters")
+				}
+				if globalOpts.Platform != hyperv1.AWSPlatform {
+					t.Skip("test only supported on platform AWS")
+				}
+				t.Log("Starting NodePoolArm64CreateTest.")
+			},
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{
 					{
