@@ -6,9 +6,12 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -32,9 +35,13 @@ func TestReconcileOauthDeploymentNoChanges(t *testing.T) {
 	hcp.Name = "name"
 	hcp.Namespace = "namespace"
 	ownerRef := config.OwnerRefFrom(hcp)
+	webhookRef := &corev1.LocalObjectReference{
+		Name: "test-webhook-audit-secret",
+	}
 
 	testCases := []struct {
 		cm               corev1.ConfigMap
+		auditCM          corev1.ConfigMap
 		deploymentConfig config.DeploymentConfig
 		serverParams     OAuthServerParams
 		configParams     OAuthConfigParams
@@ -52,6 +59,7 @@ func TestReconcileOauthDeploymentNoChanges(t *testing.T) {
 			serverParams: OAuthServerParams{
 				AvailabilityProberImage: "test-availability-image",
 				Socks5ProxyImage:        "test-socks-5-proxy-image",
+				AuditWebhookRef:         webhookRef,
 			},
 		},
 	}
@@ -61,9 +69,13 @@ func TestReconcileOauthDeploymentNoChanges(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 		oauthDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oauthDeployment.Spec.MinReadySeconds
-		err := ReconcileDeployment(ctx, fakeClient, oauthDeployment, ownerRef, &tc.cm, imageName, tc.deploymentConfig, tc.serverParams.IdentityProviders(), tc.serverParams.OauthConfigOverrides,
+		err := ReconcileDeployment(ctx, fakeClient, oauthDeployment, tc.serverParams.AuditWebhookRef, ownerRef, &tc.cm, &tc.auditCM, imageName, tc.deploymentConfig, tc.serverParams.IdentityProviders(), tc.serverParams.OauthConfigOverrides,
 			tc.serverParams.AvailabilityProberImage, tc.serverParams.NamedCertificates(), tc.serverParams.Socks5ProxyImage, tc.serverParams.NoProxy, &tc.configParams, hyperv1.IBMCloudPlatform)
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(oauthDeployment.Spec.MinReadySeconds))
+
+		deploymentYaml, err := util.SerializeResource(oauthDeployment, api.Scheme)
+		g.Expect(err).To(BeNil())
+		testutil.CompareWithFixture(t, deploymentYaml)
 	}
 }
