@@ -1082,6 +1082,16 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"datavolumes"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
+			{
+				APIGroups: []string{"ipam.cluster.x-k8s.io"},
+				Resources: []string{"ipaddressclaims", "ipaddressclaims/status"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
+			{
+				APIGroups: []string{"ipam.cluster.x-k8s.io"},
+				Resources: []string{"ipaddresses", "ipaddresses/status"},
+				Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
+			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.
 				APIGroups: []string{"subresources.kubevirt.io"},
 				Resources: []string{"virtualmachineinstances/addvolume", "virtualmachineinstances/removevolume"},

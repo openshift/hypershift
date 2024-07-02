@@ -20,6 +20,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/util"
 
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -469,4 +470,13 @@ func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string 
 		return hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
 	}
 	return ""
+}
+
+// IPsToStrings converts IP addresses from configv1.IP type to a simple String
+func IPsToStrings(ips []configv1.IP) []string {
+	res := make([]string, len(ips))
+	for i, ip := range ips {
+		res[i] = string(ip)
+	}
+	return res
 }

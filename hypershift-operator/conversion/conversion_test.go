@@ -368,6 +368,32 @@ func removeHubTypeMeta(in runtime.Object) {
 	in.GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{})
 }
 
+func fixHostedControlPlaneAfterFuzz(in runtime.Object) {
+	hc, ok := in.(*hyperv1beta1.HostedControlPlane)
+	if !ok {
+		panic(fmt.Sprintf("unexpected convertible type: %T", in))
+	}
+	// Given there is no OpenStack support on alpha we shouldn't fuzz
+	// the beta object and expect it to be equal to the non existent
+	// OpenStack support on alpha.
+	if hc.Spec.Platform.OpenStack != nil {
+		hc.Spec.Platform.OpenStack = nil
+	}
+}
+
+func fixHosterClusterAfterFuzz(in runtime.Object) {
+	hc, ok := in.(*hyperv1beta1.HostedCluster)
+	if !ok {
+		panic(fmt.Sprintf("unexpected convertible type: %T", in))
+	}
+	// Given there is no OpenStack support on alpha we shouldn't fuzz
+	// the beta object and expect it to be equal to the non existent
+	// OpenStack support on alpha.
+	if hc.Spec.Platform.OpenStack != nil {
+		hc.Spec.Platform.OpenStack = nil
+	}
+}
+
 func TestFuzzyConversion(t *testing.T) {
 	t.Run("for HostedCluster", FuzzTestFunc(FuzzTestFuncInput{
 		Hub:                &hyperv1beta1.HostedCluster{},
@@ -376,6 +402,7 @@ func TestFuzzyConversion(t *testing.T) {
 		SpokeAfterMutation: fixupHostedCluster,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{hostedClusterFuzzerFuncs},
 		Scheme:             localScheme,
+		HubAfterFuzz:       fixHosterClusterAfterFuzz,
 	}))
 	t.Run("for NodePool", FuzzTestFunc(FuzzTestFuncInput{
 		Hub:                &hyperv1beta1.NodePool{},
@@ -390,6 +417,7 @@ func TestFuzzyConversion(t *testing.T) {
 		Spoke:              &hyperv1alpha1.HostedControlPlane{},
 		SpokeAfterMutation: fixupHostedControlPlane,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{hostedControlPlaneFuzzerFuncs},
+		HubAfterFuzz:       fixHostedControlPlaneAfterFuzz,
 	}))
 	t.Run("for AWSEndpointService", FuzzTestFunc(FuzzTestFuncInput{
 		Hub:                &hyperv1beta1.AWSEndpointService{},

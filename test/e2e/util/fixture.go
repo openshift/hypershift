@@ -164,6 +164,9 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 
 		opts.InfrastructureJSON = infraFile
 		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile, renderLogFile, createLogFile)
+	case hyperv1.OpenStackPlatform:
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.OpenStackPlatform, manifestsFile, renderLogFile, createLogFile)
+
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}

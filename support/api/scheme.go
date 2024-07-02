@@ -37,6 +37,8 @@ import (
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
+	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -100,4 +102,6 @@ func init() {
 	agentv1.AddToScheme(Scheme)
 	capipowervs.AddToScheme(Scheme)
 	machinev1beta1.AddToScheme(Scheme)
+	capiopenstackv1alpha1.AddToScheme(Scheme)
+	capiopenstackv1beta1.AddToScheme(Scheme)
 }

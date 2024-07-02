@@ -55,6 +55,7 @@ type FuzzTestFuncInput struct {
 
 	Hub              runtime.Object
 	HubAfterMutation func(runtime.Object)
+	HubAfterFuzz     func(runtime.Object)
 
 	Spoke                      runtime.Object
 	SpokeAfterMutation         func(runtime.Object)
@@ -106,6 +107,10 @@ func FuzzTestFunc(input FuzzTestFuncInput) func(*testing.T) {
 				// Create the hub and fuzz it
 				hubBefore := input.Hub.DeepCopyObject()
 				fuzzer.Fuzz(hubBefore)
+
+				if input.HubAfterFuzz != nil {
+					input.HubAfterFuzz(hubBefore)
+				}
 
 				// First convert hub to spoke
 				dstCopy := input.Spoke.DeepCopyObject()

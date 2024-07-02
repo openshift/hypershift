@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -35,11 +36,12 @@ import (
 type PlatformAgnosticOptions struct {
 	core.RawCreateOptions
 
-	NonePlatform     none.RawCreateOptions
-	AWSPlatform      aws.RawCreateOptions
-	KubevirtPlatform kubevirt.RawCreateOptions
-	AzurePlatform    azure.RawCreateOptions
-	PowerVSPlatform  powervs.RawCreateOptions
+	NonePlatform      none.RawCreateOptions
+	AWSPlatform       aws.RawCreateOptions
+	KubevirtPlatform  kubevirt.RawCreateOptions
+	AzurePlatform     azure.RawCreateOptions
+	PowerVSPlatform   powervs.RawCreateOptions
+	OpenStackPlatform openstack.RawCreateOptions
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
