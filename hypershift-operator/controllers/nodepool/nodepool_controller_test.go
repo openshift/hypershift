@@ -47,6 +47,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/openshift/hypershift/support/util/performanceprofilestatus"
+	"github.com/openshift/hypershift/support/util/performanceprofilestatusconfigmap"
 )
 
 func TestIsUpdatingConfig(t *testing.T) {
@@ -2371,6 +2374,166 @@ func TestTaintsToJSON(t *testing.T) {
 			node := &corev1.Node{}
 			node.Spec.Taints = append(node.Spec.Taints, coreTaints...)
 			g.Expect(node.Spec.Taints).To(ContainElements(coreTaints))
+		})
+	}
+}
+
+func TestSetPerformanceProfileStatus(t *testing.T) {
+	controlPlaneNamespace := "clusters-hostedcluster01"
+	userClustersNamespace := "clusters"
+	nodePoolName := "hostedcluster01"
+
+	availablePPstatusCM, err := performanceprofilestatusconfigmap.New(controlPlaneNamespace, userClustersNamespace, nodePoolName,
+		performanceprofilestatusconfigmap.WithStatus(performanceprofilestatus.Available()))
+	if err != nil {
+		t.Fatalf("Failed to create a performance profile status config map")
+	}
+
+	progressingPPstatusCM, err := performanceprofilestatusconfigmap.New(controlPlaneNamespace, userClustersNamespace, nodePoolName,
+		performanceprofilestatusconfigmap.WithStatus(performanceprofilestatus.Progressing()))
+	if err != nil {
+		t.Fatalf("Failed to create a performance profile status config map")
+	}
+
+	degradedPPstatusCM, err := performanceprofilestatusconfigmap.New(controlPlaneNamespace, userClustersNamespace, nodePoolName,
+		performanceprofilestatusconfigmap.WithStatus(performanceprofilestatus.Degraded()))
+	if err != nil {
+		t.Fatalf("Failed to create a performance profile status config map")
+	}
+
+	testCases := []struct {
+		name                       string
+		PerformanceProfileStatusCM *corev1.ConfigMap
+		expectedConditions         map[string]hyperv1.NodePoolCondition
+	}{
+		{
+			name:                       "Performance profile is available",
+			PerformanceProfileStatusCM: availablePPstatusCM,
+			expectedConditions: map[string]hyperv1.NodePoolCondition{
+				performanceprofilestatus.AvailableConditionType: {
+					Type:    performanceprofilestatus.AvailableConditionType,
+					Status:  corev1.ConditionTrue,
+					Message: "cgroup=v1;",
+					Reason:  "",
+				},
+				performanceprofilestatus.ProgressingConditionType: {
+					Type:    performanceprofilestatus.ProgressingConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				performanceprofilestatus.UpgradeableConditionType: {
+					Type:    performanceprofilestatus.UpgradeableConditionType,
+					Status:  corev1.ConditionTrue,
+					Message: "",
+					Reason:  "",
+				},
+				performanceprofilestatus.DegradedConditionType: {
+					Type:    performanceprofilestatus.DegradedConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+			},
+		},
+		{
+			name:                       "Performance profile is progressing",
+			PerformanceProfileStatusCM: progressingPPstatusCM,
+			expectedConditions: map[string]hyperv1.NodePoolCondition{
+				performanceprofilestatus.AvailableConditionType: {
+					Type:    performanceprofilestatus.AvailableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				performanceprofilestatus.ProgressingConditionType: {
+					Type:    performanceprofilestatus.ProgressingConditionType,
+					Status:  corev1.ConditionTrue,
+					Reason:  "DeploymentStarting",
+					Message: "Deployment is starting",
+				},
+				performanceprofilestatus.UpgradeableConditionType: {
+					Type:    performanceprofilestatus.UpgradeableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				performanceprofilestatus.DegradedConditionType: {
+					Type:    performanceprofilestatus.DegradedConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+			},
+		},
+		{
+			name:                       "Performance profile is degraded",
+			PerformanceProfileStatusCM: degradedPPstatusCM,
+			expectedConditions: map[string]hyperv1.NodePoolCondition{
+				performanceprofilestatus.AvailableConditionType: {
+					Type:    performanceprofilestatus.AvailableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				performanceprofilestatus.ProgressingConditionType: {
+					Type:    performanceprofilestatus.ProgressingConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				performanceprofilestatus.UpgradeableConditionType: {
+					Type:    performanceprofilestatus.UpgradeableConditionType,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+					Reason:  "",
+				},
+				performanceprofilestatus.DegradedConditionType: {
+					Type:    performanceprofilestatus.DegradedConditionType,
+					Status:  corev1.ConditionTrue,
+					Message: "Cannot list Tuned Profiles to match with profile perfprofile-hostedcluster01",
+					Reason:  "GettingTunedStatusFailed",
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := NodePoolReconciler{
+				Client: fake.NewClientBuilder().Build(),
+			}
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: userClustersNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: nodePoolName,
+				},
+			}
+			performanceProfileConditions := []string{
+				performanceprofilestatus.AvailableConditionType,
+				performanceprofilestatus.ProgressingConditionType,
+				performanceprofilestatus.UpgradeableConditionType,
+				performanceprofilestatus.DegradedConditionType}
+
+			ctx := context.Background()
+			for _, ppCondition := range performanceProfileConditions {
+				cond := FindStatusCondition(nodePool.Status.Conditions, ppCondition)
+				g.Expect(cond).To(BeNil())
+			}
+
+			r.Create(ctx, tc.PerformanceProfileStatusCM)
+			err := r.SetPerformanceProfileStatus(ctx, tc.PerformanceProfileStatusCM, nodePool, controlPlaneNamespace)
+			g.Expect(err).ToNot(HaveOccurred())
+			for _, NodePoolCond := range performanceProfileConditions {
+				cond := FindStatusCondition(nodePool.Status.Conditions, NodePoolCond)
+				expectCond := tc.expectedConditions[NodePoolCond]
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(expectCond.Status))
+				g.Expect(cond.Message).To(Equal(expectCond.Message))
+				g.Expect(cond.Reason).To(Equal(expectCond.Reason))
+			}
+
 		})
 	}
 }

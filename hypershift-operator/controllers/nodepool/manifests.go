@@ -80,3 +80,12 @@ func PerformanceProfileConfigMap(namespace, name string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func PerformanceProfileStatusConfigMap(namespace, name string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("perfprofile-%s-status", name),
+		},
+	}
+}
