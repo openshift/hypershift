@@ -68,7 +68,7 @@ spec:
         vpc: fakeVPCID
         zone: fakeName
       endpointAccess: Public
-      multiArch: true
+      multiArch: false
       region: us-east-2
       rolesRef:
         controlPlaneOperatorARN: fakeControlPlaneOperatorARN
