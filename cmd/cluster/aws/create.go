@@ -44,7 +44,6 @@ type RawCreateOptions struct {
 	EnableProxy             bool
 	SingleNATGateway        bool
 	MultiArch               bool
-	SkipMultiArchImageCheck bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -360,7 +359,6 @@ func DefaultOptions() *RawCreateOptions {
 		RootVolumeType: "gp3",
 		RootVolumeSize: 120,
 		EndpointAccess: string(hyperv1.Public),
-		MultiArch:      true,
 	}
 }
 
@@ -390,7 +388,6 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	bindCoreOptions(opts, flags)
 	flags.StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	flags.BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
-	flags.BoolVar(&opts.SkipMultiArchImageCheck, "skip-multi-arch-image-check", opts.SkipMultiArchImageCheck, "If enabled, skips checking if the release image is multi-arch for multi-arch HCs; this should only be used for unit testing.")
 	opts.Credentials.BindFlags(flags)
 }
 
@@ -470,11 +467,6 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 
 // validateMultiArchRelease validates a release image or release stream is multi-arch if the multi-arch flag is set
 func validateMultiArchRelease(ctx context.Context, releaseImage, releaseStream, pullSecretFile string, awsOpts *RawCreateOptions) error {
-	// Skip checking if the release image is multi-arch in unit testing
-	if awsOpts.SkipMultiArchImageCheck {
-		return nil
-	}
-
 	// Validate the release image is multi-arch when the multi-arch flag is set and a release image is provided
 	if awsOpts.MultiArch && len(releaseImage) > 0 {
 		pullSecret, err := os.ReadFile(pullSecretFile)
