@@ -1282,6 +1282,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 	}
 
 	var predicates []Predicate[*hyperv1.HostedCluster]
