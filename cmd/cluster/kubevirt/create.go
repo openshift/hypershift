@@ -76,7 +76,7 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	if o.ServicePublishingStrategy != NodePortServicePublishingStrategy && o.APIServerAddress != "" {
 		return nil, fmt.Errorf("external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", o.ServicePublishingStrategy)
 	}
-	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && (!opts.Render || opts.RenderInto != "") {
+	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && !opts.Render {
 		var err error
 		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
 			return nil, err

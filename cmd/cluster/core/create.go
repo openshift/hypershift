@@ -550,7 +550,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
 	}
 
-	if !opts.Render && opts.RenderInto != "" {
+	if !opts.Render {
 		client, err := util.GetClient()
 		if err != nil {
 			return nil, err
@@ -594,6 +594,10 @@ type CreateOptions struct {
 func (opts *ValidatedCreateOptions) Complete() (*CreateOptions, error) {
 	if len(opts.InfraID) == 0 {
 		opts.InfraID = infraid.New(opts.Name)
+	}
+
+	if opts.RenderInto != "" {
+		opts.Render = true
 	}
 
 	return &CreateOptions{
@@ -679,7 +683,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	postProcess(resources, opts)
 
 	// In render mode, print the objects and return early
-	if opts.Render || opts.RenderInto != "" {
+	if opts.Render {
 		output := os.Stdout
 		if opts.RenderInto != "" {
 			var err error

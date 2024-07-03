@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -10,6 +11,7 @@ import (
 	"k8s.io/client-go/rest"
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
 )
@@ -33,6 +35,10 @@ func GetConfig() (*rest.Config, error) {
 
 // GetClient creates a controller-runtime client for Kubernetes
 func GetClient() (crclient.Client, error) {
+	if os.Getenv("FAKE_CLIENT") == "true" {
+		return fake.NewFakeClient(), nil
+	}
+
 	config, err := GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)

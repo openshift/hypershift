@@ -369,7 +369,7 @@ func GetMgmtClusterCPUArch(ctx context.Context) (string, error) {
 	// Get the API version in JSON format
 	versionJSON, err := kc.RESTClient().Get().AbsPath("/version").DoRaw(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get API version: %v", err)
 	}
 
 	// Unmarshal the version JSON so we can extract the platform field
