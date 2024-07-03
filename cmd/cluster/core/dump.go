@@ -28,8 +28,11 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -68,6 +71,11 @@ var (
 		&corev1.Pod{},
 		&corev1.ReplicationController{},
 		&corev1.Service{},
+	}
+
+	ocpResources = []client.Object{
+		&routev1.Route{},
+		&imagev1.ImageStream{},
 	}
 
 	kubevirtResources = []client.Object{
@@ -342,10 +350,26 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capikubevirt.KubevirtMachineTemplate{},
 		&capikubevirt.KubevirtCluster{},
 		&policyv1.PodDisruptionBudget{},
-		&routev1.Route{},
-		&imagev1.ImageStream{},
 		&networkingv1.NetworkPolicy{},
 	)
+
+	// The management cluster may not be an OpenShift cluster.
+	// Only dump registered OpenShift GVKs to avoid errors.
+	kubeClient := kubeclient.NewForConfigOrDie(cfg)
+	kubeDiscoveryClient := kubeClient.Discovery()
+	for _, resource := range ocpResources {
+		gvk, err := c.GroupVersionKindFor(resource)
+		if err != nil {
+			return err
+		}
+		resourceRegistered, err := isResourceRegistered(kubeDiscoveryClient, gvk)
+		if err != nil {
+			return err
+		}
+		if resourceRegistered {
+			resources = append(resources, resource)
+		}
+	}
 
 	if localKubevirtInUse {
 		resources = append(resources, kubevirtResources...)
@@ -362,7 +386,6 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		namespaces = append(namespaces, kubevirtNamespace)
 	}
 
-	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	for _, ns := range namespaces {
 		cmd.WithNamespace(ns).Run(ctx, resourceList)
 	}
@@ -764,4 +787,20 @@ func shouldDumpKubevirt(nodePools []*hyperv1.NodePool) ([]kubevirtExtCluster, bo
 	}
 
 	return kubevirtInExternalInfras, localKubevirtInUse
+}
+
+func isResourceRegistered(discoveryClient discovery.DiscoveryInterface, gvk schema.GroupVersionKind) (bool, error) {
+	apiResourceLists, err := discoveryClient.ServerResourcesForGroupVersion(gvk.GroupVersion().String())
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, apiResource := range apiResourceLists.APIResources {
+		if apiResource.Kind == gvk.Kind {
+			return true, nil
+		}
+	}
+	return false, nil
 }
