@@ -20,7 +20,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -214,7 +214,7 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, config *corev1.Con
 					},
 				},
 				ServiceAccountName:           "",
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 			},
 		},
 	}

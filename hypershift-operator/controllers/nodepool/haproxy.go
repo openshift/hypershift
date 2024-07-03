@@ -116,7 +116,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 
 	// TODO (alberto): Technically this should call util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
 	// How ever we allow it here to keep backward compatibility with existing clusters which defaulted .port to 443.
-	apiServerInternalPort := haproxyFrontendListenAddress(hcluster)
+	apiServerInternalPort := haproxyFrontendListenPort(hcluster)
 	if hcluster.Spec.Networking.APIServer != nil {
 		if hcluster.Spec.Networking.APIServer.AdvertiseAddress != nil {
 			apiServerInternalAddress = *hcluster.Spec.Networking.APIServer.AdvertiseAddress
@@ -141,7 +141,6 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		clusterNetworkCIDR = hcluster.Spec.Networking.ClusterNetwork[0].CIDR.String()
 	}
 
-	assignedStaticIP := ""
 	if sharedingress.UseSharedIngress() {
 		sharedIngressRouteSVC := &corev1.Service{
 			TypeMeta: metav1.TypeMeta{},
@@ -158,22 +157,10 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		}
 		apiServerExternalAddress = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
 		apiServerExternalPort = sharedingress.KASSVCLBPort
-
-		routerStaticIPsMapping := sharedingress.RouterStaticIPsMappingConfigMap()
-		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(routerStaticIPsMapping), routerStaticIPsMapping); err != nil {
-			return "", true, err
-		}
-
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		if _, exist := routerStaticIPsMapping.Data[hcpNamespace]; !exist {
-			return "", true, fmt.Errorf("waiting for sharedIngress controller to assign a static IP for HostedCluster %s", crclient.ObjectKeyFromObject(hcluster))
-		}
-
-		assignedStaticIP = routerStaticIPsMapping.Data[hcpNamespace]
 	}
 
 	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage,
-		apiServerExternalAddress, apiServerInternalAddress, assignedStaticIP,
+		apiServerExternalAddress, apiServerInternalAddress,
 		apiServerExternalPort, apiServerInternalPort,
 		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
 	if err != nil {
@@ -193,7 +180,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 
 // TODO (alberto): Technically anything should be calling util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
 // How ever we allow it here to keep backward compatibility with existing clusters which defaulted .port to 443.
-func haproxyFrontendListenAddress(hc *hyperv1.HostedCluster) int32 {
+func haproxyFrontendListenPort(hc *hyperv1.HostedCluster) int32 {
 	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
 		return *hc.Spec.Networking.APIServer.Port
 	}
@@ -221,11 +208,10 @@ type fileToAdd struct {
 	source   func() ([]byte, error)
 	name     string
 	mode     int
-	params   map[string]string
+	params   map[string]any
 }
 
 //go:embed apiserver-haproxy/*
-//go:embed remote-kas-svc-haproxy/*
 var content embed.FS
 
 func MustAsset(name string) string {
@@ -237,16 +223,13 @@ func MustAsset(name string) string {
 }
 
 var (
-	setupAPIServerIPScriptTemplate       = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("apiserver-haproxy/setup-apiserver-ip.sh")))
-	teardownAPIServerIPScriptTemplate    = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("apiserver-haproxy/teardown-apiserver-ip.sh")))
-	haProxyConfigTemplate                = template.Must(template.New("haProxyConfig").Parse(MustAsset("apiserver-haproxy/haproxy.cfg")))
-	setupRemoteKASSVCIPScriptTemplate    = template.Must(template.New("setupRemoteKASSVCIPScript").Parse(MustAsset("remote-kas-svc-haproxy/setup-remote-kas-svc-ip.sh")))
-	teardownRemoteKASSVCIPScriptTemplate = template.Must(template.New("teardownRemoteKASSVCIPScript").Parse(MustAsset("remote-kas-svc-haproxy/teardown-remote-kas-svc-ip.sh")))
-	haProxyConfigRemoteKASSVCTemplate    = template.Must(template.New("haProxyConfigRemoteKASSVC").Parse(MustAsset("remote-kas-svc-haproxy/haproxy.cfg")))
+	setupAPIServerIPScriptTemplate    = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("apiserver-haproxy/setup-apiserver-ip.sh")))
+	teardownAPIServerIPScriptTemplate = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("apiserver-haproxy/teardown-apiserver-ip.sh")))
+	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(MustAsset("apiserver-haproxy/haproxy.cfg")))
 )
 
 func apiServerProxyConfig(haProxyImage, cpoImage,
-	externalAPIAddress, internalAPIAddress, clusterStaticAssignedIP string,
+	externalAPIAddress, internalAPIAddress string,
 	externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
@@ -256,7 +239,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 			template: setupAPIServerIPScriptTemplate,
 			name:     "/usr/local/bin/setup-apiserver-ip.sh",
 			mode:     0755,
-			params: map[string]string{
+			params: map[string]any{
 				"InternalAPIAddress": internalAPIAddress,
 			},
 		},
@@ -264,31 +247,10 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 			template: teardownAPIServerIPScriptTemplate,
 			name:     "/usr/local/bin/teardown-apiserver-ip.sh",
 			mode:     0755,
-			params: map[string]string{
+			params: map[string]any{
 				"InternalAPIAddress": internalAPIAddress,
 			},
 		},
-	}
-
-	if sharedingress.UseSharedIngress() {
-		filesToAdd = append(filesToAdd, []fileToAdd{
-			{
-				template: setupRemoteKASSVCIPScriptTemplate,
-				name:     "/usr/local/bin/setup-remote-kas-svc-ip.sh",
-				mode:     0755,
-				params: map[string]string{
-					"RemoteKASSVCAdress": clusterStaticAssignedIP,
-				},
-			},
-			{
-				template: teardownRemoteKASSVCIPScriptTemplate,
-				name:     "/usr/local/bin/teardown-remote-kas-svc-ip.sh",
-				mode:     0755,
-				params: map[string]string{
-					"RemoteKASSVCAdress": clusterStaticAssignedIP,
-				},
-			},
-		}...)
 	}
 
 	// Check if no proxy contains any address that should result in skipping the system proxy
@@ -296,46 +258,18 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 		return strings.Contains(noProxy, s)
 	})
 
-	// Arbitrary port to bind for the data plane local proxies to communicate.
-	localPortToRemoteKASSVCPort := int32(7443)
 	if proxyAddr == "" || skipProxyForKAS {
-		apiserverProxyForwardIP := externalAPIAddress
-		apiserverProxyForwardPort := externalAPIPort
-
-		if sharedingress.UseSharedIngress() {
-			apiserverProxyForwardIP = clusterStaticAssignedIP
-			apiserverProxyForwardPort = localPortToRemoteKASSVCPort
-
-			filesToAdd = append(filesToAdd, []fileToAdd{
-				{
-					template: haProxyConfigRemoteKASSVCTemplate,
-					name:     "/etc/kubernetes/remote-kas-svc-proxy/haproxy.cfg",
-					mode:     0644,
-					params: map[string]string{
-						"RemoteKASSVCAddress":         clusterStaticAssignedIP,
-						"LocalPortToRemoteKASSVCPort": strconv.FormatInt(int64(localPortToRemoteKASSVCPort), 10),
-						"ExternalAPIAddress":          externalAPIAddress,
-						"ExternalAPIPort":             strconv.FormatInt(int64(externalAPIPort), 10),
-					},
-				},
-				{
-					source: generateHAProxyStaticPod("remote-kas-svc-proxy", haProxyImage, clusterStaticAssignedIP, "/etc/kubernetes/remote-kas-svc-proxy", localPortToRemoteKASSVCPort),
-					name:   "/etc/kubernetes/manifests/remote-kas-svc-proxy.yaml",
-					mode:   0644,
-				},
-			}...)
-		}
-
 		filesToAdd = append(filesToAdd, []fileToAdd{
 			{
 				template: haProxyConfigTemplate,
 				name:     "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg",
 				mode:     0644,
-				params: map[string]string{
-					"RemoteIP":           apiserverProxyForwardIP,
-					"RemotePort":         strconv.FormatInt(int64(apiserverProxyForwardPort), 10),
+				params: map[string]any{
 					"InternalAPIAddress": internalAPIAddress,
-					"InternalAPIPort":    strconv.FormatInt(int64(internalAPIPort), 10),
+					"InternalAPIPort":    internalAPIPort,
+					"ExternalAPIAddress": externalAPIAddress,
+					"ExternalAPIPort":    externalAPIPort,
+					"UseProxyProtocol":   sharedingress.UseSharedIngress(),
 				},
 			},
 			{
@@ -374,9 +308,6 @@ func apiServerProxyConfig(haProxyImage, cpoImage,
 	config.Storage.Files = files
 	config.Systemd.Units = []ignitionapi.Unit{
 		apiServerIPUnit(),
-	}
-	if sharedingress.UseSharedIngress() {
-		config.Systemd.Units = append(config.Systemd.Units, remoteKASSVCIPUnit())
 	}
 	return json.Marshal(config)
 }
@@ -527,14 +458,6 @@ func apiServerIPUnit() ignitionapi.Unit {
 	content := MustAsset("apiserver-haproxy/apiserver-ip.service")
 	return ignitionapi.Unit{
 		Name:     "apiserver-ip.service",
-		Contents: &content,
-		Enabled:  pointer.Bool(true),
-	}
-}
-func remoteKASSVCIPUnit() ignitionapi.Unit {
-	content := MustAsset("remote-kas-svc-haproxy/remote-kas-svc-ip.service")
-	return ignitionapi.Unit{
-		Name:     "remote-kas-svc-ip.service",
 		Contents: &content,
 		Enabled:  pointer.Bool(true),
 	}

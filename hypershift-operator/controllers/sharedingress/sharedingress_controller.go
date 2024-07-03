@@ -9,12 +9,15 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -144,6 +147,10 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, hostedClu
 		return fmt.Errorf("failed to reconcile router static ips mapping: %w", err)
 	}
 
+	if err := r.reconcileHostedClusters(ctx, hostedClustersList, routerStaticIPsMapping.Data); err != nil {
+		return fmt.Errorf("failed to reconcile hosted clusters APIServer advertise address: %w", err)
+	}
+
 	config, routes, err := r.generateConfig(ctx, routerStaticIPsMapping.Data)
 	if err != nil {
 		return fmt.Errorf("failed to generate router config: %w", err)
@@ -203,6 +210,30 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, hostedClu
 	// TODO(alberto): set Network policies.
 
 	return nil
+}
+
+func (r *SharedIngressReconciler) reconcileHostedClusters(ctx context.Context, hostedClustersList *hyperv1.HostedClusterList, routerStaticIPsMapping map[string]string) error {
+	var errs []error
+	for _, hc := range hostedClustersList.Items {
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+		kasAdvertiseAddress := routerStaticIPsMapping[hcpNamespace]
+
+		if hc.Spec.Networking.APIServer != nil && ptr.Deref(hc.Spec.Networking.APIServer.AdvertiseAddress, "") == kasAdvertiseAddress {
+			continue
+		}
+
+		originalHostedCluster := hc.DeepCopy()
+		if hc.Spec.Networking.APIServer == nil {
+			hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
+		}
+		hc.Spec.Networking.APIServer.AdvertiseAddress = ptr.To(kasAdvertiseAddress)
+
+		if err := r.Client.Patch(ctx, &hc, client.MergeFrom(originalHostedCluster)); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.NewAggregate(errs)
 }
 
 func (r *SharedIngressReconciler) reconcileDefaultServiceAccount(ctx context.Context) error {
