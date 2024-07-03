@@ -157,9 +157,7 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 			}
 			t.Parallel()
 			clusterOpts := globalOpts.DefaultClusterOptions(t)
-			// We set replicas to 0 in order to allow the inner tests to
-			// create their own NodePools with the proper replicas
-			clusterOpts.NodePoolReplicas = 0
+			clusterOpts.NodePoolReplicas = 1
 
 			ctx, cancel := context.WithCancel(testContext)
 			defer cancel()
