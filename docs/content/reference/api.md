@@ -7068,6 +7068,20 @@ PowerVSNodePoolPlatform
 <p>PowerVS specifies the configuration used when using IBMCloud PowerVS platform.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>openstack</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackNodePoolPlatform">
+OpenStackNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OpenStack specifies the configuration used when using OpenStack platform.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###NodePoolPlatformStatus { #hypershift.openshift.io/v1beta1.NodePoolPlatformStatus }
@@ -7519,6 +7533,47 @@ string
 </td>
 <td>
 <p>CloudName specifies the name of the entry in the clouds.yaml file to use.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OpenStackNodePoolPlatform { #hypershift.openshift.io/v1beta1.OpenStackNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>flavor</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Flavor is the OpenStack flavor to use for the node instances.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
+is chosen based on the NodePool release payload image.</p>
 </td>
 </tr>
 </tbody>

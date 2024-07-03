@@ -386,6 +386,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.NodePortPublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackIdentityReference"):
 		return &hypershiftv1beta1.OpenStackIdentityReferenceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OpenStackNodePoolPlatform"):
+		return &hypershiftv1beta1.OpenStackNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackPlatformSpec"):
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):

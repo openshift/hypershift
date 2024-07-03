@@ -2024,6 +2024,22 @@ spec:
                     required:
                     - rootVolume
                     type: object
+                  openstack:
+                    description: OpenStack specifies the configuration used when using
+                      OpenStack platform.
+                    properties:
+                      flavor:
+                        description: Flavor is the OpenStack flavor to use for the
+                          node instances.
+                        type: string
+                      imageName:
+                        description: |-
+                          ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
+                          is chosen based on the NodePool release payload image.
+                        type: string
+                    required:
+                    - flavor
+                    type: object
                   powervs:
                     description: PowerVS specifies the configuration used when using
                       IBMCloud PowerVS platform.

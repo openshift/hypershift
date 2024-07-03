@@ -24,13 +24,14 @@ import (
 // NodePoolPlatformApplyConfiguration represents an declarative configuration of the NodePoolPlatform type for use
 // with apply.
 type NodePoolPlatformApplyConfiguration struct {
-	Type     *v1beta1.PlatformType                       `json:"type,omitempty"`
-	AWS      *AWSNodePoolPlatformApplyConfiguration      `json:"aws,omitempty"`
-	IBMCloud *IBMCloudPlatformSpecApplyConfiguration     `json:"ibmcloud,omitempty"`
-	Kubevirt *KubevirtNodePoolPlatformApplyConfiguration `json:"kubevirt,omitempty"`
-	Agent    *AgentNodePoolPlatformApplyConfiguration    `json:"agent,omitempty"`
-	Azure    *AzureNodePoolPlatformApplyConfiguration    `json:"azure,omitempty"`
-	PowerVS  *PowerVSNodePoolPlatformApplyConfiguration  `json:"powervs,omitempty"`
+	Type      *v1beta1.PlatformType                        `json:"type,omitempty"`
+	AWS       *AWSNodePoolPlatformApplyConfiguration       `json:"aws,omitempty"`
+	IBMCloud  *IBMCloudPlatformSpecApplyConfiguration      `json:"ibmcloud,omitempty"`
+	Kubevirt  *KubevirtNodePoolPlatformApplyConfiguration  `json:"kubevirt,omitempty"`
+	Agent     *AgentNodePoolPlatformApplyConfiguration     `json:"agent,omitempty"`
+	Azure     *AzureNodePoolPlatformApplyConfiguration     `json:"azure,omitempty"`
+	PowerVS   *PowerVSNodePoolPlatformApplyConfiguration   `json:"powervs,omitempty"`
+	OpenStack *OpenStackNodePoolPlatformApplyConfiguration `json:"openstack,omitempty"`
 }
 
 // NodePoolPlatformApplyConfiguration constructs an declarative configuration of the NodePoolPlatform type for use with
@@ -92,5 +93,13 @@ func (b *NodePoolPlatformApplyConfiguration) WithAzure(value *AzureNodePoolPlatf
 // If called multiple times, the PowerVS field is set to the value of the last call.
 func (b *NodePoolPlatformApplyConfiguration) WithPowerVS(value *PowerVSNodePoolPlatformApplyConfiguration) *NodePoolPlatformApplyConfiguration {
 	b.PowerVS = value
+	return b
+}
+
+// WithOpenStack sets the OpenStack field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OpenStack field is set to the value of the last call.
+func (b *NodePoolPlatformApplyConfiguration) WithOpenStack(value *OpenStackNodePoolPlatformApplyConfiguration) *NodePoolPlatformApplyConfiguration {
+	b.OpenStack = value
 	return b
 }

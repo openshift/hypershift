@@ -433,6 +433,11 @@ type NodePoolPlatform struct {
 	//
 	// +optional
 	PowerVS *PowerVSNodePoolPlatform `json:"powervs,omitempty"`
+
+	// OpenStack specifies the configuration used when using OpenStack platform.
+	//
+	// +optional
+	OpenStack *OpenStackNodePoolPlatform `json:"openstack,omitempty"`
 }
 
 // PowerVSNodePoolProcType defines processor type to be used for PowerVSNodePoolPlatform
@@ -890,6 +895,20 @@ type AgentNodePoolPlatform struct {
 	// be selected for a Machine.
 	// +optional
 	AgentLabelSelector *metav1.LabelSelector `json:"agentLabelSelector,omitempty"`
+}
+
+type OpenStackNodePoolPlatform struct {
+	// Flavor is the OpenStack flavor to use for the node instances.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	Flavor string `json:"flavor"`
+
+	// ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
+	// is chosen based on the NodePool release payload image.
+	//
+	// +optional
+	ImageName string `json:"imageName,omitempty"`
 }
 
 type AzureNodePoolPlatform struct {
