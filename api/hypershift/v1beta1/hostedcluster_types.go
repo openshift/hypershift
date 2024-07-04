@@ -275,9 +275,6 @@ const (
 	// AroHCP represents the ARO HCP managed service offering
 	AroHCP = "ARO-HCP"
 
-	// RosaHCP represents the ROSA HCP managed service offering
-	RosaHCP = "ROSA-HCP"
-
 	// HostedClusterSizeLabel is a label on HostedClusters indicating a size based on the number of nodes.
 	HostedClusterSizeLabel = "hypershift.openshift.io/hosted-cluster-size"
 

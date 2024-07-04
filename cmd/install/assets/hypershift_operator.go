@@ -170,11 +170,18 @@ func (o ExternalDNSCredsSecret) Build() *corev1.Secret {
 	return secret
 }
 
+type ExternalDNSProvider string
+
+const (
+	AWSExternalDNSProvider   ExternalDNSProvider = "aws"
+	AzureExternalDNSProvider ExternalDNSProvider = "azure"
+)
+
 type ExternalDNSDeployment struct {
 	Namespace         *corev1.Namespace
 	Image             string
 	ServiceAccount    *corev1.ServiceAccount
-	Provider          string
+	Provider          ExternalDNSProvider
 	DomainFilter      string
 	CredentialsSecret *corev1.Secret
 	TxtOwnerId        string
@@ -286,7 +293,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 
 	// Add platform specific settings
 	switch o.Provider {
-	case "aws":
+	case AWSExternalDNSProvider:
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
 				Name:  "AWS_SHARED_CREDENTIALS_FILE",
@@ -303,7 +310,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--aws-batch-change-interval=10s",
 			"--aws-zones-cache-duration=1h",
 		)
-	case "azure":
+	case AzureExternalDNSProvider:
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--azure-config-file=/etc/provider/credentials",
 		)
