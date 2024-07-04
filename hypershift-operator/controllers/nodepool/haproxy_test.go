@@ -24,15 +24,55 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 	image := "ha-proxy-image:latest"
 	externalAddress := "cluster.example.com"
 	internalAddress := "cluster.internal.example.com"
-	config, err := apiServerProxyConfig(image, "", externalAddress, internalAddress, 443, 8443, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	serviceNetwork := " 10.134.0.0/16"
+	clusterNetwork := " 10.128.0.0/14"
+
+	testCases := []struct {
+		name    string
+		proxy   string
+		noProxy string
+	}{
+		{
+			name:    "when empty proxy it should create an haproxy",
+			proxy:   "",
+			noProxy: "localhost,127.0.0.1",
+		},
+		{
+			name:    "when noproxy matches internalAddress it should create an haproxy",
+			proxy:   "proxy",
+			noProxy: "localhost,127.0.0.1," + internalAddress,
+		},
+		{
+			name:    "when noproxy matches serviceNetwork it should create an haproxy",
+			proxy:   "proxy",
+			noProxy: "localhost," + serviceNetwork + ",127.0.0.1,",
+		},
+		{
+			name:    "when noproxy matches clusterNetwork it should create an haproxy",
+			proxy:   "proxy",
+			noProxy: "localhost," + clusterNetwork + ",127.0.0.1,",
+		},
+		{
+			name:    "when noproxy matches kubernetes it should create an haproxy",
+			proxy:   "proxy",
+			noProxy: "localhost,kubernetes.svc,127.0.0.1,",
+		},
 	}
-	yamlConfig, err := yaml.JSONToYAML(config)
-	if err != nil {
-		t.Fatalf("cannot convert to yaml: %v", err)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			config, err := apiServerProxyConfig(image, tc.proxy, externalAddress, internalAddress, 443, 8443,
+				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			yamlConfig, err := yaml.JSONToYAML(config)
+			if err != nil {
+				t.Fatalf("cannot convert to yaml: %v", err)
+			}
+			testutil.CompareWithFixture(t, yamlConfig)
+		})
 	}
-	testutil.CompareWithFixture(t, yamlConfig)
 }
 
 func TestReconcileHAProxyIgnitionConfig(t *testing.T) {
