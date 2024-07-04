@@ -1,7 +1,7 @@
 # Create an Azure Hosted Cluster on AKS
 This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup (starting in OCP 4.16).
 
-If you already have an existing AKS cluster up and running, you can jump to the [Setup ExternalDNS](#setup-externaldns)
+If you already have an existing AKS cluster up and running, you can jump to the [Setup ExternalDNS](#setup-externaldns).
 
 ## Prerequisites
 Obtain the az cli. See [this](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) for instructions.
@@ -29,6 +29,7 @@ az aks create \
 --resource-group ${RG} \
 --name ${AKS_CLUSTER_NAME} \
 --node-count 3 \
+--node-vm-size Standard_D4s_v3 \
 --generate-ssh-keys \
 --load-balancer-sku standard \
 --os-sku AzureLinux \ 
@@ -128,32 +129,32 @@ CUSTOMER_VNET_SUBNET1="customer-subnet-1"
 CUSTOMER_NSG="customer-nsg"
 ```
 
-# Create a managed resource group
+### Create a managed resource group
 ```
 az group create --name "${MANAGED_RG_NAME}" --location ${LOCATION}
 ```
 
-# Create a customer VNET resource group
+### Create a customer VNET resource group
 ```
 az group create --name "${CUSTOMER_RG_NAME}" --location ${LOCATION}
 ```
 
-# Create a customer NSG resource group
+### Create a customer NSG resource group
 ```
 az group create --name "${CUSTOMER_NSG_RG_NAME}" --location ${LOCATION}
 ```
 
-# Create a customer network security group
+### Create a customer network security group
 ```
 az network nsg create --resource-group "${CUSTOMER_NSG_RG_NAME}" --name "${CUSTOMER_NSG}"
 ```
 
-# Get customer nsg ID
+### Get customer nsg ID
 ```
 GetNsgID=$(az network nsg list --query "[?name=='${CUSTOMER_NSG}'].id" -o tsv)
 ```
 
-# Create customer VNET in the customer resource group
+### Create customer VNET in the customer resource group
 ```
 az network vnet create \
 --name "${CUSTOMER_VNET_NAME}" \
@@ -164,14 +165,29 @@ az network vnet create \
 --nsg "${GetNsgID}"
 ```
 
-# Get customer vnet ID
+### Get customer vnet ID
 ```
 GetVnetID=$(az network vnet list --query "[?name=='${CUSTOMER_VNET_NAME}'].id" -o tsv)
 ```
 
-# Get customer subnet ID
+### Get customer subnet ID
 ```
 GetSubnetID=$(az network vnet subnet show --vnet-name "${CUSTOMER_VNET_NAME}" --name "${CUSTOMER_VNET_SUBNET1}" --resource-group "${CUSTOMER_RG_NAME}" --query id --output tsv)
+```
+
+## Get index image digests
+```
+HYPERSHIFT_HC_VERSION="4.16"
+
+CERTIFIED_OPERATOR_INDEX_REPO="registry.redhat.io/redhat/certified-operator-index"
+COMMUNITY_OPERATOR_INDEX_REPO="registry.redhat.io/redhat/community-operator-index"
+REDHAT_MARKETPLACE_INDEX_REPO="registry.redhat.io/redhat/redhat-marketplace-index"
+REDHAT_OPERATOR_INDEX_REPO="registry.redhat.io/redhat/redhat-operator-index"
+
+CERTIFIED_OPERATOR_INDEX_HASH="$(oc image info "${CERTIFIED_OPERATOR_INDEX_REPO}:v${HYPERSHIFT_HC_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
+COMMUNITY_OPERATOR_INDEX_HASH="$(oc image info "${COMMUNITY_OPERATOR_INDEX_REPO}:v${HYPERSHIFT_HC_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
+REDHAT_MARKETPLACE_INDEX_HASH="$(oc image info "${REDHAT_MARKETPLACE_INDEX_REPO}:v${HYPERSHIFT_HC_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
+REDHAT_OPERATOR_INDEX_HASH="$(oc image info "${REDHAT_OPERATOR_INDEX_REPO}:v${HYPERSHIFT_HC_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
 ```
 
 ## Create the Azure Hosted Cluster
@@ -195,10 +211,10 @@ hypershift create cluster azure \
 --subnet-id "${GetSubnetID}" \
 --network-security-group-id "${GetNsgID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
---annotations hypershift.openshift.io/certified-operators-catalog-image=registry.redhat.io/redhat/certified-operator-index@sha256:fc68a3445d274af8d3e7d27667ad3c1e085c228b46b7537beaad3d470257be3e \
---annotations hypershift.openshift.io/community-operators-catalog-image=registry.redhat.io/redhat/community-operator-index@sha256:4a2e1962688618b5d442342f3c7a65a18a2cb014c9e66bb3484c687cfb941b90 \
---annotations hypershift.openshift.io/redhat-marketplace-catalog-image=registry.redhat.io/redhat/redhat-marketplace-index@sha256:ed22b093d930cfbc52419d679114f86bd588263f8c4b3e6dfad86f7b8baf9844 \
---annotations hypershift.openshift.io/redhat-operators-catalog-image=registry.redhat.io/redhat/redhat-operator-index@sha256:59b14156a8af87c0c969037713fc49be7294401b10668583839ff2e9b49c18d6 \
+--annotations hypershift.openshift.io/certified-operators-catalog-image=${CERTIFIED_OPERATOR_INDEX_REPO}@${CERTIFIED_OPERATOR_INDEX_HASH} \
+--annotations hypershift.openshift.io/community-operators-catalog-image=${COMMUNITY_OPERATOR_INDEX_REPO}@${COMMUNITY_OPERATOR_INDEX_HASH} \
+--annotations hypershift.openshift.io/redhat-marketplace-catalog-image=${REDHAT_MARKETPLACE_INDEX_REPO}@${REDHAT_MARKETPLACE_INDEX_HASH} \
+--annotations hypershift.openshift.io/redhat-operators-catalog-image=${REDHAT_OPERATOR_INDEX_REPO}@${REDHAT_OPERATOR_INDEX_HASH} \
 --fips=true
 ```
 
