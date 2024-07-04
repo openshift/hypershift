@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -15,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -25,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	sigyaml "sigs.k8s.io/yaml"
 )
@@ -603,6 +606,15 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 		return nil
 	}
 
+	var (
+		validity *time.Duration
+		err      error
+	)
+
+	if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+		return fmt.Errorf("failed to parse server cert validity from annotation %s: %w", hyperv1.SelfSignedCertificateValidityAnnotation, err)
+	}
+
 	deploymentConfig := &config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
@@ -611,7 +623,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 	infraNamespace := hcp.Namespace
 
 	infraServiceAccount := manifests.KubevirtCSIDriverInfraSA(infraNamespace)
-	_, err := createOrUpdate(ctx, client, infraServiceAccount, func() error {
+	_, err = createOrUpdate(ctx, client, infraServiceAccount, func() error {
 		return reconcileInfraSA(infraServiceAccount)
 	})
 	if err != nil {
@@ -646,7 +658,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	tenantControllerKubeconfigSecret := manifests.KubevirtCSIDriverTenantKubeConfig(infraNamespace)
 	_, err = createOrUpdate(ctx, client, tenantControllerKubeconfigSecret, func() error {
-		return pki.ReconcileServiceAccountKubeconfig(tenantControllerKubeconfigSecret, csrSigner, rootCA, hcp, manifests.KubevirtCSIDriverTenantNamespaceStr, "kubevirt-csi-controller-sa")
+		return pki.ReconcileServiceAccountKubeconfig(tenantControllerKubeconfigSecret, csrSigner, rootCA, hcp, manifests.KubevirtCSIDriverTenantNamespaceStr, "kubevirt-csi-controller-sa", *validity)
 	})
 	if err != nil {
 		return err

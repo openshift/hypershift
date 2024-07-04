@@ -3,17 +3,20 @@ package hostedcontrolplane
 import (
 	"context"
 	"fmt"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 type signerReconciler func(*corev1.Secret, config.OwnerRef) error
-type subReconciler func(target, ca *corev1.Secret, ownerRef config.OwnerRef) error
+type subReconciler func(target, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error
 
 func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	ctx context.Context,
@@ -23,6 +26,15 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	rootCASecret *corev1.Secret,
 	additionalClientCAs ...*corev1.ConfigMap,
 ) error {
+	var (
+		validity *time.Duration
+		err      error
+	)
+
+	if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+		return fmt.Errorf("failed to parse server cert validity from annotation %s: %w", hyperv1.SelfSignedCertificateValidityAnnotation, err)
+	}
+
 	reconcileSigner := func(s *corev1.Secret, reconciler signerReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
 			return reconciler(s, p.OwnerRef)
@@ -36,7 +48,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 
 	reconcileSub := func(target, ca *corev1.Secret, reconciler subReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
-			return reconciler(target, ca, p.OwnerRef)
+			return reconciler(target, ca, p.OwnerRef, *validity)
 		}
 
 		if _, err := createOrUpdate(ctx, r, target, applyFunc); err != nil {
@@ -187,7 +199,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// OpenShift Authenticator
 	openshiftAuthenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, openshiftAuthenticatorCertSecret, func() error {
-		return pki.ReconcileOpenShiftAuthenticatorCertSecret(openshiftAuthenticatorCertSecret, csrSigner, p.OwnerRef)
+		return pki.ReconcileOpenShiftAuthenticatorCertSecret(openshiftAuthenticatorCertSecret, csrSigner, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift authenticator cert: %w", err)
 	}
@@ -195,7 +207,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// Metrics client cert
 	metricsClientCert := manifests.MetricsClientCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, metricsClientCert, func() error {
-		return pki.ReconcileMetricsSAClientCertSecret(metricsClientCert, csrSigner, p.OwnerRef)
+		return pki.ReconcileMetricsSAClientCertSecret(metricsClientCert, csrSigner, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile metrics client cert secret: %w", err)
 	}

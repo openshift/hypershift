@@ -26,9 +26,10 @@ import (
 const (
 	keySize = 2048
 
-	ValidityOneDay   = 24 * time.Hour
-	ValidityOneYear  = 365 * ValidityOneDay
-	ValidityTenYears = 10 * ValidityOneYear
+	ValidityOneDay                = 24 * time.Hour
+	ValidityOneYear               = 365 * ValidityOneDay
+	ValidityTenYears              = 10 * ValidityOneYear
+	DefaultSelfSignedCertValidity = ValidityOneYear
 
 	CAHashAnnotation = "hypershiftlite.openshift.io/ca-hash"
 	// CASignerCertMapKey is the key value in a CA cert utilized by the control plane operator.
@@ -117,12 +118,14 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
+
 	cert := x509.Certificate{
 		BasicConstraintsValid: true,
 		IsCA:                  cfg.IsCA,
 		KeyUsage:              cfg.KeyUsages,
-		NotAfter:              time.Now().Add(cfg.Validity),
-		NotBefore:             time.Now(),
+		NotAfter:              now.Add(cfg.Validity),
+		NotBefore:             now,
 		SerialNumber:          serial,
 		Subject:               cfg.Subject,
 	}
@@ -155,14 +158,15 @@ func signedCertificate(
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
 
 	certTmpl := x509.Certificate{
 		DNSNames:              csr.DNSNames,
 		ExtKeyUsage:           cfg.ExtKeyUsages,
 		IPAddresses:           csr.IPAddresses,
 		KeyUsage:              cfg.KeyUsages,
-		NotAfter:              time.Now().Add(cfg.Validity),
-		NotBefore:             caCert.NotBefore,
+		NotAfter:              now.Add(cfg.Validity),
+		NotBefore:             now,
 		SerialNumber:          serial,
 		Subject:               csr.Subject,
 		IsCA:                  cfg.IsCA,
@@ -296,6 +300,11 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 		errs = append(errs, fmt.Errorf("actual ip addresses differ from expected: %s", ipAddressDiff))
 	}
 
+	certValidity := cert.NotAfter.Sub(cert.NotBefore)
+	if certValidity.Truncate(time.Minute) != cfg.Validity.Truncate(time.Minute) {
+		errs = append(errs, fmt.Errorf("actual validity %v differs from expected %v", (certValidity.Hours())/24, (cfg.Validity.Hours())/24))
+	}
+
 	if cert.KeyUsage != cfg.KeyUsages {
 		errs = append(errs, fmt.Errorf("actual key usage %d differs from expected %d", cert.KeyUsage, cfg.KeyUsages))
 	}
@@ -330,6 +339,7 @@ func ReconcileSignedCert(
 	caKey string,
 	dnsNames []string,
 	ips []string,
+	validity time.Duration,
 	o ...func(*CAOpts),
 ) error {
 	opts := (&CAOpts{}).withDefaults().withOpts(o...)
@@ -360,7 +370,7 @@ func ReconcileSignedCert(
 		Subject:      pkix.Name{CommonName: cn, Organization: org},
 		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsages: extUsages,
-		Validity:     ValidityOneYear,
+		Validity:     validity,
 		DNSNames:     dnsNames,
 		IPAddresses:  ipAddresses,
 	}
@@ -485,4 +495,22 @@ func hasKeys(secret *corev1.Secret, keys ...string) bool {
 		}
 	}
 	return true
+}
+
+func GenerateCertValidity(durationFromAnnotation *string) (*time.Duration, error) {
+	var (
+		validity time.Duration
+		err      error
+	)
+
+	if len(*durationFromAnnotation) <= 0 {
+		validity = DefaultSelfSignedCertValidity
+	} else {
+		validity, err = time.ParseDuration(*durationFromAnnotation)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse annotation server cert validity: %w", err)
+		}
+	}
+
+	return &validity, nil
 }

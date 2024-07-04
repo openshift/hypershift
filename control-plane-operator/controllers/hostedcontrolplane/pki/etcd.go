@@ -2,6 +2,7 @@ package pki
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -20,15 +21,15 @@ const (
 	EtcdPeerKeyKey = "peer.key"
 )
 
-func ReconcileEtcdClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, "")
+func ReconcileEtcdClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error {
+	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, "", validity)
 }
 
-func ReconcileEtcdMetricsClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-metrics-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, "")
+func ReconcileEtcdMetricsClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error {
+	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-metrics-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, "", validity)
 }
 
-func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error {
 	dnsNames := []string{
 		fmt.Sprintf("etcd-client.%s.svc", secret.Namespace),
 		fmt.Sprintf("etcd-client.%s.svc.cluster.local", secret.Namespace),
@@ -38,10 +39,10 @@ func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerR
 		"localhost",
 	}
 
-	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-server", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdServerCrtKey, EtcdServerKeyKey, "", dnsNames, nil, "")
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-server", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdServerCrtKey, EtcdServerKeyKey, "", dnsNames, nil, "", validity)
 }
 
-func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error {
 	dnsNames := []string{
 		fmt.Sprintf("*.etcd-discovery.%s.svc", secret.Namespace),
 		fmt.Sprintf("*.etcd-discovery.%s.svc.cluster.local", secret.Namespace),
@@ -49,5 +50,5 @@ func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef
 		"::1",
 	}
 
-	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, nil, "")
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, nil, "", validity)
 }

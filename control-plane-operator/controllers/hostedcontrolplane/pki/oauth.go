@@ -2,13 +2,14 @@ package pki
 
 import (
 	"net"
+	"time"
 
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 )
 
-func ReconcileOAuthServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalOAuthAddress string) error {
+func ReconcileOAuthServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalOAuthAddress string, validity time.Duration) error {
 	var dnsNames, ips []string
 	oauthIP := net.ParseIP(externalOAuthAddress)
 	if oauthIP != nil {
@@ -16,7 +17,7 @@ func ReconcileOAuthServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRe
 	} else {
 		dnsNames = append(dnsNames, externalOAuthAddress)
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, ips)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, ips, validity)
 }
 
 func ReconcileOAuthMasterCABundle(caBundle *corev1.ConfigMap, ownerRef config.OwnerRef, sourceCerts []*corev1.Secret) error {

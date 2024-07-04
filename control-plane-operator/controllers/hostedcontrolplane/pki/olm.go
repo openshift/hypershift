@@ -2,13 +2,14 @@ package pki
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/support/config"
 )
 
-func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error {
 	dnsNames := []string{
 		"packageserver",
 		fmt.Sprintf("packageserver.%s.svc", secret.Namespace),
@@ -16,23 +17,23 @@ func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef con
 		"packageserver.default.svc",
 		"packageserver.default.svc.cluster.local",
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "packageserver", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "packageserver", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil, validity)
 }
 
-func ReconcileOLMCatalogOperatorServingCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+func ReconcileOLMCatalogOperatorServingCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error {
 	dnsNames := []string{
 		"catalog-operator-metrics",
 		fmt.Sprintf("catalog-operator-metrics.%s.svc", secret.Namespace),
 		fmt.Sprintf("catalog-operator-metrics.%s.svc.cluster.local", secret.Namespace),
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "catalog-operator-metrics", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "catalog-operator-metrics", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil, validity)
 }
 
-func ReconcileOLMOperatorServingCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+func ReconcileOLMOperatorServingCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, validity time.Duration) error {
 	dnsNames := []string{
 		"olm-operator-metrics",
 		fmt.Sprintf("olm-operator-metrics.%s.svc", secret.Namespace),
 		fmt.Sprintf("olm-operator-metrics.%s.svc.cluster.local", secret.Namespace),
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "olm-operator-metrics", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "olm-operator-metrics", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil, validity)
 }

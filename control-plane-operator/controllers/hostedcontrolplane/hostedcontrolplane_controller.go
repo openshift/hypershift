@@ -2088,6 +2088,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Co
 func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.KonnectivityHost)
 
+	var (
+		validity *time.Duration
+		err      error
+	)
+
+	if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+		return fmt.Errorf("failed to parse server cert validity from annotation %s: %w", hyperv1.SelfSignedCertificateValidityAnnotation, err)
+	}
+
 	// Root CA
 	rootCASecret := manifests.RootCASecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCASecret, func() error {
@@ -2129,7 +2138,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Etcd client secret
 	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdClientSecret, func() error {
-		return pki.ReconcileEtcdClientSecret(etcdClientSecret, etcdSignerSecret, p.OwnerRef)
+		return pki.ReconcileEtcdClientSecret(etcdClientSecret, etcdSignerSecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
 	}
@@ -2137,7 +2146,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Etcd server secret
 	etcdServerSecret := manifests.EtcdServerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdServerSecret, func() error {
-		return pki.ReconcileEtcdServerSecret(etcdServerSecret, etcdSignerSecret, p.OwnerRef)
+		return pki.ReconcileEtcdServerSecret(etcdServerSecret, etcdSignerSecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd server secret: %w", err)
 	}
@@ -2145,7 +2154,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Etcd peer secret
 	etcdPeerSecret := manifests.EtcdPeerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdPeerSecret, func() error {
-		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef)
+		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
 	}
@@ -2169,7 +2178,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Etcd client secret
 	etcdMetricsClientSecret := manifests.EtcdMetricsClientSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdMetricsClientSecret, func() error {
-		return pki.ReconcileEtcdMetricsClientSecret(etcdMetricsClientSecret, etcdMetricsSignerSecret, p.OwnerRef)
+		return pki.ReconcileEtcdMetricsClientSecret(etcdMetricsClientSecret, etcdMetricsSignerSecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
 	}
@@ -2177,7 +2186,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// KAS server secret
 	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kasServerSecret, func() error {
-		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR, p.NodeInternalAPIServerIP)
+		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR, p.NodeInternalAPIServerIP, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
@@ -2202,7 +2211,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OpenShift APIServer
 	openshiftAPIServerCertSecret := manifests.OpenShiftAPIServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, openshiftAPIServerCertSecret, func() error {
-		return pki.ReconcileOpenShiftAPIServerCertSecret(openshiftAPIServerCertSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileOpenShiftAPIServerCertSecret(openshiftAPIServerCertSecret, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
 	}
@@ -2211,7 +2220,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		// OpenShift OAuth APIServer
 		openshiftOAuthAPIServerCertSecret := manifests.OpenShiftOAuthAPIServerCertSecret(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, openshiftOAuthAPIServerCertSecret, func() error {
-			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef)
+			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile openshift oauth apiserver cert: %w", err)
 		}
@@ -2220,7 +2229,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OpenShift ControllerManager Cert
 	openshiftControllerManagerCertSecret := manifests.OpenShiftControllerManagerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, openshiftControllerManagerCertSecret, func() error {
-		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftControllerManagerCertSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftControllerManagerCertSecret, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
 	}
@@ -2228,7 +2237,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OpenShift Route ControllerManager Cert
 	openshiftRouteControllerManagerCertSecret := manifests.OpenShiftRouteControllerManagerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, openshiftRouteControllerManagerCertSecret, func() error {
-		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftRouteControllerManagerCertSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftRouteControllerManagerCertSecret, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift route controller manager cert: %w", err)
 	}
@@ -2236,7 +2245,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Cluster Policy Controller Cert
 	clusterPolicyControllerCertSecret := manifests.ClusterPolicyControllerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, clusterPolicyControllerCertSecret, func() error {
-		return pki.ReconcileOpenShiftControllerManagerCertSecret(clusterPolicyControllerCertSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(clusterPolicyControllerCertSecret, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster policy controller cert: %w", err)
 	}
@@ -2258,7 +2267,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Konnectivity Server Cert
 	konnectivityServerSecret := manifests.KonnectivityServerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityServerSecret, func() error {
-		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, konnectivitySigner, p.OwnerRef)
+		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, konnectivitySigner, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server cert: %w", err)
 	}
@@ -2266,7 +2275,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Konnectivity Cluster Cert
 	konnectivityClusterSecret := manifests.KonnectivityClusterSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityClusterSecret, func() error {
-		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, konnectivitySigner, p.OwnerRef, p.ExternalKconnectivityAddress)
+		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, konnectivitySigner, p.OwnerRef, p.ExternalKconnectivityAddress, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
 	}
@@ -2274,7 +2283,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Konnectivity Client Cert
 	konnectivityClientSecret := manifests.KonnectivityClientSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityClientSecret, func() error {
-		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, konnectivitySigner, p.OwnerRef)
+		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, konnectivitySigner, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity client cert: %w", err)
 	}
@@ -2282,7 +2291,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Konnectivity Agent Cert
 	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
-		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, konnectivitySigner, p.OwnerRef)
+		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, konnectivitySigner, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
 	}
@@ -2290,7 +2299,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Ingress Cert
 	ingressCert := manifests.IngressCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, ingressCert, func() error {
-		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
+		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
 	}
@@ -2314,7 +2323,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		// OAuth server Cert
 		oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, oauthServerCert, func() error {
-			return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
+			return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
 		}
@@ -2353,7 +2362,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// MCS Cert
 	machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, machineConfigServerCert, func() error {
-		return pki.ReconcileMachineConfigServerCert(machineConfigServerCert, rootCASecret, p.OwnerRef)
+		return pki.ReconcileMachineConfigServerCert(machineConfigServerCert, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
 	}
@@ -2361,12 +2370,12 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Cluster Node Tuning Operator metrics Serving Cert
 	NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
 	NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
-	err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
+	err = removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
 	if err != nil {
 		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
 	}
 	if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
-		return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
+		return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
 	}
@@ -2374,7 +2383,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OLM PackageServer Cert
 	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, packageServerCertSecret, func() error {
-		return pki.ReconcileOLMPackageServerCertSecret(packageServerCertSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileOLMPackageServerCertSecret(packageServerCertSecret, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile packageserver cert: %w", err)
 	}
@@ -2382,7 +2391,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OLM Catalog Operator Serving Cert
 	catalogOperatorServingCert := manifests.OLMCatalogOperatorServingCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, catalogOperatorServingCert, func() error {
-		return pki.ReconcileOLMCatalogOperatorServingCertSecret(catalogOperatorServingCert, rootCASecret, p.OwnerRef)
+		return pki.ReconcileOLMCatalogOperatorServingCertSecret(catalogOperatorServingCert, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm catalog operator serving cert: %w", err)
 	}
@@ -2390,7 +2399,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OLM Operator Serving Cert
 	olmOperatorServingCert := manifests.OLMOperatorServingCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, olmOperatorServingCert, func() error {
-		return pki.ReconcileOLMOperatorServingCertSecret(olmOperatorServingCert, rootCASecret, p.OwnerRef)
+		return pki.ReconcileOLMOperatorServingCertSecret(olmOperatorServingCert, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
 	}
@@ -2398,28 +2407,28 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Image Registry Operator Serving Cert
 	imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
-		return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
+		return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
 	}
 
 	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kcmServerSecret, func() error {
-		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
 	}
 
 	cvoServerCert := manifests.ClusterVersionOperatorServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, cvoServerCert, func() error {
-		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef)
+		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
 	}
 
 	csiSnapshotWebhookSecret := manifests.CSISnapshotControllerWebhookCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, csiSnapshotWebhookSecret, func() error {
-		return pki.ReconcileCSISnapshotWebhookTLS(csiSnapshotWebhookSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileCSISnapshotWebhookTLS(csiSnapshotWebhookSecret, rootCASecret, p.OwnerRef, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
 	}
@@ -2448,7 +2457,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}
 
 		if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
-			return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
+			return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
 		}
@@ -2473,7 +2482,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}
 
 		if _, err = createOrUpdate(ctx, r, networkNodeIdentityServingCertSecret, func() error {
-			return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef)
+			return pki.ReconcileNetworkNodeIdentityServingCertSecret(networkNodeIdentityServingCertSecret, rootCASecret, p.OwnerRef, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile network node identity serving cert: %w", err)
 		}
@@ -2498,7 +2507,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}
 
 		if _, err = createOrUpdate(ctx, r, ovnControlPlaneMetricsServingCertSecret, func() error {
-			return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef)
+			return pki.ReconcileOVNControlPlaneMetricsServingCertSecret(ovnControlPlaneMetricsServingCertSecret, rootCASecret, p.OwnerRef, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OVN control plane serving cert: %w", err)
 		}
@@ -2507,7 +2516,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 		ignitionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ignitionServerCert, func() error {
-			return pki.ReconcileIgnitionServerCertSecret(ignitionServerCert, rootCASecret, p.OwnerRef)
+			return pki.ReconcileIgnitionServerCertSecret(ignitionServerCert, rootCASecret, p.OwnerRef, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition server cert: %w", err)
 		}
@@ -2518,7 +2527,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	case hyperv1.AWSPlatform:
 		awsPodIdentityWebhookServingCert := manifests.AWSPodIdentityWebhookServingCert(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, awsPodIdentityWebhookServingCert, func() error {
-			return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
+			return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
 		}
@@ -2539,7 +2548,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			}
 
 			if _, err = createOrUpdate(ctx, r, azureDiskCsiDriverControllerMetricsServingCert, func() error {
-				return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+				return pki.ReconcileAzureDiskCsiDriverControllerMetricsServingCertSecret(azureDiskCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef, *validity)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
 			}
@@ -2561,7 +2570,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			}
 
 			if _, err := createOrUpdate(ctx, r, azureFileCsiDriverControllerMetricsServingCert, func() error {
-				return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+				return pki.ReconcileAzureFileCsiDriverControllerMetricsServingCertSecret(azureFileCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef, *validity)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile azure file csi driver controller metrics serving cert: %w", err)
 			}
@@ -2762,6 +2771,15 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 
 func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
 	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext)
+
+	var (
+		validity *time.Duration
+		err      error
+	)
+
+	if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+		return fmt.Errorf("failed to parse server cert validity from annotation %s: %w", hyperv1.SelfSignedCertificateValidityAnnotation, err)
+	}
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -2981,7 +2999,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 		podIdentityWebhookSecret := manifests.AWSPodIdentityWebhookKubeconfig(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, podIdentityWebhookSecret, func() error {
-			return pki.ReconcileServiceAccountKubeconfig(podIdentityWebhookSecret, csrSigner, rootCA, hcp, "openshift-authentication", "aws-pod-identity-webhook")
+			return pki.ReconcileServiceAccountKubeconfig(podIdentityWebhookSecret, csrSigner, rootCA, hcp, "openshift-authentication", "aws-pod-identity-webhook", *validity)
 		}); err != nil {
 			return fmt.Errorf("failecd to reconcile aws pod identity webhook kubeconfig secret: %w", err)
 		}
@@ -3550,6 +3568,15 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx co
 func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := dnsoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
+	var (
+		validity *time.Duration
+		err      error
+	)
+
+	if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+		return fmt.Errorf("failed to parse server cert validity from annotation %s: %w", hyperv1.SelfSignedCertificateValidityAnnotation, err)
+	}
+
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return err
@@ -3562,7 +3589,7 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 
 	kubeconfig := manifests.DNSOperatorKubeconfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
-		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, "openshift-dns-operator", "dns-operator")
+		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, "openshift-dns-operator", "dns-operator", *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile dnsoperator kubeconfig: %w", err)
 	}
@@ -3580,6 +3607,15 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
+	var (
+		validity *time.Duration
+		err      error
+	)
+
+	if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+		return fmt.Errorf("failed to parse server cert validity from annotation %s: %w", hyperv1.SelfSignedCertificateValidityAnnotation, err)
+	}
+
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return err
@@ -3592,7 +3628,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 
 	kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
-		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, "openshift-ingress-operator", "ingress-operator")
+		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, "openshift-ingress-operator", "ingress-operator", *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator kubeconfig: %w", err)
 	}
@@ -3619,6 +3655,15 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := cco.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
+	var (
+		validity *time.Duration
+		err      error
+	)
+
+	if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+		return fmt.Errorf("failed to parse server cert validity from annotation %s: %w", hyperv1.SelfSignedCertificateValidityAnnotation, err)
+	}
+
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return err
@@ -3631,7 +3676,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx cont
 
 	kubeconfig := manifests.CloudCredentialOperatorKubeconfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
-		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, cco.WorkerNamespace, cco.WorkerServiceAccount)
+		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, cco.WorkerNamespace, cco.WorkerServiceAccount, *validity)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cloud credential operator kubeconfig: %w", err)
 	}

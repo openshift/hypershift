@@ -21,6 +21,7 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed go generate CA: %v", err)
 	}
+	validity := certs.DefaultSelfSignedCertValidity
 
 	caSecret := &corev1.Secret{
 		Data: map[string][]byte{
@@ -112,7 +113,7 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 			}
 			initialKey, initalCert := secret.Data[corev1.TLSPrivateKeyKey], secret.Data[corev1.TLSCertKey]
 
-			if err := reconcileSignedCertWithKeysAndAddresses(secret, caSecret, config.OwnerRef{}, "foo", []string{"org"}, X509UsageServerAuth, corev1.TLSCertKey, corev1.TLSPrivateKeyKey, certs.CASignerCertMapKey, []string{"foo.svc.local"}, []string{"127.0.0.1"}, ""); err != nil {
+			if err := reconcileSignedCertWithKeysAndAddresses(secret, caSecret, config.OwnerRef{}, "foo", []string{"org"}, X509UsageServerAuth, corev1.TLSCertKey, corev1.TLSPrivateKeyKey, certs.CASignerCertMapKey, []string{"foo.svc.local"}, []string{"127.0.0.1"}, "", validity); err != nil {
 				t.Fatalf("reconcileSignedCertWithKeysAndAddresses failed: %v", err)
 			}
 

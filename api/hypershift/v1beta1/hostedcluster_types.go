@@ -317,6 +317,9 @@ const (
 	// This annotation signals to the NodePool controller that it is safe to use TopologySpreadConstraints on a NodePool
 	// without triggering an unexpected update of KubeVirt VMs.
 	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
+
+	// SelfSignedCertificateValidityAnnotation allows specifying the validity of the self-signed certificate generated for HCP components. The format of the annotation is a go duration string with a numeric component and unit.
+	SelfSignedCertificateValidityAnnotation = "hypershift.openshift.io/certificate-validity"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

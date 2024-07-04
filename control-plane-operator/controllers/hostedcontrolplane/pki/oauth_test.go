@@ -54,7 +54,7 @@ func TestReconcileOAuthServerCert(t *testing.T) {
 			secret := &corev1.Secret{}
 			secret.Name = "cert"
 			secret.Namespace = "dummy"
-			err = ReconcileOAuthServerCert(secret, ca, ownerRef, test.address)
+			err = ReconcileOAuthServerCert(secret, ca, ownerRef, test.address, certs.DefaultSelfSignedCertValidity)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

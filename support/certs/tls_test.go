@@ -180,6 +180,7 @@ func abs(i int) int {
 
 func TestReconcileSignedCertWithCustomCAKeys(t *testing.T) {
 	t.Parallel()
+	validity := certs.DefaultSelfSignedCertValidity
 	ca := &corev1.Secret{Type: corev1.SecretTypeTLS}
 	if err := certs.ReconcileSelfSignedCA(ca, "some-cn", "some-ou", func(o *certs.CAOpts) {
 		o.CASignerCertMapKey = "ca-signer-cert"
@@ -204,6 +205,7 @@ func TestReconcileSignedCertWithCustomCAKeys(t *testing.T) {
 		"",
 		nil,
 		nil,
+		validity,
 		func(o *certs.CAOpts) {
 			o.CASignerCertMapKey = "ca-signer-cert"
 			o.CASignerKeyMapKey = "ca-signer-key"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -23,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -135,11 +137,20 @@ func ReconcileIgnitionServer(ctx context.Context,
 			log.Info("reconciled ignition CA cert secret", "result", result)
 		}
 
+		var (
+			validity *time.Duration
+			err      error
+		)
+
+		if validity, err = certs.GenerateCertValidity(ptr.To(hcp.Annotations[hyperv1.SelfSignedCertificateValidityAnnotation])); err != nil {
+			return fmt.Errorf("failed to parse ignition server cert validity: %w", err)
+		}
+
 		// Reconcile an ignition serving certificate issued by the generated root CA.
 		// We only create this and don't update it for now.
 		servingCertSecret := ignitionserver.IgnitionServingCertSecret(controlPlaneNamespace)
 		if result, err := createOrUpdate(ctx, c, servingCertSecret, func() error {
-			return reconcileServingCertSecret(servingCertSecret, caCertSecret, ignitionServerAddress)
+			return reconcileServingCertSecret(servingCertSecret, caCertSecret, ignitionServerAddress, *validity)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
 		} else {
@@ -344,7 +355,7 @@ func reconcileCACertSecret(caCertSecret *corev1.Secret) error {
 	})
 }
 
-func reconcileServingCertSecret(servingCertSecret *corev1.Secret, caCertSecret *corev1.Secret, ignitionServerAddress string) error {
+func reconcileServingCertSecret(servingCertSecret *corev1.Secret, caCertSecret *corev1.Secret, ignitionServerAddress string, validity time.Duration) error {
 	servingCertSecret.Type = corev1.SecretTypeTLS
 
 	var dnsNames, ipAddresses []string
@@ -366,6 +377,7 @@ func reconcileServingCertSecret(servingCertSecret *corev1.Secret, caCertSecret *
 		"",
 		dnsNames,
 		ipAddresses,
+		validity,
 		func(o *certs.CAOpts) {
 			o.CASignerCertMapKey = corev1.TLSCertKey
 			o.CASignerKeyMapKey = corev1.TLSPrivateKeyKey
