@@ -94,12 +94,12 @@ func TestNodePool(t *testing.T) {
 						test: NewKubeVirtQoSClassGuaranteedTest(ctx, mgtClient, hostedCluster),
 					},
 					{
-						name: "KubeKubeVirtJsonPatchTest",
-						test: NewKubeKubeVirtJsonPatchTest(ctx, mgtClient, hostedCluster),
+						name: "KubeVirtJsonPatchTest",
+						test: NewKubeVirtJsonPatchTest(ctx, mgtClient, hostedCluster),
 					},
 					{
 						name: "KubeVirtNodeSelectorTest",
-						test: NewKubeKubeVirtNodeSelectorTest(ctx, mgtClient, hostedCluster),
+						test: NewKubeVirtNodeSelectorTest(ctx, mgtClient, hostedCluster),
 					},
 					{
 						name: "KubeVirtNodeMultinetTest",
