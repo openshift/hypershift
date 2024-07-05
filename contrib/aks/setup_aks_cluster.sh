@@ -2,9 +2,10 @@
 set -x
 
 # Constants
-RG="aks-test"
+PREFIX="your_prefix"
+RG="${PREFIX}-aks-rg"
 LOCATION="eastus"
-AKS_CLUSTER_NAME="test"
+AKS_CLUSTER_NAME="${PREFIX}-aks-cluster"
 
 # Clear out existing Azure RG
 az group delete -n ${RG} --yes
@@ -21,7 +22,9 @@ az aks create \
 --node-count 2 \
 --generate-ssh-keys \
 --load-balancer-sku standard \
---os-sku AzureLinux
+--os-sku AzureLinux \
+--node-vm-size Standard_D4s_v4 \
+--enable-fips-image
 
 # Get kubeconfig access
 az aks get-credentials \
