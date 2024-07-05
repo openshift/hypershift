@@ -25,6 +25,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -75,7 +76,7 @@ type HostedClusterConfigOperatorConfig struct {
 }
 
 func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
-	cfg.UserAgent = "hosted-cluster-config-operator-manager"
+	cfg.UserAgent = config.HCCOUserAgent
 	allSelector := cache.ByObject{
 		Label: labels.Everything(),
 	}

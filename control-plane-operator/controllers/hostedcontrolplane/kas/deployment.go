@@ -756,6 +756,22 @@ cat <<EOF >/tmp/manifests/99_feature-gate.yaml
 %[3]s
 EOF
 
+touch /tmp/manifests/hcco-rolebinding.yaml
+cat <<EOF >/tmp/manifests/hcco-rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hcco-cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: system:hosted-cluster-config-operator
+EOF
+
 /usr/bin/render \
    --asset-output-dir /tmp/output \
    --rendered-manifest-dir=/tmp/manifests \
