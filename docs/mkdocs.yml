@@ -43,6 +43,13 @@ markdown_extensions:
 - pymdownx.details
 - pymdownx.tabbed:
     alternate_style: true
+validation:
+  omitted_files: warn
+  absolute_links: ignore  # Or 'relative_to_docs' - new in MkDocs 1.6
+  unrecognized_links: ignore
+  anchors: ignore
+  nav:
+    omitted_files: ignore
 nav:
 - Home: index.md
 - 'Getting started': getting-started.md
