@@ -583,6 +583,51 @@ func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client c
 	})
 }
 
+func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureOAPIMountsTrustBundle", func(t *testing.T) {
+		g := NewWithT(t)
+		var (
+			podList corev1.PodList
+			oapiPod corev1.Pod
+			command = []string{
+				"test",
+				"-f",
+				"/etc/pki/tls/certs/ca-bundle.crt",
+			}
+			hcpNs = manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		)
+
+		err := mgmtClient.List(ctx, &podList, crclient.InNamespace(hcpNs), crclient.MatchingLabels{"app": "openshift-apiserver"})
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get pods in namespace %s: %v", hcpNs, err)
+
+		for _, pod := range podList.Items {
+			if strings.HasPrefix(pod.Name, "openshift-apiserver") {
+				oapiPod = *pod.DeepCopy()
+			}
+		}
+		g.Expect(oapiPod.ObjectMeta).ToNot(BeNil(), "no openshift-apiserver pod found")
+		g.Expect(oapiPod.ObjectMeta.Name).ToNot(BeEmpty(), "no openshift-apiserver pod found")
+
+		// Check additionalTrustBundle volume and volumeMount
+		if hostedCluster.Spec.AdditionalTrustBundle != nil && hostedCluster.Spec.AdditionalTrustBundle.Name != "" {
+			g.Expect(oapiPod.Spec.Volumes).To(ContainElement(corev1.Volume{
+				Name: "additional-trust-bundle",
+			}), "no volume named additional-trust-bundle found in openshift-apiserver pod")
+		}
+
+		// Check Proxy TLS Certificates
+		if hostedCluster.Spec.Configuration != nil && hostedCluster.Spec.Configuration.Proxy != nil && hostedCluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+			g.Expect(oapiPod.Spec.Volumes).To(ContainElement(corev1.Volume{
+				Name: "proxy-additional-trust-bundle",
+			}), "no volume named proxy-additional-trust-bundle found in openshift-apiserver pod")
+		}
+
+		_, err = RunCommandInPod(ctx, mgmtClient, "openshift-apiserver", hcpNs, command, "openshift-apiserver")
+		g.Expect(err).ToNot(HaveOccurred(), "failed to run command in pod: %v", err)
+	})
+
+}
+
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHavePullPolicyIfNotPresent", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1346,6 +1391,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
 	EnsureGuestWebhooksValidated(t, ctx, guestClient)
 
 	if numNodes > 0 {
@@ -1389,6 +1435,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
 
 	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
