@@ -44,6 +44,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -361,6 +362,9 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if localKubevirtInUse {
 		namespaces = append(namespaces, kubevirtNamespace)
 	}
+	if sharedingress.UseSharedIngress() {
+		namespaces = append(namespaces, sharedingress.RouterNamespace)
+	}
 
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	for _, ns := range namespaces {
@@ -369,6 +373,9 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, controlPlaneNamespace, opts)
 	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, hypershiftNamespace, opts)
+	if sharedingress.UseSharedIngress() {
+		outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, sharedingress.RouterNamespace, opts)
+	}
 
 	if opts.AgentNamespace != "" {
 		cmd.WithNamespace(opts.AgentNamespace).Run(ctx, "agent.agent-install.openshift.io,infraenv.agent-install.openshift.io")
