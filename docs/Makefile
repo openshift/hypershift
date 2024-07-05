@@ -16,3 +16,7 @@ serve-containerized:
 .PHONY: image
 image:
 	$(RUNTIME) build -t $(IMG) .
+
+.PHONY: push
+push:
+	$(RUNTIME) push $(IMG)
