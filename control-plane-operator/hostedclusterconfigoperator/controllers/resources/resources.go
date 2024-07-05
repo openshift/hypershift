@@ -277,6 +277,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints and endpointslice: %w", err))
 	}
 
+	// Apply new ValidatingAdmissionPolicy to restrict the modification/deletion of certain
+	// objects from the DataPlane which are managed by the HCCO.
+	if err := kas.ReconcileKASValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile validating admission policies: %w", err))
+	}
+
 	log.Info("reconciling install configmap")
 	if err := r.reconcileInstallConfigMap(ctx, releaseImage); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile install configmap: %w", err))

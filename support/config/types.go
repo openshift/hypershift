@@ -6,7 +6,7 @@ const (
 	PodSafeToEvictLocalVolumesKey = "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
 
 	// HCCOUser references the user used by the HostedClusterConfigOperator
-	HCCOUser = "hosted-cluster-config-operator"
+	HCCOUser = "hosted-cluster-config"
 	// HCCOUserAgent references the userAgent used by the HostedClusterConfigOperator
 	HCCOUserAgent = "hosted-cluster-config-operator-manager"
 )

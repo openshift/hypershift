@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	hostedClusterConfigOperatorName = "hosted-cluster-config-operator"
+	hostedClusterConfigOperatorName = "hosted-cluster-config"
 )
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {

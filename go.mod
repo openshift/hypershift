@@ -254,9 +254,9 @@ replace github.com/google/cel-go => github.com/google/cel-go v0.17.7
 
 // These are because of github.com/openshift/cluster-node-tuning-operator@v0.0.0-20240131125539-0e319439e65a
 replace (
-	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.29.3
-	k8s.io/kubernetes => k8s.io/kubernetes v0.29.3
-	k8s.io/mount-utils => k8s.io/mount-utils v0.29.3
+	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.30.2
+	k8s.io/kubernetes => k8s.io/kubernetes v0.30.2
+	k8s.io/mount-utils => k8s.io/mount-utils v0.30.2
 )
 
 // There is an error with newer versions of prometheus
