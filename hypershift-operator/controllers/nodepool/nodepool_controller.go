@@ -103,6 +103,7 @@ const (
 	TokenSecretTokenKey                       = "token"
 	TokenSecretPullSecretHashKey              = "pull-secret-hash"
 	TokenSecretHCConfigurationHashKey         = "hc-configuration-hash"
+	TokenSecretAdditionalTrustBundleKey       = "additional-trust-bundle-hash"
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
 	TokenSecretIgnitionReachedAnnotation      = "hypershift.openshift.io/ignition-reached"
@@ -631,8 +632,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	additionalTrustBundleName := ""
+	additionalTrustBundleCM := &corev1.ConfigMap{}
+	if hcluster.Spec.AdditionalTrustBundle != nil {
+		additionalTrustBundleCM, err = r.getAdditionalTrustBundle(ctx, hcluster)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		additionalTrustBundleName = additionalTrustBundleCM.Name
+	}
+
 	// Check if config needs to be updated.
-	targetConfigHash := supportutil.HashSimple(config + pullSecretName)
+	targetConfigHash := supportutil.HashSimple(config + pullSecretName + additionalTrustBundleName)
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -677,7 +688,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, globalConfig)
+	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, additionalTrustBundleName, globalConfig)
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
@@ -844,8 +855,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
 	}
+	additionalTrustBundle := ""
+	if hcluster.Spec.AdditionalTrustBundle != nil {
+		additionalTrustBundle = additionalTrustBundleCM.Data["ca-bundle.crt"]
+	}
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes, hcConfigurationHash)
+		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes, additionalTrustBundle, hcConfigurationHash)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
 	} else {
@@ -1751,7 +1766,7 @@ func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, no
 	return nil
 }
 
-func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte, hcConfigurationHash string) error {
+func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte, additionalTrustBundle, hcConfigurationHash string) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
 	// Therefore, this secret is mutable.
@@ -1773,6 +1788,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
 		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashSimple(pullSecret))
+		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = []byte(supportutil.HashSimple(additionalTrustBundle))
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
 	}
 	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
@@ -3123,6 +3139,17 @@ func getPullSecretName(ctx context.Context, crclient client.Client, hostedCluste
 	return pullSecret.Name, nil
 }
 
+func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*corev1.ConfigMap, error) {
+	additionalTrustBundle := &corev1.ConfigMap{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.AdditionalTrustBundle.Name}, additionalTrustBundle); err != nil {
+		return additionalTrustBundle, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
+	}
+	if _, hasKey := additionalTrustBundle.Data["ca-bundle.crt"]; !hasKey {
+		return additionalTrustBundle, fmt.Errorf(" additionalTrustBundle %s/%s missing %q key", additionalTrustBundle.Namespace, additionalTrustBundle.Name, "ca-bundle.crt")
+	}
+	return additionalTrustBundle, nil
+}
+
 // machinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.
 type machinesByCreationTimestamp []*capiv1.Machine
 
@@ -3270,12 +3297,22 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, err
 	}
 
+	additionalTrustBundleName := ""
+	additionalTrustBundleCM := &corev1.ConfigMap{}
+	if hcluster.Spec.AdditionalTrustBundle != nil {
+		additionalTrustBundleCM, err = r.getAdditionalTrustBundle(ctx, hcluster)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		additionalTrustBundleName = additionalTrustBundleCM.Name
+	}
+
 	globalConfig, err := globalConfigString(hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, globalConfig)
+	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, additionalTrustBundleName, globalConfig)
 
 	// synchronously deleting the ignition token is unsafe; we need to clean up tokens by annotating them to expire
 	synchronousCleanup := func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
@@ -3382,8 +3419,8 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	return globalConfigBytes.String(), nil
 }
 
-func payloadConfigHash(config, targetVersion, pullSecretName, globalConfig string) string {
-	return supportutil.HashSimple(config + targetVersion + pullSecretName + globalConfig)
+func payloadConfigHash(config, targetVersion, pullSecretName, additionalTrustBundleName, globalConfig string) string {
+	return supportutil.HashSimple(config + targetVersion + pullSecretName + additionalTrustBundleName + globalConfig)
 }
 
 func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string) error {
