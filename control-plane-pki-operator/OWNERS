@@ -1,4 +1,6 @@
 approvers:
-- stevekuznetsov
+- enxebre
+- csrwng
+- sjenning
 labels:
 - area/control-plane-pki-operator
