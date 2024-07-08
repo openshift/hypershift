@@ -2298,6 +2298,12 @@ func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *h
 		return fmt.Errorf("failed to reconcile image digest mirror set: %w", err)
 	}
 
+	if (idms.Spec.ImageDigestMirrors != nil && len(idms.Spec.ImageDigestMirrors) <= 0) || idms.Spec.ImageDigestMirrors == nil {
+		if _, err := util.DeleteIfNeeded(ctx, r.client, idms); err != nil {
+			return fmt.Errorf("failed to delete image digest mirror set: %w", err)
+		}
+	}
+
 	return nil
 }
 
