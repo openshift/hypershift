@@ -39,6 +39,7 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -344,6 +345,9 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiaws.AWSMachineTemplate{},
 		&capiaws.AWSCluster{},
 		&hyperv1.AWSEndpointService{},
+		&capiazure.AzureCluster{},
+		&capiazure.AzureMachine{},
+		&capiazure.AzureMachineTemplate{},
 		&agentv1.AgentMachine{},
 		&agentv1.AgentMachineTemplate{},
 		&agentv1.AgentCluster{},
