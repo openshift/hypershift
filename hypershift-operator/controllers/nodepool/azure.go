@@ -45,11 +45,16 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		NetworkInterfaces: []capiazure.NetworkInterface{{
 			SubnetName: subnetName,
 		}},
-		Identity:               capiazure.VMIdentityUserAssigned,
-		UserAssignedIdentities: []capiazure.UserAssignedIdentity{{ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID}},
-		SSHPublicKey:           sshKey,
-		FailureDomain:          failureDomain(nodePool),
+		SSHPublicKey:  sshKey,
+		FailureDomain: failureDomain(nodePool),
 	}}}
+
+	if hcluster.Spec.Platform.Azure.MachineIdentityID != "" {
+		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
+		azureMachineTemplate.Template.Spec.UserAssignedIdentities = []capiazure.UserAssignedIdentity{{
+			ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID,
+		}}
+	}
 
 	if nodePool.Spec.Platform.Azure.DiskEncryptionSetID != "" {
 		azureMachineTemplate.Template.Spec.OSDisk.ManagedDisk.DiskEncryptionSet = &capiazure.DiskEncryptionSetParameters{
