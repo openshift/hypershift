@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"os"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -45,6 +46,11 @@ const (
 	TLSSignerKeyMapKey = "tls.key"
 	// UserCABundleMapKeyis the key value in a user-provided CA configMap.
 	UserCABundleMapKey = "ca-bundle.crt"
+	// Custom certificate validity. The format of the annotation is a go duration string with a numeric component and unit.
+	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
+	CertificateValidityAnnotation = "hypershift.openshift.io/certificate-validity"
+	CertificateValidityEnvVar     = "CERTIFICATE_VALIDITY"
+	CertificateValidityDefault    = ValidityOneYear
 )
 
 // CertCfg contains all needed fields to configure a new certificate
@@ -117,12 +123,14 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 	if err != nil {
 		return nil, err
 	}
+
+	now := time.Now()
 	cert := x509.Certificate{
 		BasicConstraintsValid: true,
 		IsCA:                  cfg.IsCA,
 		KeyUsage:              cfg.KeyUsages,
-		NotAfter:              time.Now().Add(cfg.Validity),
-		NotBefore:             time.Now(),
+		NotAfter:              now.Add(cfg.Validity),
+		NotBefore:             now,
 		SerialNumber:          serial,
 		Subject:               cfg.Subject,
 	}
@@ -156,13 +164,14 @@ func signedCertificate(
 		return nil, err
 	}
 
+	now := time.Now()
 	certTmpl := x509.Certificate{
 		DNSNames:              csr.DNSNames,
 		ExtKeyUsage:           cfg.ExtKeyUsages,
 		IPAddresses:           csr.IPAddresses,
 		KeyUsage:              cfg.KeyUsages,
-		NotAfter:              time.Now().Add(cfg.Validity),
-		NotBefore:             caCert.NotBefore,
+		NotAfter:              now.Add(cfg.Validity),
+		NotBefore:             now,
 		SerialNumber:          serial,
 		Subject:               csr.Subject,
 		IsCA:                  cfg.IsCA,
@@ -286,6 +295,11 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 		errs = append(errs, fmt.Errorf("actual dns names differ from expected: %s", dnsNamesDiff))
 	}
 
+	certValidity := cert.NotAfter.Sub(cert.NotBefore)
+	if certValidity.Truncate(time.Minute) != cfg.Validity.Truncate(time.Minute) {
+		errs = append(errs, fmt.Errorf("actual validity %v differs from expected %v", (certValidity.Hours())/24, (cfg.Validity.Hours())/24))
+	}
+
 	extUsageDiff := cmp.Diff(cert.ExtKeyUsage, cfg.ExtKeyUsages, cmpopts.SortSlices(func(a, b x509.ExtKeyUsage) bool { return a < b }))
 	if extUsageDiff != "" {
 		errs = append(errs, fmt.Errorf("actual extended key usages differ from expected: %s", extUsageDiff))
@@ -356,11 +370,21 @@ func ReconcileSignedCert(
 		secret.Data[caKey] = append([]byte(nil), ca.Data[opts.CASignerCertMapKey]...)
 	}
 
+	certValidity := CertificateValidityDefault
+
+	if value := os.Getenv(CertificateValidityEnvVar); value != "" {
+		customCertValidityEnvVar, err := time.ParseDuration(value)
+		if err != nil {
+			return fmt.Errorf("failed to parse custom certificate validity from env var %s: %w", CertificateValidityEnvVar, err)
+		}
+		certValidity = customCertValidityEnvVar
+	}
+
 	cfg := &CertCfg{
 		Subject:      pkix.Name{CommonName: cn, Organization: org},
 		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsages: extUsages,
-		Validity:     ValidityOneYear,
+		Validity:     certValidity,
 		DNSNames:     dnsNames,
 		IPAddresses:  ipAddresses,
 	}
