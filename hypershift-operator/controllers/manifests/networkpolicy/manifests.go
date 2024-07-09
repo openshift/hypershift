@@ -41,6 +41,15 @@ func ManagementKASNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	}
 }
 
+func SharedIngressNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "sharedingress",
+		},
+	}
+}
+
 func MetricsServerNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
