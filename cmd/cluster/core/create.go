@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +87,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
 	flags.BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. Cannot be defined with service-cidr or cluster-cidr flag.")
 	flags.StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
+	flags.StringArrayVar(&opts.Tolerations, "toleration", opts.Tolerations, "A comma separated list of options for a toleration that will be applied to the hcp pods. Valid options are, key, value, operator, effect, tolerationSeconds. E.g. key=node-role.kubernetes.io/master,operator=Exists,effect=NoSchedule. Can be specified multiple times to add multiple tolerations")
 	flags.BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	flags.DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 	flags.Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
@@ -138,6 +140,7 @@ type RawCreateOptions struct {
 	ExternalDNSDomain                string
 	Arch                             string
 	NodeSelector                     map[string]string
+	Tolerations                      []string
 	Wait                             bool
 	Timeout                          time.Duration
 	Log                              logr.Logger
@@ -374,6 +377,14 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
+	}
+
+	for _, tStr := range opts.Tolerations {
+		toleration, err := parseTolerationString(tStr)
+		if err != nil {
+			return nil, err
+		}
+		prototype.Cluster.Spec.Tolerations = append(prototype.Cluster.Spec.Tolerations, *toleration)
 	}
 
 	if len(opts.AdditionalTrustBundle) > 0 {
@@ -845,4 +856,66 @@ func etcdEncryptionKeySecret(opts *CreateOptions) *corev1.Secret {
 		},
 		Type: corev1.SecretTypeOpaque,
 	}
+}
+
+func parseTolerationString(str string) (*corev1.Toleration, error) {
+	keyVals := strings.Split(str, ",")
+	if len(keyVals) == 0 {
+		return nil, nil
+	}
+
+	var toleration corev1.Toleration
+	for _, kv := range keyVals {
+		split := strings.Split(kv, "=")
+		if len(split) != 2 {
+			return nil, fmt.Errorf("invalid toleration cli argument. [%s]", str)
+		}
+
+		split[0] = strings.TrimSpace(split[0])
+		split[1] = strings.TrimSpace(split[1])
+
+		// The cli arg ignores case, and normalizes values to their enum equivalent. This
+		// prevents confusing validation feedback like "unknown effect type [noSchedule]"
+		// just because someone didn't set NoSchedule with a capital 'N'. It's an easy mistake.
+		switch strings.ToLower(split[0]) {
+		case "key":
+			toleration.Key = split[1]
+		case "value":
+			toleration.Value = split[1]
+		case "operator":
+			switch strings.ToLower(split[1]) {
+			case strings.ToLower(string(corev1.TolerationOpExists)):
+				toleration.Operator = corev1.TolerationOpExists
+			case strings.ToLower(string(corev1.TolerationOpEqual)):
+				toleration.Operator = corev1.TolerationOpEqual
+			case "":
+			default:
+				return nil, fmt.Errorf("invalid toleration cli argument. unknown operator type [%s]", split[1])
+			}
+		case "effect":
+			switch strings.ToLower(split[1]) {
+			case strings.ToLower(string(corev1.TaintEffectNoSchedule)):
+				toleration.Effect = corev1.TaintEffectNoSchedule
+			case strings.ToLower(string(corev1.TaintEffectPreferNoSchedule)):
+				toleration.Effect = corev1.TaintEffectPreferNoSchedule
+			case strings.ToLower(string(corev1.TaintEffectNoExecute)):
+				toleration.Effect = corev1.TaintEffectNoExecute
+			case "":
+			default:
+				return nil, fmt.Errorf("invalid toleration cli argument. unknown effect type [%s]", split[1])
+			}
+
+		case "tolerationseconds":
+			seconds, err := strconv.Atoi(split[1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid toleration cli argument. failed to parse tolerationSeconds [%s]", split[1])
+			}
+			i64 := int64(seconds)
+			toleration.TolerationSeconds = &i64
+		default:
+			return nil, fmt.Errorf("invalid toleration cli argument. unknown field [%s]", split[0])
+		}
+	}
+
+	return &toleration, nil
 }

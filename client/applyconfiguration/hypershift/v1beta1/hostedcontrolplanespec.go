@@ -54,6 +54,7 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	OLMCatalogPlacement              *hypershiftv1beta1.OLMCatalogPlacement               `json:"olmCatalogPlacement,omitempty"`
 	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
+	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
 }
 
 // HostedControlPlaneSpecApplyConfiguration constructs an declarative configuration of the HostedControlPlaneSpec type for use with
@@ -298,6 +299,16 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithNodeSelector(entries map[
 	}
 	for k, v := range entries {
 		b.NodeSelector[k] = v
+	}
+	return b
+}
+
+// WithTolerations adds the given value to the Tolerations field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Tolerations field.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithTolerations(values ...corev1.Toleration) *HostedControlPlaneSpecApplyConfiguration {
+	for i := range values {
+		b.Tolerations = append(b.Tolerations, values[i])
 	}
 	return b
 }

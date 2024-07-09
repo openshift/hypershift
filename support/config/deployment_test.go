@@ -189,6 +189,7 @@ func TestSetControlPlaneTolerations(t *testing.T) {
 
 	cfg := &DeploymentConfig{}
 	cfg.setControlPlaneIsolation(hcp)
+	cfg.setAdditionalTolerations(hcp)
 	if len(cfg.Scheduling.Tolerations) == 0 {
 		t.Fatalf("No tolerations were set")
 	}

@@ -526,6 +526,11 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Tolerations when specified, define what custome tolerations are added to the hcp pods.
+	//
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
