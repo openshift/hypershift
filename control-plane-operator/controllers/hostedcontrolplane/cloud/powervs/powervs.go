@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	supportconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 )
 
 const (
@@ -207,7 +208,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 
 	deploymentConfig := supportconfig.DeploymentConfig{
 		Scheduling: supportconfig.Scheduling{
-			PriorityClass: supportconfig.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}

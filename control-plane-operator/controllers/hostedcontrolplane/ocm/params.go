@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/globalconfig"
 )
 
@@ -40,7 +41,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		Resources: map[string]corev1.ResourceRequirements{
 			ocmContainerMain().Name: {

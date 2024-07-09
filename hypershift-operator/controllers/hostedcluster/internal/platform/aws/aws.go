@@ -230,7 +230,12 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 			},
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), p.utilitiesImage, &deploymentSpec.Template.Spec)
+
+	inClusterKASReadyURL := kas.InClusterKASReadyURL(hcp.Spec.Platform.Type)
+	if p.payloadVersion != nil && p.payloadVersion.Major == 4 && p.payloadVersion.Minor < 17 {
+		inClusterKASReadyURL = kas.InClusterKASReadyURLOld(hcp.Spec.Platform.Type)
+	}
+	util.AvailabilityProber(inClusterKASReadyURL, p.utilitiesImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 

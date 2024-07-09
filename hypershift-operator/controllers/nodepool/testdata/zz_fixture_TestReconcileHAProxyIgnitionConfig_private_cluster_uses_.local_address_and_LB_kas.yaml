@@ -26,4 +26,4 @@ backend remote_apiserver
   option httpchk GET /version
   option log-health-checks
   default-server inter 10s fall 3 rise 3
-  server controlplane api.hc.hypershift.local:6443
+  server controlplane api.hc.hypershift.local:443

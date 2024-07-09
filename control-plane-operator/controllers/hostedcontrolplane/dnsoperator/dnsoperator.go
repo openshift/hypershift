@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -66,7 +67,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		"app":                         "dns-operator",
 		hyperv1.ControlPlaneComponent: "dns-operator",
 	}
-	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.DeploymentConfig.Scheduling.PriorityClass = constants.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}

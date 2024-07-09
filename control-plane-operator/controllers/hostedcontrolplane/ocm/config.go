@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -65,7 +66,7 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 	cfg.Deployer.ImageTemplateFormat.Format = deployerImage
 
 	// registry config
-	cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
+	cfg.DockerPullSecret.InternalRegistryHostname = constants.DefaultImageRegistryHostname
 	if imageConfig != nil {
 		cfg.DockerPullSecret.RegistryURLs = imageConfig.ExternalRegistryHostnames
 	}

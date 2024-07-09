@@ -44,7 +44,7 @@ import (
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -308,7 +308,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
-	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
+	enableCVOManagementClusterMetricsAccess := (os.Getenv(constants.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 
 	certRotationScale, err := pkiconfig.GetCertRotationScale()
 	if err != nil {

@@ -11,11 +11,11 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 )
 
 const (
-	OAuthServerPort   = 6443
-	RouteExternalPort = 443
+	OAuthServerPort = 6443
 )
 
 var (
@@ -64,14 +64,14 @@ func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy 
 	case hyperv1.Route:
 		if strategy.Route != nil && strategy.Route.Hostname != "" {
 			host = strategy.Route.Hostname
-			port = RouteExternalPort
+			port = constants.RouterSVCPort
 			return
 		}
 		if route.Spec.Host == "" {
 			message = fmt.Sprintf("OAuth service route does not contain valid host; %v since creation", duration.ShortHumanDuration(time.Since(route.ObjectMeta.CreationTimestamp.Time)))
 			return
 		}
-		port = RouteExternalPort
+		port = constants.RouterSVCPort
 		host = route.Spec.Host
 	case hyperv1.NodePort:
 		if strategy.NodePort == nil {

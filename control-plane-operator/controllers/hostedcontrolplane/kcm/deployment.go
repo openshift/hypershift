@@ -18,10 +18,9 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
-
-	"github.com/openshift/hypershift/support/config"
 )
 
 const (
@@ -351,8 +350,8 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--kube-api-qps=150",
 		"--leader-elect-resource-lock=leases",
 		"--leader-elect=true",
-		fmt.Sprintf("--leader-elect-renew-deadline=%s", config.KCMRecommendedRenewDeadline),
-		fmt.Sprintf("--leader-elect-retry-period=%s", config.KCMRecommendedRetryPeriod),
+		fmt.Sprintf("--leader-elect-renew-deadline=%s", constants.KCMRecommendedRenewDeadline),
+		fmt.Sprintf("--leader-elect-retry-period=%s", constants.KCMRecommendedRetryPeriod),
 		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, certs.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),

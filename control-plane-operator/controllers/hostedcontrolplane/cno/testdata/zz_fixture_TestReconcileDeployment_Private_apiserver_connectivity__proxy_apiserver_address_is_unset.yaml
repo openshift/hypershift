@@ -124,7 +124,7 @@ spec:
         - /usr/bin/control-plane-operator
         - availability-prober
         - --target
-        - https://kube-apiserver:6443/readyz
+        - https://kube-apiserver:443/readyz
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=operator.openshift.io,v1,Network
         - --required-api=network.operator.openshift.io,v1,EgressRouter

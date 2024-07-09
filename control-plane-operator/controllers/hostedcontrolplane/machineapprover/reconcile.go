@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	"gopkg.in/yaml.v2"
@@ -187,11 +188,11 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 
 	deploymentConfig := config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: constants.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
+			constants.NeedManagementKASAccessLabel: "true",
 		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {

@@ -11,7 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/constants"
 )
 
 // TODO (cewong): Add tests for other params
@@ -27,22 +27,22 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 	}{
 		{
 			name:               "not specified",
-			expectedAddress:    config.DefaultAdvertiseIPv4Address,
+			expectedAddress:    constants.DefaultAdvertiseIPv4Address,
 			serviceNetworkCIDR: "10.0.0.0/24",
-			expectedPort:       config.KASPodDefaultPort,
+			expectedPort:       constants.KASPodDefaultPort,
 		},
 		{
 			name:               "address specified",
 			advertiseAddress:   "1.2.3.4",
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedAddress:    "1.2.3.4",
-			expectedPort:       config.KASPodDefaultPort,
+			expectedPort:       constants.KASPodDefaultPort,
 		},
 		{
 			name:               "port set for default service publishing strategies",
 			port:               pointer.Int32(6789),
 			serviceNetworkCIDR: "10.0.0.0/24",
-			expectedAddress:    config.DefaultAdvertiseIPv4Address,
+			expectedAddress:    constants.DefaultAdvertiseIPv4Address,
 			expectedPort:       6789,
 		},
 		{
@@ -55,7 +55,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			},
 			port:               pointer.Int32(6789),
 			serviceNetworkCIDR: "10.0.0.0/24",
-			expectedAddress:    config.DefaultAdvertiseIPv4Address,
+			expectedAddress:    constants.DefaultAdvertiseIPv4Address,
 			expectedPort:       6789,
 		},
 	}
