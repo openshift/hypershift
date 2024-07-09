@@ -571,6 +571,22 @@ map[string]string
 <p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>tolerations</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#toleration-v1-core">
+[]Kubernetes core/v1.Toleration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Tolerations is a list of tolerations applied to the hosted control plane pods
+See <a href="https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/">https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/</a> for more info.
+These are additional tolerations other than default ones.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -4047,6 +4063,22 @@ map[string]string
 <p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>tolerations</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#toleration-v1-core">
+[]Kubernetes core/v1.Toleration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Tolerations is a list of tolerations applied to the hosted control plane pods
+See <a href="https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/">https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/</a> for more info.
+These are additional tolerations other than default ones.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1beta1.HostedClusterStatus }
@@ -4585,6 +4617,22 @@ map[string]string
 <td>
 <em>(Optional)</em>
 <p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tolerations</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#toleration-v1-core">
+[]Kubernetes core/v1.Toleration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Tolerations is a list of tolerations applied to the hosted control plane pods
+See <a href="https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/">https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/</a> for more info.
+These are additional tolerations other than default ones.</p>
 </td>
 </tr>
 </tbody>

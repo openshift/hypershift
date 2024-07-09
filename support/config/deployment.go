@@ -268,6 +268,7 @@ func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPl
 			Effect:   corev1.TaintEffectNoSchedule,
 		})
 	}
+	c.Scheduling.Tolerations = append(c.Scheduling.Tolerations, hcp.Spec.Tolerations...)
 
 	if c.Scheduling.Affinity == nil {
 		c.Scheduling.Affinity = &corev1.Affinity{}

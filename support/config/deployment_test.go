@@ -167,6 +167,52 @@ func TestSetControlPlaneIsolation(t *testing.T) {
 	}
 }
 
+func TestSetControlPlaneTolerations(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{}
+	hcp.Name = "hcp-name"
+	hcp.Namespace = "hcp-namespace"
+	customTolerations := []corev1.Toleration{
+		{
+			Key:      "key1",
+			Operator: corev1.TolerationOpEqual,
+			Value:    "value1",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      "key2",
+			Operator: corev1.TolerationOpEqual,
+			Value:    "value2",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}
+	hcp.Spec.Tolerations = append(hcp.Spec.Tolerations, customTolerations...)
+
+	cfg := &DeploymentConfig{}
+	cfg.setControlPlaneIsolation(hcp)
+	if len(cfg.Scheduling.Tolerations) == 0 {
+		t.Fatalf("No tolerations were set")
+	}
+	expectedDefaultTolerations := []corev1.Toleration{
+		{
+			Key:      controlPlaneLabelTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    "true",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      "hypershift.openshift.io/cluster",
+			Operator: corev1.TolerationOpEqual,
+			Value:    "hcp-namespace",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}
+
+	g := NewGomegaWithT(t)
+
+	g.Expect(cfg.Scheduling.Tolerations).To(ConsistOf(append(expectedDefaultTolerations, customTolerations...)))
+
+}
+
 func TestSetLocation(t *testing.T) {
 	expectedNodeSelector := map[string]string{
 		"role.kubernetes.io/infra": "",

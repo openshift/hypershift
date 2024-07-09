@@ -346,6 +346,13 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Tolerations is a list of tolerations applied to the hosted control plane pods
+	// See https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/ for more info.
+	// These are additional tolerations other than default ones.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.

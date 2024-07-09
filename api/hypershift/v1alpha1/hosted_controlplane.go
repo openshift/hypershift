@@ -216,6 +216,13 @@ type HostedControlPlaneSpec struct {
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Tolerations is a list of tolerations applied to the hosted control plane pods
+	// See https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/ for more info.
+	// These are additional tolerations other than default ones.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.
