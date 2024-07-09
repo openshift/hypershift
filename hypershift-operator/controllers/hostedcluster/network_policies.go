@@ -11,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
@@ -84,6 +85,17 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile metrics server network policy: %w", err)
 			}
+		}
+	}
+
+	if sharedingress.UseSharedIngress() {
+		// Reconcile shared-ingress Network Policy.
+		// Let all ingress from shared-ingress namespace.
+		policy := networkpolicy.SharedIngressNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileSharedIngressNetworkPolicy(policy, hcluster)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile sharedingress network policy: %w", err)
 		}
 	}
 
@@ -399,6 +411,25 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
 							"network.openshift.io/policy-group": "monitoring",
+						},
+					},
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileSharedIngressNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": sharedingress.RouterNamespace,
 						},
 					},
 				},
