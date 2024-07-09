@@ -45,6 +45,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -682,7 +683,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Validate tuningConfig input.
-	tunedConfig, performanceProfileConfig, err := r.getTuningConfig(ctx, nodePool)
+	tunedConfig, performanceProfileConfig, performanceProfileConfigMapName, err := r.getTuningConfig(ctx, nodePool)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidTuningConfigConditionType,
@@ -735,12 +736,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
-	performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, nodePool.Name)
 	if performanceProfileConfig == "" {
-		if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, performanceProfileConfigMap); err != nil {
+		// at this point in time, we no longer know the name of the ConfigMap in the HCP NS
+		// so, we remove it by listing by a label unique to PerformanceProfile
+		if err := deleteConfigByLabel(ctx, r.Client, map[string]string{PerformanceProfileConfigMapLabel: "true"}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete performanceprofileConfig ConfigMap: %w", err)
 		}
 	} else {
+		performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, performanceProfileConfigMapName, nodePool.Name)
 		if result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
 			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig)
 		}); err != nil {
@@ -2167,10 +2170,11 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 
 func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 	nodePool *hyperv1.NodePool,
-) (string, string, error) {
+) (string, string, string, error) {
 	var (
 		configs                              []corev1.ConfigMap
 		tunedAllConfigPlainText              []string
+		performanceProfileConfigMapName      string
 		performanceProfileAllConfigPlainText []string
 		errors                               []error
 	)
@@ -2204,6 +2208,7 @@ func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 			tunedAllConfigPlainText = append(tunedAllConfigPlainText, string(manifestTuned))
 		}
 		if manifestPerformanceProfile != nil {
+			performanceProfileConfigMapName = config.Name
 			performanceProfileAllConfigPlainText = append(performanceProfileAllConfigPlainText, string(manifestPerformanceProfile))
 		}
 	}
@@ -2216,7 +2221,7 @@ func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 	sort.Strings(tunedAllConfigPlainText)
 	sort.Strings(performanceProfileAllConfigPlainText)
 
-	return strings.Join(tunedAllConfigPlainText, "\n---\n"), strings.Join(performanceProfileAllConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
+	return strings.Join(tunedAllConfigPlainText, "\n---\n"), strings.Join(performanceProfileAllConfigPlainText, "\n---\n"), performanceProfileConfigMapName, utilerrors.NewAggregate(errors)
 
 }
 
@@ -3223,4 +3228,20 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 
 func payloadConfigHash(config, targetVersion, pullSecretName, globalConfig string) string {
 	return supportutil.HashSimple(config + targetVersion + pullSecretName + globalConfig)
+}
+
+func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string) error {
+	cmList := &corev1.ConfigMapList{}
+	if err := c.List(ctx, cmList, &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(lbl),
+	}); err != nil {
+		return err
+	}
+	for i := range cmList.Items {
+		cm := &cmList.Items[i]
+		if _, err := supportutil.DeleteIfNeeded(ctx, c, cm); err != nil {
+			return err
+		}
+	}
+	return nil
 }

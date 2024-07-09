@@ -1047,12 +1047,13 @@ status: {}
 
 	namespace := "test"
 	testCases := []struct {
-		name           string
-		nodePool       *hyperv1.NodePool
-		tuningConfig   []client.Object
-		tunedExpect    string
-		perfprofExpect string
-		error          bool
+		name               string
+		nodePool           *hyperv1.NodePool
+		tuningConfig       []client.Object
+		tunedExpect        string
+		perfprofExpect     string
+		perfProfNameExpect string
+		error              bool
 	}{
 		{
 			name: "gets a single valid TunedConfig",
@@ -1175,9 +1176,10 @@ status: {}
 					BinaryData: nil,
 				},
 			},
-			tunedExpect:    "",
-			perfprofExpect: perfprofOneDefaulted,
-			error:          false,
+			tunedExpect:        "",
+			perfprofExpect:     perfprofOneDefaulted,
+			perfProfNameExpect: "perfprofOne",
+			error:              false,
 		},
 		{
 			name: "Should be at most one PerformanceProfileConfig per NodePool",
@@ -1242,7 +1244,7 @@ status: {}
 			error:          true,
 		},
 		{
-			name: "PerformanceProfiles and Tuned Configs could cohexists",
+			name: "PerformanceProfiles and Tuned Configs could coexists",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1291,9 +1293,10 @@ status: {}
 					},
 				},
 			},
-			tunedExpect:    tuned1Defaulted + "\n---\n" + tuned2Defaulted,
-			perfprofExpect: perfprofOneDefaulted,
-			error:          false,
+			tunedExpect:        tuned1Defaulted + "\n---\n" + tuned2Defaulted,
+			perfprofExpect:     perfprofOneDefaulted,
+			perfProfNameExpect: "perfprofOne",
+			error:              false,
 		},
 	}
 
@@ -1305,7 +1308,7 @@ status: {}
 				Client: fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build(),
 			}
 
-			td, pp, err := r.getTuningConfig(context.Background(), tc.nodePool)
+			td, pp, ppName, err := r.getTuningConfig(context.Background(), tc.nodePool)
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
@@ -1319,6 +1322,10 @@ status: {}
 			if diff := cmp.Diff(pp, tc.perfprofExpect); diff != "" {
 				t.Errorf("actual Performance Profile config differs from expected: %s", diff)
 				t.Logf("got:\n%s\n, expected:\n%s\n", pp, tc.perfprofExpect)
+			}
+			if diff := cmp.Diff(ppName, tc.perfProfNameExpect); diff != "" {
+				t.Errorf("Performance Profile config name differ from expected: %s", diff)
+				t.Logf("got:\n%s\n, expected:\n%s\n", ppName, tc.perfProfNameExpect)
 			}
 		})
 	}
