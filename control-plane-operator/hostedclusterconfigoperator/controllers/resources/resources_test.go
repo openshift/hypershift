@@ -365,6 +365,69 @@ func fakeOperatorHub() *configv1.OperatorHub {
 	}
 }
 
+func withICS(hcp *hyperv1.HostedControlPlane) *hyperv1.HostedControlPlane {
+	hcpOriginal := hcp.DeepCopy()
+	hcpOriginal.Spec.ImageContentSources = []hyperv1.ImageContentSource{
+		{
+			Source: "example.com/test",
+			Mirrors: []string{
+				// the number after test is in purpose to not fit to the source namespace name
+				"mirror1.example.com/test1",
+				"mirror2.example.com/test2",
+			},
+		},
+		{
+			Source: "sample.com/test",
+			Mirrors: []string{
+				"mirror1.sample.com/test1",
+				"mirror2.sample.com/test2",
+			},
+		},
+		{
+			Source: "quay.io/test",
+			Mirrors: []string{
+				"mirror1.quay.io/test1",
+				"mirror2.quay.io/test2",
+			},
+		},
+	}
+
+	return hcpOriginal
+}
+
+func fakeIDMS() *configv1.ImageDigestMirrorSet {
+	return &configv1.ImageDigestMirrorSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.ImageDigestMirrorSetSpec{
+			ImageDigestMirrors: []configv1.ImageDigestMirrors{
+				{
+					Source: "example.com/test",
+					Mirrors: []configv1.ImageMirror{
+						"mirror1.example.com/test1",
+						"mirror2.example.com/test2",
+					},
+				},
+				{
+					Source: "sample.com/test",
+					Mirrors: []configv1.ImageMirror{
+						"mirror1.sample.com/test1",
+						"mirror2.sample.com/test2",
+					},
+				},
+				{
+					Source: "quay.io/test",
+					Mirrors: []configv1.ImageMirror{
+						"mirror1.quay.io/test1",
+						"mirror2.quay.io/test2",
+					},
+				},
+			},
+		},
+	}
+}
+
 func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
@@ -918,4 +981,71 @@ func TestReconcileClusterVersion(t *testing.T) {
 	g.Expect(clusterVersion.Spec.DesiredUpdate).To(BeNil())
 	g.Expect(clusterVersion.Spec.Overrides).To(Equal(testOverrides))
 	g.Expect(clusterVersion.Spec.Channel).To(BeEmpty())
+}
+
+func TestReconcileImageContentPolicyType(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		hcp                   *hyperv1.HostedControlPlane
+		expectedIDMS          *configv1.ImageDigestMirrorSet
+		expectedToFail        bool
+		removeICSAndReconcile bool
+	}{
+		{
+			name:         "ICS with content, it should return an IDMS with the same content",
+			hcp:          withICS(fakeHCP()),
+			expectedIDMS: fakeIDMS(),
+		},
+		{
+			name:           "ICS empty, is should return a not found error",
+			hcp:            fakeHCP(),
+			expectedToFail: true,
+		},
+		{
+			name:                  "ICS with content and updated the HCP deleting the ICS, it should return a not found error",
+			hcp:                   withICS(fakeHCP()),
+			expectedIDMS:          nil,
+			expectedToFail:        true,
+			removeICSAndReconcile: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hcp).Build()
+			r := &reconciler{
+				client:                 fakeClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+			err := r.reconcileImageContentPolicyType(context.Background(), tc.hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			idms := globalconfig.ImageDigestMirrorSet()
+			err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
+			if tc.hcp.Spec.ImageContentSources == nil && tc.expectedToFail {
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "expecting a not-found error, received: %v", err)
+			}
+
+			if !tc.removeICSAndReconcile && !tc.expectedToFail {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(len(tc.hcp.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)))
+				g.Expect(tc.expectedIDMS.Spec).To(BeEquivalentTo(idms.Spec))
+			}
+
+			if tc.removeICSAndReconcile {
+				// Simulating a user updating the HCP and removing the ICS
+				origHCP := tc.hcp.DeepCopy()
+				origHCP.Spec.ImageContentSources = nil
+
+				err = r.reconcileImageContentPolicyType(context.Background(), origHCP)
+				g.Expect(err).ToNot(HaveOccurred())
+				idms := globalconfig.ImageDigestMirrorSet()
+				err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "expecting a not-found error, received: %v", err)
+			}
+		})
+	}
+
 }
