@@ -26,17 +26,17 @@ func ShortenRouteHostnameIfNeeded(name, namespace string, baseDomain string) str
 	if len(name)+len(namespace)+1 < validation.DNS1123LabelMaxLength {
 		return ""
 	} else {
-		return fmt.Sprintf("%s.%s", strings.TrimSuffix(shortenName(name+"-"+namespace, "", validation.DNS1123LabelMaxLength), "-"), baseDomain)
+		return fmt.Sprintf("%s.%s", strings.TrimSuffix(ShortenName(name+"-"+namespace, "", validation.DNS1123LabelMaxLength), "-"), baseDomain)
 	}
 }
 
-// shortenName returns a name given a base ("deployment-5") and a suffix ("deploy")
+// ShortenName returns a name given a base ("deployment-5") and a suffix ("deploy")
 // It will first attempt to join them with a dash. If the resulting name is longer
 // than maxLength: if the suffix is too long, it will truncate the base name and add
 // an 8-character hash of the [base]-[suffix] string.  If the suffix is not too long,
 // it will truncate the base, add the hash of the base and return [base]-[hash]-[suffix]
 // Source: openshift/origin v3.9.0 pkg/api/apihelpers/namer.go
-func shortenName(base, suffix string, maxLength int) string {
+func ShortenName(base, suffix string, maxLength int) string {
 	if maxLength <= 0 {
 		return ""
 	}

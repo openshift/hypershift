@@ -55,7 +55,7 @@ func TestShortenName(t *testing.T) {
 
 		for j, test := range tests {
 			t.Run(fmt.Sprintf("test-%d-%d", i, j), func(t *testing.T) {
-				result := shortenName(test.base, test.suffix, kvalidation.DNS1123SubdomainMaxLength)
+				result := ShortenName(test.base, test.suffix, kvalidation.DNS1123SubdomainMaxLength)
 				if result != test.expected {
 					t.Errorf("Got unexpected result. Expected: %s Got: %s", test.expected, result)
 				}
@@ -66,14 +66,14 @@ func TestShortenName(t *testing.T) {
 
 func TestShortenNameIsDifferent(t *testing.T) {
 	shortName := randSeq(32)
-	deployerName := shortenName(shortName, "deploy", kvalidation.DNS1123SubdomainMaxLength)
-	builderName := shortenName(shortName, "build", kvalidation.DNS1123SubdomainMaxLength)
+	deployerName := ShortenName(shortName, "deploy", kvalidation.DNS1123SubdomainMaxLength)
+	builderName := ShortenName(shortName, "build", kvalidation.DNS1123SubdomainMaxLength)
 	if deployerName == builderName {
 		t.Errorf("Expecting names to be different: %s\n", deployerName)
 	}
 	longName := randSeq(kvalidation.DNS1123SubdomainMaxLength + 10)
-	deployerName = shortenName(longName, "deploy", kvalidation.DNS1123SubdomainMaxLength)
-	builderName = shortenName(longName, "build", kvalidation.DNS1123SubdomainMaxLength)
+	deployerName = ShortenName(longName, "deploy", kvalidation.DNS1123SubdomainMaxLength)
+	builderName = ShortenName(longName, "build", kvalidation.DNS1123SubdomainMaxLength)
 	if deployerName == builderName {
 		t.Errorf("Expecting names to be different: %s\n", deployerName)
 	}
@@ -84,7 +84,7 @@ func TestShortenNameReturnShortNames(t *testing.T) {
 	for maxLength := 0; maxLength < len(base)+2; maxLength++ {
 		for suffixLen := 0; suffixLen <= maxLength+1; suffixLen++ {
 			suffix := randSeq(suffixLen)
-			got := shortenName(base, suffix, maxLength)
+			got := ShortenName(base, suffix, maxLength)
 			if len(got) > maxLength {
 				t.Fatalf("len(GetName(%[1]q, %[2]q, %[3]d)) = len(%[4]q) = %[5]d; want %[3]d", base, suffix, maxLength, got, len(got))
 			}
