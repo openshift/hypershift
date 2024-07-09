@@ -33,7 +33,7 @@ type KubeVirtNodeSelectorTest struct {
 	nodeSelector  map[string]string
 }
 
-func NewKubeKubeVirtNodeSelectorTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster) *KubeVirtNodeSelectorTest {
+func NewKubeVirtNodeSelectorTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster) *KubeVirtNodeSelectorTest {
 	return &KubeVirtNodeSelectorTest{
 		ctx:           ctx,
 		client:        cl,

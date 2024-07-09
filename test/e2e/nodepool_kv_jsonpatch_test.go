@@ -30,7 +30,7 @@ type KubeVirtJsonPatchTest struct {
 	hostedCluster *hyperv1.HostedCluster
 }
 
-func NewKubeKubeVirtJsonPatchTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster) *KubeVirtJsonPatchTest {
+func NewKubeVirtJsonPatchTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster) *KubeVirtJsonPatchTest {
 	return &KubeVirtJsonPatchTest{
 		ctx:           ctx,
 		client:        cl,
@@ -43,7 +43,7 @@ func (k KubeVirtJsonPatchTest) Setup(t *testing.T) {
 		t.Skip("test only supported on platform KubeVirt")
 	}
 
-	t.Log("Starting test KubeKubeVirtJsonPatchTest")
+	t.Log("Starting test KubeVirtJsonPatchTest")
 }
 
 func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1.Node) {
@@ -96,7 +96,7 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 			err := infraClient.GetInfraClient().List(k.ctx, vmis, &crclient.ListOptions{Namespace: guestNamespace, LabelSelector: labelSelector})
 			var ptrs []*kubevirtv1.VirtualMachineInstance
 			for i := range vmis.Items {
-				ptrs[i] = &vmis.Items[i]
+				ptrs = append(ptrs, &vmis.Items[i])
 			}
 			return ptrs, err
 		},
