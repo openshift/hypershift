@@ -22,6 +22,12 @@ AZURE_CREDS=</path/to/credentials>
 AZURE_BASE_DOMAIN=<your-domin>
 PULL_SECRET=<your/path/to/pullsecrets>
 HYPERSHIFT_BINARY_PATH="<your/path/>"
+# As of 2024 July 10th, there is no 4.17 version of these images
+OCP_VERSION=v4.16
+CERTIFIED_OPERATOR_INDEX_REPO="registry.redhat.io/redhat/certified-operator-index"
+COMMUNITY_OPERATOR_INDEX_REPO="registry.redhat.io/redhat/community-operator-index"
+REDHAT_MARKETPLACE_INDEX_REPO="registry.redhat.io/redhat/redhat-marketplace-index"
+REDHAT_OPERATOR_INDEX_REPO="registry.redhat.io/redhat/redhat-operator-index"
 
 # Delete any previous instances of the resource groups
 az group delete -n "${MANAGED_RG_NAME}" --yes
@@ -58,6 +64,12 @@ GetVnetID=$(az network vnet list --query "[?name=='${CUSTOMER_VNET_NAME}'].id" -
 # Get customer subnet ID
 GetSubnetID=$(az network vnet subnet show --vnet-name "${CUSTOMER_VNET_NAME}" --name "${CUSTOMER_VNET_SUBNET1}" --resource-group "${CUSTOMER_RG_NAME}" --query id --output tsv)
 
+# Retrieve hash for the multi-arch index for the Red Hat Catalog images
+CERTIFIED_OPERATOR_INDEX_HASH="$(oc image info "$CERTIFIED_OPERATOR_INDEX_REPO:${OCP_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
+COMMUNITY_OPERATOR_INDEX_HASH="$(oc image info "$COMMUNITY_OPERATOR_INDEX_REPO:${OCP_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
+REDHAT_MARKETPLACE_INDEX_HASH="$(oc image info "$REDHAT_MARKETPLACE_INDEX_REPO:${OCP_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
+REDHAT_OPERATOR_INDEX_HASH="$(oc image info "$REDHAT_OPERATOR_INDEX_REPO:${OCP_VERSION}" -a "${PULL_SECRET}" --filter-by-os linux/amd64 -o json | jq -r .listDigest)"
+
 # Create the Hosted Cluster
 # If you want to run a custom CPO image, add the following flag to your command below
 # --control-plane-operator-image=${CUSTOM_IMAGE}" \
@@ -76,10 +88,10 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
 --subnet-id "${GetSubnetID}" \
 --network-security-group-id "${GetNsgID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
---annotations hypershift.openshift.io/certified-operators-catalog-image=registry.redhat.io/redhat/certified-operator-index@sha256:fc68a3445d274af8d3e7d27667ad3c1e085c228b46b7537beaad3d470257be3e \
---annotations hypershift.openshift.io/community-operators-catalog-image=registry.redhat.io/redhat/community-operator-index@sha256:4a2e1962688618b5d442342f3c7a65a18a2cb014c9e66bb3484c687cfb941b90 \
---annotations hypershift.openshift.io/redhat-marketplace-catalog-image=registry.redhat.io/redhat/redhat-marketplace-index@sha256:ed22b093d930cfbc52419d679114f86bd588263f8c4b3e6dfad86f7b8baf9844 \
---annotations hypershift.openshift.io/redhat-operators-catalog-image=registry.redhat.io/redhat/redhat-operator-index@sha256:59b14156a8af87c0c969037713fc49be7294401b10668583839ff2e9b49c18d6 \
+--annotations hypershift.openshift.io/certified-operators-catalog-image=registry.redhat.io/redhat/certified-operator-index@${CERTIFIED_OPERATOR_INDEX_HASH} \
+--annotations hypershift.openshift.io/community-operators-catalog-image=registry.redhat.io/redhat/community-operator-index@${COMMUNITY_OPERATOR_INDEX_HASH} \
+--annotations hypershift.openshift.io/redhat-marketplace-catalog-image=registry.redhat.io/redhat/redhat-marketplace-index@${REDHAT_MARKETPLACE_INDEX_HASH} \
+--annotations hypershift.openshift.io/redhat-operators-catalog-image=registry.redhat.io/redhat/redhat-operator-index@${REDHAT_OPERATOR_INDEX_HASH} \
 --fips=true
 
 set +x
