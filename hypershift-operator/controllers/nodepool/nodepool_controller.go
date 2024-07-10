@@ -1931,7 +1931,14 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context,
 	// https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
 	// TODO (alberto): possibly expose this config at the nodePool API.
 	maxUnhealthy := intstr.FromInt(2)
-	timeOut := 8 * time.Minute
+	var timeOut time.Duration
+
+	switch hc.Spec.Platform.Type {
+	case hyperv1.AgentPlatform, hyperv1.NonePlatform:
+		timeOut = 16 * time.Minute
+	default:
+		timeOut = 8 * time.Minute
+	}
 
 	maxUnhealthyOverride := nodePool.Annotations[hyperv1.MachineHealthCheckMaxUnhealthyAnnotation]
 	if maxUnhealthyOverride == "" {
