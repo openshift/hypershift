@@ -99,6 +99,9 @@ func TestGenerateConfig(t *testing.T) {
 							Name:      "hc1",
 							Namespace: "test",
 						},
+						Spec: hyperv1.HostedClusterSpec{
+							ClusterID: "hc1-UUID",
+						},
 					},
 					routes: []client.Object{
 						route(ignitionserver.Route("").Name, testNamespace1, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy")),
@@ -118,6 +121,9 @@ func TestGenerateConfig(t *testing.T) {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "hc2",
 							Namespace: "test",
+						},
+						Spec: hyperv1.HostedClusterSpec{
+							ClusterID: "hc2-UUID",
 						},
 					},
 					routes: []client.Object{
@@ -165,7 +171,7 @@ func TestGenerateConfig(t *testing.T) {
 			}
 			config, _, err := r.generateConfig(ctx.Background())
 			g.Expect(err).ToNot(HaveOccurred())
-			testutil.CompareWithFixture(t, config)
+			testutil.CompareWithFixture(t, config, testutil.WithExtension(".cfg"))
 		})
 	}
 }

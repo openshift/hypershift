@@ -19,10 +19,17 @@ defaults
 frontend dataplane-kas-svc
   bind :::6443 v4v6 accept-proxy
   tcp-request inspect-delay 5s
+
+  # fc_pp_tlv(0x20) extracts and decodes the custom tlv proxy header sent from the data-pane HAProxy which contains the clusterID.
+  tcp-request content set-var(sess.cluster_id) fc_pp_tlv(0x20)
   tcp-request content accept if { req_ssl_hello_type 1 }
 
+  # example output: cluster_id = "4954e6da-fc87-4e74-9861-05895fe9549d", "169.254.169.1":38984 -> "172.20.0.1":6443 [10/Jul/2024:14:02:09.943] "dataplane-kas-svc" "<backend_name>"/"<server_name>" 11/8/90052 3373 -- 25/7/2/2/0 0/0
+  # see https://www.haproxy.com/blog/introduction-to-haproxy-logging
+  log-format "%{+Q}o\ cluster_id = %[var(sess.cluster_id)], %ci:%cp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
+
   {{- range .Backends }}
-  acl is_{{ .Name }} dst {{ .SVCIP }}
+  acl is_{{ .Name }} var(sess.cluster_id) -m str {{ .ClusterID }}
   {{- end }}
   {{- range .Backends }}
   use_backend {{ .Name }} if is_{{ .Name }}

@@ -59,7 +59,7 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			noProxy: "localhost,kubernetes.svc,127.0.0.1,",
 		},
 		{
-			name:             "when use shared router it should create two haproxies",
+			name:             "when use shared router it should use proxy protocol",
 			proxy:            "",
 			noProxy:          "",
 			useSharedIngress: true,
@@ -71,7 +71,7 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			if tc.useSharedIngress {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			}
-			config, err := apiServerProxyConfig(image, tc.proxy, externalAddress, internalAddress, "SVC-IP", 443, 8443,
+			config, err := apiServerProxyConfig(image, tc.proxy, "fakeClusterID", externalAddress, internalAddress, 443, 8443,
 				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
