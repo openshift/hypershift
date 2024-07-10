@@ -93,6 +93,61 @@ hypershift dump cluster \
     --artifact-dir clusterDump-${CLUSTERNS}-${CLUSTERNAME}
 ```
 
+### How to view the ignition payload
+
+1. Define the HCP namespace where the user-data secret is stored
+```shell 
+HCP_NAMESPACE="<hcp-namespace>"
+```
+1. Find the user-data secret in the HCP namespace
+```shell
+SECRET_NAME=$(oc get secret -n $HCP_NAMESPACE | grep user-data | awk '{print $1}')
+```
+2. Retrieve the secret and decode the value key
+```shell
+USER_DATA_VALUE=$(oc get secret $SECRET_NAME -n $HCP_NAMESPACE -o jsonpath='{.data.value}' | base64 -d)
+```
+3. Extract the bearer token and ignition server from the user-data value
+```shell
+BEARER_TOKEN=$(echo $USER_DATA_VALUE | jq -r '.ignition.config.merge[0].httpHeaders[] | select(.name=="Authorization") | .value')
+IGNITION_SERVER=$(echo $USER_DATA_VALUE | jq -r '.ignition.config.merge[0].source')
+```
+
+4. Download the ignition payload from the ignition-server and save it to a file
+```shell
+curl -k -H "Authorization: $BEARER_TOKEN" $IGNITION_SERVER -o ignition.json
+```
+
+#### How to view the files in the ignition payload
+Following on from the previous section and the example file in step 4, `ignition.json`, to view the files within the payload, execute the following command:
+```
+% cat ignition.json | jq '.storage.files[].path'
+"/usr/local/bin/nm-clean-initrd-state.sh"
+"/etc/NetworkManager/conf.d/01-ipv6.conf"
+"/etc/NetworkManager/conf.d/20-keyfiles.conf"
+"/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
+"/etc/kubernetes/apiserver-url.env"
+"/etc/audit/rules.d/mco-audit-quiet-containers.rules"
+"/etc/tmpfiles.d/cleanup-cni.conf"
+"/usr/local/bin/configure-ovs.sh"
+"/etc/containers/storage.conf"
+"/etc/mco/proxy.env"
+...
+```
+
+To view the specific contents of a file, execute the following command:
+```
+% cat ignition.json | jq '.storage.files[] | select(.path=="/etc/kubernetes/apiserver-url.env")'
+{
+  "overwrite": true,
+  "path": "/etc/kubernetes/apiserver-url.env",
+  "contents": {
+    "source": "data:,KUBERNETES_SERVICE_HOST%3D'52.150.32.156'%0AKUBERNETES_SERVICE_PORT%3D'7443'%0A"
+  },
+  "mode": 420
+}
+```
+
 ## Troubleshoot By Provider
 If you have provider-scoped questions, please take a look at the troubleshooting section for the provider in the list below.
 We will keep adding more and more troubleshooting sections and updating the existent ones.
