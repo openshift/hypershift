@@ -81,9 +81,10 @@ func selectorLabels() map[string]string {
 var (
 	volumeMounts = util.PodVolumeMounts{
 		containerMain().Name: {
-			volumeClientToken().Name: "/var/run/secrets/kubernetes.io/serviceaccount",
-			volumeServingCert().Name: "/etc/secrets",
-			volumeCABundle().Name:    "/etc/certificate/ca",
+			volumeClientToken().Name:            "/var/run/secrets/kubernetes.io/serviceaccount",
+			volumeServingCert().Name:            "/etc/secrets",
+			volumeCABundle().Name:               "/etc/certificate/ca",
+			volumeTrustedCABundleManaged().Name: "/etc/pki/ca-trust/extracted/pem",
 		},
 		containerClientTokenMinter().Name: {
 			volumeClientToken().Name:     "/var/client-token",
@@ -175,6 +176,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 					util.BuildVolume(volumeServingCert(), buildVolumeServingCert),
 					util.BuildVolume(volumeAdminKubeconfig(), buildVolumeAdminKubeconfig),
 					util.BuildVolume(volumeCABundle(), buildVolumeCABundle),
+					util.BuildVolume(volumeTrustedCABundleManaged(), buildVolumeTrustedCABundleManaged),
 				},
 			},
 		},
@@ -379,6 +381,21 @@ func volumeCABundle() *corev1.Volume {
 func buildVolumeCABundle(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.RootCASecret("").Name,
+		DefaultMode: pointer.Int32(0640),
+	}
+}
+
+func volumeTrustedCABundleManaged() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "trusted-ca-bundle-managed",
+	}
+}
+
+func buildVolumeTrustedCABundleManaged(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{
+		LocalObjectReference: corev1.LocalObjectReference{
+			Name: manifests.TrustedCABundleConfigMap("").Name,
+		},
 		DefaultMode: pointer.Int32(0640),
 	}
 }
