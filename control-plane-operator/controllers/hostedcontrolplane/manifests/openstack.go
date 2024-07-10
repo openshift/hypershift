@@ -5,7 +5,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func OpenStackProviderConfig(ns string) *corev1.Secret {
+func OpenStackProviderConfig(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openstack-cloud-config",
+			Namespace: ns,
+		},
+	}
+}
+
+func OpenStackProviderConfigWithCredentials(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openstack-cloud-config",

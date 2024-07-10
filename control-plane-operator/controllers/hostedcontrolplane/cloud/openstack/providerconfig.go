@@ -7,37 +7,59 @@ import (
 
 const (
 	CloudConfigDir      = "/etc/openstack/config"
-	CloudCredentialsDir = "/etc/openstack/credentials"
-	CredentialsFile     = "clouds.conf"
+	CloudCredentialsDir = "/etc/openstack/secret"
+	CredentialsFile     = "cloud.conf"
 	CaDir               = "/etc/pki/ca-trust/extracted/pem"
-	CaKey               = "ca.pem"
+	CABundleKey         = "ca-bundle.pem"
 	Provider            = "openstack"
-	cloudsSecretKey     = "clouds.yaml"
-	caSecretKey         = "cacert"
+	CloudsSecretKey     = "clouds.yaml"
+	CASecretKey         = "cacert"
 )
 
-// ReconcileCloudConfig reconciles as expected by Nodes Kubelet.
-func ReconcileCloudConfig(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret, hasCACert bool) error {
+// ReconcileCloudConfig reconciles the cloud config secret.
+// For some controllers (e.g. Manila CSI, CNCC, etc), the cloud config needs to be stored in a secret.
+// In the hosted cluster config operator, we create the secrets needed by these controllers.
+func ReconcileCloudConfigSecret(secret *corev1.Secret, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	config := string(credentialsSecret.Data[CredentialsFile]) // TODO(emilien): Missing key handling
-
-	config += `
-[Global]
-use-clouds=true
-clouds-file=` + CloudCredentialsDir + "/" + CredentialsFile + "\n"
-
-	config += "\ncloud=" + hcp.Spec.Platform.OpenStack.IdentityRef.CloudName
-
-	if hasCACert {
-		config += "\nca-file =" + CaDir + "/" + CaKey + "\n"
+	config := getCloudConfig(cloudName, credentialsSecret, caCertData)
+	if caCertData != nil {
+		secret.Data[CABundleKey] = caCertData
 	}
+	secret.Data[CredentialsFile] = []byte(config)
 
+	return nil
+}
+
+// ReconcileCloudConfigConfigMap reconciles the cloud config configmap.
+// In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
+func ReconcileCloudConfigConfigMap(cm *corev1.ConfigMap, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	config := getCloudConfig(cloudName, credentialsSecret, caCertData)
+	if caCertData != nil {
+		cm.Data[CABundleKey] = string(caCertData)
+	}
+	cm.Data[CredentialsFile] = config
+
+	return nil
+}
+
+// getCloudConfig returns the cloud config.
+func getCloudConfig(cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) string {
+	config := string(credentialsSecret.Data[CredentialsFile])
+	config += "[Global]\n"
+	config += "use-clouds = true\n"
+	config += "clouds-file=" + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
+	config += "cloud=" + cloudName + "\n"
+	if caCertData != nil {
+		config += "ca-file=" + CaDir + "/" + CABundleKey + "\n"
+	}
 	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
 
-	secret.Data[CredentialsFile] = []byte(config)
-	return nil
+	return config
 }
 
 // ReconcileTrustedCA reconciles as expected by Nodes Kubelet.
@@ -45,13 +67,13 @@ func ReconcileTrustedCA(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, c
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	cm.Data[CaKey] = string(caCertData) // TODO(emilien): Missing key handling
+	cm.Data[CABundleKey] = string(caCertData)
 	return nil
 }
 
 // GetCloudConfigFromCredentialsSecret returns the CA cert from the credentials secret.
 func GetCACertFromCredentialsSecret(secret *corev1.Secret) []byte {
-	caCert, ok := secret.Data[caSecretKey]
+	caCert, ok := secret.Data[CASecretKey]
 	if !ok {
 		return nil
 	}
