@@ -2627,13 +2627,19 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
 		}
 		caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
-		hasCACert := caCertData != nil
 
 		cfg := manifests.OpenStackProviderConfig(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, cfg, func() error {
-			return openstack.ReconcileCloudConfig(cfg, hcp, credentialsSecret, hasCACert)
+			return openstack.ReconcileCloudConfigConfigMap(cfg, hcp.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
+		}
+
+		withSecrets := manifests.OpenStackProviderConfigWithCredentials(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, withSecrets, func() error {
+			return openstack.ReconcileCloudConfigSecret(withSecrets, hcp.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OpenStack cloud config with credentials: %w", err)
 		}
 
 		// This is for CCM to use the CA cert for OpenStack.

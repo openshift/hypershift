@@ -2,7 +2,6 @@ package openstack
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
@@ -264,60 +263,56 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 }
 
 func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	return errors.Join(
-		a.reconcileCloudsYaml(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.IdentityRef.Name),
-		a.reconcileCACert(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.IdentityRef.Name),
-	)
+	if err := a.reconcileCloudsYaml(ctx, c, createOrUpdate, controlPlaneNamespace, hcluster.Namespace, hcluster.Spec.Platform.OpenStack.IdentityRef.Name); err != nil {
+		return fmt.Errorf("failed to reconcile OpenStack clouds.yaml: %w", err)
+	}
+
+	// Sync CNCC secret
+	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.OpenStack.IdentityRef.Name}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+		return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
+	}
+	caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
+	cloudNetworkConfigCreds := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"},
+		Data:       map[string][]byte{},
+	}
+	cloudNetworkConfigCreds.Data[openstack.CloudsSecretKey] = credentialsSecret.Data[openstack.CloudsSecretKey]
+	if caCertData != nil {
+		cloudNetworkConfigCreds.Data[openstack.CABundleKey] = caCertData
+	}
+
+	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
+		return openstack.ReconcileCloudConfigSecret(cloudNetworkConfigCreds, hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
+	}
+
+	return nil
 }
 
 func (a OpenStack) reconcileCloudsYaml(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string, clusterNamespace string, identityRefName string) error {
 	var source corev1.Secret
 
-	// Sync user cloud.conf secret
-	name := client.ObjectKey{Namespace: clusterNamespace, Name: identityRefName}
-	if err := c.Get(ctx, name, &source); err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", name, err)
+	// Sync user clouds.yaml secret
+	clusterCloudsSecret := client.ObjectKey{Namespace: clusterNamespace, Name: identityRefName}
+	if err := c.Get(ctx, clusterCloudsSecret, &source); err != nil {
+		return fmt.Errorf("failed to get secret %s: %w", clusterCloudsSecret, err)
 	}
 
-	clouds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: identityRefName}}
-	_, err := createOrUpdate(ctx, c, clouds, func() error {
-		if clouds.Data == nil {
-			clouds.Data = map[string][]byte{}
+	userCloudsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: identityRefName}}
+	_, err := createOrUpdate(ctx, c, userCloudsSecret, func() error {
+		if userCloudsSecret.Data == nil {
+			userCloudsSecret.Data = map[string][]byte{}
 		}
-		clouds.Data["clouds.yaml"] = source.Data["clouds.yaml"] // TODO(emilien): Proper missing key handling.
-		clouds.Data["clouds.conf"] = source.Data["clouds.conf"] // TODO(emilien): Could we just generate this from clouds.yaml here?
-		if _, ok := source.Data["cacert"]; ok {
-			clouds.Data["cacert"] = source.Data["cacert"]
+		if _, ok := source.Data[openstack.CASecretKey]; ok {
+			userCloudsSecret.Data[openstack.CASecretKey] = source.Data[openstack.CASecretKey]
 		}
+		userCloudsSecret.Data[openstack.CloudsSecretKey] = source.Data[openstack.CloudsSecretKey]
 		return nil
 	})
 
 	return err
-}
-
-func (a OpenStack) reconcileCACert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string, clusterNamespace string, secretName string) error {
-	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: clusterNamespace, Name: secretName}}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: clusterNamespace, Name: secretName}, credentialsSecret); err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", secretName, err)
-	}
-
-	caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
-	if caCertData == nil {
-		return nil
-	}
-
-	caCert := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "openstack-ca"}}
-	if _, err := createOrUpdate(ctx, c, caCert, func() error {
-		if caCert.Data == nil {
-			caCert.Data = map[string][]byte{}
-		}
-		caCert.Data["ca.pem"] = caCertData // TODO(emilien): Proper missing key handling, naming.
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (a OpenStack) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
