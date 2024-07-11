@@ -2592,6 +2592,16 @@ func reconcileControlPlaneOperatorDeployment(
 		)
 	}
 
+	if hc.Annotations[certs.CertificateRenewalAnnotation] != "" {
+		certRenewalPercentage := hc.Annotations[certs.CertificateRenewalAnnotation]
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  certs.CertificateRenewalEnvVar,
+				Value: certRenewalPercentage,
+			},
+		)
+	}
+
 	if openShiftTrustedCABundleConfigMapExists {
 		hyperutil.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
