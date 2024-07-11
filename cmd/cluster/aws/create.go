@@ -59,10 +59,10 @@ type ValidatedCreateOptions struct {
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
 	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
 	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
-	if !o.MultiArch && (!opts.Render || opts.RenderInto != "") && opts.Arch != hyperv1.ArchitecturePPC64LE {
+	if !o.MultiArch && !opts.Render && opts.Arch != hyperv1.ArchitecturePPC64LE {
 		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to check mgmt cluster CPU arch: %v", err)
 		}
 
 		if err = hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, opts.Arch); err != nil {

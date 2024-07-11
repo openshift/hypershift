@@ -23,6 +23,7 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(context.Background())
 	tempDir := t.TempDir()
+	t.Setenv("FAKE_CLIENT", "true")
 
 	rawInfra, err := json.Marshal(&powervsinfra.Infra{
 		ID:                "fakeID",
