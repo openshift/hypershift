@@ -83,6 +83,7 @@ type proxyResolver struct {
 	disableResolver              bool
 	resolveFromGuestCluster      bool
 	resolveFromManagementCluster bool
+	mustResolve                  bool
 	dnsFallback                  *syncBool
 	guestClusterResolver         *guestClusterResolver
 	log                          logr.Logger
@@ -91,7 +92,7 @@ type proxyResolver struct {
 func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
 	// Preserve the host so we can recognize it
 	if isCloudAPI(name) || d.disableResolver {
-		return ctx, nil, nil
+		return d.defaultResolve(ctx, name)
 	}
 	l := d.log.WithValues("name", name)
 	_, ip, err := d.ResolveK8sService(ctx, l, name)
@@ -109,7 +110,7 @@ func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Contex
 			if d.resolveFromManagementCluster {
 				l.Info("Fallback to management cluster resolution")
 				d.dnsFallback.set(true)
-				return ctx, nil, nil
+				return d.defaultResolve(ctx, name)
 			}
 
 			return ctx, nil, fmt.Errorf("failed to look up name %s from guest cluster cluster-dns: %w", name, err)
@@ -120,6 +121,19 @@ func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Contex
 	}
 
 	return ctx, ip, nil
+}
+
+func (d proxyResolver) defaultResolve(ctx context.Context, name string) (context.Context, net.IP, error) {
+	// When the resolver is used by the socks5 proxy, a nil response by the resolver
+	// results in the proxy just using the default system resolver. However, when used by
+	// the http proxy, a nil response will cause an invalid CONNECT string to be created,
+	// so we must have a valid response.
+	// d.mustResolve will be set to true if the dialer needs to resolve names before
+	// dialing (which is the case of the https proxy)
+	if d.mustResolve {
+		return socks5.DNSResolver{}.Resolve(ctx, name)
+	}
+	return ctx, nil, nil
 }
 
 func (d proxyResolver) ResolveK8sService(ctx context.Context, l logr.Logger, name string) (context.Context, net.IP, error) {
