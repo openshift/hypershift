@@ -73,6 +73,7 @@ require (
 	k8s.io/kube-aggregator v0.24.0
 	k8s.io/kube-scheduler v0.23.1
 	k8s.io/kubectl v0.25.0
+	k8s.io/kubelet v0.23.3
 	k8s.io/pod-security-admission v0.23.5
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 	kubevirt.io/api v0.58.0
