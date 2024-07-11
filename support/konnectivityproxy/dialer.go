@@ -177,6 +177,7 @@ func NewKonnectivityDialer(opts Options) (ProxyDialer, error) {
 		disableResolver:              opts.DisableResolver,
 		resolveFromGuestCluster:      opts.ResolveFromGuestClusterDNS,
 		resolveFromManagementCluster: opts.ResolveFromManagementClusterDNS,
+		mustResolve:                  opts.ResolveBeforeDial,
 		dnsFallback:                  &proxy.fallbackToMCDNS,
 		log:                          opts.Log,
 	}
