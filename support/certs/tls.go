@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -48,7 +49,12 @@ const (
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
 	CertificateValidityAnnotation = "hypershift.openshift.io/certificate-validity"
 	CertificateValidityEnvVar     = "CERTIFICATE_VALIDITY"
-	CertificateValidityDefault    = ValidityOneYear
+	// Custom certificate renewal percentage. The format of the annotation is a float64 value between 0 and 1.
+	// The certificate will renew when less than CertificateRenewalEnvVar of its validity period remains.
+	// For example, if you set the validity period to 100 days and the renewal percentage to 0.30,
+	// the certificate will renew when there are fewer than 30 days remaining (100 days * 0.30 = 30 days) before it expires.
+	CertificateRenewalAnnotation = "hypershift.openshift.io/certificate-renewal"
+	CertificateRenewalEnvVar     = "CERTIFICATE_RENEWAL_PERCENTAGE"
 )
 
 // CertCfg contains all needed fields to configure a new certificate
@@ -368,7 +374,7 @@ func ReconcileSignedCert(
 		secret.Data[caKey] = append([]byte(nil), ca.Data[opts.CASignerCertMapKey]...)
 	}
 
-	certValidity := CertificateValidityDefault
+	certValidity := ValidityOneYear
 
 	if value := os.Getenv(CertificateValidityEnvVar); value != "" {
 		customCertValidityEnvVar, err := time.ParseDuration(value)
@@ -386,7 +392,18 @@ func ReconcileSignedCert(
 		DNSNames:     dnsNames,
 		IPAddresses:  ipAddresses,
 	}
-	if err := ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, 30*ValidityOneDay); err == nil {
+
+	minimumRemainingValidity := 30 * ValidityOneDay
+
+	if value := os.Getenv(CertificateRenewalEnvVar); value != "" {
+		renewalPercentage, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse custom certificate renewal percentage from env var %s: %w", CertificateRenewalEnvVar, err)
+		}
+		minimumRemainingValidity = time.Duration(float64(certValidity) * renewalPercentage)
+	}
+
+	if err := ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, minimumRemainingValidity); err == nil {
 		return nil
 	}
 	certBytes, keyBytes, _, err := signCertificate(cfg, ca, opts)
