@@ -18,7 +18,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -62,11 +62,12 @@ func (r routeByNamespaceName) Less(i, j int) bool {
 	return r[i].Namespace+r[i].Name < r[j].Namespace+r[j].Name
 }
 
-func generateRouterConfig(svcList *corev1.ServiceList, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
+func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
 	type backendDesc struct {
-		Name    string
-		SVCIP   string
-		SVCPort int32
+		Name      string
+		SVCIP     string
+		SVCPort   int32
+		ClusterID string
 	}
 	type ExternalDNSBackendDesc struct {
 		Name                 string
@@ -83,9 +84,10 @@ func generateRouterConfig(svcList *corev1.ServiceList, routes []routev1.Route, s
 	p.Backends = make([]backendDesc, 0, len(svcList.Items))
 	for _, svc := range svcList.Items {
 		p.Backends = append(p.Backends, backendDesc{
-			Name:    svc.Namespace + "-" + svc.Name,
-			SVCIP:   svc.Spec.ClusterIP,
-			SVCPort: svc.Spec.Ports[0].Port,
+			Name:      svc.Namespace + "-" + svc.Name,
+			SVCIP:     svc.Spec.ClusterIP,
+			SVCPort:   svc.Spec.Ports[0].Port,
+			ClusterID: svcsNamespaceToClusterID[svc.Namespace],
 		})
 	}
 
@@ -99,13 +101,29 @@ func generateRouterConfig(svcList *corev1.ServiceList, routes []routev1.Route, s
 		}
 		switch route.Name {
 		case manifests.KubeAPIServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-apiserver", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: config.KASSVCPort})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-apiserver",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      config.KASSVCPort})
 		case ignitionserver.Route("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-ignition", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: 443})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-ignition",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      443})
 		case manifests.KonnectivityServerRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-konnectivity", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: 8091})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-konnectivity",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      8091})
 		case manifests.OauthServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{Name: route.Namespace + "-oauth", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name], DestinationPort: 6443})
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-oauth",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      6443})
 		}
 	}
 
@@ -152,7 +170,7 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, config *corev1.Con
 					},
 				},
 				ServiceAccountName:           "",
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 			},
 		},
 	}
@@ -171,8 +189,10 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 		c.Command = []string{
 			"haproxy",
 		}
-		// 4.16.0-rc.3 haproxy router image.
-		c.Image = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:06e8c4156888f50be0ac46bf21337ecda329befa0f9a6bb1df8bce078ae04aaa"
+
+		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
+		// TODO: get the image from the payload once available https://issues.redhat.com/browse/HOSTEDCP-1819
+		c.Image = "quay.io/mraee/haproxy:2.9"
 		c.Args = []string{
 			"-f", "/usr/local/etc/haproxy",
 		}
