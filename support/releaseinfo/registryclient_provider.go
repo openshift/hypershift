@@ -3,7 +3,6 @@ package releaseinfo
 import (
 	"context"
 	"fmt"
-
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 )
 
