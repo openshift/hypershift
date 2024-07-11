@@ -152,7 +152,7 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
 	}
 
-	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP && o.ManagedService != hyperv1.RosaHCP {
+	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
 	}
 	return errors.NewAggregate(errs)
@@ -166,6 +166,10 @@ func (o *Options) ApplyDefaults() {
 		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
+	}
+
+	if o.ExternalDNSProvider == string(assets.AzureExternalDNSProvider) {
+		o.ManagedService = hyperv1.AroHCP
 	}
 }
 
@@ -203,7 +207,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for writing the OIDC documents into the S3 bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecret, "oidc-storage-provider-s3-secret", "", "Name of an existing secret containing the OIDC S3 credentials.")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecretKey, "oidc-storage-provider-s3-secret-key", "credentials", "Name of the secret key containing the OIDC S3 credentials.")
-	cmd.PersistentFlags().StringVar(&opts.ExternalDNSProvider, "external-dns-provider", opts.OIDCStorageProviderS3Credentials, "Provider to use for managing DNS records using external-dns")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSProvider, "external-dns-provider", opts.ExternalDNSProvider, "Provider to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentials, "external-dns-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specified domain.")
@@ -643,7 +647,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 			Namespace:         operatorNamespace,
 			Image:             opts.ExternalDNSImage,
 			ServiceAccount:    externalDNSServiceAccount,
-			Provider:          opts.ExternalDNSProvider,
+			Provider:          assets.ExternalDNSProvider(opts.ExternalDNSProvider),
 			DomainFilter:      opts.ExternalDNSDomainFilter,
 			CredentialsSecret: externalDNSSecret,
 			TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
