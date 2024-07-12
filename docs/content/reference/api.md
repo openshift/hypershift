@@ -2421,18 +2421,15 @@ string
 </tr>
 <tr>
 <td>
-<code>imageID</code></br>
+<code>image</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImage">
+AzureVMImage
+</a>
 </em>
 </td>
 <td>
-<em>(Optional)</em>
-<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
-is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
-The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
-Hosted Cluster specification respectively, HostedCluster.Spec.Platform.Azure.SubscriptionID and
-HostedCluster.Spec.Platform.Azure.ResourceGroupName.</p>
+<p>Image is the image to boot the VMs with</p>
 </td>
 </tr>
 <tr>
@@ -2681,6 +2678,85 @@ expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureVMImage represents the different types of image data that can be provided for an Azure VM.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>azureImageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImageType">
+AzureVMImageType
+</a>
+</em>
+</td>
+<td>
+<p>Type is the type of image data that will be provided to the Azure VM. This can be either &ldquo;ImageID&rdquo; or
+&ldquo;AzureMarketplace&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ImageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureMarketplace</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MarketplaceImage">
+MarketplaceImage
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AzureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureVMImageType { #hypershift.openshift.io/v1beta1.AzureVMImageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImage">AzureVMImage</a>)
+</p>
+<p>
+<p>AzureVMImageType is a union discriminator for AzureVMImage</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AzureMarketplace&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;ImageID&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###CIDRBlock { #hypershift.openshift.io/v1beta1.CIDRBlock }
 <p>
@@ -6570,6 +6646,73 @@ is empty.</p>
 <td><p>PersistentVolumeEtcdStorage uses PersistentVolumes for etcd storage.</p>
 </td>
 </tr></tbody>
+</table>
+###MarketplaceImage { #hypershift.openshift.io/v1beta1.MarketplaceImage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImage">AzureVMImage</a>)
+</p>
+<p>
+<p>MarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image. This struct
+replicates the same fields found in CAPZ - <a href="https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/main/api/v1beta1/types.go">https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/main/api/v1beta1/types.go</a>.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>publisher</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Publisher is the name of the organization that created the image</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>offer</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Offer specifies the name of a group of related images created by the publisher.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>sku</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>SKU specifies an instance of an offer, such as a major release of a distribution.
+For example, 18.04-LTS, 2019-Datacenter</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>version</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Version specifies the version of an image sku. The allowed formats are Major.Minor.Build or &lsquo;latest&rsquo;. Major,
+Minor, and Build are decimal numbers. Specify &lsquo;latest&rsquo; to use the latest version of an image available at
+deployment time. Even if you use &lsquo;latest&rsquo;, the VM image will not automatically update after deploy time even if a
+new version becomes available.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###MultiQueueSetting { #hypershift.openshift.io/v1beta1.MultiQueueSetting }
 <p>
