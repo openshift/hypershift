@@ -113,7 +113,37 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 				},
 			},
 			clusterImageConfig: nil,
-			expectedCert:       bytes.NewBufferString("test"),
+			expectedCert:       bytes.NewBufferString("test\n"),
+			expectedError:      false,
+		},
+		{
+			name: "The trusted CA configmap has more than one certificate entry",
+			objects: []crclient.Object{
+				&configapi.Image{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster",
+					},
+					Spec: configapi.ImageSpec{
+						AdditionalTrustedCA: configapi.ConfigMapNameReference{
+							Name: "registry-config",
+						},
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "registry-config",
+						Namespace: "openshift-config",
+					},
+					Data: map[string]string{
+						"mirror1.registry.com": "test1",
+						"mirror2.registry.com": "test2",
+						"mirror3.registry.com": "test3",
+						"mirror4.registry.com": "test4",
+					},
+				},
+			},
+			clusterImageConfig: nil,
+			expectedCert:       bytes.NewBufferString("test1\ntest2\ntest3\ntest4\n"),
 			expectedError:      false,
 		},
 	}
@@ -127,7 +157,12 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 			if tc.expectedError {
 				g.Expect(err).NotTo(BeNil())
 			}
-			g.Expect(cert).To(BeEquivalentTo(tc.expectedCert))
+
+			if tc.expectedCert != nil {
+				for _, value := range bytes.Split(cert.Bytes(), []byte("\n")) {
+					g.Expect(value).Should(BeElementOf(bytes.Split(tc.expectedCert.Bytes(), []byte("\n"))))
+				}
+			}
 		})
 	}
 }
