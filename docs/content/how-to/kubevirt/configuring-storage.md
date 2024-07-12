@@ -13,7 +13,7 @@ in pods across three separate management cluster nodes. This replication
 ensures data resiliency even when a local storage csi driver is in use.
 
 More information about ETCD storage configuration can be found in the
-[ETCD Storage Configuration](#etcd storage configuration) section.
+[ETCD Storage Configuration](#etcd-storage-configuration) section.
 
 **Node Root Volume Storage**
 
@@ -25,7 +25,7 @@ infra cluster nodes are disrupted. Ceph is an example of a csi driver that
 would meet these requirements.
 
 More information about configuring root volume storage can be found in the
-[KubeVirt VM Root Volume Configuration](#kubevirt vm root volume configuration) section.
+[KubeVirt VM Root Volume Configuration](#kubevirt-vm-root-volume-configuration) section.
 
 **KubeVirt CSI Storage**
 
@@ -44,13 +44,13 @@ Below is a chart that outlines the current features of KubeVirt CSI as they map
 to the infra cluster's storage class.
 
 | Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           | 
-|-----------------------|------------------------------------|-----------------------------------------------------------------------------|
+|-----------------------|------------------------------------|---------------------------|-------------------------------------------------|
 | RWX Block             | RWO (Block/Filesystem) RWX (Block) | Supported                 |                                                 |
 | RWO Block             | RWO (Block/Filesystem)             | Not Supported             |                                                 |
 | RWO Filesystem        | RWO (Block/Filesystem)             | Not Supported             | suboptimal guest block volume mode performance. |
 
 More information about configuring KubeVirt CSI can be found in the
-[KubeVirt CSI StorageClass Mapping](#kubevirt csi storageclass mapping) section.
+[KubeVirt CSI StorageClass Mapping](#kubevirt-csi-storageclass-mapping) section.
 
 # Configuring Storage
 
