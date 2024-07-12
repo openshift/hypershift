@@ -44,6 +44,7 @@ type OAuthServerParams struct {
 	Availability            hyperv1.AvailabilityPolicy
 	Socks5ProxyImage        string
 	NoProxy                 []string
+	AuditWebhookRef         *corev1.LocalObjectReference
 }
 
 type OAuthConfigParams struct {
@@ -95,6 +96,11 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		p.APIServer = hcp.Spec.Configuration.APIServer
 		p.OAuth = hcp.Spec.Configuration.OAuth
 	}
+
+	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
+		p.AuditWebhookRef = hcp.Spec.AuditWebhook
+	}
+
 	p.Scheduling = config.Scheduling{
 		PriorityClass: config.APICriticalPriorityClass,
 	}
@@ -240,6 +246,16 @@ func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfi
 		LoginURLOverride:             p.LoginURLOverride,
 		NamedCertificates:            p.NamedCertificates(),
 		OAuthTemplates:               p.OauthTemplates(),
+	}
+}
+
+func (p *OAuthServerParams) AuditPolicyConfig() configv1.Audit {
+	if p.APIServer != nil && p.APIServer.Audit.Profile != "" {
+		return p.APIServer.Audit
+	} else {
+		return configv1.Audit{
+			Profile: configv1.DefaultAuditProfileType,
+		}
 	}
 }
 
