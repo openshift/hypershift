@@ -87,16 +87,18 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 	hcp.Name = "name"
 	hcp.Namespace = "namespace"
 	testCases := []struct {
-		name                         string
-		cm                           corev1.ConfigMap
-		expectedVolume               *corev1.Volume
-		auditConfig                  *corev1.ConfigMap
-		expectedVolumeProjection     []corev1.VolumeProjection
-		deploymentConfig             config.DeploymentConfig
-		additionalTrustBundle        *corev1.LocalObjectReference
-		clusterConf                  *hyperv1.ClusterConfiguration
-		imageRegistryAdditionalCAs   *corev1.ConfigMap
-		expectProjectedVolumeMounted bool
+		name                              string
+		cm                                corev1.ConfigMap
+		expectedVolume                    *corev1.Volume
+		expectedProxyVolume               *corev1.Volume
+		auditConfig                       *corev1.ConfigMap
+		expectedVolumeProjection          []corev1.VolumeProjection
+		deploymentConfig                  config.DeploymentConfig
+		additionalTrustBundle             *corev1.LocalObjectReference
+		clusterConf                       *hyperv1.ClusterConfiguration
+		imageRegistryAdditionalCAs        *corev1.ConfigMap
+		expectProjectedVolumeMounted      bool
+		expectProjectedProxyVolumeMounted bool
 	}{
 		{
 			name:             "Trust bundle provided",
@@ -114,15 +116,17 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 					},
 				},
 			},
-			expectProjectedVolumeMounted: true,
+			expectProjectedVolumeMounted:      true,
+			expectProjectedProxyVolumeMounted: false,
 		},
 		{
-			name:                         "Trust bundle not provided",
-			auditConfig:                  manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
-			deploymentConfig:             config.DeploymentConfig{},
-			expectedVolume:               nil,
-			additionalTrustBundle:        nil,
-			expectProjectedVolumeMounted: false,
+			name:                              "Trust bundle not provided",
+			auditConfig:                       manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			deploymentConfig:                  config.DeploymentConfig{},
+			expectedVolume:                    nil,
+			additionalTrustBundle:             nil,
+			expectProjectedVolumeMounted:      false,
+			expectProjectedProxyVolumeMounted: false,
 		},
 		{
 			name:             "Trust bundle and image registry additional CAs provided",
@@ -153,7 +157,36 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 					},
 				},
 			},
-			expectProjectedVolumeMounted: true,
+			expectProjectedVolumeMounted:      true,
+			expectProjectedProxyVolumeMounted: false,
+		},
+		{
+			name:             "Trust bundle and proxy trust bundle provided",
+			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			deploymentConfig: config.DeploymentConfig{},
+			additionalTrustBundle: &corev1.LocalObjectReference{
+				Name: "user-ca-bundle",
+			},
+			expectedVolume: &corev1.Volume{
+				Name: "additional-trust-bundle",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources:     []corev1.VolumeProjection{getFakeVolumeProjectionCABundle()},
+						DefaultMode: ptr.To[int32](420),
+					},
+				},
+			},
+			expectedProxyVolume: &corev1.Volume{
+				Name: "proxy-additional-trust-bundle",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources:     []corev1.VolumeProjection{getFakeVolumeProjectionCABundle()},
+						DefaultMode: ptr.To[int32](420),
+					},
+				},
+			},
+			expectProjectedVolumeMounted:      true,
+			expectProjectedProxyVolumeMounted: true,
 		},
 	}
 	for _, tc := range testCases {
@@ -168,6 +201,11 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).To(ContainElement(*tc.expectedVolume))
 			} else {
 				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).NotTo(ContainElement(&corev1.Volume{Name: "additional-trust-bundle"}))
+			}
+			if tc.expectProjectedProxyVolumeMounted {
+				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).To(ContainElement(*tc.expectedProxyVolume))
+			} else {
+				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).NotTo(ContainElement(&corev1.Volume{Name: "proxy-additional-trust-bundle"}))
 			}
 		})
 	}
