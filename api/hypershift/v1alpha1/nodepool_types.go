@@ -378,6 +378,42 @@ type NodePoolManagement struct {
 	// +optional
 	// +kubebuilder:default=false
 	AutoRepair bool `json:"autoRepair"`
+
+	// AutoRepairSettings health checks settings for machines in the NodePool when AutoRepair is enabled.
+	//
+	// +optional
+	AutoRepairSettings *AutoRepairSettings `json:"autoRepairSettings,omitempty"`
+}
+
+type AutoRepairSettings struct {
+	// Machines older than this duration without a node will be considered to have
+	// failed and will be remediated.
+	// If not set, this value is defaulted to 20 minutes.
+	// If you wish to disable this feature, set the value explicitly to 0.
+	//
+	// +optional
+	NodeStartupTimeout *metav1.Duration `json:"nodeStartupTimeout,omitempty"`
+
+	// UnhealthyConditions contains a list of the conditions that determine
+	// whether a node is considered unhealthy.  The conditions are combined in a
+	// logical OR, i.e. if any of the conditions is met, the node is unhealthy.
+	//
+	// +optional
+	UnhealthyConditions []UnhealthyCondition `json:"unhealthyConditions,omitempty"`
+}
+
+type UnhealthyCondition struct {
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:MinLength=1
+	Type corev1.NodeConditionType `json:"type"`
+
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:MinLength=1
+	Status corev1.ConditionStatus `json:"status"`
+
+	// Timeout specifies the duration, after which a node is considered unhealthy
+	// if the condition type has been in the given status for at least that duration value.
+	Timeout metav1.Duration `json:"timeout"`
 }
 
 // NodePoolAutoScaling specifies auto-scaling behavior for a NodePool.
