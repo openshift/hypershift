@@ -115,6 +115,9 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+
+	etcdRecoveryPeriod  = 5 * time.Minute
+	etcdRecoveryTimeout = 10 * time.Minute
 )
 
 type InfrastructureStatus struct {
@@ -983,7 +986,8 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
 		}
 		// Block until etcd is fully rolled out at the desired generation
-		if ready := util.IsStatefulSetReady(ctx, statefulSet); !ready {
+		ready := util.IsStatefulSetReady(ctx, statefulSet)
+		if !ready {
 			r.Log.Info("Waiting for etcd statefulset to become ready")
 			return nil
 		}
@@ -2686,6 +2690,19 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile etcd-defrag-operator role binding: %w", err)
 		}
+	}
+
+	// Block to recover the ETCD cluster if it is not ready after etcdRecoveryPeriod
+	timePassed := time.Since(statefulSet.ObjectMeta.CreationTimestamp.Time)
+	ready := util.IsStatefulSetReady(ctx, statefulSet)
+	// If the etcd cluster is not ready after etcdRecoveryPeriod, we will attempt to recover it
+	// but we will stop trying it after etcdRecoveryTimeout to avoid loss of data in other scenarios.
+	if !ready && (timePassed > etcdRecoveryPeriod && timePassed <= etcdRecoveryTimeout) {
+		r.Log.Info("Forcing ETCD cluster recreation")
+		// This will force the recreation of the ETCD pod
+		statefulSet.Spec.Template.Labels = map[string]string{"forcedRecreation": "true"}
+		// This will force the recreation of the ETCD PVC
+		statefulSet.Spec.VolumeClaimTemplates[0].SetLabels(map[string]string{"forcedRecreation": "true"})
 	}
 
 	if result, err := createOrUpdate(ctx, r, statefulSet, func() error {
