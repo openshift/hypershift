@@ -64,6 +64,11 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 				conditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionFalse
 			}
 		}
+		if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AWSPlatform) {
+			// in the e2e presubmit we're using gp3-csi as a storage class for the HostedCluster,
+			// thus the PVC is RWO and VMs are expected to be non-live-migratable
+			conditions[hyperv1.KubeVirtNodesLiveMigratable] = metav1.ConditionFalse
+		}
 	}
 
 	if hostedCluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {

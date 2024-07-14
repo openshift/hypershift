@@ -1072,6 +1072,13 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 
 	r.setCIDRConflictCondition(nodePool, machines, hc)
 
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		err = r.setAllMachinesLMCondition(ctx, nodePool, hc)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1166,7 +1173,7 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 			}
 		}
 		if numNotReady > 0 {
-			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotReady)
+			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotReady, aggregatorMachineStateReady)
 		}
 	}
 
@@ -1179,6 +1186,51 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+}
+
+func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) error {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	kubevirtMachines := &capikubevirt.KubevirtMachineList{}
+	err := r.Client.List(ctx, kubevirtMachines, &client.ListOptions{
+		Namespace: controlPlaneNamespace,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list KubeVirt Machines: %w", err)
+	}
+
+	numNotLiveMigratable := 0
+	messageMap := make(map[string][]string)
+	var mapReason, mapMessage string
+	for _, kubevirtmachine := range kubevirtMachines.Items {
+		for _, cond := range kubevirtmachine.Status.Conditions {
+			if cond.Type == capikubevirt.VMLiveMigratableCondition && cond.Status == corev1.ConditionFalse {
+				mapReason = cond.Reason
+				mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", kubevirtmachine.Name, cond.Reason, cond.Message)
+				numNotLiveMigratable++
+				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
+			}
+		}
+	}
+
+	if numNotLiveMigratable == 0 {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolKubeVirtLiveMigratableType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            hyperv1.AllIsWellMessage,
+			ObservedGeneration: nodePool.Generation,
+		})
+	} else {
+		reason, message := aggregateMachineReasonsAndMessages(messageMap, len(kubevirtMachines.Items), numNotLiveMigratable, aggregatorMachineStateLiveMigratable)
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolKubeVirtLiveMigratableType,
+			Status:             corev1.ConditionFalse,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+	return nil
 }
 
 func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hc *hyperv1.HostedCluster) error {
@@ -1443,7 +1495,7 @@ func pauseMachineDeployment(ctx context.Context, c client.Client, md *capiv1.Mac
 	if md.Annotations == nil {
 		md.Annotations = make(map[string]string)
 	}
-	//FIXME: In future we may want to use the spec field instead
+	// FIXME: In future we may want to use the spec field instead
 	// https://github.com/kubernetes-sigs/cluster-api/issues/6966
 	md.Annotations[capiv1.PausedAnnotation] = "true"
 	return c.Update(ctx, md)
@@ -1481,7 +1533,7 @@ func pauseMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSet
 	if ms.Annotations == nil {
 		ms.Annotations = make(map[string]string)
 	}
-	//FIXME: In future we may want to use the spec field instead
+	// FIXME: In future we may want to use the spec field instead
 	// https://github.com/kubernetes-sigs/cluster-api/issues/6966
 	// TODO: Also for paused to be complete we will need to pause all MHC if autorepair
 	// is enabled and remove the autoscaling labels from the MachineDeployment / Machineset
@@ -3077,15 +3129,17 @@ func sortedByCreationTimestamp(machines []*capiv1.Machine) []*capiv1.Machine {
 }
 
 const (
-	endOfMessage     = "... to many similar errors\n"
-	maxMessageLength = 1000
+	endOfMessage                         = "... too many similar errors\n"
+	maxMessageLength                     = 1000
+	aggregatorMachineStateReady          = "ready"
+	aggregatorMachineStateLiveMigratable = "live migratable"
 )
 
-func aggregateMachineReasonsAndMessages(messageMap map[string][]string, numMachines, numNotReady int) (string, string) {
+func aggregateMachineReasonsAndMessages(messageMap map[string][]string, numMachines, numNotReady int, state string) (string, string) {
 	msgBuilder := &strings.Builder{}
 	reasons := make([]string, len(messageMap))
 
-	msgBuilder.WriteString(fmt.Sprintf("%d of %d machines are not ready\n", numNotReady, numMachines))
+	msgBuilder.WriteString(fmt.Sprintf("%d of %d machines are not %s\n", numNotReady, numMachines, state))
 
 	// as map order is not deterministic, we must sort the reasons in order to get deterministic reason and message, so
 	// we won't need to update the nodepool condition just because we've got different order from the map, the machine

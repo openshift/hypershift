@@ -24,7 +24,7 @@ import (
 // KubevirtClusterTemplateResource describes the data needed to create a KubevirtCluster from a template.
 type KubevirtClusterTemplateResource struct {
 	ObjectMeta clusterv1.ObjectMeta `json:"metadata,omitempty"`
-	Spec KubevirtClusterSpec `json:"spec"`
+	Spec       KubevirtClusterSpec  `json:"spec"`
 }
 
 // KubevirtClusterTemplateSpec defines the desired state of KubevirtClusterTemplate.
@@ -40,7 +40,7 @@ type KubevirtClusterTemplateSpec struct {
 type KubevirtClusterTemplate struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec KubevirtClusterTemplateSpec `json:"spec,omitempty"`
+	Spec              KubevirtClusterTemplateSpec `json:"spec,omitempty"`
 }
 
 // +kubebuilder:object:root=true

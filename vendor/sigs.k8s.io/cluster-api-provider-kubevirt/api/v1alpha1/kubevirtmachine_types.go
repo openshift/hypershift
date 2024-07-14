@@ -71,7 +71,7 @@ type VirtualMachineBootstrapCheckSpec struct {
 // KubevirtMachineStatus defines the observed state of KubevirtMachine.
 type KubevirtMachineStatus struct {
 	// Ready denotes that the machine is ready
-	// +optional
+	// +kubebuilder:default=false
 	Ready bool `json:"ready"`
 
 	// LoadBalancerConfigured denotes that the machine has been
@@ -134,6 +134,8 @@ type KubevirtMachineStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="Ready",type="boolean",JSONPath=".status.ready",description="Is machine ready"
 
 // KubevirtMachine is the Schema for the kubevirtmachines API.
 type KubevirtMachine struct {
