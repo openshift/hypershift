@@ -68,6 +68,8 @@ func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfi
 				Endpoint:   ibmCloudKMSUnixSocket,
 				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
+		},
+		{
 			Identity: &v1.IdentityConfiguration{},
 		},
 	}
