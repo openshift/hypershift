@@ -1933,7 +1933,7 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(ctx context.Context,
 	maxUnhealthy := intstr.FromInt(2)
 	var timeOut time.Duration
 
-	switch hc.Spec.Platform.Type {
+	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AgentPlatform, hyperv1.NonePlatform:
 		timeOut = 16 * time.Minute
 	default:
