@@ -1744,7 +1744,7 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 	maxUnhealthy := intstr.FromInt(2)
 	var timeOut time.Duration
 
-	switch hc.Spec.Platform.Type {
+	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AgentPlatform, hyperv1.NonePlatform:
 		timeOut = 16 * time.Minute
 	default:
@@ -1764,14 +1764,14 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionFalse,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 			{
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionUnknown,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 		},
