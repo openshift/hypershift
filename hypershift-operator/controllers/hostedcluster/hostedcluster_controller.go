@@ -2582,6 +2582,26 @@ func reconcileControlPlaneOperatorDeployment(
 		},
 	}
 
+	if hc.Annotations[certs.CertificateValidityAnnotation] != "" {
+		certValidity := hc.Annotations[certs.CertificateValidityAnnotation]
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  certs.CertificateValidityEnvVar,
+				Value: certValidity,
+			},
+		)
+	}
+
+	if hc.Annotations[certs.CertificateRenewalAnnotation] != "" {
+		certRenewalPercentage := hc.Annotations[certs.CertificateRenewalAnnotation]
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  certs.CertificateRenewalEnvVar,
+				Value: certRenewalPercentage,
+			},
+		)
+	}
+
 	if openShiftTrustedCABundleConfigMapExists {
 		hyperutil.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
