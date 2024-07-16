@@ -109,7 +109,6 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&globalOpts.configurableClusterOptions.PowerVSPER, "e2e-powervs-power-edge-router", false, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSTransitGatewayLocation, "e2e-powervs-transit-gateway-location", "", "IBM Cloud Transit Gateway location")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSTransitGateway, "e2e-powervs-transit-gateway", "", "Transit gateway name. Use this flag to reuse an existing transit gateway resource for cluster's infra")
-	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
 	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
 	flag.StringVar(&globalOpts.ManagementParentKubeconfig, "e2e.management-parent-kubeconfig", "", "Kubeconfig of the management cluster's parent cluster (required to test request serving isolation)")
@@ -370,10 +369,6 @@ type options struct {
 	IssuerURL                string
 	ServiceAccountSigningKey []byte
 
-	// SkipAPIBudgetVerification implies that you are executing the e2e tests
-	// from local to verify that them works fine before push
-	SkipAPIBudgetVerification bool
-
 	// If set, the CreateCluster test will create a cluster with request serving
 	// isolation topology.
 	RequestServingIsolation bool
@@ -493,8 +488,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
 			fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
 		},
-		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
-		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
+		EtcdStorageClass: o.configurableClusterOptions.EtcdStorageClass,
 	}
 
 	switch o.Platform {
