@@ -53,6 +53,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	PausedUntil                      *string                                              `json:"pausedUntil,omitempty"`
 	OLMCatalogPlacement              *hypershiftv1beta1.OLMCatalogPlacement               `json:"olmCatalogPlacement,omitempty"`
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
+	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
 }
 
 // HostedClusterSpecApplyConfiguration constructs an declarative configuration of the HostedClusterSpec type for use with
@@ -289,6 +290,16 @@ func (b *HostedClusterSpecApplyConfiguration) WithNodeSelector(entries map[strin
 	}
 	for k, v := range entries {
 		b.NodeSelector[k] = v
+	}
+	return b
+}
+
+// WithTolerations adds the given value to the Tolerations field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Tolerations field.
+func (b *HostedClusterSpecApplyConfiguration) WithTolerations(values ...corev1.Toleration) *HostedClusterSpecApplyConfiguration {
+	for i := range values {
+		b.Tolerations = append(b.Tolerations, values[i])
 	}
 	return b
 }

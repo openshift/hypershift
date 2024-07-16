@@ -1892,6 +1892,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
 	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
 	hcp.Spec.NodeSelector = hcluster.Spec.NodeSelector
+	hcp.Spec.Tolerations = hcluster.Spec.Tolerations
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()

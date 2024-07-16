@@ -148,6 +148,8 @@ func TestCreateCluster(t *testing.T) {
 				"--additional-network", "name:ns1/nad-foo",
 				"--additional-network", "name:ns2/nad-foo2",
 				"--infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap",
+				"--toleration", "key=key1,value=value1,effect=noSchedule",
+				"--toleration", "key=key2,value=value2,effect=noSchedule",
 			},
 		},
 	} {

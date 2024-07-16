@@ -244,6 +244,15 @@ func (c *DeploymentConfig) setColocation(hcp *hyperv1.HostedControlPlane) {
 	}
 }
 
+// setAdditionalTolerations adds any custom tolerations configured on the hcp to the deployment config
+func (c *DeploymentConfig) setAdditionalTolerations(hcp *hyperv1.HostedControlPlane) {
+	if len(hcp.Spec.Tolerations) == 0 {
+		return
+	}
+
+	c.Scheduling.Tolerations = append(c.Scheduling.Tolerations, hcp.Spec.Tolerations...)
+}
+
 // setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.
 func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPlane) {
 	c.Scheduling.Tolerations = []corev1.Toleration{
@@ -345,6 +354,7 @@ func (c *DeploymentConfig) setNodeSelector(hcp *hyperv1.HostedControlPlane) {
 func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string) {
 	c.setNodeSelector(hcp)
 	c.setControlPlaneIsolation(hcp)
+	c.setAdditionalTolerations(hcp)
 	c.setColocation(hcp)
 	// TODO (alberto): pass labels with deployment hash and set this unconditionally so we don't skew setup.
 	if c.Replicas > 1 {
