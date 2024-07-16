@@ -56,6 +56,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/set"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
@@ -102,16 +103,19 @@ const (
 	TokenSecretIgnitionReachedAnnotation      = "hypershift.openshift.io/ignition-reached"
 	TokenSecretNodePoolUpgradeType            = "hypershift.openshift.io/node-pool-upgrade-type"
 
-	tuningConfigKey                  = "tuning"
-	tunedConfigMapLabel              = "hypershift.openshift.io/tuned-config"
-	nodeTuningGeneratedConfigLabel   = "hypershift.openshift.io/nto-generated-machine-config"
-	PerformanceProfileConfigMapLabel = "hypershift.openshift.io/performanceprofile-config"
+	tuningConfigKey                      = "tuning"
+	tunedConfigMapLabel                  = "hypershift.openshift.io/tuned-config"
+	nodeTuningGeneratedConfigLabel       = "hypershift.openshift.io/nto-generated-machine-config"
+	PerformanceProfileConfigMapLabel     = "hypershift.openshift.io/performanceprofile-config"
+	ContainerRuntimeConfigConfigMapLabel = "hypershift.openshift.io/containerruntimeconfig-config"
 
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
+	// mirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
+	mirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
 )
 
 type NodePoolReconciler struct {
@@ -131,6 +135,12 @@ type NotReadyError struct {
 type CPOCapabilities struct {
 	DecompressAndDecodeConfig     bool
 	CreateDefaultAWSSecurityGroup bool
+}
+
+// MirrorConfig holds the information needed to mirror a config object to HCP namespace
+type MirrorConfig struct {
+	*corev1.ConfigMap
+	Labels map[string]string
 }
 
 var (
@@ -577,7 +587,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
 	// into the token Secret controller so we don't block Machine infra creation on this.
 	expectedCoreConfigResources := expectedCoreConfigResourcesForHostedCluster(hcluster)
-	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
+	config, mirroredConfigs, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -598,6 +608,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 		// We watch configmaps so we will get an event when these get created
 		return ctrl.Result{}, nil
+	}
+	if err := r.reconcileMirroredConfigs(ctx, log, mirroredConfigs, controlPlaneNamespace, nodePool); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to mirror configs: %w", err)
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -1654,6 +1667,22 @@ func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.Co
 	return nil
 }
 
+func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, nodePool *hyperv1.NodePool) error {
+	cm.Immutable = k8sutilspointer.Bool(true)
+	if cm.Annotations == nil {
+		cm.Annotations = make(map[string]string)
+	}
+	if cm.Labels == nil {
+		cm.Labels = make(map[string]string)
+	}
+	cm.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	cm.Labels[nodePoolAnnotation] = nodePool.GetName()
+	cm.Labels[mirroredConfigLabel] = ""
+	cm.Labels = labels.Merge(cm.Labels, mirroredConfig.Labels)
+	cm.Data = mirroredConfig.Data
+	return nil
+}
+
 func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte, hcConfigurationHash string) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
@@ -2087,14 +2116,14 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	controlPlaneResource string,
 	releaseImage *releaseinfo.ReleaseImage,
 	hcluster *hyperv1.HostedCluster,
-) (configsRaw string, missingConfigs bool, err error) {
+) (configsRaw string, mirroredConfigs []*MirrorConfig, missingConfigs bool, err error) {
 	var configs []corev1.ConfigMap
 	var allConfigPlainText []string
 	var errors []error
 
 	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to check if we manage haproxy ignition config: %w", err)
+		return "", nil, false, fmt.Errorf("failed to check if we manage haproxy ignition config: %w", err)
 	}
 	if isHAProxyIgnitionConfigManaged {
 		oldHAProxyIgnitionConfig := &corev1.ConfigMap{
@@ -2102,18 +2131,18 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 		}
 		err := r.Client.Get(ctx, client.ObjectKeyFromObject(oldHAProxyIgnitionConfig), oldHAProxyIgnitionConfig)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return "", false, fmt.Errorf("failed to get CPO-managed haproxy ignition config: %w", err)
+			return "", nil, false, fmt.Errorf("failed to get CPO-managed haproxy ignition config: %w", err)
 		}
 		if err == nil {
 			if err := r.Client.Delete(ctx, oldHAProxyIgnitionConfig); err != nil && !apierrors.IsNotFound(err) {
-				return "", false, fmt.Errorf("failed to delete the CPO-managed haproxy ignition config: %w", err)
+				return "", nil, false, fmt.Errorf("failed to delete the CPO-managed haproxy ignition config: %w", err)
 			}
 		}
 		expectedCoreConfigResources--
 
 		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage.ComponentImages(), hcluster, cpoImage)
 		if err != nil {
-			return "", false, fmt.Errorf("failed to generate haproxy ignition config: %w", err)
+			return "", nil, false, fmt.Errorf("failed to generate haproxy ignition config: %w", err)
 		}
 		if missing {
 			missingConfigs = true
@@ -2159,22 +2188,25 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 
 	configs = append(configs, nodeTuningGeneratedConfigs.Items...)
 
-	for _, config := range configs {
+	for i, config := range configs {
 		manifestRaw := config.Data[TokenSecretConfigKey]
-		manifest, err := defaultAndValidateConfigManifest([]byte(manifestRaw))
+		manifest, mirrorConfig, err := defaultAndValidateConfigManifest([]byte(manifestRaw))
 		if err != nil {
 			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
 			continue
 		}
-
 		allConfigPlainText = append(allConfigPlainText, string(manifest))
+		if mirrorConfig != nil && config.Namespace == nodePool.Namespace {
+			mirrorConfig.ConfigMap = &configs[i]
+			mirroredConfigs = append(mirroredConfigs, mirrorConfig)
+		}
 	}
 
 	// These configs are the input to a hash func whose output is used as part of the name of the user-data secret,
 	// so our output must be deterministic.
 	sort.Strings(allConfigPlainText)
 
-	return strings.Join(allConfigPlainText, "\n---\n"), missingConfigs, utilerrors.NewAggregate(errors)
+	return strings.Join(allConfigPlainText, "\n---\n"), mirroredConfigs, missingConfigs, utilerrors.NewAggregate(errors)
 }
 
 func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
@@ -2306,7 +2338,7 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
-func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
+func defaultAndValidateConfigManifest(manifest []byte) ([]byte, *MirrorConfig, error) {
 	scheme := runtime.NewScheme()
 	_ = mcfgv1.Install(scheme)
 	_ = v1alpha1.Install(scheme)
@@ -2317,10 +2349,12 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		serializer.DefaultMetaFactory, scheme, scheme,
 		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
 	)
+	// for manifests that should be mirrored into hosted control plane namespace
+	var mirrorConfig *MirrorConfig
 
 	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding config: %w", err)
+		return nil, nil, fmt.Errorf("error decoding config: %w", err)
 	}
 
 	switch obj := cr.(type) {
@@ -2328,7 +2362,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		addWorkerLabel(&obj.ObjectMeta)
 		manifest, err = encode(cr, yamlSerializer)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encode machine config after defaulting it: %w", err)
+			return nil, nil, fmt.Errorf("failed to encode machine config after defaulting it: %w", err)
 		}
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *configv1.ImageDigestMirrorSet:
@@ -2341,7 +2375,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		}
 		manifest, err = encode(cr, yamlSerializer)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encode kubelet config after setting built-in MCP selector: %w", err)
+			return nil, nil, fmt.Errorf("failed to encode kubelet config after setting built-in MCP selector: %w", err)
 		}
 	case *mcfgv1.ContainerRuntimeConfig:
 		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
@@ -2351,13 +2385,13 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		}
 		manifest, err = encode(cr, yamlSerializer)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encode container runtime config after setting built-in MCP selector: %w", err)
+			return nil, nil, fmt.Errorf("failed to encode container runtime config after setting built-in MCP selector: %w", err)
 		}
+		mirrorConfig = &MirrorConfig{Labels: map[string]string{ContainerRuntimeConfigConfigMapLabel: ""}}
 	default:
-		return nil, fmt.Errorf("unsupported config type: %T", obj)
+		return nil, nil, fmt.Errorf("unsupported config type: %T", obj)
 	}
-
-	return manifest, err
+	return manifest, mirrorConfig, err
 }
 
 func addWorkerLabel(obj *metav1.ObjectMeta) {
@@ -3109,7 +3143,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, err
 	}
 
-	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
+	config, _, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -3250,6 +3284,64 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 		cm := &cmList.Items[i]
 		if _, err := supportutil.DeleteIfNeeded(ctx, c, cm); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// reconcileMirroredConfigs mirrors configs into
+// the HCP namespace, that are needed as an input for certain operators (such as NTO)
+func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr logr.Logger, mirroredConfigs []*MirrorConfig, controlPlaneNamespace string, nodePool *hyperv1.NodePool) error {
+	// get configs which already mirrored to the HCP namespace
+	existingConfigsList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, existingConfigsList, &client.ListOptions{
+		Namespace:     controlPlaneNamespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{mirroredConfigLabel: ""}),
+	}); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	want := set.Set[string]{}
+	for _, mirrorConfig := range mirroredConfigs {
+		want.Insert(supportutil.ShortenName(mirrorConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
+	}
+	have := set.Set[string]{}
+	for _, configMap := range existingConfigsList.Items {
+		have.Insert(configMap.Name)
+	}
+	toCreate, toDelete := want.Difference(have), have.Difference(want)
+	if len(toCreate) > 0 {
+		logr = logr.WithValues("toCreate", toCreate.UnsortedList())
+	}
+	if len(toDelete) > 0 {
+		logr = logr.WithValues("toDelete", toDelete.UnsortedList())
+	}
+	if len(toCreate) > 0 || len(toDelete) > 0 {
+		logr.Info("updating mirrored configs")
+	}
+	// delete the redundant configs that are no longer part of the nodepool spec
+	for i := 0; i < len(existingConfigsList.Items); i++ {
+		existingConfig := &existingConfigsList.Items[i]
+		if toDelete.Has(existingConfig.Name) {
+			_, err := supportutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
+			if err != nil {
+				return fmt.Errorf("failed to delete ConfigMap %s/%s: %w", existingConfig.Namespace, existingConfig.Name, err)
+			}
+		}
+	}
+	// update or create the configs that need to be mirrored into the HCP NS
+	for _, mirroredConfig := range mirroredConfigs {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      supportutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength),
+				Namespace: controlPlaneNamespace},
+		}
+		if result, err := r.CreateOrUpdate(ctx, r.Client, cm, func() error {
+			return mutateMirroredConfig(cm, mirroredConfig, nodePool)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile mirrored %s/%s ConfigMap: %w", cm.Namespace, cm.Name, err)
+		} else {
+			logr.Info("Reconciled ConfigMap", "result", result)
 		}
 	}
 	return nil

@@ -2147,6 +2147,7 @@ k8s.io/utils/net
 k8s.io/utils/path
 k8s.io/utils/pointer
 k8s.io/utils/ptr
+k8s.io/utils/set
 k8s.io/utils/strings/slices
 k8s.io/utils/trace
 # kubevirt.io/api v1.1.1
