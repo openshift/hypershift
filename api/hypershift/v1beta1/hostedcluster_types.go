@@ -810,7 +810,7 @@ const (
 
 // PlatformType is a specific supported infrastructure provider.
 //
-// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS
+// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS;OpenStack
 type PlatformType string
 
 const (
@@ -834,6 +834,9 @@ const (
 
 	// PowerVSPlatform represents PowerVS infrastructure.
 	PowerVSPlatform PlatformType = "PowerVS"
+
+	// OpenStackPlatform represents OpenStack infrastructure.
+	OpenStackPlatform PlatformType = "OpenStack"
 )
 
 // List all PlatformType instances
@@ -846,6 +849,7 @@ func PlatformTypes() []PlatformType {
 		KubevirtPlatform,
 		AzurePlatform,
 		PowerVSPlatform,
+		OpenStackPlatform,
 	}
 }
 
@@ -888,6 +892,12 @@ type PlatformSpec struct {
 	// +optional
 	// +immutable
 	Kubevirt *KubevirtPlatformSpec `json:"kubevirt,omitempty"`
+
+	// OpenStack specifies configuration for clusters running on OpenStack.
+	//
+	// +optional
+	// +immutable
+	OpenStack *OpenStackPlatformSpec `json:"openstack,omitempty"`
 }
 
 type KubevirtPlatformCredentials struct {
@@ -1818,6 +1828,12 @@ type AzurePlatformSpec struct {
 	// +immutable
 	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+}
+
+// OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.
+type OpenStackPlatformSpec struct {
+	CloudsYamlSecret corev1.LocalObjectReference  `json:"cloudsYamlSecret"`
+	CACertSecret     *corev1.LocalObjectReference `json:"caCertSecret,omitempty"`
 }
 
 // Release represents the metadata for an OCP release payload image.

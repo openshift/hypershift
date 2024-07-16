@@ -2145,6 +2145,7 @@ spec:
                     - KubeVirt
                     - Azure
                     - PowerVS
+                    - OpenStack
                     type: string
                     x-kubernetes-validations:
                     - message: Type is immutable

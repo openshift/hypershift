@@ -82,5 +82,13 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			CISInstanceCRN: hcp.Spec.Platform.PowerVS.CISInstanceCRN,
 			ResourceGroup:  hcp.Spec.Platform.PowerVS.ResourceGroup,
 		}
+	case hyperv1.OpenStackPlatform:
+		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{}
+		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
+			CloudName:            "openstack",
+			LoadBalancer:         &configv1.OpenStackPlatformLoadBalancer{Type: configv1.LoadBalancerTypeUserManaged},
+			APIServerInternalIPs: []string{},
+			IngressIPs:           []string{},
+		}
 	}
 }

@@ -54127,6 +54127,49 @@ objects:
                       x-kubernetes-validations:
                       - message: Kubevirt GenerateID is required once set
                         rule: '!has(oldSelf.generateID) || has(self.generateID)'
+                    openstack:
+                      description: OpenStack specifies configuration for clusters
+                        running on OpenStack.
+                      properties:
+                        caCertSecret:
+                          description: |-
+                            LocalObjectReference contains enough information to let you locate the
+                            referenced object inside the same namespace.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                TODO: Add other useful fields. apiVersion, kind, uid?
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        cloudsYamlSecret:
+                          description: |-
+                            LocalObjectReference contains enough information to let you locate the
+                            referenced object inside the same namespace.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                TODO: Add other useful fields. apiVersion, kind, uid?
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      required:
+                      - cloudsYamlSecret
+                      type: object
                     powervs:
                       description: |-
                         PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
@@ -54343,6 +54386,7 @@ objects:
                       - KubeVirt
                       - Azure
                       - PowerVS
+                      - OpenStack
                       type: string
                   required:
                   - type
@@ -63826,6 +63870,49 @@ objects:
                       x-kubernetes-validations:
                       - message: Kubevirt GenerateID is required once set
                         rule: '!has(oldSelf.generateID) || has(self.generateID)'
+                    openstack:
+                      description: OpenStack specifies configuration for clusters
+                        running on OpenStack.
+                      properties:
+                        caCertSecret:
+                          description: |-
+                            LocalObjectReference contains enough information to let you locate the
+                            referenced object inside the same namespace.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                TODO: Add other useful fields. apiVersion, kind, uid?
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        cloudsYamlSecret:
+                          description: |-
+                            LocalObjectReference contains enough information to let you locate the
+                            referenced object inside the same namespace.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                TODO: Add other useful fields. apiVersion, kind, uid?
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      required:
+                      - cloudsYamlSecret
+                      type: object
                     powervs:
                       description: |-
                         PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
@@ -64042,6 +64129,7 @@ objects:
                       - KubeVirt
                       - Azure
                       - PowerVS
+                      - OpenStack
                       type: string
                   required:
                   - type
@@ -67241,6 +67329,7 @@ objects:
                       - KubeVirt
                       - Azure
                       - PowerVS
+                      - OpenStack
                       type: string
                       x-kubernetes-validations:
                       - message: Type is immutable
