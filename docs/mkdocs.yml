@@ -243,6 +243,7 @@ nav:
   - reference/index.md
   - reference/goals-and-design-invariants.md
   - reference/api.md
+  - reference/konnectivity.md
   - "Infrastructure":
     - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
