@@ -10,7 +10,6 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,13 +19,16 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
 	configHashAnnotation                 = "oauth.hypershift.openshift.io/config-hash"
 	oauthNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
 	socks5ProxyContainerName             = "socks-proxy"
+
+	httpKonnectivityProxyPort   = 8092
+	socks5KonnectivityProxyPort = 8090
 )
 
 var (
@@ -42,6 +44,16 @@ var (
 			oauthVolumeWorkLogs().Name:          "/var/run/kubernetes",
 			oauthVolumeMasterCABundle().Name:    "/etc/kubernetes/certs/master-ca",
 		},
+		oauthContainerSocks5Proxy().Name: {
+			oauthVolumeKubeconfig().Name:                   "/etc/kubernetes",
+			oauthVolumeKonnectivityProxyClientCert().Name:  "/etc/konnectivity/proxy-client",
+			oauthVolumeKonnectivityProxyTrustBundle().Name: "/etc/konnectivity/proxy-ca",
+		},
+		oauthContainerHTTPProxy().Name: {
+			oauthVolumeKubeconfig().Name:                   "/etc/kubernetes",
+			oauthVolumeKonnectivityProxyClientCert().Name:  "/etc/konnectivity/proxy-client",
+			oauthVolumeKonnectivityProxyTrustBundle().Name: "/etc/konnectivity/proxy-ca",
+		},
 	}
 )
 
@@ -52,7 +64,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string, noProxy []string, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -87,10 +99,11 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: utilpointer.Bool(false),
+		AutomountServiceAccountToken: ptr.To(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, noProxy)),
-			socks5ProxyContainer(socks5ProxyImage),
+			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, oauthNoProxy)),
+			util.BuildContainer(oauthContainerSocks5Proxy(), buildOAuthContainerSocks5Proxy(proxyImage)),
+			util.BuildContainer(oauthContainerHTTPProxy(), buildOAuthContainerHTTPProxy(proxyImage, proxyConfig, clusterNoProxy)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oauthVolumeConfig(), buildOAuthVolumeConfig),
@@ -102,9 +115,8 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate),
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			util.BuildVolume(oauthVolumeMasterCABundle(), buildOAuthVolumeMasterCABundle),
-			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32(0640)}}},
-			{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32(0640)}}},
-			{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32(0640)}}},
+			util.BuildVolume(oauthVolumeKonnectivityProxyClientCert(), buildOAuthVolumeKonnectivityProxyClientCert),
+			util.BuildVolume(oauthVolumeKonnectivityProxyTrustBundle(), buildOAuthVolumeKonnectivityProxyTrustBundle),
 		},
 	}
 	deploymentConfig.ApplyTo(deployment)
@@ -137,23 +149,73 @@ func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Cont
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = volumeMounts.Path(c.Name, oauthVolumeWorkLogs().Name)
 		c.Env = []corev1.EnvVar{
+			/** NOTE:
+			    For identity providers that rely on HTTP/S, we use the http konnectivity proxy, since it
+				can route traffic through the customer-configured HTTP/S proxy.
+				For identity providers such as LDAP that do not use HTTP/S, we use the socks5 proxy.
+				LDAP uses the the ALL_PROXY variable, but not HTTP_PROXY or HTTPS_PROXY.
+				See: https://github.com/openshift/library-go/pull/1388
+			**/
 			{
 				Name:  "HTTP_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("http://127.0.0.1:%d", httpKonnectivityProxyPort),
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("http://127.0.0.1:%d", httpKonnectivityProxyPort),
 			},
 			{
 				Name:  "ALL_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", socks5KonnectivityProxyPort),
 			},
 			{
 				Name:  "NO_PROXY",
 				Value: strings.Join(noProxy, ","),
 			},
 		}
+	}
+}
+
+func oauthContainerHTTPProxy() *corev1.Container {
+	return &corev1.Container{
+		Name: "http-proxy",
+	}
+}
+
+func buildOAuthContainerHTTPProxy(image string, proxyConfig *configv1.ProxySpec, noProxy string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"}
+		c.Args = []string{"run", fmt.Sprintf("--serving-port=%d", httpKonnectivityProxyPort)}
+		if proxyConfig != nil {
+			c.Args = append(c.Args, "--http-proxy", proxyConfig.HTTPProxy)
+			c.Args = append(c.Args, "--https-proxy", proxyConfig.HTTPSProxy)
+			c.Args = append(c.Args, "--no-proxy", noProxy)
+		}
+		c.Env = []corev1.EnvVar{{
+			Name:  "KUBECONFIG",
+			Value: fmt.Sprintf("%s/kubeconfig", volumeMounts.Path(c.Name, oauthVolumeKubeconfig().Name)),
+		}}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
+}
+
+func oauthContainerSocks5Proxy() *corev1.Container {
+	return &corev1.Container{
+		Name: "socks5-proxy",
+	}
+}
+
+func buildOAuthContainerSocks5Proxy(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"}
+		c.Args = []string{"run", "--resolve-from-guest-cluster-dns=true", "--resolve-from-management-cluster-dns=true"}
+		c.Env = []corev1.EnvVar{{
+			Name:  "KUBECONFIG",
+			Value: fmt.Sprintf("%s/kubeconfig", volumeMounts.Path(c.Name, oauthVolumeKubeconfig().Name)),
+		}}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
 
@@ -189,7 +251,7 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
 	}
 }
@@ -201,7 +263,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 		SecretName:  manifests.OpenShiftOAuthServerCert("").Name,
 	}
 }
@@ -212,7 +274,7 @@ func oauthVolumeSessionSecret() *corev1.Volume {
 }
 func buildOAuthVolumeSessionSecret(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 		SecretName:  manifests.OAuthServerServiceSessionSecret("").Name,
 	}
 }
@@ -224,7 +286,7 @@ func oauthVolumeErrorTemplate() *corev1.Volume {
 
 func buildOAuthVolumeErrorTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 		SecretName:  manifests.OAuthServerDefaultErrorTemplateSecret("").Name,
 	}
 }
@@ -237,7 +299,7 @@ func oauthVolumeLoginTemplate() *corev1.Volume {
 
 func buildOAuthVolumeLoginTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 		SecretName:  manifests.OAuthServerDefaultLoginTemplateSecret("").Name,
 	}
 }
@@ -250,7 +312,7 @@ func oauthVolumeProvidersTemplate() *corev1.Volume {
 
 func buildOAuthVolumeProvidersTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 		SecretName:  manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
 	}
 }
@@ -266,28 +328,26 @@ func buildOAuthVolumeMasterCABundle(v *corev1.Volume) {
 	v.ConfigMap.Name = manifests.OpenShiftOAuthMasterCABundle("").Name
 }
 
-func socks5ProxyContainer(socks5ProxyImage string) corev1.Container {
-	c := corev1.Container{
-		Name:    socks5ProxyContainerName,
-		Image:   socks5ProxyImage,
-		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true", "--resolve-from-management-cluster-dns=true"},
-		Args:    []string{"run"},
-		Env: []corev1.EnvVar{{
-			Name:  "KUBECONFIG",
-			Value: "/etc/kubernetes/kubeconfig",
-		}},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-			},
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
-			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},
-			{Name: "konnectivity-proxy-ca", MountPath: "/etc/konnectivity/proxy-ca"},
-		},
+func oauthVolumeKonnectivityProxyClientCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "konnectivity-proxy-cert",
 	}
+}
 
-	return c
+func buildOAuthVolumeKonnectivityProxyClientCert(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{
+		SecretName:  manifests.KonnectivityClientSecret("").Name,
+		DefaultMode: ptr.To[int32](0640),
+	}
+}
+
+func oauthVolumeKonnectivityProxyTrustBundle() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "konnectivity-proxy-ca",
+	}
+}
+
+func buildOAuthVolumeKonnectivityProxyTrustBundle(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{DefaultMode: ptr.To[int32](0640)}
+	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
