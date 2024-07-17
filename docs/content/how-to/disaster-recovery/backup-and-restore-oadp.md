@@ -235,6 +235,8 @@ spec:
   - hostedcluster
   - nodepool
   - secrets
+  - services
+  - deployments
   - hostedcontrolplane
   - cluster
   - agentcluster
