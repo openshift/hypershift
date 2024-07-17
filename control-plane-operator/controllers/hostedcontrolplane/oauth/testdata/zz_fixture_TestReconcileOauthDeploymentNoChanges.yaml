@@ -50,9 +50,9 @@ spec:
         - --audit-webhook-mode=batch
         env:
         - name: HTTP_PROXY
-          value: socks5://127.0.0.1:8090
+          value: http://127.0.0.1:8092
         - name: HTTPS_PROXY
-          value: socks5://127.0.0.1:8090
+          value: http://127.0.0.1:8092
         - name: ALL_PROXY
           value: socks5://127.0.0.1:8090
         - name: NO_PROXY
@@ -85,27 +85,43 @@ spec:
         workingDir: /var/run/kubernetes
       - args:
         - run
+        - --resolve-from-guest-cluster-dns=true
+        - --resolve-from-management-cluster-dns=true
         command:
         - /usr/bin/control-plane-operator
         - konnectivity-socks5-proxy
-        - --resolve-from-guest-cluster-dns=true
-        - --resolve-from-management-cluster-dns=true
         env:
         - name: KUBECONFIG
           value: /etc/kubernetes/kubeconfig
         image: test-socks-5-proxy-image
-        name: socks-proxy
-        resources:
-          requests:
-            cpu: 10m
-            memory: 10Mi
+        name: socks5-proxy
+        resources: {}
         volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: admin-kubeconfig
-        - mountPath: /etc/konnectivity/proxy-client
-          name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /etc/konnectivity/proxy-client
+          name: konnectivity-proxy-cert
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
+      - args:
+        - run
+        - --serving-port=8092
+        command:
+        - /usr/bin/control-plane-operator
+        - konnectivity-https-proxy
+        env:
+        - name: KUBECONFIG
+          value: /etc/kubernetes/kubeconfig
+        image: test-socks-5-proxy-image
+        name: http-proxy
+        resources: {}
+        volumeMounts:
+        - mountPath: /etc/konnectivity/proxy-ca
+          name: konnectivity-proxy-ca
+        - mountPath: /etc/konnectivity/proxy-client
+          name: konnectivity-proxy-cert
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
       - args:
         - -c
         - "\nset -o errexit\nset -o nounset\nset -o pipefail\n\nfunction cleanup()
@@ -169,10 +185,6 @@ spec:
       - configMap:
           name: oauth-openshift-audit
         name: audit-config
-      - name: admin-kubeconfig
-        secret:
-          defaultMode: 416
-          secretName: service-network-admin-kubeconfig
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416
