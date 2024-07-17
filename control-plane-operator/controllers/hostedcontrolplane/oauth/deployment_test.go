@@ -58,7 +58,7 @@ func TestReconcileOauthDeploymentNoChanges(t *testing.T) {
 			deploymentConfig: config.DeploymentConfig{},
 			serverParams: OAuthServerParams{
 				AvailabilityProberImage: "test-availability-image",
-				Socks5ProxyImage:        "test-socks-5-proxy-image",
+				ProxyImage:              "test-socks-5-proxy-image",
 				AuditWebhookRef:         webhookRef,
 			},
 		},
@@ -70,7 +70,7 @@ func TestReconcileOauthDeploymentNoChanges(t *testing.T) {
 		oauthDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oauthDeployment.Spec.MinReadySeconds
 		err := ReconcileDeployment(ctx, fakeClient, oauthDeployment, tc.serverParams.AuditWebhookRef, ownerRef, &tc.cm, &tc.auditCM, imageName, tc.deploymentConfig, tc.serverParams.IdentityProviders(), tc.serverParams.OauthConfigOverrides,
-			tc.serverParams.AvailabilityProberImage, tc.serverParams.NamedCertificates(), tc.serverParams.Socks5ProxyImage, tc.serverParams.NoProxy, &tc.configParams, hyperv1.IBMCloudPlatform)
+			tc.serverParams.AvailabilityProberImage, tc.serverParams.NamedCertificates(), tc.serverParams.ProxyImage, nil, "", tc.serverParams.OAuthNoProxy, &tc.configParams, hyperv1.IBMCloudPlatform)
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(oauthDeployment.Spec.MinReadySeconds))
 
