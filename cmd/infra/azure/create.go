@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"os"
 	"strings"
 	"time"
-
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/go-uuid"
@@ -18,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/yaml"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -29,11 +29,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
-	"github.com/Azure/go-autorest/autorest"
-
-	// This is the same client as terraform uses: https://github.com/hashicorp/terraform-provider-azurerm/blob/b0c897055329438be6a3a159f6ffac4e1ce958f2/internal/services/storage/blobs.go#L17
-	// The one from the azure sdk is cumbersome to use (distinct authorizer, requires to manually construct the full target url), and only allows upload from url for files that are not bigger than 256M.
-	"github.com/tombuildsstuff/giovanni/storage/2019-12-12/blob/blobs"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/pageblob"
 )
 
 const (
@@ -558,38 +556,46 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	if storageAccountKeyResult.Keys == nil || len(storageAccountKeyResult.Keys) == 0 || storageAccountKeyResult.Keys[0].Value == nil {
 		return "", errors.New("no storage account keys exist")
 	}
-	blobAuth, err := autorest.NewSharedKeyAuthorizer(storageAccountName, *storageAccountKeyResult.Keys[0].Value, autorest.SharedKey)
+
+	credential, err := container.NewSharedKeyCredential(storageAccountName, *storageAccountKeyResult.Keys[0].Value)
 	if err != nil {
-		return "", fmt.Errorf("failed to construct storage object authorizer: %w", err)
+		return "", fmt.Errorf("failed to create shared key credentials: %w", err)
 	}
 
-	blobClient := blobs.New()
-	blobClient.Authorizer = blobAuth
-	l.Info("Uploading rhcos image", "source", sourceURL)
-	input := blobs.CopyInput{
-		CopySource: sourceURL,
-		MetaData: map[string]string{
-			"source_uri": sourceURL,
-		},
-	}
-	if err := blobClient.CopyAndWait(ctx, storageAccountName, "vhd", blobName, input, 5*time.Second); err != nil {
-		return "", fmt.Errorf("failed to upload rhcos image: %w", err)
-	}
-	l.Info("Successfully uploaded rhcos image")
+	imageBlobURLPrefix := fmt.Sprintf("https://%s.blob.core.windows.net/vhd/", storageAccountName)
 
+	containerClient, err := container.NewClientWithSharedKeyCredential(imageBlobURLPrefix, credential, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create new container client: %w", err)
+	}
+
+	// VHDs should be uploaded to page blobs instead of block blobs per
+	// https://learn.microsoft.com/en-us/answers/questions/792044/how-to-create-a-vm-from-vhd-file-in-azure
+	pageBlobClient := containerClient.NewPageBlobClient(blobName)
+	_, err = pageBlobClient.Create(ctx, 0, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create page blob for vhd: %w", err)
+	}
+
+	l.Info("Copying RHCOS image to vhd blob, this can take a few minutes...")
+	err = copyImageAndWait(ctx, sourceURL, pageBlobClient)
+	if err != nil {
+		return "", err
+	}
+
+	l.Info("Successfully uploaded RHCOS image to vhd blob")
 	imagesClient, err := armcompute.NewImagesClient(subscriptionID, azureCreds, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create images client: %w", err)
 	}
 
-	imageBlobURL := "https://" + storageAccountName + ".blob.core.windows.net/" + "vhd" + "/" + blobName
 	imageInput := armcompute.Image{
 		Properties: &armcompute.ImageProperties{
 			StorageProfile: &armcompute.ImageStorageProfile{
 				OSDisk: &armcompute.ImageOSDisk{
 					OSType:  ptr.To(armcompute.OperatingSystemTypesLinux),
 					OSState: ptr.To(armcompute.OperatingSystemStateTypesGeneralized),
-					BlobURI: ptr.To(imageBlobURL),
+					BlobURI: ptr.To(imageBlobURLPrefix + blobName),
 				},
 			},
 			HyperVGeneration: ptr.To(armcompute.HyperVGenerationTypesV1),
@@ -608,6 +614,46 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	l.Info("Successfully created image", "resourceID", *imageCreationResult.ID, "result", imageCreationResult)
 
 	return bootImageID, nil
+}
+
+// copyImageAndWait copies an RHCOS image from its Azure blob URL to a page blob within the managed resource group to be
+// used as the basis for creating Azure virtual machines for a NodePool.
+//
+// This function is hardcoded to wait 10 minutes for the copy to complete or else it will error out.
+func copyImageAndWait(ctx context.Context, rhcosURL string, pageBlobClient *pageblob.Client) error {
+	_, err := pageBlobClient.CopyFromURL(ctx, rhcosURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start the process to copy rhcos image to vhd blob: %w", err)
+	}
+
+	if err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		// Grab the latest status on the copy effort
+		properties, err := pageBlobClient.GetProperties(ctx, nil)
+		if err != nil {
+			return true, fmt.Errorf("failed to check rhcos copy status: %w", err)
+		}
+
+		// This should never happen but just in case
+		if properties.CopyStatus == nil {
+			return true, fmt.Errorf("rhcos copy status is nil")
+		}
+
+		// Copy is complete, bail out
+		if *properties.CopyStatus == blob.CopyStatusTypeSuccess {
+			return true, nil
+		}
+
+		// Something went wrong with the copy process, bail out
+		if *properties.CopyStatus == blob.CopyStatusTypeAborted || *properties.CopyStatus == blob.CopyStatusTypeFailed {
+			return true, fmt.Errorf("failed to copy rhcos image: %w", err)
+		}
+
+		return false, nil
+	}); err != nil {
+		return fmt.Errorf("failed to copy and wait for rhcos image: %w", err)
+	}
+
+	return nil
 }
 
 // createPublicIPAddressForLB creates a public IP address to use for the outbound rule in the load balancer
