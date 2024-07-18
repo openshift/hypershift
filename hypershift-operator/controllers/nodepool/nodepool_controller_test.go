@@ -279,7 +279,7 @@ spec:
   kernelType: ""
   osImageURL: ""
 `
-	machineConfig2 := `
+	machineConfig23 := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -297,8 +297,28 @@ spec:
         filesystem: root
         mode: 493
         path: /usr/local/bin/file2.sh
+--- # empty yamls should be ignored
+
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: config-3
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents:
+        source: "[Service]\nType=oneshot\nExecStart=/usr/bin/echo Hello World 3\n\n[Install]\nWantedBy=multi-user.target"
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/file3.sh
 `
-	machineConfig2Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+	machineConfig23Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
   creationTimestamp: null
@@ -328,7 +348,40 @@ spec:
   kernelArguments: null
   kernelType: ""
   osImageURL: ""
+
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: config-3
+spec:
+  baseOSExtensionsContainerImage: ""
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents: null
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/file3.sh
+        source: |-
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/echo Hello World 3
+
+          [Install]
+          WantedBy=multi-user.target
+  extensions: null
+  fips: false
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: ""
 `
+
 	kubeletConfig1 := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
@@ -505,7 +558,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "gets two valid MachineConfig",
+			name: "gets three valid MachineConfig, two of them in a single config-map",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -538,11 +591,11 @@ status:
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						TokenSecretConfigKey: machineConfig2,
+						TokenSecretConfigKey: machineConfig23,
 					},
 				},
 			},
-			expect: machineConfig1Defaulted + "\n---\n" + machineConfig2Defaulted,
+			expect: machineConfig1Defaulted + "\n---\n" + machineConfig23Defaulted,
 			error:  false,
 		},
 		{
@@ -746,7 +799,7 @@ status:
 						},
 					},
 					Data: map[string]string{
-						TokenSecretConfigKey: machineConfig2Defaulted,
+						TokenSecretConfigKey: machineConfig1Defaulted,
 					},
 				},
 				&corev1.ConfigMap{

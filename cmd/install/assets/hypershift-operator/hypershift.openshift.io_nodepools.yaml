@@ -1302,8 +1302,8 @@ spec:
                   https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
 
 
-                  Each ConfigMap must have a single key named "config" whose value is the
-                  JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+                  Each ConfigMap must have a single key named "config" whose value is the YML
+                  with one or more serialized machineconfiguration.openshift.io resources:
                   KubeletConfig
                   ContainerRuntimeConfig
                   MachineConfig
