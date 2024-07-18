@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -266,15 +267,56 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	err = func() error {
 		start := time.Now()
 		binaries := []string{"machine-config-operator", "machine-config-controller", "machine-config-server"}
+		suffix := ""
+
+		mcoOSReleaseBuf := &bytes.Buffer{}
+		if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, "usr/lib/os-release", mcoOSReleaseBuf); err != nil {
+			return fmt.Errorf("failed to extract image os-release file: %w", err)
+		}
+		mcoOSRelease := mcoOSReleaseBuf.String()
+
+		// read /etc/os-release file from disk to cpoOSRelease
+		cpoOSRelease, err := os.ReadFile("/usr/lib/os-release")
+		if err != nil {
+			return fmt.Errorf("failed to read os-release file: %w", err)
+		}
+
+		// extract RHEL major version from both os-release files
+		extractMajorVersion := func(osRelease string) (string, error) {
+			for _, line := range strings.Split(osRelease, "\n") {
+				if strings.HasPrefix(line, "VERSION_ID=") {
+					return strings.Split(strings.TrimSuffix(strings.TrimPrefix(line, "VERSION_ID=\""), "\""), ".")[0], nil
+				}
+			}
+			return "", fmt.Errorf("failed to find VERSION_ID in os-release file")
+		}
+		mcoRHELMajorVersion, err := extractMajorVersion(mcoOSRelease)
+		if err != nil {
+			return fmt.Errorf("failed to extract major version from MCO os-release: %w", err)
+		}
+		cpoRHELMajorVersion, err := extractMajorVersion(string(cpoOSRelease))
+		if err != nil {
+			return fmt.Errorf("failed to extract major version from CPO os-release: %w", err)
+		}
+		log.Info("read os-release", "mcoRHELMajorVersion", mcoRHELMajorVersion, "cpoRHELMajorVersion", cpoRHELMajorVersion)
+
+		if mcoRHELMajorVersion == "8" && cpoRHELMajorVersion == "9" {
+			// NodePool MCO RHEL major version is older than the CPO, need to add suffix to the binaries
+			suffix = ".rhel9"
+		}
+
 		for _, name := range binaries {
-			file, err := os.Create(filepath.Join(binDir, name))
+			srcPath := filepath.Join("usr/bin/", name+suffix)
+			destPath := filepath.Join(binDir, name)
+			file, err := os.Create(destPath)
 			if err != nil {
 				return fmt.Errorf("failed to create file: %w", err)
 			}
 			if err := file.Chmod(0777); err != nil {
 				return fmt.Errorf("failed to chmod file: %w", err)
 			}
-			if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, filepath.Join("usr/bin/", name), file); err != nil {
+			log.Info("copying file", "src", srcPath, "dest", destPath)
+			if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, srcPath, file); err != nil {
 				return fmt.Errorf("failed to extract image file: %w", err)
 			}
 			if err := file.Close(); err != nil {
