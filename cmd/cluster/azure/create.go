@@ -15,17 +15,22 @@ import (
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/spf13/cobra"
-	"sigs.k8s.io/yaml"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
-		Location:     "eastus",
-		InstanceType: "Standard_D4s_v4",
-		DiskSizeGB:   120,
+		Location:       "eastus",
+		InstanceType:   "Standard_D4s_v4",
+		DiskSizeGB:     120,
+		EndpointAccess: string(hyperv1.AzureEndpointAccessTypePublic),
 	}
 }
 
@@ -48,6 +53,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.EndpointAccess, "endpoint-access", opts.EndpointAccess, "Access for control plane endpoints (Public, Private)")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -72,6 +78,7 @@ type RawCreateOptions struct {
 	ResourceGroupTags      map[string]string
 	SubnetID               string
 	RHCOSImage             string
+	EndpointAccess         string
 }
 
 type AzureEncryptionKey struct {
@@ -100,6 +107,15 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("--resource-group-name is required when using --disk-encryption-set-id")
 	}
+
+	// allow for lowercase input such as 'private'.
+	o.EndpointAccess = cases.Title(language.English).String(o.EndpointAccess)
+
+	allowedEndpointAccessValues := sets.NewString(string(hyperv1.AzureEndpointAccessTypePrivate), string(hyperv1.AzureEndpointAccessTypePublic))
+	if !allowedEndpointAccessValues.Has(o.EndpointAccess) {
+		return nil, fmt.Errorf("--endpoint-access allowed values are %q, got '%s' instead", allowedEndpointAccessValues.List(), o.EndpointAccess)
+	}
+
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -189,6 +205,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		PrivateZoneID: o.infra.PrivateZoneID,
 	}
 
+	endpointAccess := hyperv1.AzureEndpointAccessType(o.EndpointAccess)
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type: hyperv1.AzurePlatform,
 		Azure: &hyperv1.AzurePlatformSpec{
@@ -200,6 +217,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			SubnetID:          o.infra.SubnetID,
 			MachineIdentityID: o.infra.MachineIdentityID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			EndpointAccess:    endpointAccess,
 		},
 	}
 
