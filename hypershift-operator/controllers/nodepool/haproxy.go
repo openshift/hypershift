@@ -145,28 +145,37 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		clusterNetworkCIDR = hcluster.Spec.Networking.ClusterNetwork[0].CIDR.String()
 	}
 
+	isPrivate := false
 	if sharedingress.UseSharedIngress() {
-		sharedIngressRouteSVC := &corev1.Service{
-			TypeMeta: metav1.TypeMeta{},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      sharedingress.RouterPublicService().Name,
-				Namespace: sharedingress.RouterNamespace,
-			},
+		if hcluster.Spec.Platform.Azure != nil && hcluster.Spec.Platform.Azure.EndpointAccess == hyperv1.AzureEndpointAccessTypePrivate {
+			isPrivate = true
+			apiServerExternalAddress = sharedingress.APIServerInternalAddress(hcluster.Spec.DNS)
+			apiServerExternalPort = sharedingress.PrivateLinkLBPort
+		} else {
+			sharedIngressRouteSVC := &corev1.Service{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sharedingress.RouterPublicService().Name,
+					Namespace: sharedingress.RouterNamespace,
+				},
+			}
+			if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
+				return "", true, err
+			}
+			if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
+				return "", true, nil
+			}
+
+			apiServerExternalAddress = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
+			apiServerExternalPort = sharedingress.KASSVCLBPort
 		}
-		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
-			return "", true, err
-		}
-		if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
-			return "", true, nil
-		}
-		apiServerExternalAddress = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
-		apiServerExternalPort = sharedingress.KASSVCLBPort
 	}
 
 	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, hcluster.Spec.ClusterID,
 		apiServerExternalAddress, apiServerInternalAddress,
 		apiServerExternalPort, apiServerInternalPort,
-		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
+		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR,
+		isPrivate)
 	if err != nil {
 		return "", true, fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}
@@ -234,7 +243,8 @@ var (
 
 func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 	externalAPIAddress, internalAPIAddress string,
-	externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string) ([]byte, error) {
+	externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string,
+	isPrivate bool) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
 
@@ -279,7 +289,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 					"InternalAPIPort":    internalAPIPort,
 					"ExternalAPIAddress": externalAPIAddress,
 					"ExternalAPIPort":    externalAPIPort,
-					"UseProxyProtocol":   sharedingress.UseSharedIngress(),
+					"UseProxyProtocol":   sharedingress.UseSharedIngress() && !isPrivate,
 					"ClusterID":          clusterID,
 				},
 			},

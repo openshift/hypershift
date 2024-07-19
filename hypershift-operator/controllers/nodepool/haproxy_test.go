@@ -32,6 +32,7 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 		proxy            string
 		noProxy          string
 		useSharedIngress bool
+		isPrivate        bool
 	}{
 		{
 			name:    "when empty proxy it should create an haproxy",
@@ -64,6 +65,13 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			noProxy:          "",
 			useSharedIngress: true,
 		},
+		{
+			name:             "when use shared router and is private should not use proxy protocol",
+			proxy:            "",
+			noProxy:          "",
+			useSharedIngress: true,
+			isPrivate:        true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -72,7 +80,7 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			}
 			config, err := apiServerProxyConfig(image, tc.proxy, "fakeClusterID", externalAddress, internalAddress, 443, 8443,
-				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork)
+				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork, tc.isPrivate)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

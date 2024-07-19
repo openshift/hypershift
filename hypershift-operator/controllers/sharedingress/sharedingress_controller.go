@@ -2,11 +2,10 @@ package sharedingress
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
-
-	"github.com/openshift/hypershift/cmd/log"
-	"k8s.io/apimachinery/pkg/api/errors"
+	"strconv"
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -16,17 +15,27 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
+)
+
+const (
+	privateLinkServiceName = "pls-shared-ingress"
 )
 
 type SharedIngressReconciler struct {
-	Client         client.Client
+	client.Client
 	Namespace      string
 	createOrUpdate upsert.CreateOrUpdateFN
 }
@@ -56,6 +65,8 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 }
 
 func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: RouterNamespace}}
 	if _, err := r.createOrUpdate(ctx, r.Client, namespace, func() error {
 		return nil
@@ -66,8 +77,8 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	pullSecretPresent := false
 	src := &corev1.Secret{}
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: assets.PullSecretName}, src); err != nil {
-		if errors.IsNotFound(err) {
-			log.Log.Info(fmt.Sprintf("pull secret was not found in %s namespace, will not create pullsecret for sharedingress", r.Namespace))
+		if apierrors.IsNotFound(err) {
+			log.Info(fmt.Sprintf("pull secret was not found in %s namespace, will not create pullsecret for sharedingress", r.Namespace))
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", src, err)
 		}
@@ -95,15 +106,26 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	hcluster := &hyperv1.HostedCluster{}
+	err := r.Get(ctx, req.NamespacedName, hcluster)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("hostedcluster not found, aborting reconcile", "name", req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster %q: %w", req.NamespacedName, err)
+	}
+
+	if hcluster.DeletionTimestamp.IsZero() {
+		if err := r.reconcileAzurePrivateEndpoint(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile HostedCluster %q azure private endpoint: %w", req.NamespacedName, err)
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
-func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, []routev1.Route, error) {
-	hcList := &hyperv1.HostedClusterList{}
-	if err := r.Client.List(ctx, hcList); err != nil {
-		return "", nil, fmt.Errorf("failed to list HCs: %w", err)
-	}
-
+func (r *SharedIngressReconciler) generateConfig(ctx context.Context, hcList *hyperv1.HostedClusterList, svcsNamespaceToLinkID map[string]string) (string, []routev1.Route, error) {
 	namespaces := make([]string, 0, len(hcList.Items))
 	svcsNamespaceToClusterID := make(map[string]string)
 	for _, hc := range hcList.Items {
@@ -145,7 +167,7 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 		return "", nil, err
 	}
 
-	config, err := generateRouterConfig(svcList, svcsNamespaceToClusterID, routes, svcsNameToIP)
+	config, err := generateRouterConfig(svcList, svcsNamespaceToClusterID, routes, svcsNameToIP, svcsNamespaceToLinkID)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate router config: %w", err)
 	}
@@ -158,7 +180,25 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
-	config, routes, err := r.generateConfig(ctx)
+	hcList := &hyperv1.HostedClusterList{}
+	if err := r.Client.List(ctx, hcList); err != nil {
+		return fmt.Errorf("failed to list HCs: %w", err)
+	}
+
+	// reconcile the private service first, so that the private Link Service is created before generating config which requires the service to exist.
+	privateSvc := RouterPrivateService()
+	if _, err := r.createOrUpdate(ctx, r.Client, privateSvc, func() error {
+		return ReconcileRouterPrivateService(privateSvc, hcList)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile private router service: %w", err)
+	}
+
+	svcsNamespaceToLinkID, err := r.getLinkIDMapping(ctx, hcList)
+	if err != nil {
+		return err
+	}
+
+	config, routes, err := r.generateConfig(ctx, hcList, svcsNamespaceToLinkID)
 	if err != nil {
 		return fmt.Errorf("failed to generate router config: %w", err)
 	}
@@ -183,7 +223,7 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 	if _, err := r.createOrUpdate(ctx, r.Client, svc, func() error {
 		return ReconcileRouterService(svc)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile private router service: %w", err)
+		return fmt.Errorf("failed to reconcile public router service: %w", err)
 	}
 
 	// Get the sharedIngress LB hostname to populate the route status.
@@ -217,6 +257,120 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 	// TODO(alberto): set Network policies.
 
 	return nil
+}
+
+func (r *SharedIngressReconciler) getLinkIDMapping(ctx context.Context, hcList *hyperv1.HostedClusterList) (map[string]string, error) {
+	privateClusters := make([]hyperv1.HostedCluster, 0)
+	for _, hc := range hcList.Items {
+		if hc.Spec.Platform.Azure == nil || hc.Spec.Platform.Azure.EndpointAccess == hyperv1.AzureEndpointAccessTypePublic {
+			continue
+		}
+		privateClusters = append(privateClusters, hc)
+	}
+	if len(privateClusters) == 0 {
+		return nil, nil
+	}
+
+	response, err := getPrivateLink(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	privateEndpointIDToLinkID := make(map[string]string)
+	for _, connection := range response.Properties.PrivateEndpointConnections {
+		privateEndpointIDToLinkID[*connection.Properties.PrivateEndpoint.ID] = *connection.Properties.LinkIdentifier
+	}
+
+	hcpNamespaceToLinkID := make(map[string]string)
+	for _, hc := range privateClusters {
+		privateEndpoint := &hyperv1.AzurePrivateEndpoint{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hc.Name,
+				Namespace: hc.Namespace + "-" + hc.Name,
+			},
+		}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(privateEndpoint), privateEndpoint); err != nil {
+			// skip and continue, shared-ingress should continue serving functional clusters.
+			continue
+		}
+
+		if len(privateEndpoint.Status.EndpointID) != 0 {
+			linkIDHex, err := linkIDToLittleEndianHex(privateEndpointIDToLinkID[privateEndpoint.Status.EndpointID])
+			if err != nil {
+				continue
+			}
+			hcpNamespaceToLinkID[privateEndpoint.Namespace] = linkIDHex
+		}
+	}
+
+	return hcpNamespaceToLinkID, nil
+}
+
+func linkIDToLittleEndianHex(linkID string) (string, error) {
+	// LinkID is represented as UINT32(4 bytes) and encoded in little endian format
+	// see: https://learn.microsoft.com/en-us/azure/private-link/private-link-service-overview#getting-connection-information-using-tcp-proxy-v2
+	uint32LinkID, err := strconv.ParseUint(linkID, 10, 32)
+	if err != nil {
+		return "", err
+	}
+	b := [4]byte{}
+	binary.LittleEndian.PutUint32(b[:], uint32(uint32LinkID))
+	return fmt.Sprintf("%x", b), nil
+}
+
+func (r *SharedIngressReconciler) reconcileAzurePrivateEndpoint(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform ||
+		hc.Spec.Platform.Azure == nil ||
+		hc.Spec.Platform.Azure.EndpointAccess != hyperv1.AzureEndpointAccessTypePrivate {
+		return nil
+	}
+
+	response, err := getPrivateLink(ctx)
+	if err != nil {
+		return err
+	}
+	plsID := response.ID
+
+	privateEndpoint := &hyperv1.AzurePrivateEndpoint{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hc.Name,
+			Namespace: hc.Namespace + "-" + hc.Name,
+		},
+	}
+	if _, err := r.createOrUpdate(ctx, r.Client, privateEndpoint, func() error {
+		privateEndpoint.Spec = hyperv1.AzurePrivateEndpointSpec{
+			PrivateLinkServiceID: *plsID,
+			ResourceGroupName:    hc.Spec.Platform.Azure.ResourceGroupName,
+			SubnetID:             hc.Spec.Platform.Azure.SubnetID,
+			Location:             hc.Spec.Platform.Azure.Location,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile azure private endpoint: %w", err)
+	}
+
+	return nil
+}
+
+func getPrivateLink(ctx context.Context) (*armnetwork.PrivateLinkServicesClientGetResponse, error) {
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	subID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	client, err := armnetwork.NewPrivateLinkServicesClient(subID, cred, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	rg := os.Getenv("RESOURCE_GROUP")
+	response, err := client.Get(ctx, rg, privateLinkServiceName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }
 
 func (r *SharedIngressReconciler) reconcileDefaultServiceAccount(ctx context.Context, pullSecretPresent bool) error {
@@ -271,4 +425,9 @@ func Hostname(hcp *hyperv1.HostedControlPlane) string {
 		return ""
 	}
 	return kasPublishStrategy.Route.Hostname
+}
+
+func APIServerInternalAddress(dnsSpec hyperv1.DNSSpec) string {
+	privateDNSZoneResource, _ := arm.ParseResourceID(dnsSpec.PrivateZoneID)
+	return fmt.Sprintf("api.%s", privateDNSZoneResource.Name)
 }

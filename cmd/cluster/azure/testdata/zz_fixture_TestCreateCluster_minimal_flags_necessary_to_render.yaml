@@ -51,6 +51,7 @@ spec:
     azure:
       credentials:
         name: example-cloud-credentials
+      endpointAccess: Public
       location: fakeLocation
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID

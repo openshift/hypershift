@@ -35,6 +35,15 @@ func RouterPublicService() *corev1.Service {
 	}
 }
 
+func RouterPrivateService() *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "private-router",
+			Namespace: RouterNamespace,
+		},
+	}
+}
+
 func PullSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

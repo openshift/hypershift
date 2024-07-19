@@ -1926,6 +1926,9 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	}
 
 	if sharedingress.UseSharedIngress() {
+		if hcp.Spec.Platform.Azure != nil && hcp.Spec.Platform.Azure.EndpointAccess == hyperv1.AzureEndpointAccessTypePrivate {
+			return sharedingress.APIServerInternalAddress(hcp.Spec.DNS), sharedingress.PrivateLinkLBPort, "", nil
+		}
 		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 

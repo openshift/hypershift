@@ -4,7 +4,9 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"os"
 	"sort"
+	"strings"
 	"text/template"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -18,6 +20,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 )
 
@@ -26,6 +29,11 @@ const (
 	routerConfigHashKey = "hypershift.openshift.io/config-hash"
 	KASSVCLBPort        = 6443
 	ExternalDNSLBPort   = 443
+	PrivateLinkLBPort   = 7443
+
+	RouterKASPortName         = "kas-svc"
+	RouterExternalDNSPortName = "external-dns"
+	RouterPrivateLinkPortName = "private-link"
 )
 
 func hcpRouterLabels() map[string]string {
@@ -62,12 +70,13 @@ func (r routeByNamespaceName) Less(i, j int) bool {
 	return r[i].Namespace+r[i].Name < r[j].Namespace+r[j].Name
 }
 
-func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
+func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route, svcsNameToIP, svcsNamespaceToLinkID map[string]string) (string, error) {
 	type backendDesc struct {
 		Name      string
 		SVCIP     string
 		SVCPort   int32
 		ClusterID string
+		LinkID    string
 	}
 	type ExternalDNSBackendDesc struct {
 		Name                 string
@@ -77,18 +86,28 @@ func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID 
 	}
 	type templateParams struct {
 		Backends            []backendDesc
+		PrivateBackends     []backendDesc
 		ExternalDNSBackends []ExternalDNSBackendDesc
 	}
 	p := templateParams{}
 	sort.Sort(svcByNamespace(svcList.Items))
 	p.Backends = make([]backendDesc, 0, len(svcList.Items))
+	p.PrivateBackends = make([]backendDesc, 0, len(svcsNamespaceToLinkID))
 	for _, svc := range svcList.Items {
-		p.Backends = append(p.Backends, backendDesc{
-			Name:      svc.Namespace + "-" + svc.Name,
-			SVCIP:     svc.Spec.ClusterIP,
-			SVCPort:   svc.Spec.Ports[0].Port,
-			ClusterID: svcsNamespaceToClusterID[svc.Namespace],
-		})
+		backend := backendDesc{
+			Name:    svc.Namespace + "-" + svc.Name,
+			SVCIP:   svc.Spec.ClusterIP,
+			SVCPort: svc.Spec.Ports[0].Port,
+		}
+
+		linkID, isPrivate := svcsNamespaceToLinkID[svc.Namespace]
+		if isPrivate {
+			backend.LinkID = linkID
+			p.PrivateBackends = append(p.PrivateBackends, backend)
+		} else {
+			backend.ClusterID = svcsNamespaceToClusterID[svc.Namespace]
+			p.Backends = append(p.Backends, backend)
+		}
 	}
 
 	sort.Sort(routeByNamespaceName(routes))
@@ -208,12 +227,17 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 		c.Ports = []corev1.ContainerPort{
 			{
 				ContainerPort: 8443,
-				Name:          "external-dns",
+				Name:          RouterExternalDNSPortName,
 				Protocol:      corev1.ProtocolTCP,
 			},
 			{
 				ContainerPort: 6443,
-				Name:          "kas-svc",
+				Name:          RouterKASPortName,
+				Protocol:      corev1.ProtocolTCP,
+			},
+			{
+				ContainerPort: 7443,
+				Name:          RouterPrivateLinkPortName,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
@@ -247,12 +271,12 @@ func ReconcileRouterService(svc *corev1.Service) error {
 	for i, port := range svc.Spec.Ports {
 		switch port.Name {
 		case "external-dns":
-			svc.Spec.Ports[i].TargetPort = intstr.FromString("external-dns")
+			svc.Spec.Ports[i].TargetPort = intstr.FromString(RouterExternalDNSPortName)
 			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
 			foundExternaDNS = true
 		case "kas-svc":
 			svc.Spec.Ports[i].Port = KASSVCLBPort
-			svc.Spec.Ports[i].TargetPort = intstr.FromString("kas-svc")
+			svc.Spec.Ports[i].TargetPort = intstr.FromString(RouterKASPortName)
 			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
 			foundKASSVC = true
 		}
@@ -261,7 +285,7 @@ func ReconcileRouterService(svc *corev1.Service) error {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 			Name:       "external-dns",
 			Port:       ExternalDNSLBPort,
-			TargetPort: intstr.FromString("external-dns"),
+			TargetPort: intstr.FromString(RouterExternalDNSPortName),
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}
@@ -269,7 +293,60 @@ func ReconcileRouterService(svc *corev1.Service) error {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 			Name:       "kas-svc",
 			Port:       KASSVCLBPort,
-			TargetPort: intstr.FromString("kas-svc"),
+			TargetPort: intstr.FromString(RouterKASPortName),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
+
+	return nil
+}
+
+func ReconcileRouterPrivateService(svc *corev1.Service, hcList *hyperv1.HostedClusterList) error {
+	if svc.Labels == nil {
+		svc.Labels = map[string]string{}
+	}
+	for k, v := range hcpRouterLabels() {
+		svc.Labels[k] = v
+	}
+
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] = "true"
+	svc.Annotations["service.beta.kubernetes.io/azure-pls-create"] = "true"
+	svc.Annotations["service.beta.kubernetes.io/azure-pls-proxy-protocol"] = "true"
+	svc.Annotations["service.beta.kubernetes.io/azure-pls-name"] = privateLinkServiceName
+	svc.Annotations["service.beta.kubernetes.io/azure-pls-resource-group"] = os.Getenv("RESOURCE_GROUP")
+	svc.Annotations["service.beta.kubernetes.io/azure-pls-visibility"] = "*"
+
+	subscriptions := sets.NewString()
+	for _, hc := range hcList.Items {
+		if hc.Spec.Platform.Azure != nil {
+			subscriptions.Insert(hc.Spec.Platform.Azure.SubscriptionID)
+		}
+
+	}
+	svc.Annotations["service.beta.kubernetes.io/azure-pls-auto-approval"] = strings.Join(subscriptions.List(), " ")
+
+	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	svc.Spec.Selector = hcpRouterLabels()
+
+	foundPrivateLink := false
+	for i, port := range svc.Spec.Ports {
+		switch port.Name {
+		case "private-link":
+			svc.Spec.Ports[i].Port = PrivateLinkLBPort
+			svc.Spec.Ports[i].TargetPort = intstr.FromString(RouterPrivateLinkPortName)
+			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
+			foundPrivateLink = true
+		}
+	}
+
+	if !foundPrivateLink {
+		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
+			Name:       "private-link",
+			Port:       PrivateLinkLBPort,
+			TargetPort: intstr.FromString(RouterPrivateLinkPortName),
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}

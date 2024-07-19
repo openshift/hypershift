@@ -1562,6 +1562,19 @@ type AWSServiceEndpoint struct {
 	URL string `json:"url"`
 }
 
+// AzureEndpointAccessType specifies the publishing scope of cluster endpoints.
+type AzureEndpointAccessType string
+
+const (
+	// Public endpoint access allows public API server access and public node
+	// communication with the control plane.
+	AzureEndpointAccessTypePublic AzureEndpointAccessType = "Public"
+
+	// Private endpoint access allows only private API server access and private
+	// node communication with the control plane.
+	AzureEndpointAccessTypePrivate AzureEndpointAccessType = "Private"
+)
+
 type AzurePlatformSpec struct {
 	Credentials corev1.LocalObjectReference `json:"credentials"`
 	// The cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
@@ -1574,6 +1587,14 @@ type AzurePlatformSpec struct {
 	SubnetID          string `json:"subnetID"`
 	SubscriptionID    string `json:"subscriptionID"`
 	SecurityGroupID   string `json:"securityGroupID"`
+
+	// EndpointAccess specifies the publishing scope of cluster endpoints. The
+	// default is Public.
+	//
+	// +kubebuilder:validation:Enum=Public;Private
+	// +kubebuilder:default=Public
+	// +optional
+	EndpointAccess AzureEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
 // Release represents the metadata for an OCP release payload image.
