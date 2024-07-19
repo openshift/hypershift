@@ -44,6 +44,7 @@ type TestParams struct {
 	MgmtClient    crclient.Client
 	GuestClient   crclient.Client
 	HostedCluster *hyperv1.HostedCluster
+	HcpNS         string
 }
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, params *TestParams) {
