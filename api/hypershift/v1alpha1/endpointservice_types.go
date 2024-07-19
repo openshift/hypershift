@@ -10,6 +10,8 @@ func init() {
 		s.AddKnownTypes(SchemeGroupVersion,
 			&AWSEndpointService{},
 			&AWSEndpointServiceList{},
+			&AzurePrivateEndpoint{},
+			&AzurePrivateEndpointList{},
 		)
 		metav1.AddToGroupVersion(s, SchemeGroupVersion)
 		return nil
@@ -99,4 +101,62 @@ type AWSEndpointServiceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AWSEndpointService `json:"items"`
+}
+
+const (
+	// AzurePrivateEndpointAvailable indicates whether the Azure Private Endpoint has been created.
+	AzurePrivateEndpointAvailable ConditionType = "AzurePrivateEndpointAvailable"
+)
+
+// AzurePrivateEndpointSpec defines the desired state of AzurePrivateEndpoint
+type AzurePrivateEndpointSpec struct {
+	// PrivateLinkServiceID is the ID of the private link service where the connection request should be sent.
+	PrivateLinkServiceID string `json:"privateLinkServiceID"`
+
+	ResourceGroupName string `json:"resourceGroupName"`
+
+	SubnetID string `json:"subnetID"`
+
+	Location string `json:"location"`
+}
+
+// AzurePrivateEndpointStatus defines the observed state of AzurePrivateEndpoint
+type AzurePrivateEndpointStatus struct {
+	// EndpointID is the ID of the Endpoint created in the guest VPC
+	// +optional
+	EndpointID string `json:"endpointID,omitempty"`
+
+	// DNSNames are the names for the records created in the hypershift private zone
+	// +optional
+	DNSNames []string `json:"dnsNames,omitempty"`
+
+	// Conditions contains details for the current state of the private Endpoint.
+	//
+	// Current condition types are: "Available"
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=azureprivateendpoints,scope=Namespaced
+// +kubebuilder:subresource:status
+// AzurePrivateEndpoint specifies a request for a private Endpoint in Azure
+type AzurePrivateEndpoint struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   AzurePrivateEndpointSpec   `json:"spec,omitempty"`
+	Status AzurePrivateEndpointStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// AzurePrivateEndpointList contains a list of AzurePrivateEndpoint
+type AzurePrivateEndpointList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []AzurePrivateEndpoint `json:"items"`
 }
