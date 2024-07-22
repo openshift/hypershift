@@ -309,7 +309,7 @@ spec:
             - name: name
               value: buildah
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.1@sha256:231d49db42729dece0fae11180b619cca55540d5b9f1679d06eb4416c199238c
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:1fd10a77f52e0929c5ce5ebd48ae3bb6be850555498ba3f0e5b0db8f253c14f5
             - name: kind
               value: task
           resolver: bundles
@@ -346,7 +346,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.1@sha256:f459481bb0210bf1f68256ec065552d4f9b7dd1d49a467e8e7e288b88b2e0b3d
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:5535d327e8961df6bd186b5f57827494d5f2c84db7ba50fc6573039468d5476c
             - name: kind
               value: task
           resolver: bundles
@@ -383,7 +383,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.1@sha256:f459481bb0210bf1f68256ec065552d4f9b7dd1d49a467e8e7e288b88b2e0b3d
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:5535d327e8961df6bd186b5f57827494d5f2c84db7ba50fc6573039468d5476c
             - name: kind
               value: task
           resolver: bundles
@@ -421,7 +421,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.1@sha256:f459481bb0210bf1f68256ec065552d4f9b7dd1d49a467e8e7e288b88b2e0b3d
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:5535d327e8961df6bd186b5f57827494d5f2c84db7ba50fc6573039468d5476c
             - name: kind
               value: task
           resolver: bundles
@@ -455,7 +455,7 @@ spec:
             - name: name
               value: build-image-manifest
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:b9d72b13a28a22d07df1226a0b15d22539e849e090186e5ac553c67235350f01
+              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:5bb579a8def39173b2da04d7e090987a2e7736a40e57d39c40383a38d97ad5d7
             - name: kind
               value: task
           resolver: bundles
@@ -491,8 +491,6 @@ spec:
             workspace: workspace
       - name: deprecated-base-image-check
         params:
-          - name: BASE_IMAGES_DIGESTS
-            value: $(tasks.build-container-amd64.results.BASE_IMAGES_DIGESTS)
           - name: IMAGE_URL
             value: $(tasks.build-container.results.IMAGE_URL)
           - name: IMAGE_DIGEST
