@@ -57,16 +57,11 @@ type ValidatedCreateOptions struct {
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
-	// Validate if mgmt cluster and NodePool CPU arches don't match, a multi-arch release image or stream was used
-	// Exception for ppc64le arch since management cluster would be in x86 and node pools are going to be in ppc64le arch
-	if !o.MultiArch && !opts.Render && opts.Arch != hyperv1.ArchitecturePPC64LE {
-		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
+	// Perform multi-arch validations except for render
+	if !opts.Render {
+		err := validateMultiArch(ctx, o, opts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check mgmt cluster CPU arch: %v", err)
-		}
-
-		if err = hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, opts.Arch); err != nil {
-			opts.Log.Info(fmt.Sprintf("WARNING: %v", err))
+			return nil, err
 		}
 	}
 
@@ -500,6 +495,49 @@ func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *
 
 	if err := validateMultiArchRelease(ctx, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile, awsOpts); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func validateMultiArch(ctx context.Context, o *RawCreateOptions, opts *core.CreateOptions) error {
+	validMultiArchImage := false
+
+	// Check if the release image is multi-arch
+	if len(opts.ReleaseImage) > 0 && len(opts.PullSecretFile) > 0 {
+		pullSecret, err := os.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		validMultiArchImage, err = registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Check if a release stream was provided instead and its multi-arch
+	if len(opts.ReleaseStream) > 0 && strings.Contains(opts.ReleaseStream, "multi") {
+		validMultiArchImage = true
+	}
+
+	// The release image is not multi-arch so check the mgmt & nodepool cpu arches match
+	if !validMultiArchImage {
+		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check mgmt cluster CPU arch: %v", err)
+		}
+
+		err = hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, opts.Arch)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Set the HostedCluster multi-arch flag since a valid multi-arch release image/stream was provided
+	if validMultiArchImage && !o.MultiArch {
+		o.MultiArch = true
+		opts.Log.Info("Auto-enabled MultiArch HostedCluster since a multi-arch release image was provided")
 	}
 
 	return nil

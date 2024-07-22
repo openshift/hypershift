@@ -349,7 +349,9 @@ func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.Hos
 
 func DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePoolArch string) error {
 	if mgmtClusterCPUArch != nodePoolArch {
-		return fmt.Errorf("multi-arch hosted cluster is not enabled and management cluster and nodepool cpu arches do not match - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, nodePoolArch)
+		return fmt.Errorf("multi-arch hosted cluster is not enabled and "+
+			"management cluster and nodepool cpu architectures do not match; "+
+			"please use a multi-arch release image or a multi-arch release stream - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, nodePoolArch)
 	}
 
 	return nil
