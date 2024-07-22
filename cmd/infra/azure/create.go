@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/go-uuid"
@@ -139,10 +141,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Create the managed identity
-	identityID, identityRolePrincipalID, err := createManagedIdentity(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
+	resourceName := fmt.Sprintf("%s-%s", o.Name, o.InfraID)
+	response, err := CreateManagedIdentity(ctx, subscriptionID, resourceGroupName, resourceName, o.Location, azureCreds)
 	if err != nil {
 		return nil, err
 	}
+	identityID := *response.ID
+	identityRolePrincipalID := *response.Properties.PrincipalID
+
 	result.MachineIdentityID = identityID
 	l.Info("Successfully created managed identity", "name", identityID)
 
@@ -302,17 +308,17 @@ func getBaseDomainID(ctx context.Context, subscriptionID string, azureCreds azco
 	return "", fmt.Errorf("could not find any DNS zones in subscription")
 }
 
-// createManagedIdentity creates a managed identity
-func createManagedIdentity(ctx context.Context, subscriptionID string, resourceGroupName string, name string, infraID string, location string, azureCreds azcore.TokenCredential) (string, string, error) {
+// CreateManagedIdentity creates a managed identity
+func CreateManagedIdentity(ctx context.Context, subscriptionID string, resourceGroupName string, resourceName string, location string, azureCreds azcore.TokenCredential) (*armmsi.UserAssignedIdentitiesClientCreateOrUpdateResponse, error) {
 	identityClient, err := armmsi.NewUserAssignedIdentitiesClient(subscriptionID, azureCreds, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to create new identity client: %w", err)
+		return nil, fmt.Errorf("failed to create new identity client: %w", err)
 	}
-	identity, err := identityClient.CreateOrUpdate(ctx, resourceGroupName, name+"-"+infraID, armmsi.Identity{Location: &location}, nil)
+	identity, err := identityClient.CreateOrUpdate(ctx, resourceGroupName, resourceName, armmsi.Identity{Location: &location}, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to create managed identity: %w", err)
+		return nil, fmt.Errorf("failed to create managed identity: %w", err)
 	}
-	return *identity.ID, *identity.Properties.PrincipalID, nil
+	return &identity, nil
 }
 
 // setManagedIdentityRole sets the managed identity's principal role to 'Contributor'
@@ -344,7 +350,25 @@ func setManagedIdentityRole(ctx context.Context, subscriptionID string, resource
 		return fmt.Errorf("didn't find the 'Contributor' role")
 	}
 
-	roleAssignmentClient, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, azureCreds, nil)
+	creator := RoleAssignmentCreator{
+		SubscriptionID:   subscriptionID,
+		RoleDefinitionID: *roleDefinition.ID,
+		PrincipalID:      identityRolePrincipalID,
+		Scope:            resourceGroupID,
+	}
+	return creator.CreateRoleAssignment(ctx, azureCreds)
+}
+
+type RoleAssignmentCreator struct {
+	SubscriptionID   string
+	RoleDefinitionID string
+	Scope            string
+	PrincipalID      string
+	PrincipalType    *armauthorization.PrincipalType // optional
+}
+
+func (c *RoleAssignmentCreator) CreateRoleAssignment(ctx context.Context, azureCreds azcore.TokenCredential) error {
+	roleAssignmentClient, err := armauthorization.NewRoleAssignmentsClient(c.SubscriptionID, azureCreds, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create new role assignments client: %w", err)
 	}
@@ -354,22 +378,36 @@ func setManagedIdentityRole(ctx context.Context, subscriptionID string, resource
 		return fmt.Errorf("failed to generate uuid for role assignment name: %w", err)
 	}
 
+	if !strings.HasPrefix(c.RoleDefinitionID, "/subscriptions") {
+		c.RoleDefinitionID = fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", c.SubscriptionID, c.RoleDefinitionID)
+	}
+
 	for try := 0; try < 100; try++ {
-		_, err := roleAssignmentClient.Create(ctx, resourceGroupID, roleAssignmentName,
+		_, err = roleAssignmentClient.Create(ctx, c.Scope, roleAssignmentName,
 			armauthorization.RoleAssignmentCreateParameters{
 				Properties: &armauthorization.RoleAssignmentProperties{
-					RoleDefinitionID: roleDefinition.ID,
-					PrincipalID:      ptr.To(identityRolePrincipalID),
+					RoleDefinitionID: ptr.To(c.RoleDefinitionID),
+					PrincipalID:      ptr.To(c.PrincipalID),
+					PrincipalType:    c.PrincipalType,
 				},
 			}, nil)
 		if err != nil {
+			var azureErr *azcore.ResponseError
+			if errors.As(err, &azureErr) && azureErr.StatusCode == http.StatusConflict && azureErr.ErrorCode == "RoleAssignmentExists" {
+				// role already exist!
+				return nil
+			}
 			if try < 99 {
 				time.Sleep(time.Second)
 				continue
 			}
-			return fmt.Errorf("failed to add role assignment to role: %w", err)
+			return fmt.Errorf("failed to create role assignment: %w", err)
 		}
 		break
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to create role assignment: %w", err)
 	}
 	return nil
 }
