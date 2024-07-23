@@ -52,7 +52,6 @@ spec:
       credentials:
         name: example-cloud-credentials
       location: fakeLocation
-      machineIdentityID: fakeMachineIdentityID
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
@@ -132,6 +131,7 @@ spec:
     azure:
       diskSizeGB: 120
       imageID: fakeBootImageID
+      machineIdentityID: fakeMachineIdentityID
       subnetID: fakeSubnetID
       vmsize: Standard_D4s_v4
     type: Azure

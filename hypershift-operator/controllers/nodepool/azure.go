@@ -49,10 +49,10 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		FailureDomain: failureDomain(nodePool),
 	}}}
 
-	if hcluster.Spec.Platform.Azure.MachineIdentityID != "" {
+	if nodePool.Spec.Platform.Azure.MachineIdentityID != "" {
 		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
 		azureMachineTemplate.Template.Spec.UserAssignedIdentities = []capiazure.UserAssignedIdentity{{
-			ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID,
+			ProviderID: nodePool.Spec.Platform.Azure.MachineIdentityID,
 		}}
 	}
 

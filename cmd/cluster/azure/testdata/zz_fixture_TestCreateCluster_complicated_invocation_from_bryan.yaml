@@ -52,7 +52,6 @@ spec:
       credentials:
         name: bryans-cluster-cloud-credentials
       location: fakeLocation
-      machineIdentityID: fakeMachineIdentityID
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
@@ -134,6 +133,7 @@ spec:
       diskStorageAccountType: Standard_LRS
       enableEphemeralOSDisk: true
       imageID: fakeBootImageID
+      machineIdentityID: fakeMachineIdentityID
       subnetID: fakeSubnetID
       vmsize: Standard_DS2_v2
     type: Azure
