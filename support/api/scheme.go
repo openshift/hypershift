@@ -40,6 +40,7 @@ import (
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1beta1"
 )
 
 var (
@@ -75,6 +76,7 @@ func init() {
 	schedulingv1alpha1.AddToScheme(Scheme)
 	certificatesv1alpha1.AddToScheme(Scheme)
 	capiv1.AddToScheme(Scheme)
+	ipamv1.AddToScheme(Scheme)
 	configv1.AddToScheme(Scheme)
 	securityv1.AddToScheme(Scheme)
 	operatorv1.AddToScheme(Scheme)
