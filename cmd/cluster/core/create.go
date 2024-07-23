@@ -70,6 +70,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
 	flags.BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
 	flags.StringVar(&opts.RenderInto, "render-into", opts.RenderInto, "Render output as YAML into this file instead of applying. If unset, YAML will be output to stdout.")
+	flags.BoolVar(&opts.RenderSensitive, "render-sensitive", opts.RenderSensitive, "enables rendering of sensitive information in the output")
 	flags.StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
 	flags.StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	flags.StringVar(&opts.ImageContentSources, "image-content-sources", opts.ImageContentSources, "Path to a file with image content sources")
@@ -133,6 +134,7 @@ type RawCreateOptions struct {
 	ReleaseStream                    string
 	Render                           bool
 	RenderInto                       string
+	RenderSensitive                  bool
 	SSHKeyFile                       string
 	ServiceCIDR                      []string
 	ClusterCIDR                      []string
@@ -709,6 +711,12 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 			}()
 		}
 		for _, object := range resources.asObjects() {
+			if !opts.RenderSensitive {
+				if secret, ok := object.(*corev1.Secret); ok && strings.Contains(secret.Name, "cloud-credentials") {
+					continue
+				}
+			}
+
 			err := hyperapi.YamlSerializer.Encode(object, output)
 			if err != nil {
 				return fmt.Errorf("failed to encode objects: %w", err)
