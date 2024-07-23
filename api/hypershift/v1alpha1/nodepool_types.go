@@ -934,7 +934,8 @@ type AzureNodePoolPlatform struct {
 	// Diagnostics specifies the diagnostics settings for a virtual machine.
 	// If not specified then Boot diagnostics will be disabled.
 	// +optional
-	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+	Diagnostics       *Diagnostics `json:"diagnostics,omitempty"`
+	MachineIdentityID string       `json:"machineIdentityID"`
 }
 
 // We define our own condition type since metav1.Condition has validation

@@ -2431,8 +2431,8 @@ string
 <p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
 is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
 The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
-Hosted Cluster specification respectively, hcluster.Spec.Platform.Azure.SubscriptionID and
-hcluster.Spec.Platform.Azure.ResourceGroupName.</p>
+Hosted Cluster specification respectively, HostedCluster.Spec.Platform.Azure.SubscriptionID and
+HostedCluster.Spec.Platform.Azure.ResourceGroupName.</p>
 </td>
 </tr>
 <tr>
@@ -2489,9 +2489,9 @@ string
 <td>
 <em>(Optional)</em>
 <p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
-needs to exist in the same subscription id listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.SubscriptionID.
+needs to exist in the same subscription id listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.SubscriptionID.
 DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
-listed in the Hosted Cluster, hcluster.Spec.Platform.Azure.Location.</p>
+listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.</p>
 </td>
 </tr>
 <tr>
@@ -2515,9 +2515,9 @@ string
 </td>
 <td>
 <p>SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
-different subnet than the one listed in the HostedCluster, hcluster.Spec.Platform.Azure.SubnetID, but must exist
-in the same hcluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
-hcluster.Spec.Platform.Azure.SubscriptionID.</p>
+different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
+exist in the same HostedCluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+HostedCluster.Spec.Platform.Azure.SubscriptionID.</p>
 </td>
 </tr>
 <tr>
@@ -2532,7 +2532,25 @@ Diagnostics
 <td>
 <em>(Optional)</em>
 <p>Diagnostics specifies the diagnostics settings for a virtual machine.
-If not specified then Boot diagnostics will be disabled.</p>
+If not specified, then Boot diagnostics will be disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>machineIdentityID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MachineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. This
+field is expected to exist under the same resource group as HostedCluster.Spec.Platform.Azure.ResourceGroupName. This
+user assigned identity is expected to have the Contributor role assigned to it and scoped to the resource group
+under HostedCluster.Spec.Platform.Azure.ResourceGroupName.</p>
+<p>If this field is not supplied, the Service Principal credentials will be written to a file on the disk of each VM
+in order to be accessible by the cloud provider; the aforementioned credentials provided are the same ones as
+HostedCluster.Spec.Platform.Azure.Credentials. However, this is less secure than using a managed identity.</p>
 </td>
 </tr>
 </tbody>
@@ -2647,18 +2665,6 @@ string
 </td>
 <td>
 <p>SubscriptionID is a unique identifier for an Azure subscription used to manage resources.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>machineIdentityID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>MachineIdentityID is used as the user-assigned identity to be assigned to the VMs</p>
 </td>
 </tr>
 <tr>
