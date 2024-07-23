@@ -79,7 +79,7 @@ type NodePool struct {
 // NodePoolSpec is the desired behavior of a NodePool.
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws)", message="Setting Arch to arm64 is only supported for AWS"
-// +kubebuilder:validation:XValidation:rule="has(self.replicas) ? !has(self.autoScaling) : has(self.autoScaling)", message="One of replicas or autoScaling should be set but not both"
+// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
 type NodePoolSpec struct {
 	// ClusterName is the name of the HostedCluster this NodePool belongs to.
 	//
