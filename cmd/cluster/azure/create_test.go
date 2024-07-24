@@ -86,6 +86,7 @@ func TestCreateCluster(t *testing.T) {
 				"--enable-ephemeral-disk=true",
 				"--instance-type=Standard_DS2_v2",
 				"--disk-storage-account-type=Standard_LRS",
+				"--render-sensitive",
 			},
 		},
 	} {
