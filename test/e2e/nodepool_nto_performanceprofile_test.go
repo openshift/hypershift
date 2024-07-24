@@ -36,7 +36,6 @@ spec:
   nodeSelector:
     node-role.kubernetes.io/worker-cnf: ""
 `
-	controllerGeneratedPPConfig = "hypershift.openshift.io/performanceprofile-config"
 )
 
 type NTOPerformanceProfileTest struct {
@@ -110,7 +109,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
-				controllerGeneratedPPConfig: "true",
+				nodepool.PerformanceProfileConfigMapLabel: "true",
 			}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
 			for i := range list.Items {
@@ -148,7 +147,101 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			},
 		},
 	)
+	e2eutil.EventuallyObjects(t, ctx, "performance profile status ConfigMap to exist",
+		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
+			list := &corev1.ConfigMapList{}
+			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
+				nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+			}))
+			configMaps := make([]*corev1.ConfigMap, len(list.Items))
+			for i := range list.Items {
+				configMaps[i] = &list.Items[i]
+			}
+			return configMaps, err
+		},
+		[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+			func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
+				want, got := 1, len(configMaps)
+				return want == got, fmt.Sprintf("expected %d performance profile status ConfigMaps, got %d", want, got), nil
+			},
+		},
+		[]e2eutil.Predicate[*corev1.ConfigMap]{
+			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
+				if want, got := fmt.Sprintf("status-%s", util.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength)), configMap.Name; want != got {
+					return false, fmt.Sprintf("expected performance profile status ConfigMap name to be '%s', got '%s'", want, got), nil
+				}
+				return true, fmt.Sprintf("performance profile status ConfigMap name is as expected"), nil
+			},
+			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
+				if diff := cmp.Diff(map[string]string{
+					nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: configMap.Labels[nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel],
+					hyperv1.NodePoolLabel: configMap.Labels[hyperv1.NodePoolLabel],
+				}, map[string]string{
+					nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+					hyperv1.NodePoolLabel: nodePool.Name,
+				}); diff != "" {
+					return false, fmt.Sprintf("incorrect labels: %v", diff), nil
+				}
+				if want, got := nodePool.Namespace+"/"+nodePool.Name, configMap.Annotations[hyperv1.NodePoolLabel]; want != got {
+					return false, fmt.Sprintf("incorrect annotation %v: wanted %v, got %v", hyperv1.NodePoolLabel, want, got), nil
+				}
+				return true, "labels and annotations correct", nil
+			},
+		},
+	)
+	e2eutil.EventuallyObjects(t, ctx, "performance profile status to be reflected under the NodePool status",
+		func(ctx context.Context) ([]*hyperv1.NodePool, error) {
+			updatedNodePool := &hyperv1.NodePool{}
+			err := mc.managementClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), updatedNodePool)
+			nodePools := []*hyperv1.NodePool{updatedNodePool}
+			return nodePools, err
+		},
+		[]e2eutil.Predicate[[]*hyperv1.NodePool]{},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(nodePool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				nodePoolConditions := nodePool.Status.Conditions
+				wantPerformanceProfileUnderNodePoolConditions := []hyperv1.NodePoolCondition{
+					hyperv1.NodePoolCondition{
+						Type:   hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
+						Status: corev1.ConditionTrue,
+					},
+					hyperv1.NodePoolCondition{
+						Type:   hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType,
+						Status: corev1.ConditionFalse,
+					},
+					hyperv1.NodePoolCondition{
+						Type:   hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType,
+						Status: corev1.ConditionTrue,
+					},
+					hyperv1.NodePoolCondition{
+						Type:   hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType,
+						Status: corev1.ConditionFalse,
+					},
+				}
 
+				for _, wantCondition := range wantPerformanceProfileUnderNodePoolConditions {
+					found := false
+					for _, gotCondition := range nodePoolConditions {
+						if gotCondition.Type == wantCondition.Type {
+							if gotCondition.Status == wantCondition.Status {
+								found = true
+								break
+							}
+							reasons += fmt.Sprintf("condition %s is present, but got status=%s; want status=%s\n", gotCondition.Type, gotCondition.Status, wantCondition.Status)
+							break
+						}
+					}
+					if !found {
+						reasons += fmt.Sprintf("condition %s is not present\n", wantCondition.Type)
+					}
+				}
+				if len(reasons) == 0 {
+					return true, "PerformanceProfile conditions are present under NodePool status as expected", nil
+				}
+				return false, reasons, nil
+			},
+		},
+	)
 	t.Log("Deleting configmap reference from nodepool ...")
 	baseNP := nodePool.DeepCopy()
 	nodePool.Spec = np.Spec
@@ -160,7 +253,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
-				controllerGeneratedPPConfig: "true",
+				nodepool.PerformanceProfileConfigMapLabel: "true",
 			}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
 			for i := range list.Items {
