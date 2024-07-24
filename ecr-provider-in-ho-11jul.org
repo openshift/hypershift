@@ -1,0 +1,73 @@
+#+title: Ecr Provider In Ho 11jul
+
+[[~/org/zero-egress-4jul.org]]
+[[file:~/org/zero-egress-8jul.org::*Add credential provider support to HS base image][Add credential provider support to HS base image]]
+* call stack - how we get images
+[[file:~/redhat/go/hypershift/support/releaseinfo/registryclient_provider.go::func (p *RegistryClientProvider) Lookup(ctx context.Context, image string, pullSecret \[\]byte) (releaseImage *ReleaseImage, err error) {]]
+
+[[file:~/redhat/go/hypershift/support/releaseinfo/registryclient/client.go::func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret \[\]byte, files ...string) (map\[string\]\[\]byte, error) {]]
+
+[[file:~/redhat/go/hypershift/support/releaseinfo/registryclient/client.go::func getMetadata(ctx context.Context, imageRef string, pullSecret \[\]byte) (\[\]distribution.Descriptor, distribution.BlobStore, error) {]]
+
+[[file:~/redhat/go/hypershift/support/releaseinfo/registryclient/client.go::func GetRepoSetup(ctx context.Context, imageRef string, pullSecret \[\]byte) (distribution.Repository, *reference.DockerImageReference, error) {]]
+* errors
+is a program, not an importable package
+what does this error mean when i do a go build?
+import "k8s.io/cloud-provider-aws/cmd/ecr-credential-provider" is a program, not an importable package
+
+
+ This error message indicates that the specified module (=k8s.io/cloud-provider-aws/cmd/ecr-credential-provider=) is a standalone Go executable, not a package that can be imported and used in your Go code. If you want to use this module, you might need to examine its documentation or source code for instructions on how to interact with it from your own program.
+
+ original hypershift operator errors
+[[file:~/org/zero-egress-2jul.org::*error (from hypershift operator)][error (from hypershift operator)]]
+
+
+#+begin_src json
+{"level":"error","ts":"2024-07-02T13:37:24Z","msg":"Failed to look up release image using registry mirror","controller":"nodepool","controllerGroup":"hypershift.openshift.io","controllerKind":"NodePool","NodePool":{"name":"hkemp-workers","namespace":"ocm-int-2c8qobfpdonjesn9u8lle5vbd4cn8koq"},"namespace":"ocm-int-2c8qobfpdonjesn9u8lle5vbd4cn8koq","name":"hkemp-workers","reconcileID":"a36d01c7-a025-406b-b905-79dd4564dfbc","registry mirror":"097312256807.dkr.ecr.us-west-2.amazonaws.com/openshift/release-images","error":"failed to extract release metadata: failed to obtain root manifest for 097312256807.dkr.ecr.us-west-2.amazonaws.com/openshift/release-images@sha256:0f55261077557d1bb909c06b115e0c79b0025677be57ba2f045495c11e2443ee: Get \"https://097312256807.dkr.ecr.us-west-2.amazonaws.com/v2/openshift/release-images/manifests/sha256:0f55261077557d1bb909c06b115e0c79b0025677be57ba2f045495c11e2443ee\": no basic auth credentials","stacktrace":"github.com/openshift/hypershift/support/releaseinfo.(*ProviderWithOpenShiftImageRegistryOverridesDecorator).Lookup
+	/hypershift/support/releaseinfo/registry_image_content_policies.go:38
+
+github.com/openshift/hypershift/hypershift-operator/controllers/nodepool.(*NodePoolReconciler).getReleaseImage.func1
+	/hypershift/hypershift-operator/controllers/nodepool/nodepool_controller.go:2349
+
+github.com/openshift/hypershift/hypershift-operator/controllers/nodepool.(*NodePoolReconciler).getReleaseImage
+	/hypershift/hypershift-operator/controllers/nodepool/nodepool_controller.go:2354
+
+github.com/openshift/hypershift/hypershift-operator/controllers/nodepool.(*NodePoolReconciler).reconcile
+	/hypershift/hypershift-operator/controllers/nodepool/nodepool_controller.go:328
+
+github.com/openshift/hypershift/hypershift-operator/controllers/nodepool.(*NodePoolReconciler).Reconcile
+	/hypershift/hypershift-operator/controllers/nodepool/nodepool_controller.go:236
+
+sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Reconcile
+	/hypershift/vendor/sigs.k8s.io/controller-runtime/pkg/internal/controller/controller.go:114
+
+sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+	/hypershift/vendor/sigs.k8s.io/controller-runtime/pkg/internal/controller/controller.go:311
+
+sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+	/hypershift/vendor/sigs.k8s.io/controller-runtime/pkg/internal/controller/controller.go:261
+
+sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+	/hypershift/vendor/sigs.k8s.io/controller-runtime/pkg/internal/controller/controller.go:222
+"}
+#+end_src
+
+[[file:~/redhat/go/hypershift/hypershift-operator/controllers/nodepool/nodepool_controller.go::func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {]]
+[[file:hypershift-operator/controllers/nodepool/nodepool_controller.go::func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {]]
+
+#+begin_src go
+func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {
+	pullSecretBytes, err := r.getPullSecretBytes(ctx, hostedCluster)
+	if err != nil {
+		return nil, err
+#+end_src
+
+put the credential provider call in here?
+#+begin_src go
+field Mirrors []string
+
+Mirrors are one or more repositories that may also contain the same images.
+
+
+(v1beta1.ImageContentSource).Mirrors on pkg.go.dev
+#+end_src

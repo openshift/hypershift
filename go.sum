@@ -1799,6 +1799,7 @@ k8s.io/component-base v0.20.10/go.mod h1:ZKOEin1xu68aJzxgzl5DZSp5J1IrjAOPlPN90/t
 k8s.io/component-base v0.21.3/go.mod h1:kkuhtfEHeZM6LkX0saqSK8PbdO7A0HigUngmhhrwfGQ=
 k8s.io/component-base v0.22.1/go.mod h1:0D+Bl8rrnsPN9v0dyYvkqFfBeAd4u7n77ze+p8CMiPo=
 k8s.io/component-base v0.23.1/go.mod h1:6llmap8QtJIXGDd4uIWJhAq0Op8AtQo6bDW2RrNMTeo=
+k8s.io/component-base v0.23.3/go.mod h1:1Smc4C60rWG7d3HjSYpIwEbySQ3YWg0uzH5a2AtaTLg=
 k8s.io/component-base v0.23.5/go.mod h1:c5Nq44KZyt1aLl0IpHX82fhsn84Sb0jjzwjpcA42bY0=
 k8s.io/component-base v0.24.0/go.mod h1:Dgazgon0i7KYUsS8krG8muGiMVtUZxG037l1MKyXgrA=
 k8s.io/component-base v0.25.0 h1:haVKlLkPCFZhkcqB6WCvpVxftrg6+FK5x1ZuaIDaQ5Y=
@@ -1828,6 +1829,8 @@ k8s.io/kube-scheduler v0.23.1 h1:YdGM/eE/gp1uUnpK+w2J8PBiOX7xOB5qu857BeWyrFM=
 k8s.io/kube-scheduler v0.23.1/go.mod h1:SFPvXnt7KlxTZILrtjH8VNwGDzXcdKKHrv4TkeZdYro=
 k8s.io/kubectl v0.25.0 h1:/Wn1cFqo8ik3iee1EvpxYre3bkWsGLXzLQI6uCCAkQc=
 k8s.io/kubectl v0.25.0/go.mod h1:n16ULWsOl2jmQpzt2o7Dud1t4o0+Y186ICb4O+GwKAU=
+k8s.io/kubelet v0.23.3 h1:jYed8HoT0H2zXzf5Av+Ml8z5erN39uJfKh/yplYMgkg=
+k8s.io/kubelet v0.23.3/go.mod h1:RZxGSCsiwoWJ9z6mVla+jhiLfCFIKC16yAS38D7GQSE=
 k8s.io/pod-security-admission v0.23.5 h1:60MTMOK+/hPDgYzZ2C6zFLGaNzYDiMyy6TuZ/rv9Db8=
 k8s.io/pod-security-admission v0.23.5/go.mod h1:aSyWfjev8Zil5DaZBZ+ICAObZmZlRqhnAZHxA9r71UI=
 k8s.io/utils v0.0.0-20201110183641-67b214c5f920/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
