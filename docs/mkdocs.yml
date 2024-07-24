@@ -115,6 +115,8 @@ nav:
     - how-to/kubevirt/performance-tuning.md
     - how-to/kubevirt/external-infrastructure.md
     - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
+  - 'OpenStack':
+    - how-to/openstack/create-openstack-cluster.md
   - 'None':
     - how-to/none/create-none-cluster.md
     - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
