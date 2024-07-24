@@ -198,7 +198,6 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			ResourceGroupName: o.infra.ResourceGroupName,
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
-			MachineIdentityID: o.infra.MachineIdentityID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
 		},
 	}
@@ -281,6 +280,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
 				DiskStorageAccountType: o.DiskStorageAccountType,
 				SubnetID:               o.infra.SubnetID,
+				MachineIdentityID:      o.infra.MachineIdentityID,
 			}
 			nodePools = append(nodePools, nodePool)
 		}
@@ -298,6 +298,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
 		DiskStorageAccountType: o.DiskStorageAccountType,
 		SubnetID:               o.infra.SubnetID,
+		MachineIdentityID:      o.infra.MachineIdentityID,
 	}
 	return []*hyperv1.NodePool{nodePool}
 }

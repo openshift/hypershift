@@ -29,6 +29,7 @@ type AzureNodePoolPlatformApplyConfiguration struct {
 	EnableEphemeralOSDisk  *bool                          `json:"enableEphemeralOSDisk,omitempty"`
 	SubnetID               *string                        `json:"subnetID,omitempty"`
 	Diagnostics            *DiagnosticsApplyConfiguration `json:"diagnostics,omitempty"`
+	MachineIdentityID      *string                        `json:"machineIdentityID,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AzureNodePoolPlatform type for use with
@@ -106,5 +107,13 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithSubnetID(value string) *Az
 // If called multiple times, the Diagnostics field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithDiagnostics(value *DiagnosticsApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
 	b.Diagnostics = value
+	return b
+}
+
+// WithMachineIdentityID sets the MachineIdentityID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MachineIdentityID field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithMachineIdentityID(value string) *AzureNodePoolPlatformApplyConfiguration {
+	b.MachineIdentityID = &value
 	return b
 }

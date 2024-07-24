@@ -1823,11 +1823,6 @@ type AzurePlatformSpec struct {
 	// +required
 	SubscriptionID string `json:"subscriptionID"`
 
-	// MachineIdentityID is used as the user-assigned identity to be assigned to the VMs
-	//
-	// +optional
-	MachineIdentityID string `json:"machineIdentityID,omitempty"`
-
 	// SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 	// configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
 	// expected to exist under the same subscription as SubscriptionID.

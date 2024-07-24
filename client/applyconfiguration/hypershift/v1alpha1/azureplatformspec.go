@@ -31,7 +31,6 @@ type AzurePlatformSpecApplyConfiguration struct {
 	VnetID            *string                  `json:"vnetID,omitempty"`
 	SubnetID          *string                  `json:"subnetID,omitempty"`
 	SubscriptionID    *string                  `json:"subscriptionID,omitempty"`
-	MachineIdentityID *string                  `json:"machineIdentityID,omitempty"`
 	SecurityGroupID   *string                  `json:"securityGroupID,omitempty"`
 }
 
@@ -94,14 +93,6 @@ func (b *AzurePlatformSpecApplyConfiguration) WithSubnetID(value string) *AzureP
 // If called multiple times, the SubscriptionID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithSubscriptionID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.SubscriptionID = &value
-	return b
-}
-
-// WithMachineIdentityID sets the MachineIdentityID field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the MachineIdentityID field is set to the value of the last call.
-func (b *AzurePlatformSpecApplyConfiguration) WithMachineIdentityID(value string) *AzurePlatformSpecApplyConfiguration {
-	b.MachineIdentityID = &value
 	return b
 }
 

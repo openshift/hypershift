@@ -3458,8 +3458,6 @@ spec:
                         x-kubernetes-map-type: atomic
                       location:
                         type: string
-                      machineIdentityID:
-                        type: string
                       resourceGroup:
                         type: string
                       securityGroupID:
@@ -3473,7 +3471,6 @@ spec:
                     required:
                     - credentials
                     - location
-                    - machineIdentityID
                     - resourceGroup
                     - securityGroupID
                     - subnetID
@@ -8218,10 +8215,6 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
-                      machineIdentityID:
-                        description: MachineIdentityID is used as the user-assigned
-                          identity to be assigned to the VMs
-                        type: string
                       resourceGroup:
                         default: default
                         description: |-
