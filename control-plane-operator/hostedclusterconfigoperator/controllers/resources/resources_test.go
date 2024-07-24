@@ -285,39 +285,6 @@ func withICS(hcp *hyperv1.HostedControlPlane) *hyperv1.HostedControlPlane {
 	return hcpOriginal
 }
 
-func fakeIDMS() *configv1.ImageDigestMirrorSet {
-	return &configv1.ImageDigestMirrorSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-		Spec: configv1.ImageDigestMirrorSetSpec{
-			ImageDigestMirrors: []configv1.ImageDigestMirrors{
-				{
-					Source: "example.com/test",
-					Mirrors: []configv1.ImageMirror{
-						"mirror1.example.com/test1",
-						"mirror2.example.com/test2",
-					},
-				},
-				{
-					Source: "sample.com/test",
-					Mirrors: []configv1.ImageMirror{
-						"mirror1.sample.com/test1",
-						"mirror2.sample.com/test2",
-					},
-				},
-				{
-					Source: "quay.io/test",
-					Mirrors: []configv1.ImageMirror{
-						"mirror1.quay.io/test1",
-						"mirror2.quay.io/test2",
-					},
-				},
-			},
-		},
-	}
-}
-
 func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
@@ -877,25 +844,19 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 	testCases := []struct {
 		name                  string
 		hcp                   *hyperv1.HostedControlPlane
-		expectedIDMS          *configv1.ImageDigestMirrorSet
-		expectedToFail        bool
 		removeICSAndReconcile bool
 	}{
 		{
-			name:         "ICS with content, it should return an IDMS with the same content",
-			hcp:          withICS(fakeHCP()),
-			expectedIDMS: fakeIDMS(),
+			name: "ICS with content, it should return an IDMS with the same content",
+			hcp:  withICS(fakeHCP()),
 		},
 		{
-			name:           "ICS empty, is should return a not found error",
-			hcp:            fakeHCP(),
-			expectedToFail: true,
+			name: "ICS empty, is should return an empty IDMS",
+			hcp:  fakeHCP(),
 		},
 		{
-			name:                  "ICS with content and updated the HCP deleting the ICS, it should return a not found error",
+			name:                  "ICS And IDMS should be in sync always",
 			hcp:                   withICS(fakeHCP()),
-			expectedIDMS:          nil,
-			expectedToFail:        true,
 			removeICSAndReconcile: true,
 		},
 	}
@@ -912,14 +873,14 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 
 			idms := globalconfig.ImageDigestMirrorSet()
 			err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
-			if tc.hcp.Spec.ImageContentSources == nil && tc.expectedToFail {
-				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "expecting a not-found error, received: %v", err)
-			}
+			g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
 
-			if !tc.removeICSAndReconcile && !tc.expectedToFail {
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(len(tc.hcp.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)))
-				g.Expect(tc.expectedIDMS.Spec).To(BeEquivalentTo(idms.Spec))
+			// Same number of ICS and IDMS
+			g.Expect(len(tc.hcp.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
+
+			if tc.hcp.Spec.ImageContentSources != nil {
+				// Check if the ICS and IDMS have the same values
+				compareICSAndIDMS(g, tc.hcp.Spec.ImageContentSources, idms)
 			}
 
 			if tc.removeICSAndReconcile {
@@ -931,8 +892,21 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				idms := globalconfig.ImageDigestMirrorSet()
 				err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
-				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "expecting a not-found error, received: %v", err)
+				g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
+				g.Expect(len(origHCP.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
+				compareICSAndIDMS(g, origHCP.Spec.ImageContentSources, idms)
 			}
 		})
+	}
+}
+
+func compareICSAndIDMS(g *WithT, ics []hyperv1.ImageContentSource, idms *configv1.ImageDigestMirrorSet) {
+	g.Expect(len(ics)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
+	// Check if the ICS and IDMS have the same values
+	for i, ics := range ics {
+		g.Expect(ics.Source).To(Equal(idms.Spec.ImageDigestMirrors[i].Source))
+		for j, mirrorics := range ics.Mirrors {
+			g.Expect(mirrorics).To(Equal(string(idms.Spec.ImageDigestMirrors[i].Mirrors[j])))
+		}
 	}
 }
