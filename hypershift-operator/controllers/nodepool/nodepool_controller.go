@@ -766,13 +766,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	} else {
 		performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, performanceProfileConfigMapName, nodePool.Name)
-		if result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
+		result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
 			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig)
-		}); err != nil {
+		})
+		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile PerformanceProfile ConfigMap: %w", err)
-		} else {
-			log.Info("Reconciled PerformanceProfile ConfigMap", "result", result)
 		}
+		log.Info("Reconciled PerformanceProfile ConfigMap", "result", result)
 		if err := r.SetPerformanceProfileConditions(ctx, log, nodePool, controlPlaneNamespace, false); err != nil {
 			return ctrl.Result{}, err
 		}
