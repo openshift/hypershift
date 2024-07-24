@@ -66,6 +66,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	featuregateConfig "github.com/openshift/hypershift/hypershift-operator/featuregate"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
@@ -943,12 +944,12 @@ func (r *HostedControlPlaneReconciler) reconcileFeatureGates(ctx context.Context
 	createOrUpdate upsert.CreateOrUpdateFN,
 	releaseImageProvider *imageprovider.ReleaseImageProvider) error {
 
-	r.Log.Info("Reconciling feature gates")
-	// if !autoProvision {
-	// 	return nil
-	// }
+	r.Log.Info("Reconciling featuregates")
+	if !featuregateConfig.Gates.Enabled(featuregateConfig.AutoProvision) {
+		return nil
+	}
 
-	r.Log.Info("Reconciling Karpenter")
+	r.Log.Info("Reconciling featuregate - Karpenter")
 	availabilityProberImage := releaseImageProvider.GetImage(util.AvailabilityProberImageName)
 	tokenMinterImage := releaseImageProvider.GetImage("token-minter")
 	if err := featuregate.ReconcileKarpenter(ctx,

@@ -17,6 +17,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,10 +31,11 @@ func (r *FeatureGateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
 
-	// if notAutoprovision {
-	// 	return ctrl.Result{}, nil
-	// }
+	if !featuregate.Gates.Enabled(featuregate.AutoProvision) {
+		return ctrl.Result{}, nil
+	}
 
+	log.Info("Reconciling featuregate: Autoprovision")
 	// Look up the HostedCluster instance to reconcile
 	hc := &hyperv1.HostedCluster{}
 	err := r.Get(ctx, req.NamespacedName, hc)

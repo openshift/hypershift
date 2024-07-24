@@ -31,20 +31,19 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	featuregateInput "github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
-
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -153,6 +152,7 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringVar(&cpo.OAuthAddress, "oauth-address", cpo.KonnectivityAddress, "Address of external oauth endpoint")
 	flags.Int32Var(&cpo.OAuthPort, "oauth-port", cpo.KonnectivityPort, "Port of external oauth endpoint")
 	flags.StringToStringVar(&cpo.registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	featuregateInput.MutableGates.AddFlag(flags)
 	return cmd
 }
 

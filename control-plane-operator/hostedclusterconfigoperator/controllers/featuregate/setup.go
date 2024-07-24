@@ -6,6 +6,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/featuregate/karpenter"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	featuregateConfig "github.com/openshift/hypershift/hypershift-operator/featuregate"
 	appsv1 "k8s.io/api/apps/v1"
 	certv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,13 +18,18 @@ import (
 )
 
 func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
+	if !featuregateConfig.Gates.Enabled(featuregateConfig.AutoProvision) {
+		return nil
+	}
+
 	r := &karpenter.Reconciler{
 		Client:                 opts.CPCluster.GetClient(),
 		GuestClusterClient:     opts.Manager.GetClient(),
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
 		HCPNamespace:           opts.Namespace,
 	}
-	c, err := controller.New("featureGate-Karpenter", opts.Manager, controller.Options{Reconciler: r})
+
+	c, err := controller.New("featuregate-Karpenter", opts.Manager, controller.Options{Reconciler: r})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
