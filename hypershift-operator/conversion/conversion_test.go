@@ -394,6 +394,19 @@ func fixHosterClusterAfterFuzz(in runtime.Object) {
 	}
 }
 
+func fixNodePoolAfterFuzz(in runtime.Object) {
+	np, ok := in.(*hyperv1beta1.NodePool)
+	if !ok {
+		panic(fmt.Sprintf("unexpected convertible type: %T", in))
+	}
+	// Given there is no OpenStack support on alpha we shouldn't fuzz
+	// the beta object and expect it to be equal to the non existent
+	// OpenStack support on alpha.
+	if np.Spec.Platform.OpenStack != nil {
+		np.Spec.Platform.OpenStack = nil
+	}
+}
+
 func TestFuzzyConversion(t *testing.T) {
 	t.Run("for HostedCluster", FuzzTestFunc(FuzzTestFuncInput{
 		Hub:                &hyperv1beta1.HostedCluster{},
@@ -410,6 +423,7 @@ func TestFuzzyConversion(t *testing.T) {
 		Spoke:              &hyperv1alpha1.NodePool{},
 		SpokeAfterMutation: removeTypeMeta,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{NodePoolFuzzerFuncs},
+		HubAfterFuzz:       fixNodePoolAfterFuzz,
 	}))
 	t.Run("for HostedControlPlane", FuzzTestFunc(FuzzTestFuncInput{
 		Hub:                &hyperv1beta1.HostedControlPlane{},

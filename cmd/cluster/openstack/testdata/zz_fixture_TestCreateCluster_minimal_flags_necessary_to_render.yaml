@@ -106,3 +106,28 @@ metadata:
   namespace: clusters
 type: Opaque
 ---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: null
+  name: example
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: example
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    openstack:
+      flavor: m1.xlarge
+      imageName: rhcos
+    type: OpenStack
+  release:
+    image: ""
+  replicas: 0
+status:
+  replicas: 0
+---

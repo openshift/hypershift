@@ -27,7 +27,8 @@ import (
 )
 
 const (
-	defaultCIDRBlock = "10.0.0.0/16"
+	defaultCIDRBlock  = "10.0.0.0/16"
+	sgRuleDescription = "Managed by the Hypershift Control Plane Operator"
 )
 
 type OpenStack struct {
@@ -71,6 +72,16 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 		Port: apiEndpoint.Port,
 	}
 
+	var machineNetworks []hyperv1.MachineNetworkEntry
+	// If no MachineNetwork is provided, use a default CIDR block.
+	// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
+	// See https://github.com/openshift/hypershift/pull/4287
+	if hcluster.Spec.Networking.MachineNetwork == nil || len(hcluster.Spec.Networking.MachineNetwork) == 0 {
+		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
+	} else {
+		machineNetworks = hcluster.Spec.Networking.MachineNetwork
+	}
+
 	if len(openStackPlatform.Subnets) > 0 {
 		openStackClusterSpec.Subnets = make([]capo.SubnetParam, len(openStackPlatform.Subnets))
 		for i := range openStackPlatform.Subnets {
@@ -92,15 +103,6 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 			}
 		}
 	} else {
-		var machineNetworks []hyperv1.MachineNetworkEntry
-		// If no MachineNetwork is provided, use a default CIDR block.
-		// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
-		// See https://github.com/openshift/hypershift/pull/4287
-		if hcluster.Spec.Networking.MachineNetwork == nil || len(hcluster.Spec.Networking.MachineNetwork) == 0 {
-			machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
-		} else {
-			machineNetworks = hcluster.Spec.Networking.MachineNetwork
-		}
 		openStackClusterSpec.ManagedSubnets = make([]capo.SubnetSpec, len(machineNetworks))
 		// Only one Subnet is supported in CAPO
 		openStackClusterSpec.ManagedSubnets[0] = capo.SubnetSpec{
@@ -149,8 +151,10 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	if openStackPlatform.DisableExternalNetwork != nil {
 		openStackClusterSpec.DisableExternalNetwork = openStackPlatform.DisableExternalNetwork
 	}
-	openStackClusterSpec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{}
 	openStackClusterSpec.DisableAPIServerFloatingIP = k8sutilspointer.BoolPtr(true)
+	openStackClusterSpec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{
+		AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
+	}
 	openStackClusterSpec.Tags = openStackPlatform.Tags
 }
 
@@ -337,4 +341,120 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 
 func (a OpenStack) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
+}
+
+func machineNetworksToStrings(machineNetworks []hyperv1.MachineNetworkEntry) []string {
+	var machineNetworksStr []string
+	for _, machineNetwork := range machineNetworks {
+		machineNetworksStr = append(machineNetworksStr, machineNetwork.CIDR.String())
+	}
+	return machineNetworksStr
+}
+
+func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroupRuleSpec {
+	ingressRules := []capo.SecurityGroupRuleSpec{}
+
+	// Rules for worker security group with the remote IP prefix set to the machine CIDRs
+	for _, machineCIDR := range machineCIDRs {
+		machineCIDRInboundRules := []capo.SecurityGroupRuleSpec{
+			{
+				Name:     "esp-ingress",
+				Protocol: k8sutilspointer.String("esp"),
+			},
+			{
+				Name:     "icmp-ingress",
+				Protocol: k8sutilspointer.String("icmp"),
+			},
+			{
+				Name:         "router-ingress",
+				Protocol:     k8sutilspointer.String("tcp"),
+				PortRangeMin: k8sutilspointer.Int(1936),
+				PortRangeMax: k8sutilspointer.Int(1936),
+			},
+			{
+				Name:         "ssh-ingress",
+				Protocol:     k8sutilspointer.String("tcp"),
+				PortRangeMin: k8sutilspointer.Int(22),
+				PortRangeMax: k8sutilspointer.Int(22),
+			},
+			{
+				Name:     "vrrp-ingress",
+				Protocol: k8sutilspointer.String("vrrp"),
+			},
+		}
+
+		for i, rule := range machineCIDRInboundRules {
+			rule.RemoteIPPrefix = k8sutilspointer.String(machineCIDR)
+			machineCIDRInboundRules[i] = rule
+		}
+
+		ingressRules = append(ingressRules, machineCIDRInboundRules...)
+	}
+
+	// Rules open to all
+	allIngressRules := []capo.SecurityGroupRuleSpec{
+		{
+			Name:         "http-ingress",
+			Protocol:     k8sutilspointer.String("tcp"),
+			PortRangeMin: k8sutilspointer.Int(80),
+			PortRangeMax: k8sutilspointer.Int(80),
+		},
+		{
+			Name:         "https-ingress",
+			Protocol:     k8sutilspointer.String("tcp"),
+			PortRangeMin: k8sutilspointer.Int(443),
+			PortRangeMax: k8sutilspointer.Int(443),
+		},
+		{
+			Name:         "geneve-ingress",
+			Protocol:     k8sutilspointer.String("udp"),
+			PortRangeMin: k8sutilspointer.Int(6081),
+			PortRangeMax: k8sutilspointer.Int(6081),
+		},
+		{
+			Name:         "ike-ingress",
+			Protocol:     k8sutilspointer.String("udp"),
+			PortRangeMin: k8sutilspointer.Int(500),
+			PortRangeMax: k8sutilspointer.Int(500),
+		},
+		{
+			Name:         "ike-nat-ingress",
+			Protocol:     k8sutilspointer.String("udp"),
+			PortRangeMin: k8sutilspointer.Int(4500),
+			PortRangeMax: k8sutilspointer.Int(4500),
+		},
+		{
+			Name:         "internal-ingress-tcp",
+			Protocol:     k8sutilspointer.String("tcp"),
+			PortRangeMin: k8sutilspointer.Int(9000),
+			PortRangeMax: k8sutilspointer.Int(9999),
+		},
+		{
+			Name:         "internal-ingress-udp",
+			Protocol:     k8sutilspointer.String("udp"),
+			PortRangeMin: k8sutilspointer.Int(9000),
+			PortRangeMax: k8sutilspointer.Int(9999),
+		},
+		{
+			Name:         "vxlan-ingress",
+			Protocol:     k8sutilspointer.String("udp"),
+			PortRangeMin: k8sutilspointer.Int(4789),
+			PortRangeMax: k8sutilspointer.Int(4789),
+		},
+	}
+	for i, rule := range allIngressRules {
+		rule.RemoteIPPrefix = k8sutilspointer.String("0.0.0.0/0")
+		allIngressRules[i] = rule
+	}
+	ingressRules = append(ingressRules, allIngressRules...)
+
+	// Common attributes for all rules
+	for i, rule := range ingressRules {
+		rule.Description = k8sutilspointer.String(sgRuleDescription)
+		rule.Direction = "ingress"
+		rule.EtherType = k8sutilspointer.String("IPv4")
+		ingressRules[i] = rule
+	}
+
+	return ingressRules
 }

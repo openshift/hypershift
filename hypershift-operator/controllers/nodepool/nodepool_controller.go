@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/openstack"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -64,6 +65,7 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -2896,8 +2898,32 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 			return nil
 		}
 	case hyperv1.OpenStackPlatform:
-		// TODO(emilien) this will come in future commits
-		return nil, nil, "", nil
+		template = &capiopenstack.OpenStackMachineTemplate{}
+		var err error
+		machineTemplateSpec, err = openstack.MachineTemplateSpec(hcluster, nodePool)
+		if err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.InvalidOpenStackMachineTemplate,
+				Message:            err.Error(),
+				ObservedGeneration: nodePool.Generation,
+			})
+
+			return nil, nil, "", err
+		} else {
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
+		}
+
+		mutateTemplate = func(object client.Object) error {
+			o, _ := object.(*capiopenstack.OpenStackMachineTemplate)
+			o.Spec = *machineTemplateSpec.(*capiopenstack.OpenStackMachineTemplateSpec)
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+			return nil
+		}
 	default:
 		// TODO(alberto): Consider signal in a condition.
 		return nil, nil, "", fmt.Errorf("unsupported platform type: %s", nodePool.Spec.Platform.Type)

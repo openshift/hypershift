@@ -76,6 +76,8 @@ func TestCreateCluster(t *testing.T) {
 			name: "minimal flags necessary to render",
 			args: []string{
 				"--openstack-credentials-file=" + credentialsFile,
+				"--openstack-node-flavor=m1.xlarge",
+				"--openstack-node-image-name=rhcos",
 				"--pull-secret=" + pullSecretFile,
 			},
 		},
@@ -84,6 +86,7 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--openstack-credentials-file=" + credentialsFile,
 				"--openstack-external-network-name=fakeExternalNetwork",
+				"--openstack-node-image-name=rhcos",
 				"--openstack-node-flavor=fakeFlavor",
 				"--pull-secret=" + pullSecretFile,
 				"--auto-repair",

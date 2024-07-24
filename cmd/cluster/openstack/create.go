@@ -15,36 +15,40 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
 	corev1 "k8s.io/api/core/v1"
 )
 
 func DefaultOptions() *RawCreateOptions {
-	return &RawCreateOptions{}
+	return &RawCreateOptions{NodePoolOpts: openstacknodepool.DefaultOptions()}
 }
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
+	openstacknodepool.BindOptions(opts.NodePoolOpts, flags)
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (required)")
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
 	flags.StringVar(&opts.OpenStackExternalNetworkName, "openstack-external-network-name", opts.OpenStackExternalNetworkName, "Name of the OpenStack external network (optional)")
-	flags.StringVar(&opts.OpenStackNodeFlavor, "openstack-node-flavor", opts.OpenStackNodeFlavor, "The flavor to use for OpenStack nodes")
 }
 
 type RawCreateOptions struct {
 	OpenStackCredentialsFile     string
 	OpenStackCACertFile          string
 	OpenStackExternalNetworkName string
-	OpenStackNodeFlavor          string
 
 	externalDNSDomain string
+
+	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
 type validatedCreateOptions struct {
 	*RawCreateOptions
+
+	*openstacknodepool.ValidatedOpenStackPlatformCreateOptions
 }
 
 type ValidatedCreateOptions struct {
@@ -56,6 +60,8 @@ type ValidatedCreateOptions struct {
 type completedCreateOptions struct {
 	*ValidatedCreateOptions
 
+	CompletedNodePoolOpts *openstacknodepool.OpenStackPlatformCreateOptions
+
 	externalDNSDomain string
 	name, namespace   string
 }
@@ -63,6 +69,21 @@ type completedCreateOptions struct {
 type CreateOptions struct {
 	// Embed a private pointer that cannot be instantiated outside of this package.
 	*completedCreateOptions
+}
+
+func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
+	output := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: o,
+			externalDNSDomain:      opts.ExternalDNSDomain,
+			name:                   opts.Name,
+			namespace:              opts.Namespace,
+		},
+	}
+
+	completed, err := o.ValidatedOpenStackPlatformCreateOptions.Complete()
+	output.CompletedNodePoolOpts = completed
+	return output, err
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
@@ -75,24 +96,16 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
-	return &ValidatedCreateOptions{
+	validOpts := &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
 		},
-	}, nil
-}
-
-func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
-	output := &CreateOptions{
-		completedCreateOptions: &completedCreateOptions{
-			ValidatedCreateOptions: o,
-			name:                   opts.Name,
-			namespace:              opts.Namespace,
-			externalDNSDomain:      opts.ExternalDNSDomain,
-		},
 	}
 
-	return output, nil
+	var err error
+	validOpts.ValidatedOpenStackPlatformCreateOptions, err = o.NodePoolOpts.Validate()
+
+	return validOpts, err
 }
 
 func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
@@ -147,8 +160,13 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 	return nil
 }
 
-func (o *RawCreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
-	return nil
+func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	nodePool := constructor(hyperv1.OpenStackPlatform, "")
+	if nodePool.Spec.Management.UpgradeType == "" {
+		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+	}
+	nodePool.Spec.Platform.OpenStack = o.CompletedNodePoolOpts.NodePoolPlatform()
+	return []*hyperv1.NodePool{nodePool}
 }
 
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
