@@ -93,6 +93,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	// Inject userData so we keep the ignition authorization token up todate in the ec2Class.
+	// TODO(alberto): Reconcile the amiID as well.
 	{
 		labelSelector := labels.SelectorFromSet(labels.Set{"featuregate": "autoprovision"})
 		listOptions := &client.ListOptions{
@@ -146,6 +147,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	return reconcile.Result{
 		Requeue: false,
 		// Requeue every 1 seconds to go over EC2NodeClassList so we don't have to vendor and watch types.
+		// TODO(alberto): make this event driven.
 		RequeueAfter: 1 * time.Second,
 	}, nil
 }
