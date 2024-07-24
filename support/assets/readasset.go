@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/support/api"
-
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -68,6 +68,12 @@ func MustRoleBinding(reader AssetReader, fileName string) *rbacv1.RoleBinding {
 	roleBinding := &rbacv1.RoleBinding{}
 	deserializeResource(reader, fileName, roleBinding)
 	return roleBinding
+}
+
+func MustCRD(reader AssetReader, fileName string) *apiextensionsv1.CustomResourceDefinition {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+	deserializeResource(reader, fileName, crd)
+	return crd
 }
 
 func deserializeResource(reader AssetReader, fileName string, obj runtime.Object) {

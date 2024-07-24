@@ -40,6 +40,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/dnsoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/featuregate"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -906,6 +907,10 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		errs = append(errs, err)
 	}
 
+	if err := r.reconcileFeatureGates(ctx, hostedControlPlane, createOrUpdate, releaseImageProvider); err != nil {
+		errs = append(errs, err)
+	}
+
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	missingImages := sets.New(releaseImageProvider.GetMissingImages()...).Insert(userReleaseImageProvider.GetMissingImages()...)
 	if missingImages.Len() == 0 {
@@ -931,6 +936,33 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileFeatureGates(ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	createOrUpdate upsert.CreateOrUpdateFN,
+	releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+
+	r.Log.Info("Reconciling feature gates")
+	// if !autoProvision {
+	// 	return nil
+	// }
+
+	r.Log.Info("Reconciling Karpenter")
+	availabilityProberImage := releaseImageProvider.GetImage(util.AvailabilityProberImageName)
+	tokenMinterImage := releaseImageProvider.GetImage("token-minter")
+	if err := featuregate.ReconcileKarpenter(ctx,
+		r.Client,
+		createOrUpdate,
+		hcp,
+		availabilityProberImage,
+		tokenMinterImage,
+		r.SetDefaultSecurityContext,
+		config.OwnerRefFrom(hcp)); err != nil {
+		return fmt.Errorf("failed to reconcile karpenter deployment: %w", err)
+	}
+
+	return nil
 }
 
 // useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
