@@ -62,6 +62,7 @@ nav:
   - how-to/pause-reconciliation.md
   - how-to/per-hostedcluster-dashboard.md
   - how-to/metrics-sets.md
+  - how-to/experimental-features.md
   - how-to/troubleshooting-general.md
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
@@ -69,6 +70,7 @@ nav:
     - how-to/disaster-recovery/etcd-recovery.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
+    - how-to/automated-machine-management/node-autoprovisioning.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
     - how-to/automated-machine-management/nodepool-lifecycle.md
     - how-to/automated-machine-management/node-tuning.md

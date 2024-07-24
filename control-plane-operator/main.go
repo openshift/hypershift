@@ -9,24 +9,30 @@ import (
 
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/dnsresolver"
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
 	"github.com/openshift/hypershift/pkg/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	tokenminter "github.com/openshift/hypershift/token-minter"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,23 +40,14 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
-	"github.com/spf13/cobra"
-
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
-	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/upsert"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -184,6 +181,7 @@ func NewStartCommand() *cobra.Command {
 			"Format is: name1=image1,name2=image2. \"nameX\" is name of an image in OpenShift release (e.g. \"cluster-network-operator\"). "+
 			"\"imageX\" is container image name (e.g. \"quay.io/foo/my-network-operator:latest\"). The container image name is still subject of registry name "+
 			"replacement when --registry-overrides is used.")
+	featuregate.MutableGates.AddFlag(cmd.Flags())
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		setupLog.Info("Starting hypershift-controlplane-manager", "version", version.String())

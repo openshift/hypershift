@@ -26,6 +26,10 @@ const (
 	labelManagedPrefix       = "managed.hypershift.openshift.io"
 )
 
+// CREATE Autoprovisioning Feature gate controller
+// Reconcile CRDs
+// Reconcile Instances of ec2Class with userdata
+
 type reconciler struct {
 	client             client.Client
 	guestClusterClient client.Client

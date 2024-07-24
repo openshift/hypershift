@@ -222,6 +222,15 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 
 	r.ReconcileMetadataProviders = r.ReconcileMetadataProvidersImpl
 
+	if err := ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}).
+		WithOptions(controller.Options{}).
+		Complete(&FeatureGateReconciler{
+			HostedClusterReconciler: r,
+		}); err != nil {
+		return fmt.Errorf("failed setting up with a controller manager: %w", err)
+	}
+
 	return bldr.Complete(r)
 }
 
@@ -1892,7 +1901,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
 	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
 	hcp.Spec.NodeSelector = hcluster.Spec.NodeSelector
-	hcp.Spec.Tolerations = hcluster.Spec.Tolerations
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
@@ -2582,26 +2590,6 @@ func reconcileControlPlaneOperatorDeployment(
 				},
 			},
 		},
-	}
-
-	if hc.Annotations[certs.CertificateValidityAnnotation] != "" {
-		certValidity := hc.Annotations[certs.CertificateValidityAnnotation]
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  certs.CertificateValidityEnvVar,
-				Value: certValidity,
-			},
-		)
-	}
-
-	if hc.Annotations[certs.CertificateRenewalAnnotation] != "" {
-		certRenewalPercentage := hc.Annotations[certs.CertificateRenewalAnnotation]
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  certs.CertificateRenewalEnvVar,
-				Value: certRenewalPercentage,
-			},
-		)
 	}
 
 	if openShiftTrustedCABundleConfigMapExists {
