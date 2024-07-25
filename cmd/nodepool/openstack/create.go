@@ -89,7 +89,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		Short:        "Creates basic functional NodePool resources for OpenStack platform",
 		SilenceUsage: true,
 	}
-
+	BindOptions(platformOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		validOpts, err := platformOpts.Validate()
 		if err != nil {
