@@ -70,6 +70,7 @@ func TestCreateCluster(t *testing.T) {
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
 				"--rhcos-image=whatever",
+				"--render-sensitive",
 			},
 		},
 		{
