@@ -20,7 +20,6 @@ package credentialprovider
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -84,7 +83,7 @@ func ReadSpecificDockerConfigJSONFile(filePath string) (cfg DockerConfig, err er
 func ReadDockerConfigJSONFileFromBytes(contents []byte) (cfg DockerConfig, err error) {
 	var cfgJSON DockerConfigJSON
 	if err = json.Unmarshal(contents, &cfgJSON); err != nil {
-		return nil, errors.New("error occurred while trying to unmarshal json")
+		return nil, fmt.Errorf("error occurred while trying to unmarshal json: %w", err)
 	}
 	cfg = cfgJSON.Auths
 	return
