@@ -25,7 +25,7 @@ func IsDeploymentReady(ctx context.Context, deployment *appsv1.Deployment) bool 
 	return true
 }
 
-func IsStatefulSetReady(ctx context.Context, statefulSet *appsv1.StatefulSet) bool {
+func IsStatefulSetReady(statefulSet *appsv1.StatefulSet) bool {
 	if ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.AvailableReplicas ||
 		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.ReadyReplicas ||
 		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.UpdatedReplicas ||

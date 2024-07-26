@@ -987,7 +987,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
 		}
 		// Block until etcd is fully rolled out at the desired generation
-		ready := util.IsStatefulSetReady(ctx, statefulSet)
+		ready := util.IsStatefulSetReady(statefulSet)
 		if !ready {
 			r.Log.Info("Waiting for etcd statefulset to become ready")
 			return nil
@@ -2717,12 +2717,10 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 		}
 	}
 
-	// Block to recover the ETCD cluster if it is not ready after etcdRecoveryPeriod
-	timePassed := time.Since(statefulSet.ObjectMeta.CreationTimestamp.Time)
-	ready := util.IsStatefulSetReady(ctx, statefulSet)
-	// If the etcd cluster is not ready after etcdRecoveryPeriod, we will attempt to recover it
+	// Block to recover the ETCD cluster if it is not ready after etcdRecoveryPeriod.
+	// If the etcd cluster hasn't ever been ready after etcdRecoveryPeriod, we will attempt to recover it
 	// but we will stop trying it after etcdRecoveryTimeout to avoid loss of data in other scenarios.
-	if !ready && (timePassed > etcdRecoveryPeriod && timePassed <= etcdRecoveryTimeout) {
+	if shouldRecreateEtcd(statefulSet) {
 		r.Log.Info("Forcing ETCD cluster recreation")
 		// This will force the recreation of the ETCD pod
 		statefulSet.Spec.Template.Labels = map[string]string{"forcedRecreation": "true"}
@@ -2739,6 +2737,15 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	return nil
+}
+
+func shouldRecreateEtcd(statefulSet *appsv1.StatefulSet) bool {
+	if _, hasBeenReady := statefulSet.Annotations[etcd.ETCDHasBeenReadyAnnotation]; hasBeenReady {
+		return false
+	}
+
+	timePassed := time.Since(statefulSet.ObjectMeta.CreationTimestamp.Time)
+	return timePassed > etcdRecoveryPeriod && timePassed <= etcdRecoveryTimeout
 }
 
 func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
