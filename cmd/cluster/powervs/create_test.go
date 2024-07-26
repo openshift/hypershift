@@ -92,6 +92,7 @@ func TestCreateCluster(t *testing.T) {
 			name: "minimal flags necessary to render",
 			args: []string{
 				"--infra-json=" + infraFile,
+				"--render-sensitive",
 			},
 		},
 	} {

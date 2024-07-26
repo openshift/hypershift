@@ -213,6 +213,7 @@ func TestCreateCluster(t *testing.T) {
 				"--iam-json=" + iamFile,
 				"--role-arn=fakeRoleARN",
 				"--pull-secret=" + pullSecretFile,
+				"--render-sensitive",
 			},
 		},
 		{
@@ -233,6 +234,7 @@ func TestCreateCluster(t *testing.T) {
 				"--control-plane-operator-image=fakeCPOImage",
 				"--release-image=fakeReleaseImage",
 				"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
+				"--render-sensitive",
 			},
 		},
 	} {

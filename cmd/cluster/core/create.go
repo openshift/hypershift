@@ -712,7 +712,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 		}
 		for _, object := range resources.asObjects() {
 			if !opts.RenderSensitive {
-				if secret, ok := object.(*corev1.Secret); ok && strings.Contains(secret.Name, "cloud-credentials") {
+				if _, ok := object.(*corev1.Secret); ok {
 					continue
 				}
 			}

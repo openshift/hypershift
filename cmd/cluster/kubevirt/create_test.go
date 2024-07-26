@@ -126,7 +126,9 @@ func TestCreateCluster(t *testing.T) {
 	}{
 		{
 			name: "minimal flags necessary to render",
-			args: []string{},
+			args: []string{
+				"--render-sensitive",
+			},
 		},
 		{
 			name: "test from dvossel",
@@ -150,6 +152,7 @@ func TestCreateCluster(t *testing.T) {
 				"--infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap",
 				"--toleration", "key=key1,value=value1,effect=noSchedule",
 				"--toleration", "key=key2,value=value2,effect=noSchedule",
+				"--render-sensitive",
 			},
 		},
 	} {

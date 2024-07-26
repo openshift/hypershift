@@ -97,6 +97,7 @@ func TestCreateCluster(t *testing.T) {
 				"--control-plane-operator-image=fakeCPOImage",
 				"--release-image=fakeReleaseImage",
 				"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
+				"--render-sensitive",
 			},
 		},
 	} {

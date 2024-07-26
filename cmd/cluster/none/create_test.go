@@ -27,6 +27,7 @@ func TestCreateCluster(t *testing.T) {
 			name: "minimal flags necessary to render",
 			args: []string{
 				"--external-api-server-address=fakeAddress", // if we don't set it, the machine's IP is looked up, which isn't portable
+				"--render-sensitive",
 			},
 		},
 	} {
