@@ -27,6 +27,42 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 		expectedOpenStackClusterSpec capo.OpenStackClusterSpec
 	}{
 		{
+			name: "CAPO provisioned network and subnet with defaults",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						OpenStack: &hyperv1.OpenStackPlatformSpec{
+							IdentityRef: hyperv1.OpenStackIdentityReference{
+								Name:      "openstack-credentials",
+								CloudName: "openstack",
+							},
+						},
+					},
+				},
+			},
+			expectedOpenStackClusterSpec: capo.OpenStackClusterSpec{
+				IdentityRef: capo.OpenStackIdentityReference{
+					Name:      "openstack-credentials",
+					CloudName: "openstack",
+				},
+				ManagedSubnets: []capo.SubnetSpec{{
+					CIDR: "10.0.0.0/16",
+					AllocationPools: []capo.AllocationPool{{
+						Start: "10.0.0.10",
+						End:   "10.0.255.254",
+					}}},
+				},
+				ControlPlaneEndpoint: &capiv1.APIEndpoint{
+					Host: "api-endpoint",
+					Port: 6443,
+				},
+				DisableAPIServerFloatingIP: k8sutilspointer.BoolPtr(true),
+				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
+					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"10.0.0.0/16"}),
+				},
+			},
+		},
+		{
 			name: "CAPO provisioned network and subnet",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
@@ -40,7 +76,6 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 								CloudName: "openstack",
 							},
 							ManagedSubnets: []hyperv1.SubnetSpec{{
-								DNSNameservers: []string{"1.1.1.1"},
 								AllocationPools: []hyperv1.AllocationPool{{
 									Start: "10.0.0.1",
 									End:   "10.0.0.10",
@@ -55,8 +90,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					CloudName: "openstack",
 				},
 				ManagedSubnets: []capo.SubnetSpec{{
-					CIDR:           "10.0.0.0/24",
-					DNSNameservers: []string{"1.1.1.1"},
+					CIDR: "10.0.0.0/24",
 					AllocationPools: []capo.AllocationPool{{
 						Start: "10.0.0.1",
 						End:   "10.0.0.10",
@@ -71,7 +105,8 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"10.0.0.0/24"}),
 				},
-			}},
+			},
+		},
 		{
 			name: "User provided network and subnet by ID on hosted cluster",
 			hostedCluster: &hyperv1.HostedCluster{

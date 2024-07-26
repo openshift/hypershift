@@ -22,6 +22,7 @@ require (
 	github.com/IBM/networking-go-sdk v0.45.0
 	github.com/IBM/platform-services-go-sdk v0.60.0
 	github.com/IBM/vpc-go-sdk v0.50.0
+	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.52.6
 	github.com/blang/semver v3.5.1+incompatible

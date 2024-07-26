@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/utils/ptr"
 	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
@@ -14,6 +15,14 @@ const flavor = "m1.xlarge"
 const imageName = "rhcos"
 
 func TestOpenStackMachineTemplate(t *testing.T) {
+
+	defaultPort := capiopenstack.PortOpts{}
+	defaultPort.AllowedAddressPairs = []capiopenstack.AddressPair{
+		{
+			IPAddress: "10.0.0.7",
+		},
+	}
+
 	testCases := []struct {
 		name                string
 		cluster             hyperv1.HostedClusterSpec
@@ -50,6 +59,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 								Name: ptr.To(imageName),
 							},
 						},
+						Ports: []capiopenstack.PortOpts{defaultPort},
 					},
 				},
 			},
@@ -86,6 +96,9 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 			if tc.nodePool.Platform.OpenStack == nil {
 				tc.nodePool.Platform.OpenStack = &hyperv1.OpenStackNodePoolPlatform{}
 			}
+			tc.cluster.Networking = hyperv1.ClusterNetworking{}
+			tc.cluster.Networking.MachineNetwork = make([]hyperv1.MachineNetworkEntry, 1)
+			tc.cluster.Networking.MachineNetwork[0].CIDR = *ipnet.MustParseCIDR("10.0.0.0/16")
 			result, err := MachineTemplateSpec(
 				&hyperv1.HostedCluster{Spec: tc.cluster},
 				&hyperv1.NodePool{
@@ -105,5 +118,20 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 				t.Errorf(cmp.Diff(tc.expected, result))
 			}
 		})
+	}
+}
+
+func TestGetIngressIP(t *testing.T) {
+	machineNetwork := hyperv1.MachineNetworkEntry{
+		CIDR: *ipnet.MustParseCIDR("10.0.0.0/16"),
+	}
+
+	expectedIP := "10.0.0.7"
+	ip, err := getIngressIP(machineNetwork)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if ip != expectedIP {
+		t.Errorf("expected IP: %s, got: %s", expectedIP, ip)
 	}
 }

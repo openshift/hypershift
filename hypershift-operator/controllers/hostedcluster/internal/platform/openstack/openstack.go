@@ -3,6 +3,7 @@ package openstack
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,11 +23,12 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
+	openstackutil "github.com/openshift/hypershift/support/openstackutil"
 )
 
 const (
-	defaultCIDRBlock  = "10.0.0.0/16"
 	sgRuleDescription = "Managed by the Hypershift Control Plane Operator"
 )
 
@@ -63,7 +65,7 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 	return openStackCluster, nil
 }
 
-func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClusterSpec *capo.OpenStackClusterSpec, apiEndpoint hyperv1.APIEndpoint) {
+func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClusterSpec *capo.OpenStackClusterSpec, apiEndpoint hyperv1.APIEndpoint) error {
 	openStackPlatform := hcluster.Spec.Platform.OpenStack
 
 	openStackClusterSpec.ControlPlaneEndpoint = &capiv1.APIEndpoint{
@@ -75,8 +77,13 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	// If no MachineNetwork is provided, use a default CIDR block.
 	// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
 	// See https://github.com/openshift/hypershift/pull/4287
+	// When subnet is provided, machine network is required.
+	// Note: currently there is no validation that the provided subnets are within the machine network, it's up to the user to ensure that for now.
 	if hcluster.Spec.Networking.MachineNetwork == nil || len(hcluster.Spec.Networking.MachineNetwork) == 0 {
-		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
+		if (openStackPlatform.ManagedSubnets != nil && len(openStackPlatform.ManagedSubnets) > 0) || (openStackPlatform.Subnets != nil && len(openStackPlatform.Subnets) > 0) {
+			return fmt.Errorf("failed to reconcile OpenStack CAPI cluster, machine network is required when subnets are provided")
+		}
+		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(openstackutil.DefaultCIDRBlock)}}
 	} else {
 		machineNetworks = hcluster.Spec.Networking.MachineNetwork
 	}
@@ -102,20 +109,37 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 			}
 		}
 	} else {
-		openStackClusterSpec.ManagedSubnets = make([]capo.SubnetSpec, len(machineNetworks))
-		// Only one Subnet is supported in CAPO
-		openStackClusterSpec.ManagedSubnets[0] = capo.SubnetSpec{
-			CIDR: machineNetworks[0].CIDR.String(),
-		}
-		for i := range openStackPlatform.ManagedSubnets {
-			openStackClusterSpec.ManagedSubnets[i].DNSNameservers = openStackPlatform.ManagedSubnets[i].DNSNameservers
-			allocationPools := openStackPlatform.ManagedSubnets[i].AllocationPools
-			openStackClusterSpec.ManagedSubnets[i].AllocationPools = make([]capo.AllocationPool, len(allocationPools))
-			for j := range allocationPools {
-				openStackClusterSpec.ManagedSubnets[i].AllocationPools[j] = capo.AllocationPool{
-					Start: allocationPools[j].Start,
-					End:   allocationPools[j].End,
+		// If no managed subnets are provided, create a default subnet with the machine network and
+		// safe defaults for DNS nameservers and allocation pools.
+		if len(openStackPlatform.ManagedSubnets) == 0 {
+			defaultAllocationPool, err := getSubnetAllocationPool(machineNetworks[0])
+			if err != nil {
+				return fmt.Errorf("failed to get default subnet allocation pool: %w", err)
+			}
+			openStackClusterSpec.ManagedSubnets = make([]capo.SubnetSpec, 1)
+			openStackClusterSpec.ManagedSubnets[0] = capo.SubnetSpec{
+				AllocationPools: []capo.AllocationPool{*defaultAllocationPool},
+				CIDR:            machineNetworks[0].CIDR.String(),
+			}
+		} else {
+			for i := range openStackPlatform.ManagedSubnets {
+				openStackClusterSpec.ManagedSubnets = make([]capo.SubnetSpec, len(openStackPlatform.ManagedSubnets))
+				allocationPools := openStackPlatform.ManagedSubnets[i].AllocationPools
+				// When we request CAPO to create a subnet, we need to provide at least one allocation pool.
+				// This allocation pool needs to leave the first 10 IPs for things like Ingress or more in the future.
+				if len(allocationPools) == 0 {
+					return fmt.Errorf("failed to reconcile OpenStack CAPI cluster, empty allocation pools for managed subnet %d", i)
 				}
+				openStackClusterSpec.ManagedSubnets[i].AllocationPools = make([]capo.AllocationPool, len(allocationPools))
+				for j := range allocationPools {
+					openStackClusterSpec.ManagedSubnets[i].AllocationPools[j] = capo.AllocationPool{
+						Start: allocationPools[j].Start,
+						End:   allocationPools[j].End,
+					}
+				}
+				// Only one Subnet is supported in CAPO
+				openStackClusterSpec.ManagedSubnets[i].CIDR = machineNetworks[0].CIDR.String()
+				openStackClusterSpec.ManagedSubnets[i].DNSNameservers = openStackPlatform.ManagedSubnets[i].DNSNameservers
 			}
 		}
 	}
@@ -155,6 +179,8 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 		AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
 	}
 	openStackClusterSpec.Tags = openStackPlatform.Tags
+
+	return nil
 }
 
 func convertHypershiftTagToCAPOTag(tags []hyperv1.NeutronTag) []capo.NeutronTag {
@@ -452,4 +478,28 @@ func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroup
 	}
 
 	return ingressRules
+}
+
+// getSubnetAllocationPool returns an AllocationPool for the given CIDR.
+func getSubnetAllocationPool(machineNetwork hyperv1.MachineNetworkEntry) (*capo.AllocationPool, error) {
+	// go-cidr expects a net.IPNet, so we need to convert the hypershift type of CIDR to net.IPNet
+	machineNetworkIPNet := &net.IPNet{
+		IP:   machineNetwork.CIDR.IP,
+		Mask: machineNetwork.CIDR.Mask,
+	}
+	// We reserve the first 10 IPs for things like Ingress or more in the future.
+	// The last IP is reserved for the broadcast address.
+	// The rest of the IPs are available for allocation.
+	start, err := cidr.Host(machineNetworkIPNet, 10)
+	if err != nil {
+		return nil, err
+	}
+	end, err := cidr.Host(machineNetworkIPNet, -2)
+	if err != nil {
+		return nil, err
+	}
+	return &capo.AllocationPool{
+		Start: start.String(),
+		End:   end.String(),
+	}, nil
 }
