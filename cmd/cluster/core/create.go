@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"sort"
 	"strconv"
@@ -46,6 +47,7 @@ func DefaultOptions() *RawCreateOptions {
 		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
 		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
 		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
+		MachineCIDR:                    []string{},
 		Log:                            log.Log,
 		Arch:                           "amd64",
 		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
@@ -86,6 +88,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
+	flags.StringArrayVar(&opts.MachineCIDR, "machine-cidr", opts.MachineCIDR, "The CIDR of the machine network. Can be specified multiple times.")
 	flags.BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. Cannot be defined with service-cidr or cluster-cidr flag.")
 	flags.StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
 	flags.StringArrayVar(&opts.Tolerations, "toleration", opts.Tolerations, "A comma separated list of options for a toleration that will be applied to the hcp pods. Valid options are, key, value, operator, effect, tolerationSeconds. E.g. key=node-role.kubernetes.io/master,operator=Exists,effect=NoSchedule. Can be specified multiple times to add multiple tolerations")
@@ -138,6 +141,7 @@ type RawCreateOptions struct {
 	SSHKeyFile                       string
 	ServiceCIDR                      []string
 	ClusterCIDR                      []string
+	MachineCIDR                      []string
 	DefaultDual                      bool
 	ExternalDNSDomain                string
 	Arch                             string
@@ -377,6 +381,12 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 	}
 	prototype.Cluster.Spec.Networking.ServiceNetwork = serviceNetworkEntries
 
+	var machineNetworkEntries []hyperv1.MachineNetworkEntry
+	for _, cidr := range opts.MachineCIDR {
+		machineNetworkEntries = append(machineNetworkEntries, hyperv1.MachineNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
+	}
+	prototype.Cluster.Spec.Networking.MachineNetwork = machineNetworkEntries
+
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
 	}
@@ -585,6 +595,24 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	case hyperv1.ArchitecturePPC64LE:
 	default:
 		return nil, fmt.Errorf("specified arch %q is not supported", opts.Arch)
+	}
+
+	if len(opts.MachineCIDR) > 2 {
+		return nil, errors.New("--machine-cidr shouldn't have more than 2 CIDRs")
+	}
+	if len(opts.ClusterCIDR) > 2 {
+		return nil, errors.New("--cluster-cidr shouldn't have more than 2 CIDRs")
+	}
+	if len(opts.ServiceCIDR) > 2 {
+		return nil, errors.New("--service-cidr shouldn't have more than 2 CIDRs")
+	}
+	for _, cidrs := range [][]string{opts.MachineCIDR, opts.ClusterCIDR, opts.ServiceCIDR} {
+		for _, cidr := range cidrs {
+			_, _, err := net.ParseCIDR(cidr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse CIDR: %w", err)
+			}
+		}
 	}
 
 	return &ValidatedCreateOptions{

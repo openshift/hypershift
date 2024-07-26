@@ -28,6 +28,7 @@ func NewCreateCommands() *cobra.Command {
 
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
+	cmd.MarkFlagsMutuallyExclusive("machine-cidr", "default-dual")
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
