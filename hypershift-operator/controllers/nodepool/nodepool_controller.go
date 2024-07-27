@@ -3090,8 +3090,6 @@ func (r *NodePoolReconciler) addCredentialProviderAuthToPullSecret(ctx context.C
 			switch platformType {
 			case hyperv1.AWSPlatform:
 				ecrCredentialProvider := dockerCredentialProvider.AWS
-				ecrAuthKey := "auth"
-
 				ecrRepo, err := ecrCredentialProvider.ParseECRRepoURL(mirror)
 				if err != nil {
 					log.Info(fmt.Sprintf("failed to parse ECR repo URL: %v", err))
@@ -3099,21 +3097,20 @@ func (r *NodePoolReconciler) addCredentialProviderAuthToPullSecret(ctx context.C
 					// mirrorCredentialsResponse.Auth.
 				}
 
-				mirrorCredentialsResponse, err := ecrCredentialProvider.GetECRCredentials(ctx, ecrRepo)
+				credentials, err := ecrCredentialProvider.GetECRCredentials(ctx, ecrRepo)
 				if err != nil {
 					log.Info(fmt.Sprintf("failed to fetch from ECR repo %v: %v", ecrRepo, err))
 					continue
 				}
-				authString := fmt.Sprintf("%s:%s", mirrorCredentialsResponse.Auth[ecrAuthKey].Username, mirrorCredentialsResponse.Auth[ecrAuthKey].Password)
 
+				log.Info(fmt.Sprintf("raw credentials: %v", credentials))
 				// Use raw standard encoding (no padding)
-				pullSecret.Auths[mirror] = DockerAuth{
-					AuthBase64: base64.RawStdEncoding.EncodeToString([]byte(authString)),
-				}
+				pullSecret.Auths[mirror] = DockerAuth{AuthBase64: credentials}
 			}
 		}
 	}
 
+	log.Info(fmt.Sprintf("full ps: %v", pullSecret))
 	// TODO add instance metadata service URL?
 	newPullSecretBytes := bytes.NewBuffer(nil)
 	encoder := json.NewEncoder(newPullSecretBytes)
@@ -3122,6 +3119,7 @@ func (r *NodePoolReconciler) addCredentialProviderAuthToPullSecret(ctx context.C
 		return nil, fmt.Errorf("failed to encode existing pull secret to JSON: %w", err)
 	}
 
+	log.Info("full ps string: %s", newPullSecretBytes.String())
 	return newPullSecretBytes.Bytes(), nil
 }
 

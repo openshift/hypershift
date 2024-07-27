@@ -4,25 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
-
-	"k8s.io/kubelet/pkg/apis/credentialprovider/v1alpha1"
 )
-
-func TestNewECRDockerCredentialProvider(t *testing.T) {
-	tests := []struct {
-		name string
-		want ECRDockerCredentialProvider
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := NewECRDockerCredentialProvider(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewECRDockerCredentialProvider() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 func TestGetECRCredentials(t *testing.T) {
 	type args struct {
@@ -33,7 +15,7 @@ func TestGetECRCredentials(t *testing.T) {
 		name    string
 		e       *ecrDockerCredentialProviderImpl
 		args    args
-		want    *v1alpha1.CredentialProviderResponse
+		want    string
 		wantErr bool
 	}{
 		// TODO: Add test cases.
@@ -46,7 +28,7 @@ func TestGetECRCredentials(t *testing.T) {
 				t.Errorf("ecrDockerCredentialProviderImpl.GetECRCredentials() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if got != tt.want {
 				t.Errorf("ecrDockerCredentialProviderImpl.GetECRCredentials() = %v, want %v", got, tt.want)
 			}
 		})

@@ -3,7 +3,6 @@ package nodepool
 // TODO add tests for get pull secret bytes
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -44,7 +43,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	credv1alpha1 "k8s.io/kubelet/pkg/apis/credentialprovider/v1alpha1"
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -57,12 +55,12 @@ import (
 )
 
 type fakeCredentialProvider struct {
-	getECRCredentials func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (*credv1alpha1.CredentialProviderResponse, error)
+	getECRCredentials func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error)
 
 	parseECRRepoURL func(image string) (*credentialprovider.ECRRepo, error)
 }
 
-func (f *fakeCredentialProvider) GetECRCredentials(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (*credv1alpha1.CredentialProviderResponse, error) {
+func (f *fakeCredentialProvider) GetECRCredentials(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error) {
 	return f.getECRCredentials(ctx, ecrRepo)
 }
 
@@ -3873,7 +3871,7 @@ func TestAddCredentialProviderAuthToPullSecret(t *testing.T) {
 		pullSecretBytesInput        []byte
 		imageRegistryOverridesInput map[string][]string
 		platformTypeInput           hyperv1.PlatformType
-		getECRCredentials           func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (*credv1alpha1.CredentialProviderResponse, error)
+		getECRCredentials           func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error)
 
 		parseECRRepoURL         func(image string) (*credentialprovider.ECRRepo, error)
 		expectedPullSecretBytes []byte
@@ -3885,8 +3883,8 @@ func TestAddCredentialProviderAuthToPullSecret(t *testing.T) {
 			imageRegistryOverridesInput: map[string][]string{},
 			platformTypeInput:           hyperv1.AWSPlatform,
 
-			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (*credv1alpha1.CredentialProviderResponse, error) {
-				return nil, nil
+			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error) {
+				return "", nil
 			},
 			parseECRRepoURL: func(image string) (*credentialprovider.ECRRepo, error) {
 				return nil, nil
@@ -3902,15 +3900,8 @@ func TestAddCredentialProviderAuthToPullSecret(t *testing.T) {
 			},
 			platformTypeInput: hyperv1.AWSPlatform,
 
-			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (*credv1alpha1.CredentialProviderResponse, error) {
-				return &credv1alpha1.CredentialProviderResponse{
-					Auth: map[string]credv1alpha1.AuthConfig{
-						"auth": credv1alpha1.AuthConfig{
-							Username: "AWS",
-							Password: "password",
-						},
-					},
-				}, nil
+			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error) {
+				return "somebase64", nil
 			},
 			parseECRRepoURL: func(image string) (*credentialprovider.ECRRepo, error) {
 				return &credentialprovider.ECRRepo{
@@ -3919,14 +3910,8 @@ func TestAddCredentialProviderAuthToPullSecret(t *testing.T) {
 					Registry:   "foobar",
 				}, nil
 			},
-			expectedPullSecretBytes: []byte(
-				fmt.Sprintf(`{"auths":{"123456789012.dkr.ecr.us-west-2.amazonaws.com/foobar":{"auth":"%s"},"quay.io":{"auth":"quux"},"registry.redhat.com":{"auth":"bar"},"registry.redhat.io":{"auth":"foo"}}}
-`,
-					base64.RawStdEncoding.EncodeToString(
-						[]byte(fmt.Sprintf("%s:%s", "AWS", "password")),
-					),
-				),
-			),
+			expectedPullSecretBytes: []byte(`{"auths":{"123456789012.dkr.ecr.us-west-2.amazonaws.com/foobar":{"auth":"somebase64"},"quay.io":{"auth":"quux"},"registry.redhat.com":{"auth":"bar"},"registry.redhat.io":{"auth":"foo"}}}
+`),
 			expectedErrorSubstring: "",
 		},
 	}
