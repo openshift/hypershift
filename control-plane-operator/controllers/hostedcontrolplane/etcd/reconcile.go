@@ -24,6 +24,8 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+var ETCDHasBeenReadyAnnotation = "hypershift.openshift.io/etcd-has-been-ready"
+
 func etcdContainer() *corev1.Container {
 	return &corev1.Container{
 		Name: "etcd",
@@ -181,6 +183,14 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 	}
 
 	p.DeploymentConfig.ApplyToStatefulSet(ss)
+
+	// If the StatefulSet is ever ready, set the annotation.
+	if util.IsStatefulSetReady(ss) {
+		if ss.Annotations == nil {
+			ss.Annotations = make(map[string]string)
+		}
+		ss.Annotations[ETCDHasBeenReadyAnnotation] = "true"
+	}
 
 	return nil
 }

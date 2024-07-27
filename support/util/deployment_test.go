@@ -212,7 +212,7 @@ func TestIsStatefulSetReady(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		ready := IsStatefulSetReady(context.TODO(), tt.statefulSet)
+		ready := IsStatefulSetReady(tt.statefulSet)
 		if ready != tt.ready {
 			t.Errorf("IsStatefulSetReady() statefulset %s got ready %t, expected %t", tt.statefulSet.Name, ready, tt.ready)
 			return

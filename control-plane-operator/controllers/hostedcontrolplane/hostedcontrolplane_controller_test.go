@@ -18,6 +18,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -1569,6 +1570,49 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 					t.Errorf("got unexpected event message")
 				}
 			}
+		})
+	}
+}
+
+func TestShouldRecreateEtcd(t *testing.T) {
+	creationTimestamp := metav1.Time{Time: metav1.Now().Add(-etcdRecoveryPeriod)}
+	testCases := []struct {
+		name     string
+		sts      appsv1.StatefulSet
+		expected bool
+	}{
+		{
+			name: "when no annotations and within timeframe, should recreate",
+			sts: appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "etcd",
+					Namespace:         "test",
+					CreationTimestamp: creationTimestamp,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When annotations present, should NOT recreate",
+			sts: appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "etcd",
+					Namespace:         "test",
+					CreationTimestamp: creationTimestamp,
+					Annotations: map[string]string{
+						etcd.ETCDHasBeenReadyAnnotation: "true",
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := shouldRecreateEtcd(&tc.sts)
+			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
 }
