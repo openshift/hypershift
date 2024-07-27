@@ -3119,7 +3119,7 @@ func (r *NodePoolReconciler) addCredentialProviderAuthToPullSecret(ctx context.C
 		return nil, fmt.Errorf("failed to encode existing pull secret to JSON: %w", err)
 	}
 
-	log.Info("full ps string: %s", newPullSecretBytes.String())
+	log.Info(fmt.Sprintf("full ps string: %s", newPullSecretBytes.String()))
 	return newPullSecretBytes.Bytes(), nil
 }
 
