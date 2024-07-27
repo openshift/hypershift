@@ -38,7 +38,7 @@ func ccmVolumeKubeconfig() *corev1.Volume {
 
 func ccmCloudConfig() *corev1.Volume {
 	return &corev1.Volume{
-		Name: "openstack-cloud-credentials",
+		Name: "cloud-config",
 	}
 }
 

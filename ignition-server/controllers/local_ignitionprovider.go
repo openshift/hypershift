@@ -221,11 +221,18 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("failed to extract image-references from image: %w", err)
 	}
 
-	// For Azure, extract the cloud provider config file as MCO input
-	if p.CloudProvider == hyperv1.AzurePlatform {
+	// For Azure and OpenStack, extract the cloud provider config file as MCO input
+	if p.CloudProvider == hyperv1.AzurePlatform || p.CloudProvider == hyperv1.OpenStackPlatform {
 		cloudConfigMap := &corev1.ConfigMap{}
-		if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.AzureProviderConfig("").Name}, cloudConfigMap); err != nil {
-			return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
+		switch p.CloudProvider {
+		case hyperv1.AzurePlatform:
+			if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.AzureProviderConfig("").Name}, cloudConfigMap); err != nil {
+				return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
+			}
+		case hyperv1.OpenStackPlatform:
+			if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.OpenStackProviderConfig("").Name}, cloudConfigMap); err != nil {
+				return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
+			}
 		}
 		cloudConfYaml, err := yaml.Marshal(cloudConfigMap)
 		if err != nil {
@@ -457,7 +464,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
 			args = append(args, fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir))
 		}
-		if p.CloudProvider == hyperv1.AzurePlatform {
+		if p.CloudProvider == hyperv1.AzurePlatform || p.CloudProvider == hyperv1.OpenStackPlatform {
 			args = append(args, fmt.Sprintf("--cloud-config-file=%s/cloud.conf.configmap.yaml", mcoBaseDir))
 		}
 

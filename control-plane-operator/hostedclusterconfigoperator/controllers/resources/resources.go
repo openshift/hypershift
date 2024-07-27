@@ -45,6 +45,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -75,8 +76,11 @@ import (
 )
 
 const (
-	ControllerName       = "resources"
-	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
+	ControllerName         = "resources"
+	SecretHashAnnotation   = "hypershift.openshift.io/kubeadmin-secret-hash"
+	ConfigNamespace        = "openshift-config"
+	ConfigManagedNamespace = "openshift-config-managed"
+	CloudProviderCMName    = "cloud-provider-config"
 )
 
 var (
@@ -371,7 +375,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling kubelet serving CA configmap")
 	kubeletServingCAConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "openshift-config-managed",
+			Namespace: ConfigManagedNamespace,
 			Name:      "kubelet-serving-ca",
 		},
 	}
@@ -1002,7 +1006,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 				dest := corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      name,
-						Namespace: "openshift-config",
+						Namespace: ConfigNamespace,
 					},
 				}
 				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
@@ -1030,7 +1034,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 				dest := corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      oidcClient.ClientSecret.Name,
-						Namespace: "openshift-config",
+						Namespace: ConfigNamespace,
 					},
 				}
 				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
@@ -1411,6 +1415,20 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile csi driver secret: %w", err))
 		}
+	case hyperv1.OpenStackPlatform:
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.OpenStack.IdentityRef.Name}}
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return []error{fmt.Errorf("failed to get cloud credentials secret in hcp namespace: %w", err)}
+		}
+		caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
+		cloudName := hcp.Spec.Platform.OpenStack.IdentityRef.CloudName
+
+		errs = append(errs,
+			r.reconcileOpenStackCredentialsSecret(ctx, "openshift-cluster-csi-drivers", "openstack-cloud-credentials", credentialsSecret, cloudName, caCertData),
+			r.reconcileOpenStackCredentialsSecret(ctx, "openshift-image-registry", "installer-cloud-credentials", credentialsSecret, cloudName, caCertData),
+			r.reconcileOpenStackCredentialsSecret(ctx, "openshift-cloud-network-config-controller", "cloud-credentials", credentialsSecret, cloudName, caCertData),
+			r.reconcileOpenStackCredentialsSecret(ctx, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, cloudName, caCertData),
+		)
 	case hyperv1.PowerVSPlatform:
 		createPowerVSSecret := func(srcSecret, destSecret *corev1.Secret) error {
 			_, err := r.CreateOrUpdate(ctx, r.client, destSecret, func() error {
@@ -1483,6 +1501,23 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		}
 	}
 	return errs
+}
+
+// reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack cloud config secrets.
+func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, namespace, name string, credentialsSecret *corev1.Secret, cloudName string, caCertData []byte) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: credentialsSecret.Data,
+	}
+	if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
+		return openstack.ReconcileCloudConfigSecret(secret, cloudName, credentialsSecret, caCertData)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile secret %s/%s: %w", secret.Namespace, secret.Name, err)
+	}
+	return nil
 }
 
 // reconcileOperatorHub gets the OperatorHubConfig from the HCP, for now the controller only reconcile over the DisableAllDefaultSources field and only once.
@@ -1659,25 +1694,66 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 }
 
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
-	if hcp.Spec.Platform.Type != hyperv1.AzurePlatform {
-		return nil
-	}
 
-	reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
-		return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
-	}
-
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-config", Name: "cloud-provider-config"}}
-	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
-		if cm.Data == nil {
-			cm.Data = map[string]string{}
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AzurePlatform:
+		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
+		reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+			return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
 		}
-		cm.Data["config"] = reference.Data[azure.CloudConfigKey]
+
+		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+			if cm.Data == nil {
+				cm.Data = map[string]string{}
+			}
+			cm.Data["config"] = reference.Data[azure.CloudConfigKey]
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+		}
+	case hyperv1.OpenStackPlatform:
+		reference := cpomanifests.OpenStackProviderConfig(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+			return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
+		}
+
+		cmCPC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, cmCPC, func() error {
+			if cmCPC.Data == nil {
+				cmCPC.Data = map[string]string{}
+			}
+			cmCPC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			if reference.Data[openstack.CABundleKey] != "" {
+				cmCPC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cmCPC.Namespace, cmCPC.Name, err)
+		}
+
+		// This ConfigMap is normally created by the cloud controller manager operator
+		// in the config-sync-controllers but this isn't yet deployed in the control-plane.
+		// We need to handle this now so the ConfigMap can be used by Cluster Network Operator
+		// to create the kube-cloud-config ConfigMap for cloud-network-config-controller.
+		// This is particular to OpenStack because in the case of a cloud using a self-signed
+		// CA, the CA bundle is needed to be passed to the cloud-network-config-controller.
+		cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, cmKCC, func() error {
+			if cmKCC.Data == nil {
+				cmKCC.Data = map[string]string{}
+			}
+			cmKCC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			if reference.Data[openstack.CABundleKey] != "" {
+				cmKCC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
+		}
+	default:
 		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
 	}
 
 	return nil

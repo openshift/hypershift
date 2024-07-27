@@ -10,6 +10,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 )
 
 func InfrastructureConfig() *configv1.Infrastructure {
@@ -84,6 +85,9 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		}
 	case hyperv1.OpenStackPlatform:
 		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{}
+		// This ConfigMap is populated by the local ignition provider and given to MCO
+		infra.Spec.CloudConfig.Name = "cloud-provider-config"
+		infra.Spec.CloudConfig.Key = openstack.CredentialsFile
 		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
 			CloudName:            "openstack",
 			LoadBalancer:         &configv1.OpenStackPlatformLoadBalancer{Type: configv1.LoadBalancerTypeUserManaged},
