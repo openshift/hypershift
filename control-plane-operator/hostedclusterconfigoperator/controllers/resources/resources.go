@@ -1173,7 +1173,6 @@ func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.Hos
 
 	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
 	kasEndpointsPort := util.KASPodPort(hcp)
-	kasEndpointSlicePort := kasEndpointsPort
 
 	// We only keep reconciling the endpoint for existing clusters that are relying on this for nodes haproxy to work.
 	// Otherwise, changing the haproxy config to !=443 would result in a NodePool rollout which want to avoid for existing clusters.
@@ -1193,7 +1192,7 @@ func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.Hos
 	}
 	kasEndpointSlice := manifests.KASEndpointSlice()
 	if _, err := r.CreateOrUpdate(ctx, r.client, kasEndpointSlice, func() error {
-		kas.ReconcileKASEndpointSlice(kasEndpointSlice, kasAdvertiseAddress, kasEndpointSlicePort)
+		kas.ReconcileKASEndpointSlice(kasEndpointSlice, kasAdvertiseAddress, kasEndpointsPort)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoint slice: %w", err))

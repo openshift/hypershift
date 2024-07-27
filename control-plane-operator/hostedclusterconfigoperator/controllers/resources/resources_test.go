@@ -9,10 +9,12 @@ import (
 
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -1020,5 +1022,61 @@ func compareICSAndIDMS(g *WithT, ics []hyperv1.ImageContentSource, idms *configv
 		for j, mirrorics := range ics.Mirrors {
 			g.Expect(mirrorics).To(Equal(string(idms.Spec.ImageDigestMirrors[i].Mirrors[j])))
 		}
+	}
+}
+
+func TestReconcileKASEndpoints(t *testing.T) {
+
+	testCases := []struct {
+		name         string
+		hcp          *hyperv1.HostedControlPlane
+		expectedPort int32
+	}{
+		{
+			name: "When HC has hcp.spec.networking.apiServer.port set to 443, endpoint and slice should have port 443",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port: ptr.To(int32(443)),
+						},
+					},
+				},
+			},
+			expectedPort: int32(443),
+		},
+		{
+			name: "When HC has no hcp.spec.networking.apiServer.port set, endpoint and slice should have port 6443",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expectedPort: int32(6443),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			r := &reconciler{
+				client:                 fakeClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			err := r.reconcileKASEndpoints(context.Background(), tc.hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			endpoints := &corev1.Endpoints{}
+			err = fakeClient.Get(context.Background(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpoints)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
+			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
+
+			endpointSlice := &discoveryv1.EndpointSlice{}
+			err = fakeClient.Get(context.Background(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpointSlice)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
+			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
+		})
 	}
 }
