@@ -3049,12 +3049,11 @@ func (r *NodePoolReconciler) getPullSecretBytes(ctx context.Context, hostedClust
 
 	openShiftImageRegistryOverrides := r.ImageMetadataProvider.(*hyperutil.RegistryClientImageMetadataProvider).OpenShiftImageRegistryOverrides
 
-	newPullSecretBytes, err := credentialprovider.AddCredentialProviderAuthToPullSecret(ctx, hostedCluster.Spec.Platform.Type, pullSecret, openShiftImageRegistryOverrides)
-	pullSecret.Data[corev1.DockerConfigJsonKey] = newPullSecretBytes
-
+	newPullSecretBytes, err := credentialprovider.AddCredentialProviderAuthToPullSecret(ctx, hostedCluster, pullSecret.Data[corev1.DockerConfigJsonKey], openShiftImageRegistryOverrides)
 	if err != nil {
 		return nil, err
 	}
+	pullSecret.Data[corev1.DockerConfigJsonKey] = newPullSecretBytes
 
 	return pullSecret.Data[corev1.DockerConfigJsonKey], nil
 }

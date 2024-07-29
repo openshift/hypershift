@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -23,7 +22,7 @@ type DockerAuthMap struct {
 	Auths map[string]DockerAuth `json:"auths"`
 }
 
-func AddCredentialProviderAuthToPullSecret(ctx context.Context, platformType hyperv1.PlatformType, pullSecret *corev1.Secret, openShiftImageRegistryOverrides map[string][]string) ([]byte, error) {
+func AddCredentialProviderAuthToPullSecret(ctx context.Context, hostedCluster *hyperv1.HostedCluster, pullSecretBytes []byte, openShiftImageRegistryOverrides map[string][]string) ([]byte, error) {
 	log := ctrl.LoggerFrom(ctx)
 	if len(openShiftImageRegistryOverrides) > 0 {
 		log.Info("management cluster has ImageDigestMirrorSet or ImageContentSourcePolicy, checking for cloud credential provider auth and adding to pull secret")
@@ -32,15 +31,15 @@ func AddCredentialProviderAuthToPullSecret(ctx context.Context, platformType hyp
 			AWS: NewECRDockerCredentialProvider(),
 		}
 
-		newPullSecretBytes, err := addCredentialProviderAuthToPullSecret(ctx, dockerCredentialProvider, platformType, pullSecret.Data[corev1.DockerConfigJsonKey], openShiftImageRegistryOverrides)
+		newPullSecretBytes, err := addCredentialProviderAuthToPullSecret(ctx, dockerCredentialProvider, hostedCluster.Spec.Platform.Type, pullSecretBytes, openShiftImageRegistryOverrides)
 		if err != nil {
-			return nil, fmt.Errorf("cannot add credential provider auth to pull secret %s/%s: %w", pullSecret.Namespace, pullSecret.Name, err)
+			return nil, fmt.Errorf("cannot add credential provider auth to pull secret %s/%s: %w", hostedCluster.Name, hostedCluster.Namespace, err)
 
 		}
-
 		return newPullSecretBytes, nil
 	}
-	return pullSecret.Data[corev1.DockerConfigJsonKey], nil
+
+	return pullSecretBytes, nil
 }
 
 func addCredentialProviderAuthToPullSecret(ctx context.Context, dockerCredentialProvider DockerCredentialProvider,
