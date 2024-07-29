@@ -3038,7 +3038,7 @@ func (r *NodePoolReconciler) getMachinesForNodePool(ctx context.Context, nodePoo
 func (r *NodePoolReconciler) getPullSecretBytes(ctx context.Context, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
 	// if ()
 	//
-	log := ctrl.LoggerFrom(ctx)
+	// log := ctrl.LoggerFrom(ctx)
 	pullSecret := &corev1.Secret{}
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
 		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
@@ -3049,78 +3049,14 @@ func (r *NodePoolReconciler) getPullSecretBytes(ctx context.Context, hostedClust
 
 	openShiftImageRegistryOverrides := r.ImageMetadataProvider.(*hyperutil.RegistryClientImageMetadataProvider).OpenShiftImageRegistryOverrides
 
-	if len(openShiftImageRegistryOverrides) > 0 {
-		log.Info("management cluster has ImageDigestMirrorSet or ImageContentSourcePolicy, checking for cloud credential provider auth and adding to pull secret")
-		dockerCredentialProvider := credentialprovider.NewDockerCredentialProvider()
+	newPullSecretBytes, err := credentialprovider.AddCredentialProviderAuthToPullSecret(ctx, hostedCluster.Spec.Platform.Type, pullSecret, openShiftImageRegistryOverrides)
+	pullSecret.Data[corev1.DockerConfigJsonKey] = newPullSecretBytes
 
-		pullSecretBytes, err := r.addCredentialProviderAuthToPullSecret(ctx, dockerCredentialProvider, hostedCluster.Spec.Platform.Type, pullSecret.Data[corev1.DockerConfigJsonKey], openShiftImageRegistryOverrides)
-		if err != nil {
-			return nil, fmt.Errorf("cannot add credential provider auth to pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
-
-		}
-		pullSecret.Data[corev1.DockerConfigJsonKey] = pullSecretBytes
-
+	if err != nil {
+		return nil, err
 	}
 
 	return pullSecret.Data[corev1.DockerConfigJsonKey], nil
-}
-
-func (r *NodePoolReconciler) addCredentialProviderAuthToPullSecret(ctx context.Context,
-	dockerCredentialProvider *credentialprovider.DockerCredentialProvider, platformType hyperv1.PlatformType, pullSecretBytes []byte, imageRegistryOverrides map[string][]string) ([]byte, error) {
-	log := ctrl.LoggerFrom(ctx)
-
-	type DockerAuth struct {
-		AuthBase64 string `json:"auth"`
-	}
-
-	type DockerAuthMap struct {
-		Auths map[string]DockerAuth `json:"auths"`
-	}
-
-	decoder := json.NewDecoder(bytes.NewReader(pullSecretBytes))
-	pullSecret := DockerAuthMap{}
-
-	err := decoder.Decode(&pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode existing pull secret from JSON: %w", err)
-	}
-
-	for _, mirrors := range imageRegistryOverrides {
-		for _, mirror := range mirrors {
-			switch platformType {
-			case hyperv1.AWSPlatform:
-				ecrCredentialProvider := dockerCredentialProvider.AWS
-				ecrRepo, err := ecrCredentialProvider.ParseECRRepoURL(mirror)
-				if err != nil {
-					log.Info(fmt.Sprintf("failed to parse ECR repo URL: %v", err))
-					continue
-					// mirrorCredentialsResponse.Auth.
-				}
-
-				credentials, err := ecrCredentialProvider.GetECRCredentials(ctx, ecrRepo)
-				if err != nil {
-					log.Info(fmt.Sprintf("failed to fetch from ECR repo %v: %v", ecrRepo, err))
-					continue
-				}
-
-				log.Info(fmt.Sprintf("raw credentials: %v", credentials))
-				// Use raw standard encoding (no padding)
-				pullSecret.Auths[mirror] = DockerAuth{AuthBase64: credentials}
-			}
-		}
-	}
-
-	log.Info(fmt.Sprintf("full ps: %v", pullSecret))
-	// TODO add instance metadata service URL?
-	newPullSecretBytes := bytes.NewBuffer(nil)
-	encoder := json.NewEncoder(newPullSecretBytes)
-	err = encoder.Encode(pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode existing pull secret to JSON: %w", err)
-	}
-
-	log.Info(fmt.Sprintf("full ps string: %s", newPullSecretBytes.String()))
-	return newPullSecretBytes.Bytes(), nil
 }
 
 // getPullSecretName retrieves the name of the pull secret in the hosted cluster spec

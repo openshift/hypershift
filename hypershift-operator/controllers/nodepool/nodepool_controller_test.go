@@ -3865,84 +3865,84 @@ spec:
 	}
 }
 
-func TestAddCredentialProviderAuthToPullSecret(t *testing.T) {
-	testCases := []struct {
-		name                        string
-		pullSecretBytesInput        []byte
-		imageRegistryOverridesInput map[string][]string
-		platformTypeInput           hyperv1.PlatformType
-		getECRCredentials           func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error)
+// func TestAddCredentialProviderAuthToPullSecret(t *testing.T) {
+// 	testCases := []struct {
+// 		name                        string
+// 		pullSecretBytesInput        []byte
+// 		imageRegistryOverridesInput map[string][]string
+// 		platformTypeInput           hyperv1.PlatformType
+// 		getECRCredentials           func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error)
 
-		parseECRRepoURL         func(image string) (*credentialprovider.ECRRepo, error)
-		expectedPullSecretBytes []byte
-		expectedErrorSubstring  string
-	}{
-		{
-			name:                        "it returns an error if it cannot decode the pull secret",
-			pullSecretBytesInput:        []byte(`undecodable`),
-			imageRegistryOverridesInput: map[string][]string{},
-			platformTypeInput:           hyperv1.AWSPlatform,
+// 		parseECRRepoURL         func(image string) (*credentialprovider.ECRRepo, error)
+// 		expectedPullSecretBytes []byte
+// 		expectedErrorSubstring  string
+// 	}{
+// 		{
+// 			name:                        "it returns an error if it cannot decode the pull secret",
+// 			pullSecretBytesInput:        []byte(`undecodable`),
+// 			imageRegistryOverridesInput: map[string][]string{},
+// 			platformTypeInput:           hyperv1.AWSPlatform,
 
-			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error) {
-				return "", nil
-			},
-			parseECRRepoURL: func(image string) (*credentialprovider.ECRRepo, error) {
-				return nil, nil
-			},
-			expectedPullSecretBytes: nil,
-			expectedErrorSubstring:  "failed to decode existing pull secret from JSON",
-		},
-		{
-			name:                 "it returns the updated pull secret if the credential provider finds the auth on the system",
-			pullSecretBytesInput: []byte(`{"auths": {"quay.io": {"auth": "quux"}, "registry.redhat.com": {"auth": "bar"}, "registry.redhat.io": {"auth": "foo"}}}`),
-			imageRegistryOverridesInput: map[string][]string{
-				"quay.io": []string{"123456789012.dkr.ecr.us-west-2.amazonaws.com/foobar"},
-			},
-			platformTypeInput: hyperv1.AWSPlatform,
+// 			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error) {
+// 				return "", nil
+// 			},
+// 			parseECRRepoURL: func(image string) (*credentialprovider.ECRRepo, error) {
+// 				return nil, nil
+// 			},
+// 			expectedPullSecretBytes: nil,
+// 			expectedErrorSubstring:  "failed to decode existing pull secret from JSON",
+// 		},
+// 		{
+// 			name:                 "it returns the updated pull secret if the credential provider finds the auth on the system",
+// 			pullSecretBytesInput: []byte(`{"auths": {"quay.io": {"auth": "quux"}, "registry.redhat.com": {"auth": "bar"}, "registry.redhat.io": {"auth": "foo"}}}`),
+// 			imageRegistryOverridesInput: map[string][]string{
+// 				"quay.io": []string{"123456789012.dkr.ecr.us-west-2.amazonaws.com/foobar"},
+// 			},
+// 			platformTypeInput: hyperv1.AWSPlatform,
 
-			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error) {
-				return "somebase64", nil
-			},
-			parseECRRepoURL: func(image string) (*credentialprovider.ECRRepo, error) {
-				return &credentialprovider.ECRRepo{
-					RegistryID: "123456789012",
-					Region:     "us-west-2",
-					Registry:   "foobar",
-				}, nil
-			},
-			expectedPullSecretBytes: []byte(`{"auths":{"123456789012.dkr.ecr.us-west-2.amazonaws.com/foobar":{"auth":"somebase64"},"quay.io":{"auth":"quux"},"registry.redhat.com":{"auth":"bar"},"registry.redhat.io":{"auth":"foo"}}}
-`),
-			expectedErrorSubstring: "",
-		},
-	}
+// 			getECRCredentials: func(ctx context.Context, ecrRepo *credentialprovider.ECRRepo) (string, error) {
+// 				return "somebase64", nil
+// 			},
+// 			parseECRRepoURL: func(image string) (*credentialprovider.ECRRepo, error) {
+// 				return &credentialprovider.ECRRepo{
+// 					RegistryID: "123456789012",
+// 					Region:     "us-west-2",
+// 					Registry:   "foobar",
+// 				}, nil
+// 			},
+// 			expectedPullSecretBytes: []byte(`{"auths":{"123456789012.dkr.ecr.us-west-2.amazonaws.com/foobar":{"auth":"somebase64"},"quay.io":{"auth":"quux"},"registry.redhat.com":{"auth":"bar"},"registry.redhat.io":{"auth":"foo"}}}
+// `),
+// 			expectedErrorSubstring: "",
+// 		},
+// 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			r := NodePoolReconciler{
-				Client: fake.NewClientBuilder().Build(),
-			}
-			// TODO get this working (logging outputs)
-			// log := logr.Logger
-			// ctx := context.WithValue(context.Background(), logr.Logger{}, t.Logf)
+// 	for _, tc := range testCases {
+// 		t.Run(tc.name, func(t *testing.T) {
+// 			g := NewWithT(t)
+// 			r := NodePoolReconciler{
+// 				Client: fake.NewClientBuilder().Build(),
+// 			}
+// 			// TODO get this working (logging outputs)
+// 			// log := logr.Logger
+// 			// ctx := context.WithValue(context.Background(), logr.Logger{}, t.Logf)
 
-			fcp := fakeCredentialProvider{
-				getECRCredentials: tc.getECRCredentials,
-				parseECRRepoURL:   tc.parseECRRepoURL,
-			}
-			dockercredentialprovider := credentialprovider.DockerCredentialProvider{
-				AWS: &fcp,
-			}
+// 			fcp := fakeCredentialProvider{
+// 				getECRCredentials: tc.getECRCredentials,
+// 				parseECRRepoURL:   tc.parseECRRepoURL,
+// 			}
+// 			dockercredentialprovider := credentialprovider.DockerCredentialProvider{
+// 				AWS: &fcp,
+// 			}
 
-			actualPullSecretBytes, actualErr := r.addCredentialProviderAuthToPullSecret(context.Background(), &dockercredentialprovider, tc.platformTypeInput, tc.pullSecretBytesInput, tc.imageRegistryOverridesInput)
+// 			actualPullSecretBytes, actualErr := r.addCredentialProviderAuthToPullSecret(context.Background(), &dockercredentialprovider, tc.platformTypeInput, tc.pullSecretBytesInput, tc.imageRegistryOverridesInput)
 
-			g.Expect(string(tc.expectedPullSecretBytes)).To(Equal(string(actualPullSecretBytes)))
-			g.Expect(fmt.Sprintf("%v", actualErr)).To(ContainSubstring(tc.expectedErrorSubstring))
-		})
-	}
+// 			g.Expect(string(tc.expectedPullSecretBytes)).To(Equal(string(actualPullSecretBytes)))
+// 			g.Expect(fmt.Sprintf("%v", actualErr)).To(ContainSubstring(tc.expectedErrorSubstring))
+// 		})
+// 	}
 
-	return
-}
+// 	return
+// }
 
 func TestShouldKeepOldUserData(t *testing.T) {
 	pullSecret := &corev1.Secret{

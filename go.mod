@@ -86,7 +86,6 @@ require (
 	k8s.io/kube-aggregator v0.30.1
 	k8s.io/kube-scheduler v0.30.1
 	k8s.io/kubectl v0.30.1
-	k8s.io/kubelet v0.28.4
 	k8s.io/pod-security-admission v0.30.1
 	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0
 	kubevirt.io/api v1.1.1
@@ -243,6 +242,7 @@ require (
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kms v0.30.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240521193020-835d969ad83a // indirect
+	k8s.io/kubelet v0.28.4 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
