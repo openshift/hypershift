@@ -102,7 +102,6 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudInstanceID, "e2e-powervs-cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudConnection, "e2e-powervs-cloud-connection", "", "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVPC, "e2e-powervs-vpc", "", "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
-	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
 	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
 	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
@@ -355,10 +354,6 @@ type options struct {
 	IssuerURL                string
 	ServiceAccountSigningKey []byte
 
-	// SkipAPIBudgetVerification implies that you are executing the e2e tests
-	// from local to verify that them works fine before push
-	SkipAPIBudgetVerification bool
-
 	// If set, the CreateCluster test will create a cluster with request serving
 	// isolation topology.
 	RequestServingIsolation bool
@@ -460,8 +455,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
 			fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
 		},
-		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
-		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
+		EtcdStorageClass: o.configurableClusterOptions.EtcdStorageClass,
 	}
 
 	// Arch is only currently valid for aws platform
