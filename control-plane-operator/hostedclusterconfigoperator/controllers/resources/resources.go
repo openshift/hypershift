@@ -52,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
+	consoleoperator "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/console"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
@@ -533,6 +534,15 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling in-cluster cloud config")
 	if err := r.reconcileCloudConfig(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile the cloud config: %w", err))
+	}
+
+	log.Info("reconciling console operator")
+	consoleOperator := consoleoperator.ConsoleOperator()
+	if _, err := r.CreateOrUpdate(ctx, r.client, consoleOperator, func() error {
+		consoleoperator.ReconcileConsoleOperator(consoleOperator, hcp.Spec.Platform.Type)
+		return nil
+	}); err != nil && !apierrors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("failed to reconcile console operator: %w", err))
 	}
 
 	log.Info("reconciling openshift controller manager service ca bundle")
