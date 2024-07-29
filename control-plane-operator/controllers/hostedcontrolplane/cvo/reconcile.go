@@ -56,6 +56,8 @@ var (
 		"0000_50_olm_02-services.yaml",
 		"0000_50_olm_06-psm-operator.deployment.yaml",
 		"0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml",
+		"0000_50_olm_06-psm-operator.service.yaml",
+		"0000_50_olm_06-psm-operator.servicemonitor.yaml",
 		"0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml",
 		"0000_50_olm_07-olm-operator.deployment.yaml",
 		"0000_50_olm_07-collect-profiles.cronjob.yaml",
