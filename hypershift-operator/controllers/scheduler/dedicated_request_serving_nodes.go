@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	corev1applyconfigurations "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
@@ -813,12 +814,12 @@ func (r *DedicatedServingComponentSchedulerAndSizer) takenNodePairLabels(ctx con
 	if err := r.List(ctx, nodes, client.HasLabels{hyperv1.HostedClusterLabel, OSDFleetManagerPairedNodesLabel}); err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
-	var result []string
+	result := sets.New[string]()
 	for _, node := range nodes.Items {
 		labelValue := node.Labels[OSDFleetManagerPairedNodesLabel]
-		result = append(result, labelValue)
+		result.Insert(labelValue)
 	}
-	return result, nil
+	return sets.List(result), nil
 }
 
 func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment(ctx context.Context, hc *hyperv1.HostedCluster, size, pairLabel string, nodesNeeded int) (*appsv1.Deployment, error) {

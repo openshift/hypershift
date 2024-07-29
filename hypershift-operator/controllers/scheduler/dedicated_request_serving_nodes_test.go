@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -759,4 +760,41 @@ func mustQty(qty string) *resource.Quantity {
 		panic(err)
 	}
 	return &result
+}
+
+func TestTakenNodePairLabels(t *testing.T) {
+	g := NewGomegaWithT(t)
+	node := func(name, fleetManagerLabel string) *corev1.Node {
+		n := &corev1.Node{}
+		n.Name = name
+		n.Labels = map[string]string{
+			OSDFleetManagerPairedNodesLabel: fleetManagerLabel,
+			hyperv1.HostedClusterLabel:      "cluster",
+		}
+		return n
+	}
+	baselineNodes := make([]client.Object, 0, 20)
+	for i := 0; i < 20; i++ {
+		baselineNodes = append(baselineNodes, node(fmt.Sprintf("node-%d", i), fmt.Sprintf("pair-%d", i/2)))
+	}
+	r := DedicatedServingComponentSchedulerAndSizer{
+		Client: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(baselineNodes...).Build(),
+	}
+	baseline, err := r.takenNodePairLabels(context.Background())
+	g.Expect(err).ToNot(HaveOccurred())
+
+	for i := 0; i < 10; i++ {
+		nodeIndices := rand.Perm(20)
+		nodes := make([]client.Object, 0, 20)
+		for _, index := range nodeIndices {
+			n := node(fmt.Sprintf("node-%d", index), fmt.Sprintf("pair-%d", index/2))
+			nodes = append(nodes, n)
+		}
+		r := DedicatedServingComponentSchedulerAndSizer{
+			Client: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(nodes...).Build(),
+		}
+		result, err := r.takenNodePairLabels(context.Background())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(baseline))
+	}
 }
