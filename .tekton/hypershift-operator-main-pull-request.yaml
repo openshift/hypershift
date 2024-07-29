@@ -486,8 +486,6 @@ spec:
             workspace: workspace
       - name: deprecated-base-image-check
         params:
-          - name: BASE_IMAGES_DIGESTS
-            value: $(tasks.build-container-amd64.results.BASE_IMAGES_DIGESTS)
           - name: IMAGE_URL
             value: $(tasks.build-container.results.IMAGE_URL)
           - name: IMAGE_DIGEST
