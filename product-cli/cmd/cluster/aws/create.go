@@ -17,6 +17,8 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	}
 
 	awsOpts := hypershiftaws.DefaultOptions()
+	awsOpts.MultiArch = true
+
 	hypershiftaws.BindOptions(awsOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
