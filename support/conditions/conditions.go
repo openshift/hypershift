@@ -69,6 +69,12 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 			// thus the PVC is RWO and VMs are expected to be non-live-migratable
 			conditions[hyperv1.KubeVirtNodesLiveMigratable] = metav1.ConditionFalse
 		}
+	case hyperv1.OpenStackPlatform:
+		// Ingress isn't yet implemented for HCP on OpenStack platform so the
+		// console operator won't be Ready from CVO's perspective
+		conditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+		conditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionFalse
+		conditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
 	}
 
 	if hostedCluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {

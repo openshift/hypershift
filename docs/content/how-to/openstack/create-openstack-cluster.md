@@ -163,6 +163,9 @@ NAME            VERSION   KUBECONFIG                       PROGRESS   AVAILABLE 
 example         4.17.0    example-admin-kubeconfig         Completed  True        False         The hosted control plane is available
 ```
 
+Because Ingress is not yet supported on this platform, the Console operator won't report Ready.
+Once the user deploys Ingress on day 2 (e.g. via Metal LB), the console becomes available.
+
 ## Accessing the HostedCluster
 
 CLI access to the guest cluster is gained by retrieving the guest cluster's
