@@ -111,6 +111,10 @@ const (
 	// performance degradation due to fragmentation of the double encapsulation in ovn-kubernetes
 	ValidKubeVirtInfraNetworkMTU ConditionType = "ValidKubeVirtInfraNetworkMTU"
 
+	// KubeVirtNodesLiveMigratable indicates if all nodes (VirtualMachines) of the kubevirt
+	// hosted cluster can be live migrated without experiencing a node restart
+	KubeVirtNodesLiveMigratable ConditionType = "KubeVirtNodesLiveMigratable"
+
 	// ValidAWSIdentityProvider indicates if the Identity Provider referenced
 	// in the cloud credentials is healthy. E.g. for AWS the idp ARN is referenced in the iam roles.
 	// 		"Version": "2012-10-17",
@@ -222,6 +226,8 @@ const (
 	ReconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
 
 	KubeVirtSuboptimalMTUReason = "KubeVirtSuboptimalMTUDetected"
+
+	KubeVirtNodesLiveMigratableReason = "KubeVirtNodesNotLiveMigratable"
 )
 
 // Messages.

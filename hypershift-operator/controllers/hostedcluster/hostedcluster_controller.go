@@ -700,6 +700,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *validMtuCondCreated)
 			}
 		}
+		if err := r.syncKVLiveMigratableCondition(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update condition: %w", err)
+		}
 	}
 
 	// Copy conditions from hostedcontrolplane
@@ -4747,6 +4750,49 @@ func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hclus
 	return false, nil
 }
 
+func (r *HostedClusterReconciler) syncKVLiveMigratableCondition(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	if hcluster.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+		return nil
+	}
+	nodePools, err := listNodePools(ctx, r.Client, hcluster.Namespace, hcluster.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get node pools by cluster name for cluster %q: %w", hcluster.Name, err)
+	}
+	var nonMigratableNodePools []string
+	for _, nodePool := range nodePools {
+		lmNpCondition := FindNodePoolStatusCondition(nodePool.Status.Conditions, string(hyperv1.KubeVirtNodesLiveMigratable))
+		if lmNpCondition != nil && lmNpCondition.Status == corev1.ConditionFalse {
+			nonMigratableNodePools = append(nonMigratableNodePools, nodePool.Name)
+		}
+	}
+
+	var lmHcCondition metav1.Condition
+
+	if len(nonMigratableNodePools) == 0 {
+		lmHcCondition = metav1.Condition{
+			Type:               string(hyperv1.KubeVirtNodesLiveMigratable),
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            hyperv1.AllIsWellMessage,
+			ObservedGeneration: hcluster.Generation,
+		}
+	} else {
+		lmHcCondition = metav1.Condition{
+			Type:   string(hyperv1.KubeVirtNodesLiveMigratable),
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.KubeVirtNodesLiveMigratableReason,
+			Message: fmt.Sprintf("Non-live-migratable node(s) have been found on the following NodePool(s) attached to "+
+				"this Hosted Cluster: %s. It is recommended to use live-migratable nodes in order to improve cluster stability "+
+				"and downtime. Check the reason for the non-live-migratability in the corresponding NodePool(s).",
+				strings.Join(nonMigratableNodePools, ", ")),
+			ObservedGeneration: hcluster.Generation,
+		}
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, lmHcCondition)
+
+	return nil
+}
+
 // isUpgrading returns
 // 1) bool indicating whether the HostedCluster is upgrading
 // 2) non-error message about the condition of the upgrade
@@ -5200,4 +5246,15 @@ func isAPIServerRoute(hcluster *hyperv1.HostedCluster) bool {
 		}
 	}
 	return false
+}
+
+// FindStatusCondition finds the conditionType in conditions.
+func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType string) *hyperv1.NodePoolCondition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
+		}
+	}
+
+	return nil
 }

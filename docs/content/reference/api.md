@@ -3309,6 +3309,10 @@ A failure here may require external user intervention to resolve. E.g. hitting q
 <td><p>KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
 A failure here often means a software bug or a non-stable cluster.</p>
 </td>
+</tr><tr><td><p>&#34;KubeVirtNodesLiveMigratable&#34;</p></td>
+<td><p>KubeVirtNodesLiveMigratable indicates if all nodes (VirtualMachines) of the kubevirt
+hosted cluster can be live migrated without experiencing a node restart</p>
+</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.

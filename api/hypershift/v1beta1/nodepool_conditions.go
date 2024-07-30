@@ -68,6 +68,10 @@ const (
 	// NodePoolClusterNetworkCIDRConflictType signals if a NodePool's machine objects are colliding with the
 	// cluster network's CIDR range. This can indicate why some network functionality might be degraded.
 	NodePoolClusterNetworkCIDRConflictType = "ClusterNetworkCIDRConflict"
+
+	// KubeVirtNodesLiveMigratable indicates if all (VirtualMachines) nodes of the kubevirt
+	// hosted cluster can be live migrated without experiencing a node restart
+	NodePoolKubeVirtLiveMigratableType = "KubeVirtNodesLiveMigratable"
 )
 
 // Reasons
@@ -85,4 +89,5 @@ const (
 	InvalidKubevirtMachineTemplate        = "InvalidKubevirtMachineTemplate"
 	InvalidOpenStackMachineTemplate       = "InvalidOpenStackMachineTemplate"
 	CIDRConflictReason                    = "CIDRConflict"
+	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
 )

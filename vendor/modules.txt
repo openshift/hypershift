@@ -872,9 +872,6 @@ github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
 github.com/operator-framework/api/pkg/operators/v1
 github.com/operator-framework/api/pkg/operators/v1alpha1
-# github.com/pborman/uuid v1.2.1
-## explicit
-github.com/pborman/uuid
 # github.com/peterbourgon/diskv v2.0.1+incompatible
 ## explicit
 github.com/peterbourgon/diskv
@@ -2154,12 +2151,12 @@ k8s.io/utils/ptr
 k8s.io/utils/set
 k8s.io/utils/strings/slices
 k8s.io/utils/trace
-# kubevirt.io/api v1.1.1
+# kubevirt.io/api v1.2.1
 ## explicit; go 1.17
 kubevirt.io/api/core
 kubevirt.io/api/core/v1
-# kubevirt.io/containerized-data-importer-api v1.58.1
-## explicit; go 1.19
+# kubevirt.io/containerized-data-importer-api v1.59.0
+## explicit; go 1.21
 kubevirt.io/containerized-data-importer-api/pkg/apis/core
 kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1
 # kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90
@@ -2210,8 +2207,8 @@ sigs.k8s.io/cluster-api-provider-azure/util/webhook
 ## explicit; go 1.20
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
-# sigs.k8s.io/cluster-api-provider-kubevirt v0.1.8
-## explicit; go 1.20
+# sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
+## explicit; go 1.22.0
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
 # sigs.k8s.io/cluster-api-provider-openstack v0.10.4
 ## explicit; go 1.22

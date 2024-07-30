@@ -33,6 +33,13 @@ const (
 	// WaitingForBootstrapDataReason (Severity=Info) documents a KubevirtMachine waiting for the bootstrap
 	// script to be ready before starting to create the VM that provides the KubevirtMachine infrastructure.
 	WaitingForBootstrapDataReason = "WaitingForBootstrapData"
+
+	// VMCreateFailed (Severity=Error) documents a KubevirtMachine that is unable to create the
+	// corresponding VM object.
+	VMCreateFailedReason = "VMCreateFailed"
+
+	// VMLiveMigratableCondition documents whether the VM is live-migratable or not
+	VMLiveMigratableCondition clusterv1.ConditionType = "VMLiveMigratable"
 )
 
 const (

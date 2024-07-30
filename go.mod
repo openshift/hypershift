@@ -88,13 +88,13 @@ require (
 	k8s.io/kubectl v0.30.1
 	k8s.io/pod-security-admission v0.30.1
 	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0
-	kubevirt.io/api v1.1.1
-	kubevirt.io/containerized-data-importer-api v1.58.1
+	kubevirt.io/api v1.2.1
+	kubevirt.io/containerized-data-importer-api v1.59.0
 	sigs.k8s.io/cluster-api v1.7.2
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.5.0
 	sigs.k8s.io/cluster-api-provider-azure v1.15.0
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
-	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.8
+	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.10.4
 	sigs.k8s.io/controller-runtime v0.18.3
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1
@@ -192,7 +192,6 @@ require (
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
 	github.com/openshift/machine-config-operator v0.0.1-0.20230807154212-886c5c3fc7a9 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
-	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/profile v1.3.0 // indirect
