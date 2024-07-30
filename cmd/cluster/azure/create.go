@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/cmd/version"
 	"net/url"
 	"os"
 	"strings"
@@ -349,7 +350,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 	rhcosImage := azureOpts.RHCOSImage
 	if rhcosImage == "" {
 		var err error
-		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
+		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile)
 		if err != nil {
 			return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
@@ -371,7 +372,15 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 }
 
 // lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
-func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecretFile string) (string, error) {
+func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecretFile string) (string, error) {
+	if len(image) == 0 && len(releaseStream) != 0 {
+		defaultVersion, err := version.LookupDefaultOCPVersion(releaseStream)
+		if err != nil {
+			return "", fmt.Errorf("failed to lookup OCP release image for release stream, %s: %w", releaseStream, err)
+		}
+		image = defaultVersion.PullSpec
+	}
+
 	rhcosImage := ""
 	releaseProvider := &releaseinfo.RegistryClientProvider{}
 
