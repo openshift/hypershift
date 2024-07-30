@@ -266,7 +266,9 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 		for i, condition := range nodePool.Status.Conditions {
 			expectedStatus, known := expectedConditions[condition.Type]
 			if !known {
-				return false, fmt.Errorf("unknown condition %s", condition.Type)
+				// We don't know what this condition is, so we can't validate it
+				// Newer HOs may have additional conditions that we don't know about
+				continue
 			}
 			conditionsValid = conditionsValid && (condition.Status == expectedStatus)
 
