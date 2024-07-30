@@ -301,9 +301,11 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 		errs = append(errs, fmt.Errorf("actual dns names differ from expected: %s", dnsNamesDiff))
 	}
 
+	tolerance := float64(time.Second * 1)
 	certValidity := cert.NotAfter.Sub(cert.NotBefore)
-	if certValidity.Truncate(time.Minute) != cfg.Validity.Truncate(time.Minute) {
-		errs = append(errs, fmt.Errorf("actual validity %v differs from expected %v", (certValidity.Hours())/24, (cfg.Validity.Hours())/24))
+	expectedValidity := cfg.Validity
+	if diff := (certValidity - expectedValidity).Abs().Seconds(); diff >= float64(tolerance) {
+		errs = append(errs, fmt.Errorf("actual validity differs from expected with %v seconds", diff))
 	}
 
 	extUsageDiff := cmp.Diff(cert.ExtKeyUsage, cfg.ExtKeyUsages, cmpopts.SortSlices(func(a, b x509.ExtKeyUsage) bool { return a < b }))
