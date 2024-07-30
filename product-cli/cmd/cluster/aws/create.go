@@ -7,6 +7,7 @@ import (
 
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/version"
 )
 
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
@@ -15,6 +16,8 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		Short:        "Creates basic functional HostedCluster resources on AWS",
 		SilenceUsage: true,
 	}
+
+	opts.ReleaseStream = version.DefaultReleaseStream
 
 	awsOpts := hypershiftaws.DefaultOptions()
 	awsOpts.MultiArch = true

@@ -23,7 +23,7 @@ var (
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
 const (
-	defaultReleaseStream = "4-stable-multi"
+	DefaultReleaseStream = "4-stable-multi"
 
 	multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
 	releaseURLTemplate          = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
@@ -37,7 +37,7 @@ type OCPVersion struct {
 
 func LookupDefaultOCPVersion(releaseStream string) (OCPVersion, error) {
 	if len(releaseStream) == 0 {
-		releaseStream = defaultReleaseStream
+		releaseStream = DefaultReleaseStream
 	}
 
 	var releaseURL string
