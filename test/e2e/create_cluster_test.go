@@ -61,6 +61,7 @@ func TestCreateCluster(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
 
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
+		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }

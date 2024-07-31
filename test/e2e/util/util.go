@@ -896,6 +896,22 @@ func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, 
 	})
 }
 
+func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureHostedClusterImmutability", func(t *testing.T) {
+		g := NewWithT(t)
+
+		for i, svc := range hostedCluster.Spec.Services {
+			if svc.Service == hyperv1.APIServer {
+				svc.Type = hyperv1.NodePort
+				hostedCluster.Spec.Services[i] = svc
+			}
+		}
+		err := hostClient.Update(ctx, hostedCluster)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("Services is immutable"))
+	})
+}
+
 func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
 	t.Run("EnsureSecretEncryptedUsingKMS", func(t *testing.T) {
 		// create secret in guest cluster
