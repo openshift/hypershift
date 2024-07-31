@@ -74,6 +74,32 @@ const (
 	NodePoolKubeVirtLiveMigratableType = "KubeVirtNodesLiveMigratable"
 )
 
+// PerformanceProfile Conditions
+const (
+
+	// NodePoolPerformanceProfileTuningConditionTypePrefix is a common prefix to all PerformanceProfile
+	// status conditions reported by NTO
+	NodePoolPerformanceProfileTuningConditionTypePrefix = "performance.operator.openshift.io"
+
+	// NodePoolPerformanceProfileTuningAvailableConditionType signals that the PerformanceProfile associated with the
+	// NodePool is available and its tunings were being applied successfully.
+	NodePoolPerformanceProfileTuningAvailableConditionType = NodePoolPerformanceProfileTuningConditionTypePrefix + "/Available"
+
+	// NodePoolPerformanceProfileTuningProgressingConditionType signals that the PerformanceProfile associated with the
+	// NodePool is in the middle of its tuning processing and its in progressing state.
+	NodePoolPerformanceProfileTuningProgressingConditionType = NodePoolPerformanceProfileTuningConditionTypePrefix + "/Progressing"
+
+	// NodePoolPerformanceProfileTuningUpgradeableConditionType signals that it's safe to
+	// upgrade the PerformanceProfile operator component
+	NodePoolPerformanceProfileTuningUpgradeableConditionType = NodePoolPerformanceProfileTuningConditionTypePrefix + "/Upgradeable"
+
+	// NodePoolPerformanceProfileTuningDegradedConditionType signals that the PerformanceProfile associated with the
+	// NodePool is failed to apply its tuning.
+	// This is usually happening because more lower-level components failed to apply successfully, like
+	// MachineConfig or KubeletConfig
+	NodePoolPerformanceProfileTuningDegradedConditionType = NodePoolPerformanceProfileTuningConditionTypePrefix + "/Degraded"
+)
+
 // Reasons
 const (
 	NodePoolValidationFailedReason        = "ValidationFailed"
