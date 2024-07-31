@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -21,9 +24,8 @@ const (
 	configKey = "config.yaml"
 )
 
-func ReconcileOpenShiftRouteControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string, networkConfig *configv1.NetworkSpec) error {
-	ownerRef.ApplyTo(cm)
-
+func ReconcileOpenShiftRouteControllerManagerConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+	hcp := cpContext.Hcp
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -34,7 +36,11 @@ func ReconcileOpenShiftRouteControllerManagerConfig(cm *corev1.ConfigMap, ownerR
 			return fmt.Errorf("unable to decode existing openshift route controller manager configuration: %w", err)
 		}
 	}
-	if err := reconcileConfig(config, minTLSVersion, cipherSuites, networkConfig); err != nil {
+	var networkConfig *configv1.NetworkSpec
+	if hcp.Spec.Configuration != nil {
+		networkConfig = hcp.Spec.Configuration.Network
+	}
+	if err := reconcileConfig(config, minTLSVersion(hcp), cipherSuites(hcp), networkConfig); err != nil {
 		return err
 	}
 	configStr, err := util.SerializeResource(config, api.Scheme)
@@ -76,4 +82,18 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLS
 		},
 	}
 	return nil
+}
+
+func minTLSVersion(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.APIServer != nil {
+		return config.MinTLSVersion(hcp.Spec.Configuration.APIServer.TLSSecurityProfile)
+	}
+	return config.MinTLSVersion(nil)
+}
+
+func cipherSuites(hcp *hyperv1.HostedControlPlane) []string {
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.APIServer != nil {
+		return config.CipherSuites(hcp.Spec.Configuration.APIServer.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
 }

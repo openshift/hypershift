@@ -75,10 +75,3 @@ metadata:
   creationTimestamp: null
   name: openshift-route-controller-manager-config
   namespace: test-namespace
-  ownerReferences:
-  - apiVersion: hypershift.openshift.io/v1beta1
-    blockOwnerDeletion: true
-    controller: true
-    kind: HostedControlPlane
-    name: test
-    uid: ""

@@ -4,14 +4,13 @@ import (
 	"testing"
 
 	v1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	config2 "github.com/openshift/hypershift/support/config"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -27,23 +26,23 @@ func TestReconcileOpenShiftRouteControllerManagerConfig(t *testing.T) {
 				Type: hyperv1.AWSPlatform,
 			},
 			IssuerURL: "https://www.example.com",
-		},
-	}
-	images := map[string]string{
-		"route-controller-manager": "quay.io/test/route-controller-manager",
-	}
-	imageProvider := imageprovider.NewFromImages(images)
-
-	params := NewOpenShiftRouteControllerManagerParams(hcp, imageProvider, true)
-	configMap := manifests.OpenShiftRouteControllerManagerConfig(hcp.Namespace)
-
-	networkConfig := &v1.NetworkSpec{
-		ExternalIP: &v1.ExternalIPConfig{
-			AutoAssignCIDRs: []string{"99.1.0.0/24"},
+			Configuration: &hyperv1.ClusterConfiguration{
+				Network: &v1.NetworkSpec{
+					ExternalIP: &v1.ExternalIPConfig{
+						AutoAssignCIDRs: []string{"99.1.0.0/24"},
+					},
+				},
+			},
 		},
 	}
 
-	if err := ReconcileOpenShiftRouteControllerManagerConfig(configMap, config2.OwnerRefFrom(hcp), params.MinTLSVersion(), params.CipherSuites(), networkConfig); err != nil {
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ConfigMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	if err := ReconcileOpenShiftRouteControllerManagerConfig(controlplanecomponent.ControlPlaneContext{Hcp: hcp}, configMap); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	configMapYaml, err := util.SerializeResource(configMap, api.Scheme)

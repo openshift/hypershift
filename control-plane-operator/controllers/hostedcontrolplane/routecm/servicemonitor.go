@@ -3,7 +3,7 @@ package routecm
 import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -11,9 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
-	ownerRef.ApplyTo(sm)
-
+func ReconcileServiceMonitor(cpContext component.ControlPlaneContext, sm *prometheusoperatorv1.ServiceMonitor) error {
 	sm.Spec.Selector.MatchLabels = openShiftRouteControllerManagerLabels()
 	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{sm.Namespace},
@@ -50,11 +48,11 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 					},
 				},
 			},
-			MetricRelabelConfigs: metrics.OpenShiftRouteControllerManagerRelabelConfigs(metricsSet),
+			MetricRelabelConfigs: metrics.OpenShiftRouteControllerManagerRelabelConfigs(cpContext.MetricsSet),
 		},
 	}
 
-	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], clusterID)
+	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], cpContext.Hcp.Spec.ClusterID)
 
 	return nil
 }

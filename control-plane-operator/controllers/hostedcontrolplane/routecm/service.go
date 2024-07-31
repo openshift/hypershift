@@ -4,11 +4,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
 )
 
-func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(svc)
+func ReconcileService(cpContext component.ControlPlaneContext, svc *corev1.Service) error {
 	svc.Labels = openShiftRouteControllerManagerLabels()
 	svc.Spec.Selector = openShiftRouteControllerManagerLabels()
 	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.

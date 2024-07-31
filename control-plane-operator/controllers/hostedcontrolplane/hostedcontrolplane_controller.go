@@ -214,7 +214,10 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 }
 
 func (r *HostedControlPlaneReconciler) registerComponents() {
-	r.components = append(r.components, autoscaler.NewComponent())
+	r.components = append(r.components,
+		autoscaler.NewComponent(),
+		routecm.NewComponent(),
+	)
 }
 
 func getEC2Client() (ec2iface.EC2API, *session.Session) {
@@ -1147,12 +1150,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling OpenShift Controller Manager")
 	if err := r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
-	}
-
-	// Reconcile openshift route controller manager
-	r.Log.Info("Reconciling OpenShift Route Controller Manager")
-	if err := r.reconcileOpenShiftRouteControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager: %w", err)
 	}
 
 	// Reconcile cluster policy controller
@@ -3395,44 +3392,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 		return ocm.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
-	}
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := routecm.NewOpenShiftRouteControllerManagerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
-	config := manifests.OpenShiftRouteControllerManagerConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, config, func() error {
-		return routecm.ReconcileOpenShiftRouteControllerManagerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites(), p.Network)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager config: %w", err)
-	}
-
-	if err := r.Get(ctx, client.ObjectKeyFromObject(config), config); err != nil {
-		return fmt.Errorf("failed to get openshift controller manager config: %w", err)
-	}
-
-	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
-		service := manifests.OpenShiftRouteControllerManagerService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, service, func() error {
-			return routecm.ReconcileService(service, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile openshift route controller manager service: %w", err)
-		}
-
-		serviceMonitor := manifests.OpenShiftRouteControllerManagerServiceMonitor(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-			return routecm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile openshift route controller manager service monitor: %w", err)
-		}
-	}
-
-	deployment := manifests.OpenShiftRouteControllerManagerDeployment(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return routecm.ReconcileDeployment(deployment, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager deployment: %w", err)
 	}
 	return nil
 }
