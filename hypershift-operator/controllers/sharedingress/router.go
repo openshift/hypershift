@@ -192,7 +192,7 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 
 		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
 		// TODO: get the image from the payload once available https://issues.redhat.com/browse/HOSTEDCP-1819
-		c.Image = "quay.io/mraee/haproxy:2.9"
+		c.Image = "quay.io/rh_ee_brcox/hypershift:haproxy2.9.9-multi"
 		c.Args = []string{
 			"-f", "/usr/local/etc/haproxy",
 		}

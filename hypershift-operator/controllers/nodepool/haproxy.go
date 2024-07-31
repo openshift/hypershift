@@ -237,7 +237,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 	if sharedingress.UseSharedIngress() {
 		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
 		// TODO: get the image from the payload once available https://issues.redhat.com/browse/HOSTEDCP-1819
-		haProxyImage = "quay.io/mraee/haproxy:2.9"
+		haProxyImage = "quay.io/rh_ee_brcox/hypershift:haproxy2.9.9-multi"
 	}
 
 	filesToAdd := []fileToAdd{
