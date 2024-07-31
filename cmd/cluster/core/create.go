@@ -96,6 +96,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.OLMDisableDefaultSources, "olm-disable-default-sources", opts.OLMDisableDefaultSources, "Disables the OLM default catalog sources for the HostedCluster.")
 	flags.StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
+	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
+
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -103,7 +105,6 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 
 	flags.StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "Override the default image used to deploy the control plane operator")
-	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4.15.0-0.nightly), this flag is ignored if release-image is set")
 
 	flags.StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
 }

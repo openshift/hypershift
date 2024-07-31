@@ -7,6 +7,7 @@ import (
 
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/version"
 )
 
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
@@ -16,7 +17,11 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	opts.ReleaseStream = version.DefaultReleaseStream
+
 	awsOpts := hypershiftaws.DefaultOptions()
+	awsOpts.MultiArch = true
+
 	hypershiftaws.BindOptions(awsOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
