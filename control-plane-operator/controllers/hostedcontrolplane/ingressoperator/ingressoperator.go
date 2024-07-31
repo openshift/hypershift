@@ -3,6 +3,7 @@ package ingressoperator
 import (
 	"fmt"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -17,15 +18,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
-	operatorName                 = "ingress-operator"
-	ingressOperatorContainerName = "ingress-operator"
-	metricsHostname              = "ingress-operator"
-	socks5ProxyContainerName     = "socks-proxy"
-	ingressOperatorMetricsPort   = 60000
+	operatorName                   = "ingress-operator"
+	ingressOperatorContainerName   = "ingress-operator"
+	metricsHostname                = "ingress-operator"
+	konnectivityProxyContainerName = "konnectivity-proxy"
+	ingressOperatorMetricsPort     = 60000
+	konnectivityProxyPort          = 8090
 )
 
 type Params struct {
@@ -36,9 +38,11 @@ type Params struct {
 	ReleaseVersion          string
 	TokenMinterImage        string
 	AvailabilityProberImage string
-	Socks5ProxyImage        string
+	ProxyImage              string
 	Platform                hyperv1.PlatformType
 	DeploymentConfig        config.DeploymentConfig
+	ProxyConfig             *configv1.ProxySpec
+	NoProxy                 string
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
@@ -48,16 +52,20 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		HAProxyRouterImage:      userReleaseImageProvider.GetImage("haproxy-router"),
 		ReleaseVersion:          version,
 		TokenMinterImage:        releaseImageProvider.GetImage("token-minter"),
-		Socks5ProxyImage:        releaseImageProvider.GetImage("socks5-proxy"),
+		ProxyImage:              releaseImageProvider.GetImage(util.CPOImageName),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Platform:                platform,
+	}
+	if hcp.Spec.Configuration != nil {
+		p.ProxyConfig = hcp.Spec.Configuration.Proxy
+		p.NoProxy = proxy.DefaultNoProxy(hcp)
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	return p
 }
@@ -76,7 +84,8 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 			ingressOpResources = mainContainer.Resources
 		}
 	}
-	dep.Spec.Replicas = utilpointer.Int32(1)
+
+	dep.Spec.Replicas = ptr.To[int32](1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	if dep.Spec.Template.Annotations == nil {
@@ -92,7 +101,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		hyperv1.ControlPlaneComponent: operatorName,
 	}
 
-	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.Bool(false)
+	dep.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{
 			"ingress-operator",
@@ -115,11 +124,11 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 			{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
 			{
 				Name:  "HTTP_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivityProxyPort),
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivityProxyPort),
 			},
 			{
 				Name:  "NO_PROXY",
@@ -135,12 +144,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 			{Name: "ingress-operator-kubeconfig", MountPath: "/etc/kubernetes"},
 		},
 	}}
-	dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, ingressOperatorSocks5ProxyContainer(params.Socks5ProxyImage))
+	dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, ingressOperatorKonnectivityProxyContainer(params.ProxyImage, params.ProxyConfig, params.NoProxy))
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
-		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name, DefaultMode: utilpointer.Int32(0640)}}},
-		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32(0640)}}},
-		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32(0640)}}},
-		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32(0640)}}},
+		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name, DefaultMode: ptr.To[int32](0640)}}},
+		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: ptr.To[int32](0640)}}},
+		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: ptr.To[int32](0640)}}},
+		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: ptr.To[int32](0640)}}},
 	}
 
 	if params.Platform == hyperv1.AWSPlatform {
@@ -193,16 +202,13 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 	params.DeploymentConfig.ApplyTo(dep)
 }
 
-func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Container {
+func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *configv1.ProxySpec, noProxy string) corev1.Container {
 	c := corev1.Container{
-		Name:    socks5ProxyContainerName,
-		Image:   socks5ProxyImage,
-		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true"},
+		Name:    konnectivityProxyContainerName,
+		Image:   proxyImage,
+		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"},
 		Args: []string{
 			"run",
-			// Do not route cloud provider traffic through konnektivity and thus nodes to speed
-			// up cluster creation. Requires proxy env vars to be set.
-			"--connect-directly-to-cloud-apis=true",
 		},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
@@ -220,7 +226,11 @@ func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Contain
 			{Name: "konnectivity-proxy-ca", MountPath: "/etc/konnectivity/proxy-ca"},
 		},
 	}
-	proxy.SetEnvVars(&c.Env)
+	if proxyConfig != nil {
+		c.Args = append(c.Args, "--http-proxy", proxyConfig.HTTPProxy)
+		c.Args = append(c.Args, "--https-proxy", proxyConfig.HTTPSProxy)
+		c.Args = append(c.Args, "--no-proxy", noProxy)
+	}
 	return c
 }
 
