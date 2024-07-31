@@ -70,6 +70,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
@@ -109,7 +110,6 @@ import (
 const (
 	finalizer                              = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigKey              = "kubeconfig"
-	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
 	resourceDeletionTimeout = 10 * time.Minute
@@ -160,6 +160,8 @@ func (s InfrastructureStatus) IsReady() bool {
 type HostedControlPlaneReconciler struct {
 	client.Client
 
+	components []component.ControlPlaneComponent
+
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
 
@@ -207,7 +209,12 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.ec2Client, r.awsSession = getEC2Client()
 
+	r.registerComponents()
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) registerComponents() {
+	r.components = append(r.components, autoscaler.NewComponent())
 }
 
 func getEC2Client() (ec2iface.EC2API, *session.Session) {
@@ -906,6 +913,23 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		errs = append(errs, err)
 	}
 
+	cpContext := component.ControlPlaneContext{
+		Context:                   ctx,
+		Client:                    r.Client,
+		Hcp:                       hostedControlPlane,
+		CreateOrUpdate:            createOrUpdate,
+		ReleaseImageProvider:      releaseImageProvider,
+		UserReleaseImageProvider:  userReleaseImageProvider,
+		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		MetricsSet:                r.MetricsSet,
+	}
+	for _, c := range r.components {
+		r.Log.Info("Reconciling component", "name", c.Name())
+		if err := c.Reconcile(cpContext); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	missingImages := sets.New(releaseImageProvider.GetMissingImages()...).Insert(userReleaseImageProvider.GetMissingImages()...)
 	if missingImages.Len() == 0 {
@@ -1240,11 +1264,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Disable machine management components if enabled
 	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableMachineManagement]; !exists {
-		r.Log.Info("Reconciling autoscaler")
-		if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile autoscaler: %w", err)
-		}
-
 		r.Log.Info("Reconciling machine approver")
 		if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile machine approver: %w", err)
@@ -4580,13 +4599,6 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		}
 	}
 	return nil
-}
-
-// reconcileAutoscaler orchestrates reconciliation of autoscaler components using
-func (r *HostedControlPlaneReconciler) reconcileAutoscaler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	autoscalerImage := releaseImageProvider.GetImage(ImageStreamAutoscalerImage)
-	availabilityProberImage := releaseImageProvider.GetImage(util.AvailabilityProberImageName)
-	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, autoscalerImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {

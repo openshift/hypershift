@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/testutil"
@@ -585,8 +586,12 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			deployment := manifests.AutoscalerDeployment("test-ns")
-			sa := manifests.AutoscalerServiceAccount("test-ns")
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "autoscaler",
+				},
+			}
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
@@ -596,7 +601,16 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Name = "name"
 			hcp.Namespace = "namespace"
-			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false, config.OwnerRefFrom(hcp))
+			hcp.Spec.Autoscaling = test.AutoscalerOptions
+
+			cpContext := controlplanecomponent.ControlPlaneContext{
+				Hcp:                  hcp,
+				ReleaseImageProvider: imageprovider.NewFromImages(nil),
+			}
+			reconciler := autoscaler.AutoscalerReconciler{
+				CapiKubeConfigSecret: secret,
+			}
+			err := reconciler.ReconcileDeployment(cpContext, deployment)
 			if err != nil {
 				t.Error(err)
 			}

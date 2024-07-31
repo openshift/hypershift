@@ -1,15 +1,12 @@
 package autoscaler
 
 import (
-	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/upsert"
+	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,29 +14,77 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	autoscalerName = "cluster-autoscaler"
+
+	ImageStreamAutoscalerImage = "cluster-autoscaler"
 )
 
-func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(deployment)
+var _ component.DeploymentReconciler = &AutoscalerReconciler{}
+
+type AutoscalerReconciler struct {
+	CapiKubeConfigSecret *corev1.Secret
+}
+
+func NewComponent() component.ControlPlaneComponent {
+	return &component.ControlPlaneDeployment{
+		DeploymentReconciler:     &AutoscalerReconciler{},
+		RBACReconciler:           component.NewRBACReconciler(autoscalerRoleRules()),
+		NeedsManagementKASAccess: true,
+	}
+}
+
+// Name implements controlplanecomponent.DeploymentReconciler.
+func (a *AutoscalerReconciler) Name() string {
+	return autoscalerName
+}
+
+// Predicate implements controlplanecomponent.DeploymentReconciler.
+func (a *AutoscalerReconciler) Predicate(cpContext component.ControlPlaneContext) (bool, error) {
+	hcp := cpContext.Hcp
+
+	// Disable cluster-autoscaler component if DisableMachineManagement label is set.
+	if _, exists := hcp.Annotations[hyperv1.DisableMachineManagement]; exists {
+		return false, nil
+	}
+
+	// The deployment depends on the kubeconfig being reported.
+	if hcp.Status.KubeConfig == nil {
+		return false, nil
+	}
+	// Resolve the kubeconfig secret for CAPI which the autoscaler is deployed alongside of.
+	capiKubeConfigSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcp.Namespace,
+			Name:      fmt.Sprintf("%s-kubeconfig", hcp.Spec.InfraID),
+		},
+	}
+	err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
+	if err != nil {
+		return false, fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
+	}
+
+	a.CapiKubeConfigSecret = capiKubeConfigSecret
+	return true, nil
+}
+
+// reconcileDeployment implements controlplanecomponent.DeploymentReconciler.
+func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+	hcp := cpContext.Hcp
+	options := hcp.Spec.Autoscaling
+
+	clusterAutoscalerImage := cpContext.ReleaseImageProvider.GetImage(ImageStreamAutoscalerImage)
+	availabilityProberImage := cpContext.ReleaseImageProvider.GetImage(util.AvailabilityProberImageName)
 
 	autoscalerResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("60Mi"),
 			corev1.ResourceCPU:    resource.MustParse("10m"),
 		},
-	}
-	// preserve existing resource requirements
-	mainContainer := util.FindContainer(autoscalerName, deployment.Spec.Template.Spec.Containers)
-	if mainContainer != nil {
-		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
-			autoscalerResources = mainContainer.Resources
-		}
 	}
 
 	args := []string{
@@ -107,8 +152,8 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
-				ServiceAccountName:            sa.Name,
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+				ServiceAccountName:            autoscalerName,
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",
@@ -120,8 +165,8 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						Name: "target-kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName:  kubeConfigSecret.Name,
-								DefaultMode: k8sutilspointer.Int32(0640),
+								SecretName:  a.CapiKubeConfigSecret.Name,
+								DefaultMode: ptr.To[int32](0640),
 								Items: []corev1.KeyToPath{
 									{
 										// TODO: should the key be published on status?
@@ -193,33 +238,16 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), availabilityProberImage, &deployment.Spec.Template.Spec)
 
-	deploymentConfig := config.DeploymentConfig{
-		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		},
-		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
-		},
-		SetDefaultSecurityContext: setDefaultSecurityContext,
-	}
-	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
-		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
-	}
-
-	replicas := k8sutilspointer.Int(1)
+	deployment.Spec.Replicas = ptr.To[int32](1)
 	if _, exists := hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation]; exists {
-		replicas = k8sutilspointer.Int(0)
+		deployment.Spec.Replicas = ptr.To[int32](0)
 	}
-	deploymentConfig.SetDefaults(hcp, nil, replicas)
-	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.ApplyTo(deployment)
 
 	return nil
 }
 
-func ReconcileAutoscalerRole(role *rbacv1.Role, owner config.OwnerRef) error {
-	owner.ApplyTo(role)
-	role.Rules = []rbacv1.PolicyRule{
+func autoscalerRoleRules() []rbacv1.PolicyRule {
+	return []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"cluster.x-k8s.io"},
 			Resources: []string{
@@ -244,81 +272,6 @@ func ReconcileAutoscalerRole(role *rbacv1.Role, owner config.OwnerRef) error {
 			Verbs:     []string{"get", "list"},
 		},
 	}
-	return nil
-}
-
-func ReconcileAutoscalerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount, owner config.OwnerRef) error {
-	owner.ApplyTo(binding)
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "Role",
-		Name:     role.Name,
-	}
-
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
-	}
-
-	return nil
-}
-
-// ReconcileAutoscaler orchestrates reconciliation of autoscaler components.
-func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, autoscalerImage, availabilityProberImage string, createOrUpdate upsert.CreateOrUpdateFN, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
-	autoscalerRole := manifests.AutoscalerRole(hcp.Namespace)
-	_, err := createOrUpdate(ctx, c, autoscalerRole, func() error {
-		return ReconcileAutoscalerRole(autoscalerRole, ownerRef)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
-	}
-
-	autoscalerServiceAccount := manifests.AutoscalerServiceAccount(hcp.Namespace)
-	_, err = createOrUpdate(ctx, c, autoscalerServiceAccount, func() error {
-		util.EnsurePullSecret(autoscalerServiceAccount, controlplaneoperator.PullSecret("").Name)
-		ownerRef.ApplyTo(autoscalerServiceAccount)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
-	}
-
-	autoscalerRoleBinding := manifests.AutoscalerRoleBinding(hcp.Namespace)
-	_, err = createOrUpdate(ctx, c, autoscalerRoleBinding, func() error {
-		return ReconcileAutoscalerRoleBinding(autoscalerRoleBinding, autoscalerRole, autoscalerServiceAccount, ownerRef)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
-	}
-
-	// The deployment depends on the kubeconfig being reported.
-	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret for CAPI which the
-		// autoscaler is deployed alongside of.
-		capiKubeConfigSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: hcp.Namespace,
-				Name:      fmt.Sprintf("%s-kubeconfig", hcp.Spec.InfraID),
-			},
-		}
-		err = c.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
-		if err != nil {
-			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
-		}
-
-		autoscalerDeployment := manifests.AutoscalerDeployment(hcp.Namespace)
-		_, err = createOrUpdate(ctx, c, autoscalerDeployment, func() error {
-			return ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, setDefaultSecurityContext, ownerRef)
-		})
-		if err != nil {
-			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
-		}
-	}
-
-	return nil
 }
 
 const BalancingIgnoreLabelArg = "--balancing-ignore-label"
