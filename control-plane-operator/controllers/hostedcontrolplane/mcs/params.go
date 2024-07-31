@@ -32,7 +32,9 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 
 	infra := globalconfig.InfrastructureConfig()
-	globalconfig.ReconcileInfrastructure(infra, hcp)
+	if err := globalconfig.ReconcileInfrastructure(infra, hcp); err != nil {
+		return &MCSParams{}, fmt.Errorf("failed on infrastructure reconciliation config: %w", err)
+	}
 
 	network := globalconfig.NetworkConfig()
 	if err := globalconfig.ReconcileNetworkConfig(network, hcp); err != nil {

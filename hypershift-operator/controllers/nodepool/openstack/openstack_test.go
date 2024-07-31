@@ -120,18 +120,3 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 		})
 	}
 }
-
-func TestGetIngressIP(t *testing.T) {
-	machineNetwork := hyperv1.MachineNetworkEntry{
-		CIDR: *ipnet.MustParseCIDR("10.0.0.0/16"),
-	}
-
-	expectedIP := "10.0.0.7"
-	ip, err := getIngressIP(machineNetwork)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if ip != expectedIP {
-		t.Errorf("expected IP: %s, got: %s", expectedIP, ip)
-	}
-}

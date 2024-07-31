@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 )
 
@@ -22,7 +24,7 @@ func InfrastructureConfig() *configv1.Infrastructure {
 	return infra
 }
 
-func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.HostedControlPlane) {
+func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.HostedControlPlane) error {
 
 	platformType := hcp.Spec.Platform.Type
 
@@ -84,15 +86,31 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			ResourceGroup:  hcp.Spec.Platform.PowerVS.ResourceGroup,
 		}
 	case hyperv1.OpenStackPlatform:
-		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{}
+		var machineNetworks []hyperv1.MachineNetworkEntry
+		if hcp.Spec.Networking.MachineNetwork == nil || len(hcp.Spec.Networking.MachineNetwork) == 0 {
+			machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(openstackutil.DefaultCIDRBlock)}}
+		} else {
+			machineNetworks = hcp.Spec.Networking.MachineNetwork
+		}
+		ingressIP, err := openstackutil.GetIngressIP(machineNetworks[0])
+		if err != nil {
+			return err
+		}
+
+		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{
+			IngressIPs: []configv1.IP{
+				configv1.IP(ingressIP),
+			},
+		}
 		// This ConfigMap is populated by the local ignition provider and given to MCO
 		infra.Spec.CloudConfig.Name = "cloud-provider-config"
 		infra.Spec.CloudConfig.Key = openstack.CredentialsFile
 		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
-			CloudName:            "openstack",
-			LoadBalancer:         &configv1.OpenStackPlatformLoadBalancer{Type: configv1.LoadBalancerTypeUserManaged},
-			APIServerInternalIPs: []string{},
-			IngressIPs:           []string{},
+			CloudName:    "openstack",
+			LoadBalancer: &configv1.OpenStackPlatformLoadBalancer{Type: configv1.LoadBalancerTypeUserManaged},
+			IngressIPs:   []string{ingressIP},
 		}
 	}
+
+	return nil
 }
