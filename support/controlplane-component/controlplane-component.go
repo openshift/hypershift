@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -110,7 +111,9 @@ func (c *ControlPlaneDeployment) Reconcile(cpContext ControlPlaneContext) error 
 	if _, err := cpContext.CreateOrUpdate(cpContext, cpContext.Client, deployment, func() error {
 		ownerRef.ApplyTo(deployment)
 
-		deploymentConfig := &config.DeploymentConfig{}
+		deploymentConfig := &config.DeploymentConfig{
+			Resources: make(map[string]corev1.ResourceRequirements),
+		}
 		// preserve existing resource requirements, this needs to be done before calling c.reconcileDeployment() which might override the resources requirements.
 		for _, container := range deployment.Spec.Template.Spec.Containers {
 			deploymentConfig.Resources[container.Name] = container.Resources
@@ -168,8 +171,6 @@ func (c *ControlPlaneDeployment) reconcileRBAC(cpContext ControlPlaneContext) er
 func (c *ControlPlaneDeployment) setDefaults(cpContext ControlPlaneContext, deploymentConfig *config.DeploymentConfig, deployment *appsv1.Deployment) {
 	hcp := cpContext.Hcp
 
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
-
 	deploymentConfig.SetDefaultSecurityContext = cpContext.SetDefaultSecurityContext
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
@@ -181,6 +182,7 @@ func (c *ControlPlaneDeployment) setDefaults(cpContext ControlPlaneContext, depl
 			config.NeedManagementKASAccessLabel: "true",
 		}
 	}
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(c.NeedsManagementKASAccess)
 
 	var replicas *int
 	if deployment.Spec.Replicas != nil {
