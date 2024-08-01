@@ -7692,6 +7692,29 @@ string
 </tr>
 </tbody>
 </table>
+###OpenStackIngressProvider { #hypershift.openshift.io/v1beta1.OpenStackIngressProvider }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
+</p>
+<p>
+<p>OpenStackIngressProvider specifies the ingress provider to use for the cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;None&#34;</p></td>
+<td><p>OpenStackIngressProviderNone is the default value and means no ingress provider is used.</p>
+</td>
+</tr><tr><td><p>&#34;Octavia&#34;</p></td>
+<td><p>OpenStackIngressProviderOctavia is the value to use when using Octavia as the ingress provider.</p>
+</td>
+</tr></tbody>
+</table>
 ###OpenStackNodePoolPlatform { #hypershift.openshift.io/v1beta1.OpenStackNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -7889,6 +7912,37 @@ to an external network is not possible or desirable, e.g. if using a provider ne
 <td>
 <em>(Optional)</em>
 <p>Tags to set on all resources in cluster which support tags</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressFloatingIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+be associated with the OpenShift ingress port.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressProvider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackIngressProvider">
+OpenStackIngressProvider
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IngressProvider specifies the ingress provider to use for the cluster.
+Valid values are None and Octavia.
+The default value is None which means Ingress is not enabled.
+Octavia provider is experimental and might be replaced in the future.
+When Octavia is selected, a floating IP has to be provided in IngressFloatingIP.</p>
 </td>
 </tr>
 </tbody>

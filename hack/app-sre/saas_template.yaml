@@ -54554,6 +54554,23 @@ objects:
                           - cloudName
                           - name
                           type: object
+                        ingressFloatingIP:
+                          description: |-
+                            IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+                            be associated with the OpenShift ingress port.
+                          type: string
+                        ingressProvider:
+                          default: None
+                          description: |-
+                            IngressProvider specifies the ingress provider to use for the cluster.
+                            Valid values are None and Octavia.
+                            The default value is None which means Ingress is not enabled.
+                            Octavia provider is experimental and might be replaced in the future.
+                            When Octavia is selected, a floating IP has to be provided in IngressFloatingIP.
+                          enum:
+                          - None
+                          - Octavia
+                          type: string
                         managedSubnets:
                           description: |-
                             ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
@@ -64820,6 +64837,23 @@ objects:
                           - cloudName
                           - name
                           type: object
+                        ingressFloatingIP:
+                          description: |-
+                            IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+                            be associated with the OpenShift ingress port.
+                          type: string
+                        ingressProvider:
+                          default: None
+                          description: |-
+                            IngressProvider specifies the ingress provider to use for the cluster.
+                            Valid values are None and Octavia.
+                            The default value is None which means Ingress is not enabled.
+                            Octavia provider is experimental and might be replaced in the future.
+                            When Octavia is selected, a floating IP has to be provided in IngressFloatingIP.
+                          enum:
+                          - None
+                          - Octavia
+                          type: string
                         managedSubnets:
                           description: |-
                             ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,

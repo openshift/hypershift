@@ -71,6 +71,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -927,6 +928,25 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 			return ingress.ReconcileDefaultIngressControllerCertSecret(ingressControllerCert, sourceCert)
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller cert: %w", err))
+		}
+	}
+
+	if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+		ingressFloatingIP := hcp.Spec.Platform.OpenStack.IngressFloatingIP
+		ingressProvider := hcp.Spec.Platform.OpenStack.IngressProvider
+		if err := openstackutil.ValidateIngressOptions(ingressProvider, ingressFloatingIP); err != nil {
+			errs = append(errs, err)
+			return errors.NewAggregate(errs)
+		}
+
+		// At this point validations have passed, so we can proceed with the reconciliation
+		if ingressProvider == hyperv1.OpenStackIngressProviderOctavia {
+			ingressDefaultIngressOctaviaService := manifests.IngressDefaultIngressOctaviaService()
+			if _, err := r.CreateOrUpdate(ctx, r.client, ingressDefaultIngressOctaviaService, func() error {
+				return ingress.ReconcileDefaultIngressOctaviaService(ingressDefaultIngressOctaviaService, ingressFloatingIP)
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile default ingress octavia service: %w", err))
+			}
 		}
 	}
 

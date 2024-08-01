@@ -5,7 +5,7 @@ Install an OCP cluster running on VMs within a management OCP cluster
 ## Limitations
 
 * The HyperShift Operator with OpenStack support is currently in development and is not intended for production use.
-* Enabling Ingress is a day 2 operation for now, using MetalLB.
+* Ingress can work with Octavia at installation time or disabled (default) and the user can figure it out on day 2 (e.g. by using MetalLB).
 * OpenStack CSI (Cinder and Manila) are not functional.
 
 ## Prerequisites
@@ -14,6 +14,7 @@ Install an OCP cluster running on VMs within a management OCP cluster
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
+* OpenStack Octavia service must be running if Ingress with Octavia is enabled.
 
 ## Installing HyperShift Operator and cli tooling
 
@@ -80,6 +81,20 @@ Here is an example of how to upload an RHCOS image to OpenStack:
 ```shell
 openstack image create --disk-format qcow2 --file rhcos-417.94.202407080309-0-openstack.x86_64.qcow2 rhcos
 ```
+## Create a floating IP for the Ingress (optional)
+
+To get Ingress functional on day 1, you need to create a floating IP that will be used by the Ingress service.
+
+```shell
+openstack floating ip create <external-network>
+```
+
+## Update the DNS record for the Ingress (optional)
+
+To get Ingress functional on day 1, you need to create a DNS record for the following wildcard domain that needs to point to the Ingress floating IP:
+`*.apps.<cluster-name>.<base-domain>`
+
+```shell
 
 ## Create a HostedCluster
 
@@ -118,6 +133,9 @@ export CA_CERT_PATH="$HOME/ca.crt"
 # SSH Key for the nodepool VMs
 export SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
+export INGRESS_FLOATING_IP="<ingress-floating-ip>"
+export INGRESS_PROVIDER="Octavia"
+
 hcp create cluster openstack \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
@@ -127,7 +145,9 @@ hcp create cluster openstack \
 --openstack-credentials-file $CLOUDS_YAML \
 --openstack-external-network-id $EXTERNAL_ID \
 --openstack-node-image-name $IMAGE_NAME \
---openstack-node-flavor $FLAVOR
+--openstack-node-flavor $FLAVOR \
+--openstack-ingress-floating-ip $INGRESS_FLOATING_IP \
+--openstack-ingress-provider $INGRESS_PROVIDER
 ```
 
 !!! note
@@ -192,133 +212,6 @@ oc --kubeconfig $CLUSTER_NAME-kubeconfig get clusterversion
 NAME      VERSION       AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.17.0        True        False         5m39s   Cluster version is 4.17.0
 ```
-
-## Enabling Ingress
-
-Note: In 4.17, enabling Ingress is a day 2 operation and we tested it with MetalLB. This might change in the future.
-
-* Create a floating IP using the external network configured on your cluster that will be the public IP for Ingress.
-* Update your DNS to create the wildcard for *apps.<cluster-name>.<base-domain> .
-* Create the OpenStack Neutron port for Ingress:
-
-```shell
-openstack port create --network k8s-clusterapi-cluster-<cluster-namespace>-<cluster-name>-<cluster-id> --fixed-ip ip-address=<internal-ingress-IP> hcp-ingress
-```
-
-Note: if CAPO handles the network resources, the internal ingress IP should be `10.0.0.7`. This IP was chosen because
-if the user doesn't pre-create network resources, we will ask CAPO to create them in a pre-defined CIDR (10.0.0.0/16)
-and setup DHCP in a allocation pool that is out of the reserved IP needed for Ingress.
-When the user provides the network, it's up to them to configure an allocation pool which allows the Ingress IP to be out
-of it.
-
-* Assign the floating IP to the port:
-
-```shell
-openstack floating ip set --port hcp-ingress <ingress-FIP>
-```
-
-* Deploy the MetalLB operator:
-
-```shell
-cat <<EOF | oc apply -f -
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: metallb
-  labels:
-    openshift.io/cluster-monitoring: "true"
-  annotations:
-    workload.openshift.io/allowed: management
----
-apiVersion: operators.coreos.com/v1
-kind: OperatorGroup
-metadata:
-  name: metallb-operator-operatorgroup
-  namespace: metallb
----
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: metallb-operator
-  namespace: metallb
-spec:
-  channel: "stable"
-  name: metallb-operator
-  source: redhat-operators
-  sourceNamespace: openshift-marketplace
-EOF
-```
-
-* Deploy a MetalLB instance:
-
-```shell
-cat <<EOF | oc apply -f -
----
-apiVersion: metallb.io/v1beta1
-kind: MetalLB
-metadata:
-  name: metallb
-  namespace: metallb
-EOF
-```
-
-* Deploy a MetalLB IP address pool and the BGP advertisment:
-
-```shell
-cat <<EOF | oc apply -f -
----
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: ingress-public-ip
-  namespace: metallb
-spec:
-  protocol: layer2
-  autoAssign: false
-  addresses:
-    - <ingress-FIP>/32
----
-apiVersion: metallb.io/v1beta1
-kind: BGPAdvertisement
-metadata:
-  name: ingress-public-ip
-  namespace: metallb
-spec:
-  ipAddressPools:
-    - ingress-public-ip
-EOF
-```
-
-* Deploy a Service of type LoadBalancer for Ingress:
-
-```shell
-cat <<EOF | oc apply -f -
----
-kind: Service
-apiVersion: v1
-metadata:
-  annotations:
-    metallb.universe.tf/address-pool: ingress-public-ip
-  name: metallb-ingress
-  namespace: openshift-ingress
-spec:
-  ports:
-    - name: http
-      protocol: TCP
-      port: 80
-      targetPort: 80
-    - name: https
-      protocol: TCP
-      port: 443
-      targetPort: 443
-  selector:
-    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
-  type: LoadBalancer
-EOF
-```
-
-At this point, Ingress should be functional, you can test to log into the console URL: `console-openshift-console.apps.<cluster-name>.<base-domain>`.
 
 ## Scaling an existing NodePool
 
