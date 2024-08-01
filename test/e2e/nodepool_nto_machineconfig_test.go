@@ -96,6 +96,9 @@ func (mc *NTOMachineConfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyp
 }
 
 func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
+	var (
+		EnsureFuncNoCrashingPods e2eutil.EnsureFunc = e2eutil.EnsureNoCrashingPods
+	)
 	g := NewWithT(t)
 
 	ctx := mc.ctx
@@ -133,7 +136,10 @@ func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePo
 	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
 	e2eutil.WaitForReadyNodesByNodePool(t, ctx, mc.hostedClusterClient, &nodePool, mc.hostedCluster.Spec.Platform.Type)
 	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
-	e2eutil.EnsureNoCrashingPods(t, ctx, mc.mgmtClient, mc.hostedCluster)
+	EnsureFuncNoCrashingPods(t, ctx, &e2eutil.TestParams{
+		MgmtClient:    mc.mgmtClient,
+		HostedCluster: mc.hostedCluster,
+	})
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, mc.mgmtClient, mc.hostedCluster)

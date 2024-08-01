@@ -150,7 +150,7 @@ func TestNoneCreateCluster(t *testing.T) {
 		e2eutil.WaitForConditionsOnHostedControlPlane(t, ctx, mgtClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 		// etcd restarts for me once always and apiserver two times before running stable
-		// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+		// e2eutil.EnsureNoCrashingPods(t, ctx, client, e2eutil.TestParams{...})
 	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
