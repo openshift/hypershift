@@ -5,7 +5,8 @@ Install an OCP cluster running on VMs within a management OCP cluster
 ## Limitations
 
 * The HyperShift Operator with OpenStack support is currently in development and is not intended for production use.
-* Ingress and OpenStack CSI (Cinder and Manila) are not functional.
+* Enabling Ingress is a day 2 operation for now, using OpenStack Octavia.
+* OpenStack CSI (Cinder and Manila) are not functional.
 
 ## Prerequisites
 
@@ -13,6 +14,7 @@ Install an OCP cluster running on VMs within a management OCP cluster
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
+* OpenStack Octavia is required to make Ingress working in dev-preview.
 
 ## Installing HyperShift Operator and cli tooling
 
@@ -191,6 +193,49 @@ oc --kubeconfig $CLUSTER_NAME-kubeconfig get clusterversion
 NAME      VERSION       AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.17.0        True        False         5m39s   Cluster version is 4.17.0
 ```
+
+## Enabling Ingress
+
+Note: In 4.17, enabling Ingress is a day 2 operation and we tested it wit OpenStack Octavia. This will change in the future.
+
+* Create a floating IP using the external network configured on your cluster that will be the public IP for Ingress.
+* Update your DNS to create the wildcard for `.apps.$CLUSTER_NAME.$BASE_DOMAIN`.
+* Create a Service for the Ingress Controller:
+
+```shell
+cat <<EOF | oc --kubeconfig $CLUSTER_NAME-kubeconfig apply -f -
+kind: Service
+apiVersion: v1
+metadata:
+  name: octavia-ingress
+  namespace: openshift-ingress
+spec:
+  loadBalancerIP: <Ingress FIP>
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 443
+  selector:
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
+  type: LoadBalancer
+EOF
+
+Once the load-balancer was created in Octavia, you should see the external IP of the Service matching the ingress floating IP:
+
+```shell
+oc --kubeconfig $CLUSTER_NAME-kubeconfig get svc octavia-ingress -n openshift-ingress
+
+NAME              TYPE           CLUSTER-IP       EXTERNAL-IP      PORT(S)                      AGE
+octavia-ingress   LoadBalancer   172.31.165.123   192.168.25.156   80:30331/TCP,443:30576/TCP   76m
+```
+
+Note: `192.168.25.156` is our Ingress FIP in this example.
+At this point, the ingress service should be available and you can use things like the console.
 
 ## Scaling an existing NodePool
 
