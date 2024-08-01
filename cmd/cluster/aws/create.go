@@ -25,25 +25,26 @@ import (
 )
 
 type RawCreateOptions struct {
-	Credentials             awsutil.AWSCredentialsOptions
-	CredentialSecretName    string
-	AdditionalTags          []string
-	IAMJSON                 string
-	InstanceType            string
-	IssuerURL               string
-	PrivateZoneID           string
-	PublicZoneID            string
-	Region                  string
-	RootVolumeIOPS          int64
-	RootVolumeSize          int64
-	RootVolumeType          string
-	RootVolumeEncryptionKey string
-	EndpointAccess          string
-	Zones                   []string
-	EtcdKMSKeyARN           string
-	EnableProxy             bool
-	SingleNATGateway        bool
-	MultiArch               bool
+	Credentials                 awsutil.AWSCredentialsOptions
+	CredentialSecretName        string
+	AdditionalTags              []string
+	IAMJSON                     string
+	InstanceType                string
+	IssuerURL                   string
+	PrivateZoneID               string
+	PublicZoneID                string
+	Region                      string
+	RootVolumeIOPS              int64
+	RootVolumeSize              int64
+	RootVolumeType              string
+	RootVolumeEncryptionKey     string
+	EndpointAccess              string
+	Zones                       []string
+	EtcdKMSKeyARN               string
+	EnableProxy                 bool
+	ProxyVPCEndpointServiceName string
+	SingleNATGateway            bool
+	MultiArch                   bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -374,6 +375,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.EndpointAccess, "endpoint-access", opts.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
 	flags.StringVar(&opts.EtcdKMSKeyARN, "kms-key-arn", opts.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	flags.BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	flags.StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
@@ -417,17 +419,18 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOptions) awsinfra.CreateInfraOptions {
 	return awsinfra.CreateInfraOptions{
-		Region:             awsOpts.Region,
-		InfraID:            opts.InfraID,
-		AWSCredentialsOpts: awsOpts.Credentials,
-		Name:               opts.Name,
-		BaseDomain:         opts.BaseDomain,
-		BaseDomainPrefix:   opts.BaseDomainPrefix,
-		AdditionalTags:     awsOpts.AdditionalTags,
-		Zones:              awsOpts.Zones,
-		EnableProxy:        awsOpts.EnableProxy,
-		SSHKeyFile:         opts.SSHKeyFile,
-		SingleNATGateway:   awsOpts.SingleNATGateway,
+		Region:                      awsOpts.Region,
+		InfraID:                     opts.InfraID,
+		AWSCredentialsOpts:          awsOpts.Credentials,
+		Name:                        opts.Name,
+		BaseDomain:                  opts.BaseDomain,
+		BaseDomainPrefix:            opts.BaseDomainPrefix,
+		AdditionalTags:              awsOpts.AdditionalTags,
+		Zones:                       awsOpts.Zones,
+		EnableProxy:                 awsOpts.EnableProxy,
+		ProxyVPCEndpointServiceName: awsOpts.ProxyVPCEndpointServiceName,
+		SSHKeyFile:                  opts.SSHKeyFile,
+		SingleNATGateway:            awsOpts.SingleNATGateway,
 	}
 }
 

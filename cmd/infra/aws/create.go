@@ -26,18 +26,19 @@ import (
 )
 
 type CreateInfraOptions struct {
-	AWSCredentialsOpts awsutil.AWSCredentialsOptions
-	Region             string
-	InfraID            string
-	Name               string
-	BaseDomain         string
-	BaseDomainPrefix   string
-	Zones              []string
-	OutputFile         string
-	AdditionalTags     []string
-	EnableProxy        bool
-	SSHKeyFile         string
-	SingleNATGateway   bool
+	AWSCredentialsOpts          awsutil.AWSCredentialsOptions
+	Region                      string
+	InfraID                     string
+	Name                        string
+	BaseDomain                  string
+	BaseDomainPrefix            string
+	Zones                       []string
+	OutputFile                  string
+	AdditionalTags              []string
+	EnableProxy                 bool
+	ProxyVPCEndpointServiceName string
+	SSHKeyFile                  string
+	SingleNATGateway            bool
 
 	CredentialsSecretData *util.CredentialsSecretData
 
@@ -95,6 +96,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availability zones in which NodePool can be created")
 	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	cmd.Flags().StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 
 	cmd.MarkFlagRequired("infra-id")
@@ -257,24 +259,35 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	if o.EnableProxy {
-		var sshKeyFile []byte
-		if o.SSHKeyFile != "" {
-			sshKeyFile, err = os.ReadFile(o.SSHKeyFile)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
-			}
-		}
-		result.ProxyAddr, err = o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, result.VPCID, string(sshKeyFile))
+		sgGroupID, err := o.createProxySecurityGroup(ctx, l, ec2Client, result.VPCID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create proxy host: %w", err)
+			return nil, fmt.Errorf("failed to create security group for proxy: %w", err)
 		}
 
+		if o.ProxyVPCEndpointServiceName != "" {
+			result.ProxyAddr, err = o.createProxyVPCEndpoint(ctx, l, ec2Client, result.VPCID, result.Zones[0].SubnetID, sgGroupID)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			var sshKeyFile []byte
+			if o.SSHKeyFile != "" {
+				sshKeyFile, err = os.ReadFile(o.SSHKeyFile)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
+				}
+			}
+			result.ProxyAddr, err = o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, string(sshKeyFile), sgGroupID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create proxy host: %w", err)
+			}
+		}
 	}
 	return result, nil
 }
 
-func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, vpcID string, sshKeys string) (string, error) {
-	const securityGroupName = "proxy-sg"
+func (o *CreateInfraOptions) createProxySecurityGroup(ctx context.Context, l logr.Logger, client ec2iface.EC2API, vpcID string) (*string, error) {
+	securityGroupName := o.InfraID + "-proxy-sg"
 	sgCreateResult, err := client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
 		GroupName:         aws.String(securityGroupName),
 		Description:       aws.String("proxy security group"),
@@ -282,7 +295,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 		TagSpecifications: o.ec2TagSpecifications("security-group", securityGroupName),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create bastion security group: %w", err)
+		return nil, fmt.Errorf("failed to create bastion security group: %w", err)
 	}
 
 	var sgResult *ec2.DescribeSecurityGroupsOutput
@@ -297,7 +310,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(sgCreateResult.GroupId))
+		return nil, fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(sgCreateResult.GroupId))
 	}
 	sg := sgResult.SecurityGroups[0]
 	l.Info("Created security group", "name", securityGroupName, "id", aws.StringValue(sg.GroupId))
@@ -325,10 +338,34 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 		IpPermissions: permissions,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to authorize security group: %w", err)
+		return nil, fmt.Errorf("failed to authorize security group: %w", err)
 	}
 	l.Info("Authorized security group for proxy")
 
+	return sg.GroupId, nil
+}
+
+func (o *CreateInfraOptions) createProxyVPCEndpoint(ctx context.Context, l logr.Logger, client ec2iface.EC2API, vpcID string, subnetID string, sgGroupID *string) (string, error) {
+	output, err := client.CreateVpcEndpointWithContext(ctx, &ec2.CreateVpcEndpointInput{
+		ServiceName: aws.String(o.ProxyVPCEndpointServiceName),
+		VpcId:       aws.String(vpcID),
+		SubnetIds:   []*string{aws.String(subnetID)},
+		SecurityGroupIds: []*string{
+			sgGroupID,
+		},
+		VpcEndpointType:   aws.String("Interface"),
+		PrivateDnsEnabled: aws.Bool(false),
+		TagSpecifications: o.ec2TagSpecifications("vpc-endpoint", o.InfraID+"-http-proxy"),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create VPC endpoint for proxy: %w", err)
+	}
+
+	l.Info("Created VPC endpoint for proxy", "id", aws.StringValue(output.VpcEndpoint.VpcEndpointId))
+	return fmt.Sprintf("http://%s:3128", *output.VpcEndpoint.DnsEntries[0].DnsName), nil
+}
+
+func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, sshKeys string, sgGroupID *string) (string, error) {
 	result, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
 		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
 		MaxCount:     aws.Int64(1),
@@ -340,10 +377,10 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 				DeviceIndex:              aws.Int64(0),
 				AssociatePublicIpAddress: aws.Bool(true),
 				SubnetId:                 aws.String(subnetID),
-				Groups:                   []*string{sg.GroupId},
+				Groups:                   []*string{sgGroupID},
 			},
 		},
-		TagSpecifications: o.ec2TagSpecifications("instance", o.Name+"-"+o.InfraID+"-http-proxy"),
+		TagSpecifications: o.ec2TagSpecifications("instance", o.InfraID+"-http-proxy"),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to launch proxy host: %w", err)
