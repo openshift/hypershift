@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -1932,6 +1933,17 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		log.Info("Persistent volumes are removed")
 	}
 
+	log.Info("Ensuring volume snapshots are removed")
+	removed, err = r.ensureVolumeSnapshotsRemoved(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	if !removed {
+		remaining.Insert("volume-snapshots")
+	} else {
+		log.Info("Volume snapshots are removed")
+	}
+
 	return remaining, errors.NewAggregate(errs)
 }
 
@@ -2204,6 +2216,22 @@ func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (boo
 	}
 
 	return removed, nil
+}
+
+func (r *reconciler) ensureVolumeSnapshotsRemoved(ctx context.Context) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	vss := &snapshotv1.VolumeSnapshotList{}
+	if err := r.client.List(ctx, vss); err != nil {
+		return false, fmt.Errorf("cannot list volume snapshots: %w", err)
+	}
+	if len(vss.Items) == 0 {
+		log.Info("There are no more volume snapshots. Nothing to cleanup.")
+		return true, nil
+	}
+	if _, err := cleanupResources(ctx, r.client, &snapshotv1.VolumeSnapshotList{}, nil, false); err != nil {
+		return false, fmt.Errorf("failed to remove volume snapshots: %w", err)
+	}
+	return false, nil
 }
 
 func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, error) {
