@@ -14,6 +14,9 @@ import (
 )
 
 func TestUpgradeControlPlane(t *testing.T) {
+	var (
+		EnsureFuncNoCrashingPods e2eutil.EnsureFunc = e2eutil.EnsureNoCrashingPods
+	)
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
@@ -52,7 +55,10 @@ func TestUpgradeControlPlane(t *testing.T) {
 		guestClient = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgtClient, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
-		e2eutil.EnsureNoCrashingPods(t, ctx, mgtClient, hostedCluster)
+		EnsureFuncNoCrashingPods(t, ctx, &e2eutil.TestParams{
+			MgmtClient:    mgtClient,
+			HostedCluster: hostedCluster,
+		})
 		e2eutil.EnsureMachineDeploymentGeneration(t, ctx, mgtClient, hostedCluster, 1)
 		// TODO (cewong): enable this test once the fix for KAS->Kubelet communication has merged
 		// e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
