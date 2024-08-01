@@ -13,7 +13,6 @@ import (
 	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -73,8 +72,6 @@ type Params struct {
 	OwnerRef                config.OwnerRef
 	DeploymentConfig        config.DeploymentConfig
 	IsPrivate               bool
-	ExposedThroughHCPRouter bool
-	SbDbPubStrategy         *hyperv1.ServicePublishingStrategy
 	DefaultIngressDomain    string
 }
 
@@ -106,10 +103,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		IsPrivate:               util.IsPrivateHCP(hcp),
-		ExposedThroughHCPRouter: isOVNSBDBExposedThroughHCPRouter(hcp),
 		HostedClusterName:       hcp.Name,
 		TokenAudience:           hcp.Spec.IssuerURL,
-		SbDbPubStrategy:         util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb),
 		DefaultIngressDomain:    defaultIngressDomain,
 		CAConfigMap:             caConfigMap,
 		CAConfigMapKey:          caConfigMapKey,
@@ -366,16 +361,6 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		cnoArgs = append(cnoArgs, "--extra-clusters=management=/configs/management")
 	}
 
-	sbDbRouteHost := util.ShortenRouteHostnameIfNeeded("ovnkube-sbdb", dep.Namespace, params.DefaultIngressDomain)
-	if params.IsPrivate {
-		sbDbRouteHost = "ovnkube-sbdb." + awsprivatelink.RouterZoneName(params.HostedClusterName)
-	} else if params.SbDbPubStrategy != nil && params.SbDbPubStrategy.Route != nil && params.SbDbPubStrategy.Route.Hostname != "" {
-		sbDbRouteHost = params.SbDbPubStrategy.Route.Hostname
-	}
-	cnoEnv = append(cnoEnv, corev1.EnvVar{
-		Name: "OVN_SBDB_ROUTE_HOST", Value: sbDbRouteHost,
-	})
-
 	if !params.IsPrivate {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name: "PROXY_INTERNAL_APISERVER_ADDRESS", Value: "true",
@@ -386,16 +371,6 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name:  rhobsmonitoring.EnvironmentVariable,
 			Value: "1",
-		})
-	}
-
-	if params.ExposedThroughHCPRouter && !params.IsPrivate {
-		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: util.HCPRouteLabel + "=" + dep.Namespace})
-	}
-	if params.IsPrivate {
-		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: fmt.Sprintf("%v=%v,%v=%v",
-			util.HCPRouteLabel, dep.Namespace,
-			util.InternalRouteLabel, "true"),
 		})
 	}
 
@@ -592,19 +567,6 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		o.WaitForInfrastructureResource = true
 	})
 	return nil
-}
-
-func isOVNSBDBExposedThroughHCPRouter(hcp *hyperv1.HostedControlPlane) bool {
-	publishingStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb)
-	if publishingStrategy == nil || publishingStrategy.Type != hyperv1.Route {
-		return false
-	}
-
-	if util.IsPrivateHCP(hcp) {
-		return true
-	}
-
-	return util.IsPublicKASWithDNS(hcp) && publishingStrategy.Route.Hostname != ""
 }
 
 func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, dep *appsv1.Deployment, c config.DeploymentConfig) error {

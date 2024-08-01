@@ -657,6 +657,7 @@ var (
 	Ignition ServiceType = "Ignition"
 
 	// OVNSbDb is the optional control plane ovn southbound database service used by OVNKubernetes CNI.
+	// Deprecated: This service is no longer used by OVNKubernetes CNI for >= 4.14.
 	OVNSbDb ServiceType = "OVNSbDb"
 )
 

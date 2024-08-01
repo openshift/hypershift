@@ -33,7 +33,6 @@ spec:
         command:
         - /usr/bin/cluster-network-operator
         env:
-        - name: OVN_SBDB_ROUTE_HOST
         - name: PROXY_INTERNAL_APISERVER_ADDRESS
           value: "true"
         - name: HYPERSHIFT

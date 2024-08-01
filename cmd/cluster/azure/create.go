@@ -3,10 +3,11 @@ package azure
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/hypershift/cmd/version"
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/openshift/hypershift/cmd/version"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -240,10 +241,6 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			case hyperv1.Ignition:
 				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
 					Hostname: fmt.Sprintf("ignition-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-			case hyperv1.OVNSbDb:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("ovn-sbdb-%s.%s", cluster.Name, o.externalDNSDomain),
 				}
 			}
 		}

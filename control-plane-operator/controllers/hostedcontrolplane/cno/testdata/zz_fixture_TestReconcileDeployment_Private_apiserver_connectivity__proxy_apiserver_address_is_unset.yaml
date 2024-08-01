@@ -33,10 +33,6 @@ spec:
         command:
         - /usr/bin/cluster-network-operator
         env:
-        - name: OVN_SBDB_ROUTE_HOST
-          value: ovnkube-sbdb.apps..hypershift.local
-        - name: OVN_SBDB_ROUTE_LABELS
-          value: hypershift.openshift.io/hosted-control-plane=,hypershift.openshift.io/internal-route=true
         - name: HYPERSHIFT
           value: "true"
         - name: HOSTED_CLUSTER_NAME

@@ -1054,7 +1054,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 			{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 			{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
-			{Service: hyperv1.OVNSbDb, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 		}
 		cluster.Spec.PullSecret = corev1.LocalObjectReference{Name: "secret"}
 		cluster.Spec.InfraID = "infra-id"
