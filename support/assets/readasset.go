@@ -5,6 +5,7 @@ import (
 
 	"github.com/openshift/hypershift/support/api"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -68,6 +69,12 @@ func MustRoleBinding(reader AssetReader, fileName string) *rbacv1.RoleBinding {
 	roleBinding := &rbacv1.RoleBinding{}
 	deserializeResource(reader, fileName, roleBinding)
 	return roleBinding
+}
+
+func MustHostedCluster(reader AssetReader, fileName string) *hyperv1.HostedCluster {
+	hostedCluster := &hyperv1.HostedCluster{}
+	deserializeResource(reader, fileName, hostedCluster)
+	return hostedCluster
 }
 
 func deserializeResource(reader AssetReader, fileName string, obj runtime.Object) {

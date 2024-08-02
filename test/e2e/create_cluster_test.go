@@ -11,13 +11,45 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
+	"github.com/openshift/hypershift/support/assets"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
 	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func TestCreateClusterAPIUX(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	t.Run("AzureShouldOnlyAllowServicesWithRouteAndHostname", func(t *testing.T) {
+		g := NewWithT(t)
+		client, err := e2eutil.GetClient()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
+
+		testCases := []struct {
+			name                   string
+			file                   string
+			expectedErrorSubstring string
+		}{
+			{
+				name:                   "AzureExpectServicesRouteHostname",
+				file:                   "azure-services-ignition-route-not-hostname.yaml",
+				expectedErrorSubstring: "Azure platform requires Ignition Route service with a hostname to be defined",
+			},
+		}
+
+		for _, tc := range testCases {
+			hc := assets.MustHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
+			defer client.Delete(ctx, hc)
+			err = client.Create(ctx, hc)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+		}
+	})
+}
 
 // TestCreateCluster implements a test that creates a cluster with the code under test
 // vs upgrading to the code under test as TestUpgradeControlPlane does.
