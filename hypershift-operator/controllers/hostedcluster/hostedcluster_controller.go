@@ -1717,20 +1717,22 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 		}
-		if err := ignitionserverreconciliation.ReconcileIgnitionServer(ctx,
-			r.Client,
-			createOrUpdate,
-			utilitiesImage,
-			releaseInfo.ComponentImages(),
-			hcp,
-			defaultIngressDomain,
-			ignitionServerHasHealthzHandler,
-			releaseProvider.GetRegistryOverrides(),
-			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
-			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-			config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
-		); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
+		if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+			if err := ignitionserverreconciliation.ReconcileIgnitionServer(ctx,
+				r.Client,
+				createOrUpdate,
+				utilitiesImage,
+				releaseInfo.ComponentImages(),
+				hcp,
+				defaultIngressDomain,
+				ignitionServerHasHealthzHandler,
+				releaseProvider.GetRegistryOverrides(),
+				hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
+				r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+				config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
+			); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
+			}
 		}
 	}
 
@@ -1810,6 +1812,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.AWSLoadBalancerSubnetsAnnotation,
 		hyperv1.ManagementPlatformAnnotation,
 		hyperv1.KubeAPIServerVerbosityLevelAnnotation,
+		hyperv1.DisableIgnitionServerAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
