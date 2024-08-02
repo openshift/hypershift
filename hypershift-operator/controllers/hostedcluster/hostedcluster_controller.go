@@ -4148,7 +4148,6 @@ func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) e
 	for _, serviceType := range []hyperv1.ServiceType{
 		hyperv1.Konnectivity,
 		hyperv1.OAuthServer,
-		hyperv1.OVNSbDb,
 		hyperv1.Ignition,
 	} {
 		servicePublishingStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hc, serviceType)

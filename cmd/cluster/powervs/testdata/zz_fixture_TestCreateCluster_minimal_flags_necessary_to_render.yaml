@@ -97,9 +97,6 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
-  - service: OVNSbDb
-    servicePublishingStrategy:
-      type: Route
   sshKey: {}
 status:
   controlPlaneEndpoint:

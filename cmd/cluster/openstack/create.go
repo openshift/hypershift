@@ -149,10 +149,6 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
 					Hostname: fmt.Sprintf("ignition-%s.%s", cluster.Name, o.externalDNSDomain),
 				}
-			case hyperv1.OVNSbDb:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("ovn-sbdb-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
 			}
 		}
 	}

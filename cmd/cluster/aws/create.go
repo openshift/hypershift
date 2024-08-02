@@ -293,15 +293,8 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 						Hostname: fmt.Sprintf("ignition-%s.%s", cluster.Name, o.externalDNSDomain),
 					}
 				}
-			case hyperv1.OVNSbDb:
-				if endpointAccess == hyperv1.Public {
-					cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-						Hostname: fmt.Sprintf("ovn-sbdb-%s.%s", cluster.Name, o.externalDNSDomain),
-					}
-				}
 			}
 		}
-
 	}
 
 	return nil

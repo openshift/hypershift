@@ -783,9 +783,6 @@ func GetIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, use
 		hyperv1.Konnectivity: hyperv1.Route,
 		hyperv1.Ignition:     hyperv1.Route,
 	}
-	if netType == hyperv1.OVNKubernetes {
-		services[hyperv1.OVNSbDb] = hyperv1.Route
-	}
 	var ret []hyperv1.ServicePublishingStrategyMapping
 	for service, strategy := range services {
 		ret = append(ret, hyperv1.ServicePublishingStrategyMapping{
@@ -808,9 +805,6 @@ func GetServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress stri
 		hyperv1.OIDC,
 		hyperv1.Konnectivity,
 		hyperv1.Ignition,
-	}
-	if netType == hyperv1.OVNKubernetes {
-		services = append(services, hyperv1.OVNSbDb)
 	}
 	var ret []hyperv1.ServicePublishingStrategyMapping
 	for _, service := range services {
