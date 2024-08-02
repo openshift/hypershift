@@ -20,6 +20,7 @@ require (
 	github.com/clarketm/json v1.14.1
 	github.com/coreos/ignition/v2 v2.14.0
 	github.com/docker/distribution v2.8.2+incompatible
+	github.com/elazarl/goproxy v0.0.0-20240618083138-03be62527ccb
 	github.com/evanphx/json-patch/v5 v5.7.0
 	github.com/go-logr/logr v1.3.0
 	github.com/go-logr/zapr v1.2.4
@@ -80,7 +81,6 @@ require (
 	k8s.io/utils v0.0.0-20231127182322-b307cd553661
 	kubevirt.io/api v1.1.0
 	kubevirt.io/containerized-data-importer-api v1.57.0
-	sigs.k8s.io/apiserver-network-proxy v0.0.24
 	sigs.k8s.io/cluster-api v1.5.3
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.2.4
 	sigs.k8s.io/cluster-api-provider-azure v1.11.5
