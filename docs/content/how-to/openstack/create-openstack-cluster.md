@@ -110,7 +110,7 @@ export FLAVOR="m1.large"
 
 # Optional flags:
 # External network to use for the API and Ingress endpoints.
-export EXTERNAL_NETWORK="public"
+export EXTERNAL_ID="5387f86a-a10e-47fe-91c6-41ac131f9f30"
 
 # CA certificate path to use for the OpenStack API if using self-signed certificates.
 export CA_CERT_PATH="$HOME/ca.crt"
@@ -125,7 +125,7 @@ hcp create cluster openstack \
 --ssh-key $SSH_KEY \
 --openstack-ca-cert-file $CA_CERT_PATH \
 --openstack-credentials-file $CLOUDS_YAML \
---openstack-external-network-name $EXTERNAL_NETWORK \
+--openstack-external-network-id $EXTERNAL_ID \
 --openstack-node-image-name $IMAGE_NAME \
 --openstack-node-flavor $FLAVOR
 ```

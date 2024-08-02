@@ -31,13 +31,13 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (required)")
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
-	flags.StringVar(&opts.OpenStackExternalNetworkName, "openstack-external-network-name", opts.OpenStackExternalNetworkName, "Name of the OpenStack external network (optional)")
+	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 }
 
 type RawCreateOptions struct {
-	OpenStackCredentialsFile     string
-	OpenStackCACertFile          string
-	OpenStackExternalNetworkName string
+	OpenStackCredentialsFile   string
+	OpenStackCACertFile        string
+	OpenStackExternalNetworkID string
 
 	externalDNSDomain string
 
@@ -119,11 +119,9 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 		CloudName: "openstack", // TODO: make this configurable or at least check the clouds.yaml file
 	}
 
-	if o.OpenStackExternalNetworkName != "" {
+	if o.OpenStackExternalNetworkID != "" {
 		cluster.Spec.Platform.OpenStack.ExternalNetwork = &hyperv1.NetworkParam{
-			Filter: &hyperv1.NetworkFilter{
-				Name: o.OpenStackExternalNetworkName,
-			},
+			ID: &o.OpenStackExternalNetworkID,
 		}
 	}
 

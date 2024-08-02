@@ -86,7 +86,7 @@ func TestCreateCluster(t *testing.T) {
 			name: "default creation flags",
 			args: []string{
 				"--openstack-credentials-file=" + credentialsFile,
-				"--openstack-external-network-name=fakeExternalNetwork",
+				"--openstack-external-network-id=5387f86a-a10e-47fe-91c6-41ac131f9f30",
 				"--openstack-node-image-name=rhcos",
 				"--openstack-node-flavor=fakeFlavor",
 				"--pull-secret=" + pullSecretFile,

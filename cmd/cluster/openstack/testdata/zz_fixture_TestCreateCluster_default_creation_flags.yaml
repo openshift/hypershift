@@ -51,8 +51,7 @@ spec:
   platform:
     openstack:
       externalNetwork:
-        filter:
-          name: fakeExternalNetwork
+        id: 5387f86a-a10e-47fe-91c6-41ac131f9f30
       identityRef:
         cloudName: openstack
         name: test-cloud-credentials
