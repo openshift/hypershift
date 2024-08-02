@@ -9679,6 +9679,11 @@ spec:
             - services
             - sshKey
             type: object
+            x-kubernetes-validations:
+            - message: Services is immutable. Changes might result in unpredictable
+                and disruptive behavior.
+              rule: 'self.platform.type != ''IBMCloud'' ? self.services == oldSelf.services
+                : true'
           status:
             description: Status is the latest observed status of the HostedCluster.
             properties:

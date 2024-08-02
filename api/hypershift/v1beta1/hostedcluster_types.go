@@ -321,6 +321,7 @@ const (
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'IBMCloud' ? self.services == oldSelf.services : true", message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
 type HostedClusterSpec struct {
 	// Release specifies the desired OCP release payload for the hosted cluster.
 	//
