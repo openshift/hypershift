@@ -321,7 +321,12 @@ const (
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
+
 // +kubebuilder:validation:XValidation:rule="self.platform.type != 'IBMCloud' ? self.services == oldSelf.services : true", message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'Azure' ? self.services.exists(s, s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route' && s.servicePublishingStrategy.route.hostname != '') : true",message="Azure platform requires APIServer Route service with a hostname to be defined"
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'Azure' ? self.services.exists(s, s.service == 'OAuthServer' && s.servicePublishingStrategy.type == 'Route' && s.servicePublishingStrategy.route.hostname != '') : true",message="Azure platform requires OAuthServer Route service with a hostname to be defined"
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'Azure' ? self.services.exists(s, s.service == 'Konnectivity' && s.servicePublishingStrategy.type == 'Route' && s.servicePublishingStrategy.route.hostname != '') : true",message="Azure platform requires Konnectivity Route service with a hostname to be defined"
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'Azure' ? self.services.exists(s, s.service == 'Ignition' && s.servicePublishingStrategy.type == 'Route' && s.servicePublishingStrategy.route.hostname != '') : true",message="Azure platform requires Ignition Route service with a hostname to be defined"
 type HostedClusterSpec struct {
 	// Release specifies the desired OCP release payload for the hosted cluster.
 	//

@@ -3764,7 +3764,6 @@ which contain any of the given tags will be excluded from the result.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedCluster">HostedCluster</a>)
 </p>
 <p>
-<p>HostedClusterSpec is the desired behavior of a HostedCluster.</p>
 </p>
 <table>
 <thead>
