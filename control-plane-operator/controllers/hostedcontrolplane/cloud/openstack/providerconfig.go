@@ -19,11 +19,11 @@ const (
 // ReconcileCloudConfigSecret reconciles the cloud config secret.
 // For some controllers (e.g. Manila CSI, CNCC, etc), the cloud config needs to be stored in a secret.
 // In the hosted cluster config operator, we create the secrets needed by these controllers.
-func ReconcileCloudConfigSecret(secret *corev1.Secret, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigSecret(externalNetworkID *string, secret *corev1.Secret, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	config := getCloudConfig(cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
 	if caCertData != nil {
 		secret.Data[CABundleKey] = caCertData
 	}
@@ -34,11 +34,11 @@ func ReconcileCloudConfigSecret(secret *corev1.Secret, cloudName string, credent
 
 // ReconcileCloudConfigConfigMap reconciles the cloud config configmap.
 // In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
-func ReconcileCloudConfigConfigMap(cm *corev1.ConfigMap, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigConfigMap(externalNetworkID *string, cm *corev1.ConfigMap, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	config := getCloudConfig(cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
 	if caCertData != nil {
 		cm.Data[CABundleKey] = string(caCertData)
 	}
@@ -48,7 +48,7 @@ func ReconcileCloudConfigConfigMap(cm *corev1.ConfigMap, cloudName string, crede
 }
 
 // getCloudConfig returns the cloud config.
-func getCloudConfig(cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) string {
+func getCloudConfig(externalNetworkID *string, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) string {
 	config := string(credentialsSecret.Data[CredentialsFile])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
@@ -58,6 +58,9 @@ func getCloudConfig(cloudName string, credentialsSecret *corev1.Secret, caCertDa
 		config += "ca-file=" + CaDir + "/" + CABundleKey + "\n"
 	}
 	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
+	if externalNetworkID != nil && *externalNetworkID != "" {
+		config += "floating-network-id = " + *externalNetworkID + "\n"
+	}
 
 	return config
 }
