@@ -2680,6 +2680,21 @@ configuration for the Azure cloud provider, aka Azure cloud controller manager (
 expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>msiClientIDs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedServiceIdentities">
+ControlPlaneManagedServiceIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###CIDRBlock { #hypershift.openshift.io/v1beta1.CIDRBlock }
@@ -3399,6 +3414,75 @@ A failure here is unlikely to resolve without the changing user input.</p>
 and reports missing images if any.</p>
 </td>
 </tr></tbody>
+</table>
+###ControlPlaneManagedServiceIdentities { #hypershift.openshift.io/v1beta1.ControlPlaneManagedServiceIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>imageRegistryMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ImageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the cluster-image-registry-operator. The managed identity will be in a different resource group other than
+ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the cluster-ingress-operator. The managed identity will be in a different resource group other than
+ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>NetworkMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the cluster-network-operator. The managed identity will be in a different resource group other than
+ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>StorageMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the cluster-storage-operator. The managed identity will be in a different resource group other than
+ResourceGroupName.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>

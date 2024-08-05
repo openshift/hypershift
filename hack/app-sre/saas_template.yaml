@@ -49379,6 +49379,36 @@ objects:
                           x-kubernetes-map-type: atomic
                         location:
                           type: string
+                        msiClientIDs:
+                          description: |-
+                            MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+                            components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.
+                          properties:
+                            imageRegistryMSIClientID:
+                              description: |-
+                                ImageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-image-registry-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            ingressMSIClientID:
+                              description: |-
+                                IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-ingress-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            networkMSIClientID:
+                              description: |-
+                                NetworkMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-network-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            storageMSIClientID:
+                              description: |-
+                                StorageMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-storage-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                          type: object
                         resourceGroup:
                           type: string
                         securityGroupID:
@@ -54175,6 +54205,36 @@ objects:
                           x-kubernetes-validations:
                           - message: Location is immutable
                             rule: self == oldSelf
+                        msiClientIDs:
+                          description: |-
+                            MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+                            components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.
+                          properties:
+                            imageRegistryMSIClientID:
+                              description: |-
+                                ImageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-image-registry-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            ingressMSIClientID:
+                              description: |-
+                                IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-ingress-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            networkMSIClientID:
+                              description: |-
+                                NetworkMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-network-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            storageMSIClientID:
+                              description: |-
+                                StorageMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-storage-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                          type: object
                         resourceGroup:
                           default: default
                           description: |-
@@ -59667,6 +59727,36 @@ objects:
                           x-kubernetes-map-type: atomic
                         location:
                           type: string
+                        msiClientIDs:
+                          description: |-
+                            MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+                            components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.
+                          properties:
+                            imageRegistryMSIClientID:
+                              description: |-
+                                ImageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-image-registry-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            ingressMSIClientID:
+                              description: |-
+                                IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-ingress-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            networkMSIClientID:
+                              description: |-
+                                NetworkMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-network-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            storageMSIClientID:
+                              description: |-
+                                StorageMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-storage-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                          type: object
                         resourceGroup:
                           type: string
                         securityGroupID:
@@ -64441,6 +64531,36 @@ objects:
                           x-kubernetes-validations:
                           - message: Location is immutable
                             rule: self == oldSelf
+                        msiClientIDs:
+                          description: |-
+                            MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+                            components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.
+                          properties:
+                            imageRegistryMSIClientID:
+                              description: |-
+                                ImageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-image-registry-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            ingressMSIClientID:
+                              description: |-
+                                IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-ingress-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            networkMSIClientID:
+                              description: |-
+                                NetworkMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-network-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                            storageMSIClientID:
+                              description: |-
+                                StorageMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                                the cluster-storage-operator. The managed identity will be in a different resource group other than
+                                ResourceGroupName.
+                              type: string
+                          type: object
                         resourceGroup:
                           default: default
                           description: |-

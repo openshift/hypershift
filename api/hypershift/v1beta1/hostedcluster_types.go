@@ -330,6 +330,7 @@ const (
 type HostedClusterSpec struct {
 	// Release specifies the desired OCP release payload for the hosted cluster.
 	//
+	//
 	// Updating this field will trigger a rollout of the control plane. The
 	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
 	// and InfrastructureAvailabilityPolicy.
@@ -1785,7 +1786,7 @@ type AzurePlatformSpec struct {
 	//
 	// Resource group naming requirements can be found here: https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/.
 	//
-	//Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+	// Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
 	//          ResourceGroupName is <resourceGroupName>.
 	//
 	// +kubebuilder:default:=default
@@ -1839,6 +1840,46 @@ type AzurePlatformSpec struct {
 	// +immutable
 	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+	// components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.
+	//
+	// +optional
+	MSIClientIDs *ControlPlaneManagedServiceIdentities `json:"msiClientIDs,omitempty"`
+}
+
+type ControlPlaneManagedServiceIdentities struct {
+	// ImageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the cluster-image-registry-operator. The managed identity will be in a different resource group other than
+	// ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	ImageRegistryMSIClientID string `json:"imageRegistryMSIClientID,omitempty"`
+
+	// IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the cluster-ingress-operator. The managed identity will be in a different resource group other than
+	// ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	IngressMSIClientID string `json:"ingressMSIClientID,omitempty"`
+
+	// NetworkMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the cluster-network-operator. The managed identity will be in a different resource group other than
+	// ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	NetworkMSIClientID string `json:"networkMSIClientID,omitempty"`
+
+	// StorageMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the cluster-storage-operator. The managed identity will be in a different resource group other than
+	// ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	StorageMSIClientID string `json:"storageMSIClientID,omitempty"`
 }
 
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.
