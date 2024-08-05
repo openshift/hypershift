@@ -1294,7 +1294,13 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
 		hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
-		expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
+		if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AWSPlatform) {
+			// AWS platform supports Jumbo frames
+			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
+		} else if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
+			// Azure platform doesn't support Jumbo frames
+			expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionFalse
+		}
 	}
 
 	t.Logf("validating status for hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)

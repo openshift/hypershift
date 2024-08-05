@@ -240,7 +240,7 @@ const (
 	// See https://github.com/openshift/enhancements/blob/master/enhancements/authentication/pod-security-admission.md
 	PodSecurityAdmissionLabelOverrideAnnotation = "hypershift.openshift.io/pod-security-admission-label-override"
 
-	//DisableMonitoringServices introduces an option to disable monitor services IBM Cloud do not use.
+	// DisableMonitoringServices introduces an option to disable monitor services IBM Cloud do not use.
 	DisableMonitoringServices = "hypershift.openshift.io/disable-monitoring-services"
 
 	// JSONPatchAnnotation allow modifying the kubevirt VM template using jsonpatch
@@ -262,6 +262,9 @@ const (
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifing the log verbosity of kube-apiserver.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
+
+	// ManagementPlatformAnnotation specifies the infrastructure platform of the underlying management cluster
+	ManagementPlatformAnnotation = "hypershift.openshift.io/management-platform"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
