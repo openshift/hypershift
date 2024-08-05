@@ -2624,6 +2624,19 @@ AzureKMSKey
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>kms</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureNodePoolPlatform { #hypershift.openshift.io/v1beta1.AzureNodePoolPlatform }
@@ -2927,6 +2940,67 @@ string
 <p>SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
 expected to exist under the same subscription as SubscriptionID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managedIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
+AzureResourceManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>managedIdentities contains the client IDs related to the managed identities needed for HCP control plane
+and data plane components that authenticate with Azure&rsquo;s API.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managementKeyVault</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedAzureKeyVault">
+ManagedAzureKeyVault
+</a>
+</em>
+</td>
+<td>
+<p>managementKeyVault contains information on the management cluster&rsquo;s Azure Key Vault. This Key Vault is where the
+managed identities certificates are stored. //TODO add a blurb about secrets CSI here as well.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureResourceManagedIdentities contains the client IDs related to the managed identities needed for HCP control plane
+and data plane components that authenticate with Azure&rsquo;s API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>controlPlane</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">
+ControlPlaneManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>controlPlane contains the client IDs of all the managed identities on the HCP control plane needing to
+authenticate with Azure&rsquo;s API.</p>
 </td>
 </tr>
 </tbody>
@@ -3733,6 +3807,130 @@ A failure here is unlikely to resolve without the changing user input.</p>
 and reports missing images if any.</p>
 </td>
 </tr></tbody>
+</table>
+###ControlPlaneManagedIdentities { #hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">AzureResourceManagedIdentities</a>)
+</p>
+<p>
+<p>ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
+Azure&rsquo;s API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cloudProvider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>cloudProvider is a pre-existing managed identity associated with the azure cloud provider, aka cloud controller
+manager.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterAPIAzure</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>clusterAPIAzure is a pre-existing managed identity associated with cluster-api azure.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlane</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>controlPlaneClientID is a pre-existing managed identity associated with the control plane operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>ingress is a pre-existing managed identity associated with the cluster-ingress-operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>network is a pre-existing managed identity associated with the cluster-network-operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disk</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>diskClientID is a pre-existing managed identity associated with the azure-disk-controller.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>file</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>fileClientID is a pre-existing managed identity associated with the azure-disk-controller.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
@@ -6805,6 +7003,59 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 </tr>
 </tbody>
 </table>
+###ManagedAzureKeyVault { #hypershift.openshift.io/v1beta1.ManagedAzureKeyVault }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>ManagedAzureKeyVault is the management cluster&rsquo;s Azure Key Vault where the managed identity certificates are stored.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the management cluster&rsquo;s Azure Key Vault where the managed identity certificates are stored.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tenantID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>tenantID is the tenant ID for the management cluster&rsquo;s Azure Key Vault where the managed identity certificates
+are stored.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>authorizedClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>authorizedClientID is the client ID of the managed identity which can access the Azure Key Vault to retrieve
+certificates related to the ControlPlaneManagedIdentities.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ManagedEtcdSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -6920,6 +7171,49 @@ is empty.</p>
 <td><p>PersistentVolumeEtcdStorage uses PersistentVolumes for etcd storage.</p>
 </td>
 </tr></tbody>
+</table>
+###ManagedIdentity { #hypershift.openshift.io/v1beta1.ManagedIdentity }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">ControlPlaneManagedIdentities</a>)
+</p>
+<p>
+<p>ManagedIdentity contains the client ID, and its certificate, of a managed identity. This managed identity is used, by
+an HCP component, to authenticate with the Azure API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>clientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>clientID is the client ID of a managed identity.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>certificateName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+reside in an Azure key vault on the management cluster.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###MarketplaceImage { #hypershift.openshift.io/v1beta1.MarketplaceImage }
 <p>
