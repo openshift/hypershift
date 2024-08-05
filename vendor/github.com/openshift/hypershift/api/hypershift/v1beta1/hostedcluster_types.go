@@ -1805,7 +1805,7 @@ type AzurePlatformSpec struct {
 	//
 	// Resource group naming requirements can be found here: https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/.
 	//
-	//Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+	// Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
 	//          ResourceGroupName is <resourceGroupName>.
 	//
 	// +kubebuilder:default:=default
@@ -1857,8 +1857,98 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SecurityGroupID is immutable"
 	// +kubebuilder:validation:Required
 	// +immutable
-	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// managedIdentities contains the client IDs related to the managed identities needed for HCP control plane
+	// and data plane components that authenticate with Azure's API.
+	//
+	// +kubebuilder:validation:Required
+	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
+}
+
+// AzureResourceManagedIdentities contains the client IDs related to the managed identities needed for HCP control plane
+// and data plane components that authenticate with Azure's API.
+type AzureResourceManagedIdentities struct {
+	// ControlPlaneManagedIdentities contains the client IDs of all the managed identities on the HCP control plane needing to
+	// authenticate with Azure's API.
+	//
+	// +kubebuilder:validation:Required
+	ControlPlaneManagedIdentities ControlPlaneManagedIdentities `json:"controlPlaneManagedIdentities"`
+
+	// Future placeholder - DataPlaneMIs * DataPlaneManagedIdentities
+}
+
+// ManagedIdentityClientID is a client ID of a managed identity
+// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+type ManagedIdentityClientID string
+
+// ControlPlaneManagedIdentities contains the client IDs of all the managed identities on the HCP control plane needing
+// to authenticate with Azure's API.
+// Managed identity regex pattern is from Microsoft here - https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftmanagedidentity.
+// The format a managed identity should be `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{managedIdentityName}`.
+type ControlPlaneManagedIdentities struct {
+	// azureCloudProviderManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the azure
+	// cloud provider, aka ccm. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+	// hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	AzureCloudProviderManagedIdentityClientID ManagedIdentityClientID `json:"azureCloudProviderManagedIdentityClientID"`
+
+	// clusterAPIAzureManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with cluster-api
+	// azure. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated
+	// hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	ClusterAPIAzureManagedIdentityClientID ManagedIdentityClientID `json:"clusterAPIAzureManagedIdentityClientID"`
+
+	// controlPlaneManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the control plane
+	// operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated
+	// hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	ControlPlaneManagedIdentityClientID ManagedIdentityClientID `json:"controlPlaneManagedIdentityClientID"`
+
+	// azureKMSManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with Azure KMS. The client
+	// ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters
+	// in the form 8-4-4-4-12.
+	//
+	// +optional
+	AzureKMSManagedIdentityClientID ManagedIdentityClientID `json:"azureKMSManagedIdentityClientID,omitempty"`
+
+	// imageRegistryManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+	// cluster-image-registry-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups
+	// of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	ImageRegistryManagedIdentityClientID ManagedIdentityClientID `json:"imageRegistryManagedIdentityClientID"`
+
+	// ingressManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+	// cluster-ingress-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+	// hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	IngressManagedIdentityClientID ManagedIdentityClientID `json:"ingressManagedIdentityClientID"`
+
+	// networkManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+	// cluster-network-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+	// hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	NetworkManagedIdentityClientID ManagedIdentityClientID `json:"networkManagedIdentityClientID"`
+
+	// azureDiskManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+	// azure-disk-controller. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen
+	// separated hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	AzureDiskManagedIdentityClientID ManagedIdentityClientID `json:"azureDiskManagedIdentityClientID"`
+
+	// azureFileManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+	// azure-disk-controller. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen
+	// separated hexadecimal characters in the form 8-4-4-4-12.
+	//
+	// +kubebuilder:validation:Required
+	AzureFileManagedIdentityClientID ManagedIdentityClientID `json:"azureFileManagedIdentityClientID"`
 }
 
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.
