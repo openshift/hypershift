@@ -244,6 +244,14 @@ const (
 	// the frequency of memory collection when memory used rises above a particular threshhold. This can be used to reduce
 	// the memory footprint of the kube-apiserver during upgrades.
 	KubeAPIServerGOMemoryLimitAnnotation = "hypershift.openshift.io/kube-apiserver-gomemlimit"
+
+	// KubeAPIServerMaximumRequestsInFlight allows overriding the default value for the kube-apiserver max-requests-inflight
+	// flag. This allows controlling how many concurrent requests can be handled by the Kube API server at any given time.
+	KubeAPIServerMaximumRequestsInFlight = "hypershift.openshift.io/kube-apiserver-max-requests-inflight"
+
+	// KubeAPIServerMaximumMutatingRequestsInFlight allows overring the default value for the kube-apiserver max-mutating-requests-inflight
+	// flag. This allows controlling how many mutating concurrent requests can be handled by the Kube API server at any given time.
+	KubeAPIServerMaximumMutatingRequestsInFlight = "hypershift.openshift.io/kube-apiserver-max-mutating-requests-inflight"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
