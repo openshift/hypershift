@@ -2704,6 +2704,20 @@ configuration for the Azure cloud provider, aka Azure cloud controller manager (
 expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>msiClientIDs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedServiceIdentities">
+ControlPlaneManagedServiceIdentities
+</a>
+</em>
+</td>
+<td>
+<p>MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+components: azure cloud provider.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
@@ -3501,6 +3515,73 @@ A failure here is unlikely to resolve without the changing user input.</p>
 and reports missing images if any.</p>
 </td>
 </tr></tbody>
+</table>
+###ControlPlaneManagedServiceIdentities { #hypershift.openshift.io/v1beta1.ControlPlaneManagedServiceIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>azureCloudProviderMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>azureCloudProviderMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+with the azure cloud provider, aka ccm. The managed identity is expected to be in
+AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterAPIAzureMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>clusterAPIAzureMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+with cluster-api azure. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>controlPlaneMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+with the control plane operator. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureKMSMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azureKMSMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+with Azure KMS. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>

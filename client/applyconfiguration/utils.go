@@ -98,6 +98,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.ClusterNetworkingApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &applyconfigurationhypershiftv1alpha1.ClusterVersionStatusApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ControlPlaneManagedServiceIdentities"):
+		return &applyconfigurationhypershiftv1alpha1.ControlPlaneManagedServiceIdentitiesApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Diagnostics"):
 		return &applyconfigurationhypershiftv1alpha1.DiagnosticsApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("DNSSpec"):
@@ -286,6 +288,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterNetworkingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedServiceIdentities"):
+		return &hypershiftv1beta1.ControlPlaneManagedServiceIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):
 		return &hypershiftv1beta1.DiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DNSSpec"):

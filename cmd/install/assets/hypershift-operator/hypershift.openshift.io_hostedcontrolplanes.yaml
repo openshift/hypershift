@@ -3458,6 +3458,20 @@ spec:
                         x-kubernetes-map-type: atomic
                       location:
                         type: string
+                      msiClientIDs:
+                        description: |-
+                          MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+                          components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.
+                        properties:
+                          azureCloudProviderMSIClientID:
+                            description: |-
+                              AzureCloudProviderMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+                              with the azure cloud provider, aka ccm. The managed identity is expected to be in
+                              AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                        required:
+                        - azureCloudProviderMSIClientID
+                        type: object
                       resourceGroup:
                         type: string
                       securityGroupID:
@@ -8215,6 +8229,37 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      msiClientIDs:
+                        description: |-
+                          MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+                          components: azure cloud provider.
+                        properties:
+                          azureCloudProviderMSIClientID:
+                            description: |-
+                              azureCloudProviderMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+                              with the azure cloud provider, aka ccm. The managed identity is expected to be in
+                              AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                          azureKMSMSIClientID:
+                            description: |-
+                              azureKMSMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+                              with Azure KMS. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                          clusterAPIAzureMSIClientID:
+                            description: |-
+                              clusterAPIAzureMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+                              with cluster-api azure. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                          controlPlaneMSIClientID:
+                            description: |-
+                              controlPlaneMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+                              with the control plane operator. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                        required:
+                        - azureCloudProviderMSIClientID
+                        - clusterAPIAzureMSIClientID
+                        - controlPlaneMSIClientID
+                        type: object
                       resourceGroup:
                         default: default
                         description: |-

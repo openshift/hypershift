@@ -341,6 +341,7 @@ const (
 type HostedClusterSpec struct {
 	// Release specifies the desired OCP release payload for the hosted cluster.
 	//
+	//
 	// Updating this field will trigger a rollout of the control plane. The
 	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
 	// and InfrastructureAvailabilityPolicy.
@@ -1796,7 +1797,7 @@ type AzurePlatformSpec struct {
 	//
 	// Resource group naming requirements can be found here: https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/.
 	//
-	//Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
+	// Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
 	//          ResourceGroupName is <resourceGroupName>.
 	//
 	// +kubebuilder:default:=default
@@ -1850,6 +1851,43 @@ type AzurePlatformSpec struct {
 	// +immutable
 	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+	// components: azure cloud provider.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	MSIClientIDs *ControlPlaneManagedServiceIdentities `json:"msiClientIDs,omitempty"`
+}
+
+type ControlPlaneManagedServiceIdentities struct {
+	// azureCloudProviderMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+	// with the azure cloud provider, aka ccm. The managed identity is expected to be in
+	// AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	AzureCloudProviderMSIClientID string `json:"azureCloudProviderMSIClientID"`
+
+	// clusterAPIAzureMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+	// with cluster-api azure. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	ClusterAPIAzureMSIClientID string `json:"clusterAPIAzureMSIClientID"`
+
+	// controlPlaneMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+	// with the control plane operator. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	ControlPlaneMSIClientID string `json:"controlPlaneMSIClientID"`
+
+	// azureKMSMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+	// with Azure KMS. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+	//
+	// +optional
+	AzureKMSMSIClientID string `json:"azureKMSMSIClientID,omitempty"`
 }
 
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.

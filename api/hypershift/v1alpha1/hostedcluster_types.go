@@ -1574,6 +1574,22 @@ type AzurePlatformSpec struct {
 	SubnetID          string `json:"subnetID"`
 	SubscriptionID    string `json:"subscriptionID"`
 	SecurityGroupID   string `json:"securityGroupID"`
+
+	// MSIClientIDs contains the client IDs related to the managed identities needed for the following control plane
+	// components: cluster-image-registry, cluster-ingress, cluster-storage, and cluster-network operators.
+	//
+	// +optional
+	MSIClientIDs *ControlPlaneManagedServiceIdentities `json:"msiClientIDs,omitempty"`
+}
+
+type ControlPlaneManagedServiceIdentities struct {
+	// AzureCloudProviderMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+	// with the azure cloud provider, aka ccm. The managed identity is expected to be in
+	// AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	AzureCloudProviderMSIClientID string `json:"azureCloudProviderMSIClientID"`
 }
 
 // Release represents the metadata for an OCP release payload image.
