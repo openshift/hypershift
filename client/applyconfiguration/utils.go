@@ -274,6 +274,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureResourceManagedIdentities"):
+		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
@@ -288,6 +290,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterNetworkingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
+		return &hypershiftv1beta1.ControlPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):
 		return &hypershiftv1beta1.DiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DNSSpec"):
@@ -366,10 +370,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.LoadBalancerPublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):
 		return &hypershiftv1beta1.MachineNetworkEntryApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedAzureKeyVault"):
+		return &hypershiftv1beta1.ManagedAzureKeyVaultApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdSpec"):
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedIdentity"):
+		return &hypershiftv1beta1.ManagedIdentityApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("MarketplaceImage"):
 		return &hypershiftv1beta1.MarketplaceImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkFilter"):
