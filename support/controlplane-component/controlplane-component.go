@@ -12,8 +12,9 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -59,6 +60,9 @@ type ControlPlaneDeployment struct {
 	MultiZoneSpreadLabels    map[string]string
 	IsRequestServing         bool
 	NeedsManagementKASAccess bool
+
+	// if provided, a konnectivity proxy container and required volumes will be injected into the deployment.
+	KonnectivityContainerOpts *KonnectivityContainerOptions
 }
 
 // Name implements ControlPlaneComponent.
@@ -111,20 +115,20 @@ func (c *ControlPlaneDeployment) Reconcile(cpContext ControlPlaneContext) error 
 	if _, err := cpContext.CreateOrUpdate(cpContext, cpContext.Client, deployment, func() error {
 		ownerRef.ApplyTo(deployment)
 
-		deploymentConfig := &config.DeploymentConfig{
-			Resources: make(map[string]corev1.ResourceRequirements),
-		}
 		// preserve existing resource requirements, this needs to be done before calling c.reconcileDeployment() which might override the resources requirements.
+		existingResources := make(map[string]corev1.ResourceRequirements)
 		for _, container := range deployment.Spec.Template.Spec.Containers {
-			deploymentConfig.Resources[container.Name] = container.Resources
+			existingResources[container.Name] = container.Resources
 		}
+		// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
+		existingLabelSelector := deployment.Spec.Selector.DeepCopy()
 
 		// reconcile deployment
 		if err := c.ReconcileDeployment(cpContext, deployment); err != nil {
 			return err
 		}
 
-		c.setDefaults(cpContext, deploymentConfig, deployment)
+		c.setDefaults(cpContext, deployment, existingResources, existingLabelSelector)
 		return nil
 	}); err != nil {
 		return err
@@ -168,10 +172,13 @@ func (c *ControlPlaneDeployment) reconcileRBAC(cpContext ControlPlaneContext) er
 	return nil
 }
 
-func (c *ControlPlaneDeployment) setDefaults(cpContext ControlPlaneContext, deploymentConfig *config.DeploymentConfig, deployment *appsv1.Deployment) {
+func (c *ControlPlaneDeployment) setDefaults(cpContext ControlPlaneContext, deployment *appsv1.Deployment, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) {
 	hcp := cpContext.Hcp
 
-	deploymentConfig.SetDefaultSecurityContext = cpContext.SetDefaultSecurityContext
+	deploymentConfig := &config.DeploymentConfig{
+		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
+		Resources:                 existingResources,
+	}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -196,4 +203,12 @@ func (c *ControlPlaneDeployment) setDefaults(cpContext ControlPlaneContext, depl
 
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
+
+	if existingLabelSelector != nil {
+		deployment.Spec.Selector = existingLabelSelector
+	}
+
+	if c.KonnectivityContainerOpts != nil {
+		c.KonnectivityContainerOpts.injectKonnectivityContainer(cpContext, deployment)
+	}
 }
