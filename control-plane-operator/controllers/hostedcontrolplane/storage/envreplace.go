@@ -49,6 +49,7 @@ var (
 		"HYPERSHIFT_IMAGE":                                "token-minter",
 		"AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE":              "aws-ebs-csi-driver",
 		"LIVENESS_PROBE_CONTROL_PLANE_IMAGE":              "csi-livenessprobe",
+		"TOOLS_IMAGE":                                     "tools",
 	}
 )
 
