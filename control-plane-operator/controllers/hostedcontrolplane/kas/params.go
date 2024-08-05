@@ -69,6 +69,9 @@ type KubeAPIServerParams struct {
 
 	Availability           hyperv1.AvailabilityPolicy
 	APIServerSTSDirectives string
+
+	MaxMutatingRequestsInflight string
+	MaxRequestsInflight         string
 }
 
 type KubeAPIServerServiceParams struct {
@@ -80,6 +83,9 @@ const (
 	KonnectivityHealthPort      = 2041
 	KonnectivityServerLocalPort = 8090
 	KonnectivityServerPort      = 8091
+
+	defaultMaxRequestsInflight         = 3000
+	defaultMaxMutatingRequestsInflight = 1000
 )
 
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
@@ -107,6 +113,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			AWSPodIdentityWebhookImage: releaseImageProvider.GetImage("aws-pod-identity-webhook"),
 			KonnectivityServer:         releaseImageProvider.GetImage("apiserver-network-proxy"),
 		},
+		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
+		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
@@ -115,6 +123,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.Network = hcp.Spec.Configuration.Network
 		params.Image = hcp.Spec.Configuration.Image
 		params.Scheduler = hcp.Spec.Configuration.Scheduler
+	}
+	if reqInflight := hcp.Annotations[hyperv1.KubeAPIServerMaximumRequestsInFlight]; reqInflight != "" {
+		params.MaxRequestsInflight = reqInflight
+	}
+	if mutatingReqInflight := hcp.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight]; mutatingReqInflight != "" {
+		params.MaxMutatingRequestsInflight = mutatingReqInflight
 	}
 
 	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
@@ -378,6 +392,8 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		DisableProfiling:             p.DisableProfiling,
 		APIServerSTSDirectives:       p.APIServerSTSDirectives,
 		Authentication:               p.Authentication,
+		MaxRequestsInflight:          p.MaxRequestsInflight,
+		MaxMutatingRequestsInflight:  p.MaxMutatingRequestsInflight,
 	}
 }
 
@@ -404,6 +420,8 @@ type KubeAPIServerConfigParams struct {
 	DisableProfiling             bool
 	APIServerSTSDirectives       string
 	Authentication               *configv1.AuthenticationSpec
+	MaxRequestsInflight          string
+	MaxMutatingRequestsInflight  string
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {
