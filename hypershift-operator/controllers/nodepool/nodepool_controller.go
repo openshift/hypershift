@@ -1756,6 +1756,15 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 	// https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
 	// TODO (alberto): possibly expose this config at the nodePool API.
 	maxUnhealthy := intstr.FromInt(2)
+	var timeOut time.Duration
+
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AgentPlatform, hyperv1.NonePlatform:
+		timeOut = 16 * time.Minute
+	default:
+		timeOut = 8 * time.Minute
+	}
+
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: CAPIClusterName,
@@ -1769,14 +1778,14 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionFalse,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 			{
 				Type:   corev1.NodeReady,
 				Status: corev1.ConditionUnknown,
 				Timeout: metav1.Duration{
-					Duration: 8 * time.Minute,
+					Duration: timeOut,
 				},
 			},
 		},
