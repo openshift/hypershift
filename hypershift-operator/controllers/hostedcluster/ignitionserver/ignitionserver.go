@@ -97,7 +97,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 				if serviceStrategy.Route != nil {
 					hostname = serviceStrategy.Route.Hostname
 				}
-				err := reconcileExternalRoute(ignitionServerRoute, ownerRef, routeServiceName, hostname, defaultIngressDomain)
+				err := reconcileExternalRoute(ignitionServerRoute, ownerRef, routeServiceName, hostname, defaultIngressDomain, hostname != "")
 				if err != nil {
 					return fmt.Errorf("failed to reconcile external route in ignition server: %w", err)
 				}
@@ -325,9 +325,9 @@ func reconcileIgnitionServerServiceWithProxy(svc *corev1.Service, strategy *hype
 	return nil
 }
 
-func reconcileExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, svcName string, hostname string, defaultIngressDomain string) error {
+func reconcileExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, svcName string, hostname string, defaultIngressDomain string, labelHCPRoutes bool) error {
 	ownerRef.ApplyTo(route)
-	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, svcName)
+	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, svcName, labelHCPRoutes)
 }
 
 func reconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef, svcName string) error {

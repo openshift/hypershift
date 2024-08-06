@@ -287,9 +287,9 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 	return nil
 }
 
-func ReconcileKonnectivityExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
+func ReconcileKonnectivityExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string, labelHCPRoutes bool) error {
 	ownerRef.ApplyTo(route)
-	if err := util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name); err != nil {
+	if err := util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name, labelHCPRoutes); err != nil {
 		return err
 	}
 	if route.Annotations == nil {
