@@ -60,22 +60,25 @@ type Images struct {
 }
 
 type Params struct {
-	ReleaseVersion          string
-	AvailabilityProberImage string
-	HostedClusterName       string
-	CAConfigMap             string
-	CAConfigMapKey          string
-	APIServerAddress        string
-	APIServerPort           int32
-	TokenAudience           string
-	Images                  Images
-	OwnerRef                config.OwnerRef
-	DeploymentConfig        config.DeploymentConfig
-	IsPrivate               bool
-	DefaultIngressDomain    string
+	ReleaseVersion           string
+	AvailabilityProberImage  string
+	HostedClusterName        string
+	CAConfigMap              string
+	CAConfigMapKey           string
+	APIServerAddress         string
+	APIServerPort            int32
+	TokenAudience            string
+	Images                   Images
+	OwnerRef                 config.OwnerRef
+	DeploymentConfig         config.DeploymentConfig
+	platform                 hyperv1.PlatformType
+	IsPrivate                bool
+	DefaultIngressDomain     string
+	NetworkMSIClientIdExists bool
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
+	networkMSIClientIdExists := hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hcp.Spec.Platform.Azure.MSIClientIDs != nil && len(hcp.Spec.Platform.Azure.MSIClientIDs.NetworkMSIClientID) > 0
 	p := Params{
 		Images: Images{
 			NetworkOperator:              releaseImageProvider.GetImage("cluster-network-operator"),
@@ -99,15 +102,17 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			CLI:                          releaseImageProvider.GetImage("cli"),
 			Socks5Proxy:                  releaseImageProvider.GetImage("socks5-proxy"),
 		},
-		ReleaseVersion:          version,
-		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
-		OwnerRef:                config.OwnerRefFrom(hcp),
-		IsPrivate:               util.IsPrivateHCP(hcp),
-		HostedClusterName:       hcp.Name,
-		TokenAudience:           hcp.Spec.IssuerURL,
-		DefaultIngressDomain:    defaultIngressDomain,
-		CAConfigMap:             caConfigMap,
-		CAConfigMapKey:          caConfigMapKey,
+		ReleaseVersion:           version,
+		AvailabilityProberImage:  releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		OwnerRef:                 config.OwnerRefFrom(hcp),
+		IsPrivate:                util.IsPrivateHCP(hcp),
+		HostedClusterName:        hcp.Name,
+		TokenAudience:            hcp.Spec.IssuerURL,
+		DefaultIngressDomain:     defaultIngressDomain,
+		CAConfigMap:              caConfigMap,
+		CAConfigMapKey:           caConfigMapKey,
+		platform:                 hcp.Spec.Platform.Type,
+		NetworkMSIClientIdExists: networkMSIClientIdExists,
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
@@ -566,6 +571,15 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		}
 		o.WaitForInfrastructureResource = true
 	})
+
+	if params.NetworkMSIClientIdExists {
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AZURE_MSI_AUTHENTICATION",
+				Value: "true",
+			})
+	}
+
 	return nil
 }
 
