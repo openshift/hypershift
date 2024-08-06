@@ -24,29 +24,42 @@ func TestCreateClusterAPIUX(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	t.Run("AzureShouldOnlyAllowServicesWithRouteAndHostname", func(t *testing.T) {
+	t.Run("AzureShouldOnlyAllowServicesWithRouteAndHostnameIfExternalDnsEnabled", func(t *testing.T) {
 		g := NewWithT(t)
 		client, err := e2eutil.GetClient()
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
 
 		testCases := []struct {
-			name                   string
-			file                   string
-			expectedErrorSubstring string
+			name                    string
+			file                    string
+			expectedErrorSubstrings []string
 		}{
 			{
-				name:                   "AzureExpectServicesRouteHostname",
-				file:                   "azure-services-ignition-route-not-hostname.yaml",
-				expectedErrorSubstring: "Azure platform requires Ignition Route service with a hostname to be defined",
+				name:                    "AzureExpectServicesRouteHostname",
+				file:                    "azure-services-ignition-route-not-hostname.yaml",
+				expectedErrorSubstrings: []string{"Azure platform requires APIServer service to be defined. If APIServer servicePublishingStrategy type is 'Route', all specified services (APIServer, OAuthServer, Konnectivity, Ignition) must have a defined hostname"},
+			},
+			{
+				name:                    "AzureExpectServices",
+				file:                    "azure-services-missing-services.yaml",
+				expectedErrorSubstrings: []string{"Azure platform requires Ignition Route service to be defined", "Azure platform requires Konnectivity Route service to be defined", "Azure platform requires OAuthServer Route service to be defined"},
 			},
 		}
 
 		for _, tc := range testCases {
-			hc := assets.MustHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
-			defer client.Delete(ctx, hc)
-			err = client.Create(ctx, hc)
-			g.Expect(err).To(HaveOccurred())
-			g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+			t.Run(tc.name, func(t *testing.T) {
+				hc := assets.MustHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
+				defer client.Delete(ctx, hc)
+				err = client.Create(ctx, hc)
+				if len(tc.expectedErrorSubstrings) > 0 {
+					g.Expect(err).To(HaveOccurred())
+					for _, expectedErrorSubstring := range tc.expectedErrorSubstrings {
+						g.Expect(err.Error()).To(ContainSubstring(expectedErrorSubstring))
+					}
+				} else {
+					g.Expect(err).NotTo(HaveOccurred())
+				}
+			})
 		}
 	})
 }
