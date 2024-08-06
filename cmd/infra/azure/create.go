@@ -217,10 +217,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 	l.Info("Successfully created guest cluster egress load balancer")
 
-	// Upload RHCOS image and create a bootable image
-	result.BootImageID, err = createRhcosImages(ctx, l, o, subscriptionID, resourceGroupName, azureCreds)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create RHCOS image: %w", err)
+	// This is only populated if an Azure Marketplace image wasn't provided.
+	// If one wasn't provided, a boot image ID needs to be created.
+	if o.RHCOSImage != "" {
+		// Upload RHCOS image and create a bootable image
+		result.BootImageID, err = createRhcosImages(ctx, l, o, subscriptionID, resourceGroupName, azureCreds)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create RHCOS image: %w", err)
+		}
 	}
 
 	if o.OutputFile != "" {

@@ -58,3 +58,28 @@ func ReadCredentials(path string) (*AzureCreds, error) {
 
 	return &result, nil
 }
+
+// ValidateMarketplaceFlags validates if any marketplace flag was used, all were set to a non-empty value
+func ValidateMarketplaceFlags(marketplaceFlags map[string]*string) error {
+	allFlagsEmpty := true
+	for _, value := range marketplaceFlags {
+		if value != nil && *value != "" {
+			allFlagsEmpty = false
+			break
+		}
+	}
+
+	// It is okay if all the flags are empty, meaning an ImageID was used instead of an Azure Marketplace image.
+	if allFlagsEmpty {
+		return nil
+	}
+
+	// If one marketplace flag was used, ensure all were to be set with non-empty values.
+	for flag, value := range marketplaceFlags {
+		if value == nil || *value == "" {
+			return fmt.Errorf("all marketplace flags (i.e. marketplace-publisher, marketplace-offer, marketplace-sku, marketplace-version) are required when using a marketplace image; the following flag was empty: %s", flag)
+		}
+	}
+
+	return nil
+}
