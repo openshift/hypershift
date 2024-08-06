@@ -268,6 +268,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
+		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
 		return &hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
@@ -362,6 +364,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("MarketplaceImage"):
+		return &hypershiftv1beta1.MarketplaceImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkFilter"):
 		return &hypershiftv1beta1.NetworkFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkParam"):
