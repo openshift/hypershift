@@ -86,9 +86,11 @@ func hash(s string) string {
 	return result
 }
 
-func ReconcileExternalRoute(route *routev1.Route, hostname string, defaultIngressDomain string, serviceName string) error {
-	if hostname != "" {
+func ReconcileExternalRoute(route *routev1.Route, hostname string, defaultIngressDomain string, serviceName string, labelHCPRoutes bool) error {
+	if labelHCPRoutes {
 		AddHCPRouteLabel(route)
+	}
+	if hostname != "" {
 		route.Spec.Host = hostname
 	} else {
 		if route.Spec.Host == "" {
