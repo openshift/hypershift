@@ -13,11 +13,13 @@ const (
 )
 
 type Params struct {
-	OwnerRef             config.OwnerRef
-	StorageOperatorImage string
-	ImageReplacer        *environmentReplacer
+	StorageMSIClientIdExists bool
+	StorageOperatorImage     string
+	AvailabilityProberImage  string
+	OwnerRef                 config.OwnerRef
+	ImageReplacer            *environmentReplacer
+	platform                 hyperv1.PlatformType
 
-	AvailabilityProberImage string
 	config.DeploymentConfig
 }
 
@@ -32,11 +34,14 @@ func NewParams(
 	ir.setVersions(version)
 	ir.setOperatorImageReferences(releaseImageProvider.ComponentImages(), userReleaseImageProvider.ComponentImages())
 
+	storageMSIClientIdExists := hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hcp.Spec.Platform.Azure.MSIClientIDs != nil && len(hcp.Spec.Platform.Azure.MSIClientIDs.StorageMSIClientID) > 0
 	params := Params{
-		OwnerRef:                config.OwnerRefFrom(hcp),
-		StorageOperatorImage:    releaseImageProvider.GetImage(storageOperatorImageName),
-		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
-		ImageReplacer:           ir,
+		OwnerRef:                 config.OwnerRefFrom(hcp),
+		StorageOperatorImage:     releaseImageProvider.GetImage(storageOperatorImageName),
+		AvailabilityProberImage:  releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		ImageReplacer:            ir,
+		StorageMSIClientIdExists: storageMSIClientIdExists,
+		platform:                 hcp.Spec.Platform.Type,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		AdditionalLabels: map[string]string{

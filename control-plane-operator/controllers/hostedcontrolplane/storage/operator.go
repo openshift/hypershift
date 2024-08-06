@@ -31,6 +31,14 @@ func ReconcileOperatorDeployment(
 		case "cluster-storage-operator":
 			deployment.Spec.Template.Spec.Containers[i].Image = params.StorageOperatorImage
 			params.ImageReplacer.replaceEnvVars(deployment.Spec.Template.Spec.Containers[i].Env)
+
+			if params.platform == hyperv1.AzurePlatform && params.StorageMSIClientIdExists {
+				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env,
+					corev1.EnvVar{
+						Name:  "AZURE_MSI_AUTHENTICATION",
+						Value: "true",
+					})
+			}
 		}
 	}
 
