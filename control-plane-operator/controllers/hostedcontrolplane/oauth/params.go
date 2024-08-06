@@ -31,7 +31,8 @@ type OAuthServerParams struct {
 	ExternalAPIPort         int32           `json:"externalAPIPort"`
 	OAuthServerImage        string
 	config.DeploymentConfig `json:",inline"`
-	OAuth                   *configv1.OAuthSpec     `json:"oauth"`
+	OAuth                   *configv1.OAuthSpec
+	ProxyConfig             *configv1.ProxySpec
 	APIServer               *configv1.APIServerSpec `json:"apiServer"`
 	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
 	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
@@ -42,8 +43,12 @@ type OAuthServerParams struct {
 	LoginURLOverride        string
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	Availability            hyperv1.AvailabilityPolicy
-	Socks5ProxyImage        string
-	NoProxy                 []string
+	// ProxyImage is the image that contains the control-plane-operator binary that will
+	// be used to run konnectivity-socks5-proxy and konnectivity-https-proxy
+	ProxyImage string
+	// OAuthNoProxy is a list of hosts or IPs that should not be routed through
+	// konnectivity. Currently only used for IBM Cloud specific addresses.
+	OAuthNoProxy []string
 }
 
 type OAuthConfigParams struct {
@@ -87,12 +92,13 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		OAuthServerImage:        releaseImageProvider.GetImage("oauth-server"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
-		Socks5ProxyImage:        releaseImageProvider.GetImage("socks5-proxy"),
-		NoProxy:                 []string{manifests.KubeAPIServerService("").Name},
+		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
+		OAuthNoProxy:            []string{manifests.KubeAPIServerService("").Name},
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
 		p.OAuth = hcp.Spec.Configuration.OAuth
+		p.ProxyConfig = hcp.Spec.Configuration.Proxy
 	}
 	p.Scheduling = config.Scheduling{
 		PriorityClass: config.APICriticalPriorityClass,
@@ -105,6 +111,18 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("40Mi"),
 				corev1.ResourceCPU:    resource.MustParse("25m"),
+			},
+		},
+		oauthContainerHTTPProxy().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
+			},
+		},
+		oauthContainerSocks5Proxy().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
 			},
 		},
 	}
@@ -163,7 +181,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 	p.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		p.NoProxy = append(p.NoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
+		p.OAuthNoProxy = append(p.OAuthNoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
 	}
 
 	return p
