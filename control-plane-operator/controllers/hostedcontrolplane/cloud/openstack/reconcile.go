@@ -3,6 +3,8 @@ package openstack
 import (
 	"fmt"
 
+	k8sutilspointer "k8s.io/utils/pointer"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -41,8 +43,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 				Containers: []corev1.Container{
 					util.BuildContainer(ccmContainer(), buildCCMContainer(releaseImageProvider.GetImage("openstack-cloud-controller-manager"), hcp.Spec.InfraID)),
 				},
-				Volumes:            []corev1.Volume{},
-				ServiceAccountName: serviceAccountName,
+				Volumes:                      []corev1.Volume{},
+				ServiceAccountName:           serviceAccountName,
+				AutomountServiceAccountToken: k8sutilspointer.Bool(false),
 			},
 		},
 	}
