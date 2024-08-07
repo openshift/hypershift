@@ -29,6 +29,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
+	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
@@ -85,6 +86,7 @@ func main() {
 
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(NewInitCommand())
+	cmd.AddCommand(etcdrecovery.NewStartCommand())
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
