@@ -26,6 +26,7 @@ const (
 	backupAWSKMSUnixSocketFileName = "awskmsbackup.sock"
 	backupAWSKMSHealthPort         = 8081
 	awsKeyNamePrefix               = "awskmskey"
+	kmsAPIVersionV1                = "v1"
 )
 
 var (
@@ -78,7 +79,7 @@ func NewAWSKMSProvider(kmsSpec *hyperv1.AWSKMSSpec, kmsImage, tokenMinterImage s
 	}, nil
 }
 
-func (p *awsKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error) {
+func (p *awsKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.EncryptionConfiguration, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 	if len(p.activeKey.ARN) == 0 {
 		return nil, fmt.Errorf("active key metadata is nil")
@@ -90,10 +91,10 @@ func (p *awsKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfigurat
 	}
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		KMS: &v1.KMSConfiguration{
-			Name:      fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
-			Endpoint:  activeAWSKMSUnixSocket,
-			CacheSize: ptr.To[int32](100),
-			Timeout:   &metav1.Duration{Duration: 35 * time.Second},
+			APIVersion: apiVersion,
+			Name:       fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
+			Endpoint:   activeAWSKMSUnixSocket,
+			Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
 	if p.backupKey != nil && len(p.backupKey.ARN) > 0 {
@@ -104,13 +105,20 @@ func (p *awsKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfigurat
 		}
 		providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 			KMS: &v1.KMSConfiguration{
-				Name:      fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
-				Endpoint:  backupAWSKMSUnixSocket,
-				CacheSize: ptr.To[int32](100),
-				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
+				APIVersion: apiVersion,
+				Name:       fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
+				Endpoint:   backupAWSKMSUnixSocket,
+				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
 		})
 	}
+
+	if apiVersion == kmsAPIVersionV1 {
+		for _, p := range providerConfiguration {
+			p.KMS.CacheSize = ptr.To[int32](100)
+		}
+	}
+
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		Identity: &v1.IdentityConfiguration{},
 	})

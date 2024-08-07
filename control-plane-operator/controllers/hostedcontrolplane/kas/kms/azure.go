@@ -66,7 +66,7 @@ func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMS
 	}, nil
 }
 
-func (p *azureKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error) {
+func (p *azureKMSProvider) GenerateKMSEncryptionConfig(_ string) (*v1.EncryptionConfiguration, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 
 	activeKeyHash, err := util.HashStruct(p.kmsSpec.ActiveKey)

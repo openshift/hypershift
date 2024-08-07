@@ -58,7 +58,7 @@ func NewIBMCloudKMSProvider(ibmCloud *hyperv1.IBMCloudKMSSpec, kmsImage string) 
 	}, nil
 }
 
-func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error) {
+func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig(_ string) (*v1.EncryptionConfiguration, error) {
 
 	providerConfiguration := []v1.ProviderConfiguration{
 		{
