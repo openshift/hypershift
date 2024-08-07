@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -27,13 +28,13 @@ const (
 var _ component.DeploymentReconciler = &AutoscalerReconciler{}
 
 type AutoscalerReconciler struct {
-	CapiKubeConfigSecret *corev1.Secret
 }
 
 func NewComponent() component.ControlPlaneComponent {
-	return &component.ControlPlaneDeployment{
+	return &component.ControlPlaneWorkload{
 		DeploymentReconciler:     &AutoscalerReconciler{},
 		RBACReconciler:           component.NewRBACReconciler(autoscalerRoleRules()),
+		Predicate:                Predicate,
 		NeedsManagementKASAccess: true,
 	}
 }
@@ -43,9 +44,8 @@ func (a *AutoscalerReconciler) Name() string {
 	return autoscalerName
 }
 
-// Predicate implements controlplanecomponent.DeploymentReconciler.
-func (a *AutoscalerReconciler) Predicate(cpContext component.ControlPlaneContext) (bool, error) {
-	hcp := cpContext.Hcp
+func Predicate(cpContext component.ControlPlaneContext) (bool, error) {
+	hcp := cpContext.HCP
 
 	// Disable cluster-autoscaler component if DisableMachineManagement label is set.
 	if _, exists := hcp.Annotations[hyperv1.DisableMachineManagement]; exists {
@@ -57,24 +57,18 @@ func (a *AutoscalerReconciler) Predicate(cpContext component.ControlPlaneContext
 		return false, nil
 	}
 	// Resolve the kubeconfig secret for CAPI which the autoscaler is deployed alongside of.
-	capiKubeConfigSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: hcp.Namespace,
-			Name:      fmt.Sprintf("%s-kubeconfig", hcp.Spec.InfraID),
-		},
-	}
+	capiKubeConfigSecret := manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID)
 	err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
 	if err != nil {
 		return false, fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
 	}
 
-	a.CapiKubeConfigSecret = capiKubeConfigSecret
 	return true, nil
 }
 
 // reconcileDeployment implements controlplanecomponent.DeploymentReconciler.
 func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
-	hcp := cpContext.Hcp
+	hcp := cpContext.HCP
 	options := hcp.Spec.Autoscaling
 
 	clusterAutoscalerImage := cpContext.ReleaseImageProvider.GetImage(ImageStreamAutoscalerImage)
@@ -165,7 +159,7 @@ func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPl
 						Name: "target-kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName:  a.CapiKubeConfigSecret.Name,
+								SecretName:  manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID).Name,
 								DefaultMode: ptr.To[int32](0640),
 								Items: []corev1.KeyToPath{
 									{

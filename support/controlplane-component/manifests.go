@@ -16,6 +16,15 @@ func deploymentManifest(name, namespace string) *appsv1.Deployment {
 	}
 }
 
+func statefulSetManifest(name, namespace string) *appsv1.StatefulSet {
+	return &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+}
+
 func serviceAccountManifest(name, namespace string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{

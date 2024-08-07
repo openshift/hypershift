@@ -52,7 +52,7 @@ func ReconcileServiceMonitor(cpContext component.ControlPlaneContext, sm *promet
 		},
 	}
 
-	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], cpContext.Hcp.Spec.ClusterID)
+	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], cpContext.HCP.Spec.ClusterID)
 
 	return nil
 }
