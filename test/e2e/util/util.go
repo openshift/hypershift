@@ -900,13 +900,14 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 	t.Run("EnsureHostedClusterImmutability", func(t *testing.T) {
 		g := NewWithT(t)
 
-		for i, svc := range hostedCluster.Spec.Services {
-			if svc.Service == hyperv1.APIServer {
-				svc.Type = hyperv1.NodePort
-				hostedCluster.Spec.Services[i] = svc
+		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			for i, svc := range obj.Spec.Services {
+				if svc.Service == hyperv1.APIServer {
+					svc.Type = hyperv1.NodePort
+					obj.Spec.Services[i] = svc
+				}
 			}
-		}
-		err := hostClient.Update(ctx, hostedCluster)
+		})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("Services is immutable"))
 	})
