@@ -3658,12 +3658,12 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 					}
 				}
 			} else {
-				for name, catalog := range olm.CatalogToImage {
-					pullSecret := common.PullSecret(hcp.Namespace)
-					if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-						return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
-					}
+				pullSecret := common.PullSecret(hcp.Namespace)
+				if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+					return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
+				}
 
+				for name, catalog := range olm.CatalogToImage {
 					parts := strings.Split(catalog, ":")
 					if len(parts) != 2 {
 						return fmt.Errorf("invalid catalog format %s, expected 'registry:tag'", catalog)
@@ -3700,7 +3700,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 							*override = imageOverride
 						}
 					} else {
-						return fmt.Errorf("unknown catalog %s", name)
+						return fmt.Errorf("unknown catalog for catalog image override %s", name)
 					}
 				}
 			}
