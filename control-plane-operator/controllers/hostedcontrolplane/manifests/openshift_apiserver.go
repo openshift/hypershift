@@ -4,6 +4,7 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,6 +42,13 @@ func OpenShiftAPIServerDeployment(ns string) *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openshift-apiserver",
 			Namespace: ns,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					TerminationGracePeriodSeconds: ptr.To[int64](120),
+				},
+			},
 		},
 	}
 }
