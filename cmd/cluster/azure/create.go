@@ -278,6 +278,18 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		}
 	}
 
+	azureNodePool := constructor(hyperv1.AzurePlatform, "")
+	instanceType := o.NodePoolOpts.InstanceType
+	if strings.TrimSpace(instanceType) == "" {
+		// Aligning with Azure IPI instance type defaults
+		switch azureNodePool.Spec.Arch {
+		case hyperv1.ArchitectureAMD64:
+			instanceType = "Standard_D4s_v3"
+		case hyperv1.ArchitectureARM64:
+			instanceType = "Standard_D4ps_v5"
+		}
+	}
+
 	if len(o.AvailabilityZones) > 0 {
 		var nodePools []*hyperv1.NodePool
 		for _, availabilityZone := range o.AvailabilityZones {
@@ -286,7 +298,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-				VMSize:                 o.NodePoolOpts.InstanceType,
+				VMSize:                 instanceType,
 				Image:                  vmImage,
 				DiskSizeGB:             o.NodePoolOpts.DiskSize,
 				AvailabilityZone:       availabilityZone,
@@ -300,12 +312,12 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		}
 		return nodePools
 	}
-	nodePool := constructor(hyperv1.AzurePlatform, "")
-	if nodePool.Spec.Management.UpgradeType == "" {
-		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+
+	if azureNodePool.Spec.Management.UpgradeType == "" {
+		azureNodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 	}
-	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:                 o.NodePoolOpts.InstanceType,
+	azureNodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+		VMSize:                 instanceType,
 		Image:                  vmImage,
 		DiskSizeGB:             o.NodePoolOpts.DiskSize,
 		DiskEncryptionSetID:    o.DiskEncryptionSetID,
@@ -314,7 +326,8 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		SubnetID:               o.infra.SubnetID,
 		MachineIdentityID:      o.infra.MachineIdentityID,
 	}
-	return []*hyperv1.NodePool{nodePool}
+
+	return []*hyperv1.NodePool{azureNodePool}
 }
 
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {

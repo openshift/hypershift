@@ -2,13 +2,16 @@ package azure
 
 import (
 	"context"
+	"strings"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/cmd/util"
-	"k8s.io/utils/ptr"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -21,6 +24,7 @@ type AzurePlatformCreateOptions struct {
 	DiskStorageAccountType string
 	SubnetID               string
 	ImageID                string
+	Arch                   string
 }
 
 type AzureMarketPlaceImageInfo struct {
@@ -38,8 +42,7 @@ type RawAzurePlatformCreateOptions struct {
 func DefaultOptions() *RawAzurePlatformCreateOptions {
 	return &RawAzurePlatformCreateOptions{
 		AzurePlatformCreateOptions: &AzurePlatformCreateOptions{
-			InstanceType: "Standard_D4s_v4",
-			DiskSize:     120,
+			DiskSize: 120,
 		},
 		AzureMarketPlaceImageInfo: &AzureMarketPlaceImageInfo{},
 	}
@@ -142,11 +145,11 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 }
 
 func (o *CompletedAzurePlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
-	nodePool.Spec.Platform.Azure = o.NodePoolPlatform()
+	nodePool.Spec.Platform.Azure = o.NodePoolPlatform(nodePool)
 	return nil
 }
 
-func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform() *hyperv1.AzureNodePoolPlatform {
+func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1.NodePool) *hyperv1.AzureNodePoolPlatform {
 	var vmImage hyperv1.AzureVMImage
 	if o.ImageID != "" {
 		vmImage = hyperv1.AzureVMImage{
@@ -165,8 +168,19 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform() *hyperv1.AzureN
 		}
 	}
 
+	instanceType := o.completetedAzurePlatformCreateOptions.AzurePlatformCreateOptions.InstanceType
+	if strings.TrimSpace(instanceType) == "" {
+		// Aligning with Azure IPI instance type defaults
+		switch nodePool.Spec.Arch {
+		case hyperv1.ArchitectureAMD64:
+			instanceType = "Standard_D4s_v3"
+		case hyperv1.ArchitectureARM64:
+			instanceType = "Standard_D4ps_v5"
+		}
+	}
+
 	platform := &hyperv1.AzureNodePoolPlatform{
-		VMSize:                 o.InstanceType,
+		VMSize:                 instanceType,
 		DiskSizeGB:             o.DiskSize,
 		AvailabilityZone:       o.AvailabilityZone,
 		DiskEncryptionSetID:    o.DiskEncryptionSetID,

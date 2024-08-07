@@ -132,7 +132,7 @@ spec:
         imageID: fakeBootImageID
       machineIdentityID: fakeMachineIdentityID
       subnetID: fakeSubnetID
-      vmsize: Standard_D4s_v4
+      vmsize: Standard_D4s_v3
     type: Azure
   release:
     image: ""
