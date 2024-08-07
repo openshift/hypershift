@@ -114,6 +114,7 @@ import (
 const (
 	HostedClusterFinalizer              = "hypershift.openshift.io/finalizer"
 	HostedClusterAnnotation             = "hypershift.openshift.io/cluster"
+	ETCDRecoveryInProgressAnnotation    = "hypershift.openshift.io/etcd-restoring-failing-member"
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
@@ -1074,6 +1075,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
+	}
+
+	if err := r.reconcileETCDMemberRecovery(ctx, hcluster, createOrUpdate); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile etcd member recovery: %w", err)
 	}
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
@@ -2324,6 +2329,67 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 
 	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
+
+func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Preliminary checks to see if we need to proceed with the recovery procedure
+	if hcluster.Spec.ControllerAvailabilityPolicy != hyperv1.HighlyAvailable {
+		log.Info("skipping etcd member recovery procedure because the cluster is not HA")
+		return nil
+	}
+
+	var etcdCondition metav1.Condition
+
+	for _, condition := range hcluster.Status.Conditions {
+		if condition.Type == string(hyperv1.EtcdAvailable) {
+			etcdCondition = condition
+			break
+		}
+	}
+
+	if len(etcdCondition.Type) <= 0 || etcdCondition.Status == metav1.ConditionUnknown {
+		log.Info("no etcd condition found or status unknown, skipping recovery procedure")
+		return nil
+	}
+
+	// ETCD Degraded condition
+	if etcdCondition.Status == metav1.ConditionTrue {
+		log.Info("etcd is available, skipping recovery procedure")
+		return nil
+	}
+
+	// Passed more than 3 minutes since the last transition time
+	if (metav1.Now().Sub(etcdCondition.LastTransitionTime.Time)) < 3*time.Minute {
+		log.Info("waiting for several minutes in order to verify if ETCD is available")
+		return nil
+	}
+
+	log.Info("there are sympthoms of ETCD cluster degradation, triggering recovery procedure")
+	//hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+
+	//recoveryJob := etcdrecovery.EtcdRecoveryJob(hcpNS)
+	//if _, err := createOrUpdate(ctx, r.Client, recoveryJob, func() error {
+	//	return r.reconcileEtcdRecoveryJob(recoveryJob, hcluster)
+	//}); err != nil {
+	//	return fmt.Errorf("failed to create etcd recovery job: %w", err)
+	//}
+
+	return nil
+}
+
+//func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hcluster *hyperv1.HostedCluster, hoImage string) error {
+//	job.Spec = batchv1.JobSpec{
+//		Template: corev1.PodTemplateSpec{
+//			Spec: corev1.PodSpec{
+//				Containers: []corev1.Container{
+//					Name:  "etcd-recovery",
+//					Image: hoImage,
+//					Command: []string{
+//
+//
+//	return nil
+//}
 
 // reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
 // hosted cluster, has an owner reference of the hosted cluster.

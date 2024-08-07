@@ -21,7 +21,7 @@ import (
 )
 
 // NewDelegatingClient creates a new set of AWS service clients that delegate individual calls to the right credentials.
-func NewDelegatingClient(
+func NewDelegatingClient (
 	awsEbsCsiDriverControllerCredentialsFile string,
 	cloudControllerCredentialsFile string,
 	cloudNetworkConfigControllerCredentialsFile string,
@@ -50,8 +50,8 @@ func NewDelegatingClient(
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "cloud-controller"),
 	})
 	cloudController := &cloudControllerClientDelegate{
-		ec2Client:   ec2.New(cloudControllerSession, awsConfig),
-		elbClient:   elb.New(cloudControllerSession, awsConfig),
+		ec2Client: ec2.New(cloudControllerSession, awsConfig),
+		elbClient: elb.New(cloudControllerSession, awsConfig),
 		elbv2Client: elbv2.New(cloudControllerSession, awsConfig),
 	}
 	cloudNetworkConfigControllerSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{cloudNetworkConfigControllerCredentialsFile}})
@@ -74,7 +74,7 @@ func NewDelegatingClient(
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "control-plane-operator"),
 	})
 	controlPlaneOperator := &controlPlaneOperatorClientDelegate{
-		ec2Client:     ec2.New(controlPlaneOperatorSession, awsConfig),
+		ec2Client: ec2.New(controlPlaneOperatorSession, awsConfig),
 		route53Client: route53.New(controlPlaneOperatorSession, awsConfig),
 	}
 	nodePoolSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{nodePoolCredentialsFile}})
@@ -101,39 +101,38 @@ func NewDelegatingClient(
 	}
 	return &DelegatingClient{
 		EC2API: &ec2Client{
-			EC2API:                       nil,
-			awsEbsCsiDriverController:    awsEbsCsiDriverController,
-			cloudController:              cloudController,
+			EC2API: nil,
+			awsEbsCsiDriverController: awsEbsCsiDriverController,
+			cloudController: cloudController,
 			cloudNetworkConfigController: cloudNetworkConfigController,
-			controlPlaneOperator:         controlPlaneOperator,
-			nodePool:                     nodePool,
+			controlPlaneOperator: controlPlaneOperator,
+			nodePool: nodePool,
 		},
 		ELBAPI: &elbClient{
-			ELBAPI:          nil,
+			ELBAPI: nil,
 			cloudController: cloudController,
 		},
 		ELBV2API: &elbv2Client{
-			ELBV2API:        nil,
+			ELBV2API: nil,
 			cloudController: cloudController,
 		},
 		Route53API: &route53Client{
-			Route53API:           nil,
+			Route53API: nil,
 			controlPlaneOperator: controlPlaneOperator,
 		},
 		S3API: &s3Client{
-			S3API:                  nil,
+			S3API: nil,
 			openshiftImageRegistry: openshiftImageRegistry,
 		},
 	}, nil
 }
-
 type awsEbsCsiDriverControllerClientDelegate struct {
 	ec2Client ec2iface.EC2API
 }
 
 type cloudControllerClientDelegate struct {
-	ec2Client   ec2iface.EC2API
-	elbClient   elbiface.ELBAPI
+	ec2Client ec2iface.EC2API
+	elbClient elbiface.ELBAPI
 	elbv2Client elbv2iface.ELBV2API
 }
 
@@ -142,7 +141,7 @@ type cloudNetworkConfigControllerClientDelegate struct {
 }
 
 type controlPlaneOperatorClientDelegate struct {
-	ec2Client     ec2iface.EC2API
+	ec2Client ec2iface.EC2API
 	route53Client route53iface.Route53API
 }
 
@@ -154,6 +153,7 @@ type openshiftImageRegistryClientDelegate struct {
 	s3Client s3iface.S3API
 }
 
+
 // DelegatingClient embeds clients for AWS services we have privileges to use with guest cluster component roles.
 type DelegatingClient struct {
 	ec2iface.EC2API
@@ -163,16 +163,17 @@ type DelegatingClient struct {
 	s3iface.S3API
 }
 
+
 // ec2Client delegates to individual component clients for API calls we know those components will have privileges to make.
 type ec2Client struct {
 	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
 	ec2iface.EC2API
 
-	awsEbsCsiDriverController    *awsEbsCsiDriverControllerClientDelegate
-	cloudController              *cloudControllerClientDelegate
+	awsEbsCsiDriverController *awsEbsCsiDriverControllerClientDelegate
+	cloudController *cloudControllerClientDelegate
 	cloudNetworkConfigController *cloudNetworkConfigControllerClientDelegate
-	controlPlaneOperator         *controlPlaneOperatorClientDelegate
-	nodePool                     *nodePoolClientDelegate
+	controlPlaneOperator *controlPlaneOperatorClientDelegate
+	nodePool *nodePoolClientDelegate
 }
 
 func (c *ec2Client) AttachVolumeWithContext(ctx aws.Context, input *ec2.AttachVolumeInput, opts ...request.Option) (*ec2.VolumeAttachment, error) {
@@ -593,3 +594,5 @@ func (c *s3Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInpu
 func (c *s3Client) PutPublicAccessBlockWithContext(ctx aws.Context, input *s3.PutPublicAccessBlockInput, opts ...request.Option) (*s3.PutPublicAccessBlockOutput, error) {
 	return c.openshiftImageRegistry.s3Client.PutPublicAccessBlockWithContext(ctx, input, opts...)
 }
+
+	
