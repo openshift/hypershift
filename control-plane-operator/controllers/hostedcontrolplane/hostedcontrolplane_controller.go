@@ -76,6 +76,7 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -3658,49 +3659,49 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 					}
 				}
 			} else {
-				pullSecret := common.PullSecret(hcp.Namespace)
-				if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-					return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
-				}
-
-				for name, catalog := range olm.CatalogToImage {
-					parts := strings.Split(catalog, ":")
-					if len(parts) != 2 {
-						return fmt.Errorf("invalid catalog format %s, expected 'registry:tag'", catalog)
+				if !overrideImages {
+					pullSecret := common.PullSecret(hcp.Namespace)
+					if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+						return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 					}
-					catalogImage, tag := parts[0], parts[1]
 
-					catalogImageParts := strings.Split(catalogImage, "/")
-					catalogRepo := catalogImageParts[len(catalogImageParts)-1]
-					catalogRegistry := strings.Join(catalogImageParts[:len(catalogImageParts)-1], "/")
-
-					if isImageRegistryOverrides != nil {
-						if mirror, exists := isImageRegistryOverrides[catalogRegistry]; exists && len(mirror) > 0 {
-							catalogRegistry = mirror[0]
+					for name, catalog := range olm.CatalogToImage {
+						imageRef, err := reference.Parse(catalog)
+						if err != nil {
+							return fmt.Errorf("failed to parse catalog image %s: %w", catalog, err)
 						}
-					}
 
-					catalogImageWithRegistryOverride := fmt.Sprintf("%s/%s:%s", catalogRegistry, catalogRepo, tag)
-					listDigest, err := registryclient.GetListDigest(ctx, catalogImageWithRegistryOverride, pullSecret.Data[corev1.DockerConfigJsonKey])
-					if err != nil {
-						return fmt.Errorf("failed to get manifest for image %s: %v", catalogImageWithRegistryOverride, err)
-					}
-
-					imageOverride := fmt.Sprintf("%s/%s@%s", catalogRegistry, catalogRepo, listDigest.String())
-
-					catalogOverrides := map[string]*string{
-						"redhat-operators":    &p.RedHatOperatorsCatalogImageOverride,
-						"certified-operators": &p.CertifiedOperatorsCatalogImageOverride,
-						"community-operators": &p.CommunityOperatorsCatalogImageOverride,
-						"redhat-marketplace":  &p.RedHatMarketplaceCatalogImageOverride,
-					}
-
-					if override, exists := catalogOverrides[name]; exists {
-						if ptr.Deref(override, "") == "" {
-							*override = imageOverride
+						if len(isImageRegistryOverrides) > 0 {
+							for registrySource, registryDest := range isImageRegistryOverrides {
+								if strings.Contains(imageRef.Exact(), registrySource) {
+									imageRef, err = reference.Parse(strings.Replace(imageRef.Exact(), registrySource, registryDest[0], 1))
+									if err != nil {
+										return fmt.Errorf("failed to parse registry override image %s: %w", registryDest[0], err)
+									}
+								}
+							}
 						}
-					} else {
-						return fmt.Errorf("unknown catalog for catalog image override %s", name)
+
+						listDigest, err := registryclient.GetListDigest(ctx, imageRef.Exact(), pullSecret.Data[corev1.DockerConfigJsonKey])
+						if err != nil {
+							return fmt.Errorf("failed to get manifest for image %s: %v", imageRef.Exact(), err)
+						}
+						imageRef.ID = listDigest.String()
+
+						catalogOverrides := map[string]*string{
+							"redhat-operators":    &p.RedHatOperatorsCatalogImageOverride,
+							"certified-operators": &p.CertifiedOperatorsCatalogImageOverride,
+							"community-operators": &p.CommunityOperatorsCatalogImageOverride,
+							"redhat-marketplace":  &p.RedHatMarketplaceCatalogImageOverride,
+						}
+
+						if override, exists := catalogOverrides[name]; exists {
+							if ptr.Deref(override, "") == "" {
+								*override = imageRef.Exact()
+							}
+						} else {
+							return fmt.Errorf("unknown catalog for catalog image override %s", name)
+						}
 					}
 				}
 			}
