@@ -166,6 +166,9 @@ func (p *awsKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
 		awsKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
+
+	container.Args = append(container.Args, "--encryption-provider-config-automatic-reload=false")
+
 	return nil
 }
 
