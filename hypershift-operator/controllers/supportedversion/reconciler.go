@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/openshift/hypershift/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -22,8 +23,9 @@ import (
 )
 
 const (
-	configMapKey           = "supported-versions"
-	supportedVersionsLabel = "hypershift.openshift.io/supported-versions"
+	ConfigMapVersionsKey      = "supported-versions"
+	ConfigMapServerVersionKey = "server-version"
+	supportedVersionsLabel    = "hypershift.openshift.io/supported-versions"
 )
 
 type Reconciler struct {
@@ -56,7 +58,7 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 	return nil
 }
 
-type supportedVersions struct {
+type SupportedVersions struct {
 	Versions []string `json:"versions"`
 }
 
@@ -71,7 +73,7 @@ func (r *Reconciler) ensureSupportedVersionConfigMap(ctx context.Context) error 
 	}
 	cm.Labels[supportedVersionsLabel] = "true"
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
-		content := &supportedVersions{
+		content := &SupportedVersions{
 			Versions: supportedversion.Supported(),
 		}
 		contentBytes, err := json.Marshal(content)
@@ -81,7 +83,8 @@ func (r *Reconciler) ensureSupportedVersionConfigMap(ctx context.Context) error 
 		if cm.Data == nil {
 			cm.Data = map[string]string{}
 		}
-		cm.Data[configMapKey] = string(contentBytes)
+		cm.Data[ConfigMapVersionsKey] = string(contentBytes)
+		cm.Data[ConfigMapServerVersionKey] = version.GetRevision()
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to update supported version configmap: %w", err)
