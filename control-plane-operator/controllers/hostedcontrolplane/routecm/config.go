@@ -47,7 +47,7 @@ func ReconcileOpenShiftRouteControllerManagerConfig(cm *corev1.ConfigMap, ownerR
 
 func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string, networkConfig *configv1.NetworkSpec) error {
 	cpath := func(volume, file string) string {
-		dir := volumeMounts.Path(routeOCMContainerMain().Name, volume)
+		dir := volumes.Path(routeOCMContainerMain().Name, volume)
 		return path.Join(dir, file)
 	}
 	cfg.TypeMeta = metav1.TypeMeta{
