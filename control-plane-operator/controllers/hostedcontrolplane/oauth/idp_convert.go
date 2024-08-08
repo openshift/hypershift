@@ -487,7 +487,7 @@ func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, names
 		ConnectDirectlyToCloudAPIs:      false,
 		ResolveFromManagementClusterDNS: true,
 		ResolveFromGuestClusterDNS:      true,
-		ResolveBeforeDial:               false,
+		ResolveBeforeDial:               true,
 		DisableResolver:                 false,
 		Client:                          guestClusterClient,
 		Log:                             ctrl.LoggerFrom(ctx),
