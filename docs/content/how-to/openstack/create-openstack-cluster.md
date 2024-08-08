@@ -94,8 +94,6 @@ openstack floating ip create <external-network>
 To get Ingress functional on day 1, you need to create a DNS record for the following wildcard domain that needs to point to the Ingress floating IP:
 `*.apps.<cluster-name>.<base-domain>`
 
-```shell
-
 ## Create a HostedCluster
 
 Once all the [prerequisites](#prerequisites) are met, and the HyperShift
