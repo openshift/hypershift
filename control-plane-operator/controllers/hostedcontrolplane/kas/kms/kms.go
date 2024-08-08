@@ -6,7 +6,7 @@ import (
 )
 
 type IKMSProvider interface {
-	GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error)
+	GenerateKMSEncryptionConfig(apiVersion string) (*v1.EncryptionConfiguration, error)
 
 	ApplyKMSConfig(podSpec *corev1.PodSpec) error
 }

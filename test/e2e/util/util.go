@@ -915,62 +915,78 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 
 func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
 	t.Run("EnsureSecretEncryptedUsingKMS", func(t *testing.T) {
-		// create secret in guest cluster
-		testSecret := corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-secret",
-				Namespace: "default",
-			},
-			Type: corev1.SecretTypeOpaque,
-			Data: map[string][]byte{
-				"myKey": []byte("myData"),
-			},
-		}
-		if err := guestClient.Create(ctx, &testSecret); err != nil {
-			t.Errorf("failed to create a secret in guest cluster; %v", err)
-		}
-
-		restConfig, err := GetConfig()
-		if err != nil {
-			t.Errorf("failed to get restConfig; %v", err)
-		}
-
-		secretEtcdKey := fmt.Sprintf("/kubernetes.io/secrets/%s/%s", testSecret.Namespace, testSecret.Name)
-		command := []string{
-			"/usr/bin/etcdctl",
-			"--endpoints=localhost:2379",
-			"--cacert=/etc/etcd/tls/etcd-ca/ca.crt",
-			"--cert=/etc/etcd/tls/client/etcd-client.crt",
-			"--key=/etc/etcd/tls/client/etcd-client.key",
-			"get",
-			secretEtcdKey,
-		}
-
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-		out := new(bytes.Buffer)
-
-		podExecuter := PodExecOptions{
-			StreamOptions: StreamOptions{
-				IOStreams: genericclioptions.IOStreams{
-					Out:    out,
-					ErrOut: os.Stderr,
-				},
-			},
-			Command:       command,
-			Namespace:     hcpNamespace,
-			PodName:       "etcd-0",
-			ContainerName: "etcd",
-			Config:        restConfig,
-		}
-
-		if err := podExecuter.Run(ctx); err != nil {
-			t.Errorf("failed to execute etcdctl command; %v", err)
-		}
-
-		if !strings.Contains(out.String(), "k8s:enc:kms:") {
-			t.Errorf("secret is not encrypted using kms")
-		}
+		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:")
 	})
+}
+
+func EnsureSecretEncryptedUsingKMSV1(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
+	t.Run("EnsureSecretEncryptedUsingKMSV1", func(t *testing.T) {
+		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:v1")
+	})
+}
+
+func EnsureSecretEncryptedUsingKMSV2(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
+	t.Run("EnsureSecretEncryptedUsingKMSV2", func(t *testing.T) {
+		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:v2")
+	})
+}
+
+func ensureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client, expectedPrefix string) {
+	// create secret in guest cluster
+	testSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-secret",
+			Namespace: "default",
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"myKey": []byte("myData"),
+		},
+	}
+	if err := guestClient.Create(ctx, &testSecret); err != nil {
+		t.Errorf("failed to create a secret in guest cluster; %v", err)
+	}
+
+	restConfig, err := GetConfig()
+	if err != nil {
+		t.Errorf("failed to get restConfig; %v", err)
+	}
+
+	secretEtcdKey := fmt.Sprintf("/kubernetes.io/secrets/%s/%s", testSecret.Namespace, testSecret.Name)
+	command := []string{
+		"/usr/bin/etcdctl",
+		"--endpoints=localhost:2379",
+		"--cacert=/etc/etcd/tls/etcd-ca/ca.crt",
+		"--cert=/etc/etcd/tls/client/etcd-client.crt",
+		"--key=/etc/etcd/tls/client/etcd-client.key",
+		"get",
+		secretEtcdKey,
+	}
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	out := new(bytes.Buffer)
+
+	podExecuter := PodExecOptions{
+		StreamOptions: StreamOptions{
+			IOStreams: genericclioptions.IOStreams{
+				Out:    out,
+				ErrOut: os.Stderr,
+			},
+		},
+		Command:       command,
+		Namespace:     hcpNamespace,
+		PodName:       "etcd-0",
+		ContainerName: "etcd",
+		Config:        restConfig,
+	}
+
+	if err := podExecuter.Run(ctx); err != nil {
+		t.Errorf("failed to execute etcdctl command; %v", err)
+	}
+
+	if !strings.Contains(out.String(), expectedPrefix) {
+		t.Errorf("secret is not encrypted using kms")
+	}
 }
 
 func createK8sClient() (*k8s.Clientset, error) {

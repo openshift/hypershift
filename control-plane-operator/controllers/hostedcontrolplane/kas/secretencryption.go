@@ -21,7 +21,7 @@ func ReconcileKMSEncryptionConfig(config *corev1.Secret,
 		config.Data = map[string][]byte{}
 	}
 
-	encryptionConfigurationBytes, err := generateKMSEncryptionConfig(encryptionSpec)
+	encryptionConfigurationBytes, err := generateKMSEncryptionConfig(config, encryptionSpec)
 	if err != nil {
 		return err
 	}
