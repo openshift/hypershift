@@ -247,9 +247,9 @@ example-twxns         Ready    worker   88s     v1.27.4+18eadca
 ## Adding Additional NodePools
 
 Create additional NodePools for a guest cluster by specifying a name, number of
-replicas, and any additional information such as memory and cpu requirements.
+replicas, and any additional information like the additional ports to create for each node.
 
-For example, let's create a NodePool with more CPUs assigned to the VMs (4 vs 2):
+For example, let's create a NodePool with an additional port for SR-IOV and address pairs:
 
 ```shell linenums="1"
 export NODEPOOL_NAME=$CLUSTER_NAME-extra-cpu
@@ -257,6 +257,8 @@ export WORKER_COUNT="2"
 export IMAGE_NAME="rhcos"
 export FLAVOR="m1.xlarge"
 export AZ="az1"
+export SRIOV_NEUTRON_NETWORK_ID="f050901b-11bc-4a75-a553-878509255760"
+export ADDRESS_PAIRS="192.168.0.1-192.168.0.2"
 
 hcp create nodepool openstack \
   --cluster-name $CLUSTER_NAME \
@@ -264,7 +266,8 @@ hcp create nodepool openstack \
   --node-count $WORKER_COUNT \
   --openstack-node-image-name $IMAGE_NAME \
   --openstack-node-flavor $FLAVOR \
-  --openstack-node-availability-zone $AZ
+  --openstack-node-availability-zone $AZ \
+  --openstack-node-additional-port=network-id:$SRIOV_NEUTRON_NETWORK_ID,vnic-type:direct,address-pairs:$ADDRESS_PAIRS
 ```
 
 Check the status of the NodePool by listing `nodepool` resources in the `clusters`
