@@ -326,6 +326,9 @@ const (
 	// This annotation signals to the NodePool controller that it is safe to use TopologySpreadConstraints on a NodePool
 	// without triggering an unexpected update of KubeVirt VMs.
 	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
+
+	// DisableIgnitionServerAnnotation controls skipping of the ignition server deployment.
+	DisableIgnitionServerAnnotation = "hypershift.openshift.io/disable-ignition-server"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
