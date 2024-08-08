@@ -236,6 +236,9 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: rootVolumeName,
+			Labels: map[string]string{
+				hyperv1.IsKubeVirtRHCOSVolumeLabelName: "true",
+			},
 		},
 		Spec: v1beta1.DataVolumeSpec{
 			Source: dvSource,

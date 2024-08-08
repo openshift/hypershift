@@ -222,8 +222,9 @@ func (qi *cachedBootImage) buildDVForCache(nodePool *hyperv1.NodePool, uid strin
 			GenerateName: bootImageNamePrefix,
 			Namespace:    qi.namespace,
 			Labels: map[string]string{
-				bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
-				bootImageDVLabelUID:      uid,
+				bootImageDVLabelRoleName:               bootImageDVLabelRoleValue,
+				bootImageDVLabelUID:                    uid,
+				hyperv1.IsKubeVirtRHCOSVolumeLabelName: "true",
 			},
 			Annotations: map[string]string{
 				bootImageDVAnnotationHash:          qi.hash,
