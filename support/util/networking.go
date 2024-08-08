@@ -1,6 +1,8 @@
 package util
 
 import (
+	"strings"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
@@ -42,6 +44,15 @@ func FirstClusterCIDR(clusterNetwork []hyperv1.ClusterNetworkEntry) string {
 		return clusterCIDRs[0]
 	}
 	return ""
+}
+
+// MachineNetworksToList converts a list of MachineNetworkEntry to a comma separated list of CIDRs.
+func MachineNetworksToList(machineNetwork []hyperv1.MachineNetworkEntry) string {
+	cidrs := []string{}
+	for _, mn := range machineNetwork {
+		cidrs = append(cidrs, mn.CIDR.String())
+	}
+	return strings.Join(cidrs, ",")
 }
 
 // KASPodPort will retrieve the port the kube-apiserver binds on locally in the pod.

@@ -2,6 +2,7 @@ package openstack
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 )
@@ -20,11 +21,11 @@ const (
 // ReconcileCloudConfigSecret reconciles the cloud config secret.
 // For some controllers (e.g. Manila CSI, CNCC, etc), the cloud config needs to be stored in a secret.
 // In the hosted cluster config operator, we create the secrets needed by these controllers.
-func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, secret *corev1.Secret, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, secret *corev1.Secret, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	config := getCloudConfig(platformSpec, credentialsSecret, caCertData)
+	config := getCloudConfig(platformSpec, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
 		secret.Data[CABundleKey] = caCertData
 	}
@@ -35,11 +36,11 @@ func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, sec
 
 // ReconcileCloudConfigConfigMap reconciles the cloud config configmap.
 // In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
-func ReconcileCloudConfigConfigMap(platformSpec *hyperv1.OpenStackPlatformSpec, cm *corev1.ConfigMap, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigConfigMap(platformSpec *hyperv1.OpenStackPlatformSpec, cm *corev1.ConfigMap, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	config := getCloudConfig(platformSpec, credentialsSecret, caCertData)
+	config := getCloudConfig(platformSpec, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
 		cm.Data[CABundleKey] = string(caCertData)
 	}
@@ -49,7 +50,7 @@ func ReconcileCloudConfigConfigMap(platformSpec *hyperv1.OpenStackPlatformSpec, 
 }
 
 // getCloudConfig returns the cloud config.
-func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecret *corev1.Secret, caCertData []byte) string {
+func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) string {
 	config := string(credentialsSecret.Data[CredentialsFile])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
@@ -67,6 +68,8 @@ func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecr
 			config += "floating-network-id = " + externalNetworkID + "\n"
 		}
 	}
+	config += "\n[Networking]\n"
+	config += "address-sort-order = " + util.MachineNetworksToList(machineNetwork) + "\n"
 
 	return config
 }

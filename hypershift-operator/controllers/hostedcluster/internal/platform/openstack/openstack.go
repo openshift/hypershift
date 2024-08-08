@@ -9,8 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/upsert"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -27,7 +27,6 @@ import (
 )
 
 const (
-	defaultCIDRBlock  = "10.0.0.0/16"
 	sgRuleDescription = "Managed by the Hypershift Control Plane Operator"
 )
 
@@ -59,7 +58,10 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 		CloudName: openStackPlatform.IdentityRef.CloudName,
 	}
 	if _, err := createOrUpdate(ctx, client, openStackCluster, func() error {
-		reconcileOpenStackClusterSpec(hcluster, &openStackCluster.Spec, apiEndpoint)
+		err := reconcileOpenStackClusterSpec(hcluster, &openStackCluster.Spec, apiEndpoint)
+		if err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -67,22 +69,17 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 	return openStackCluster, nil
 }
 
-func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClusterSpec *capo.OpenStackClusterSpec, apiEndpoint hyperv1.APIEndpoint) {
+func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClusterSpec *capo.OpenStackClusterSpec, apiEndpoint hyperv1.APIEndpoint) error {
+	machineNetworks := hcluster.Spec.Networking.MachineNetwork
+	if len(machineNetworks) == 0 {
+		return fmt.Errorf("failed to reconcile OpenStackClusterSpec, empty machine networks")
+	}
+
 	openStackPlatform := hcluster.Spec.Platform.OpenStack
 
 	openStackClusterSpec.ControlPlaneEndpoint = &capiv1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
-	}
-
-	var machineNetworks []hyperv1.MachineNetworkEntry
-	// If no MachineNetwork is provided, use a default CIDR block.
-	// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
-	// See https://github.com/openshift/hypershift/pull/4287
-	if len(hcluster.Spec.Networking.MachineNetwork) == 0 {
-		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
-	} else {
-		machineNetworks = hcluster.Spec.Networking.MachineNetwork
 	}
 
 	if len(openStackPlatform.Subnets) > 0 {
@@ -101,7 +98,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 					CIDR:                subnetFilter.CIDR,
 					IPv6AddressMode:     subnetFilter.IPv6AddressMode,
 					IPv6RAMode:          subnetFilter.IPv6RAMode,
-					FilterByNeutronTags: createCAPOFilterTags(subnetFilter.Tags, subnetFilter.TagsAny, subnetFilter.NotTags, subnetFilter.NotTagsAny),
+					FilterByNeutronTags: openstackutil.CreateCAPOFilterTags(subnetFilter.Tags, subnetFilter.TagsAny, subnetFilter.NotTags, subnetFilter.NotTagsAny),
 				}
 			}
 		}
@@ -131,7 +128,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 				Name:                routerFilter.Name,
 				Description:         routerFilter.Description,
 				ProjectID:           routerFilter.ProjectID,
-				FilterByNeutronTags: createCAPOFilterTags(routerFilter.Tags, routerFilter.TagsAny, routerFilter.NotTags, routerFilter.NotTagsAny),
+				FilterByNeutronTags: openstackutil.CreateCAPOFilterTags(routerFilter.Tags, routerFilter.TagsAny, routerFilter.NotTags, routerFilter.NotTagsAny),
 			}
 
 		}
@@ -139,7 +136,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	if openStackPlatform.Network != nil {
 		openStackClusterSpec.Network = &capo.NetworkParam{ID: openStackPlatform.Network.ID}
 		if openStackPlatform.Network.Filter != nil {
-			openStackClusterSpec.Network.Filter = createCAPONetworkFilter(openStackPlatform.Network.Filter)
+			openStackClusterSpec.Network.Filter = openstackutil.CreateCAPONetworkFilter(openStackPlatform.Network.Filter)
 		}
 	}
 	if openStackPlatform.NetworkMTU != nil {
@@ -148,7 +145,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	if openStackPlatform.ExternalNetwork != nil {
 		openStackClusterSpec.ExternalNetwork = &capo.NetworkParam{ID: openStackPlatform.ExternalNetwork.ID}
 		if openStackPlatform.ExternalNetwork.Filter != nil {
-			openStackClusterSpec.ExternalNetwork.Filter = createCAPONetworkFilter(openStackPlatform.ExternalNetwork.Filter)
+			openStackClusterSpec.ExternalNetwork.Filter = openstackutil.CreateCAPONetworkFilter(openStackPlatform.ExternalNetwork.Filter)
 		}
 	}
 	if openStackPlatform.DisableExternalNetwork != nil {
@@ -159,32 +156,8 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 		AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
 	}
 	openStackClusterSpec.Tags = openStackPlatform.Tags
-}
 
-func convertHypershiftTagToCAPOTag(tags []hyperv1.NeutronTag) []capo.NeutronTag {
-	var capoTags []capo.NeutronTag
-	for i := range tags {
-		capoTags = append(capoTags, capo.NeutronTag(tags[i]))
-	}
-	return capoTags
-}
-
-func createCAPOFilterTags(tags, tagsAny, NotTags, NotTagsAny []hyperv1.NeutronTag) capo.FilterByNeutronTags {
-	return capo.FilterByNeutronTags{
-		Tags:       convertHypershiftTagToCAPOTag(tags),
-		TagsAny:    convertHypershiftTagToCAPOTag(tagsAny),
-		NotTags:    convertHypershiftTagToCAPOTag(NotTags),
-		NotTagsAny: convertHypershiftTagToCAPOTag(NotTagsAny),
-	}
-}
-
-func createCAPONetworkFilter(filter *hyperv1.NetworkFilter) *capo.NetworkFilter {
-	return &capo.NetworkFilter{
-		Name:                filter.Name,
-		Description:         filter.Description,
-		ProjectID:           filter.ProjectID,
-		FilterByNeutronTags: createCAPOFilterTags(filter.Tags, filter.TagsAny, filter.NotTags, filter.NotTagsAny),
-	}
+	return nil
 }
 
 func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
@@ -293,7 +266,7 @@ func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, cr
 	}
 
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
-		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack, cloudNetworkConfigCreds, credentialsSecret, caCertData)
+		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack, cloudNetworkConfigCreds, credentialsSecret, caCertData, hcluster.Spec.Networking.MachineNetwork)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
 	}
