@@ -256,11 +256,25 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		}
 	}
 
+	// case platform specific options
+	var clusterName string
+	switch platform {
+	case hyperv1.OpenStackPlatform:
+		// On some platforms (OpenStack), the cluster name can be pre-set in the environment
+		// so the DNS record for Ingress can be created with the correct name prior to cluster creation.
+		clusterName = os.Getenv("CLUSTER_NAME")
+		if clusterName == "" {
+			clusterName = SimpleNameGenerator.GenerateName("example-")
+		}
+	default:
+		clusterName = SimpleNameGenerator.GenerateName("example-")
+	}
+
 	// Build the skeletal HostedCluster based on the provided platform.
 	hc := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      SimpleNameGenerator.GenerateName("example-"),
+			Name:      clusterName,
 		},
 		Spec: hyperv1.HostedClusterSpec{
 			Platform: hyperv1.PlatformSpec{

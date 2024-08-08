@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
@@ -263,6 +264,8 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			TransitGateway:         createOpts.PowerVSPlatform.TransitGateway,
 		}
 		return powervs.DestroyCluster(ctx, opts)
+	case hyperv1.OpenStackPlatform:
+		return openstack.DestroyCluster(ctx, opts)
 
 	default:
 		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)
