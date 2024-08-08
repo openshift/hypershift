@@ -6810,6 +6810,7 @@ FilterByNeutronTags
 ###NetworkParam { #hypershift.openshift.io/v1beta1.NetworkParam }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackNodePoolPlatform">OpenStackNodePoolPlatform</a>, 
 <a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
 </p>
 <p>
@@ -7752,6 +7753,20 @@ string
 <em>(Optional)</em>
 <p>ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
 is chosen based on the NodePool release payload image.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalNetworks</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NetworkParam">
+[]NetworkParam
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalNetworks specify the extra networks attached to the nodes</p>
 </td>
 </tr>
 </tbody>

@@ -909,6 +909,11 @@ type OpenStackNodePoolPlatform struct {
 	//
 	// +optional
 	ImageName string `json:"imageName,omitempty"`
+
+	// AdditionalNetworks specify the extra networks attached to the nodes
+	//
+	// +optional
+	AdditionalNetworks []NetworkParam `json:"additionalNetworks,omitempty"`
 }
 
 type AzureVMImageType string
