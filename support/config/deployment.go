@@ -174,7 +174,9 @@ func colocationLabelValue(hcp *hyperv1.HostedControlPlane) string {
 
 // setMultizoneSpread sets PodAntiAffinity with corev1.LabelTopologyZone as the topology key for a given set of labels.
 // This is useful to e.g ensure pods are spread across availavility zones.
-func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string) {
+// If required is true, the rule is set as RequiredDuringSchedulingIgnoredDuringExecution, otherwise it is set as
+// PreferredDuringSchedulingIgnoredDuringExecution.
+func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string, required bool) {
 	if labels == nil {
 		return
 	}
@@ -184,14 +186,28 @@ func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string) {
 	if c.Scheduling.Affinity.PodAntiAffinity == nil {
 		c.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 	}
-	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
-		corev1.PodAffinityTerm{
-			TopologyKey: corev1.LabelTopologyZone,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: labels,
+	if required {
+		c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+			corev1.PodAffinityTerm{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: labels,
+				},
 			},
-		},
-	)
+		)
+	} else {
+		c.Scheduling.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(c.Scheduling.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+			corev1.WeightedPodAffinityTerm{
+				Weight: 100,
+				PodAffinityTerm: corev1.PodAffinityTerm{
+					TopologyKey: corev1.LabelTopologyZone,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: labels,
+					},
+				},
+			},
+		)
+	}
 }
 
 // setNodeSpread sets PodAntiAffinity with corev1.LabelHostname as the topology key for a given set of labels.
@@ -358,7 +374,16 @@ func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZon
 	c.setColocation(hcp)
 	// TODO (alberto): pass labels with deployment hash and set this unconditionally so we don't skew setup.
 	if c.Replicas > 1 {
-		c.setMultizoneSpread(multiZoneSpreadLabels)
+		var multiZoneRequired bool
+		switch hcp.Spec.Platform.Type {
+		// On OpenStack and Kubevirt we can't spread across zones in certain cases
+		// so let's relax the requirement on those platforms.
+		case hyperv1.OpenStackPlatform, hyperv1.KubevirtPlatform:
+			multiZoneRequired = false
+		default:
+			multiZoneRequired = true
+		}
+		c.setMultizoneSpread(multiZoneSpreadLabels, multiZoneRequired)
 		c.setNodeSpread(multiZoneSpreadLabels)
 	}
 }
