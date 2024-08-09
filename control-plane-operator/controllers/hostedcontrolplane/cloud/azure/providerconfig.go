@@ -42,9 +42,6 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 		return err
 	}
 
-	cfg.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	cfg.AADClientSecret = string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
-	cfg.UseManagedIdentityExtension = false
 	cfg.UseInstanceMetadata = false
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -78,6 +75,7 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
 		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
 		UseManagedIdentityExtension:  true,
+		UserAssignedIdentityID:       hcp.Spec.Platform.Azure.MSIClientIDs.AzureCloudProviderMSIClientID,
 		SubscriptionID:               hcp.Spec.Platform.Azure.SubscriptionID,
 		ResourceGroup:                hcp.Spec.Platform.Azure.ResourceGroupName,
 		Location:                     hcp.Spec.Platform.Azure.Location,
@@ -106,9 +104,8 @@ type AzureConfig struct {
 	Cloud                        string `json:"cloud"`
 	TenantID                     string `json:"tenantId"`
 	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
+	UserAssignedIdentityID       string `json:"userAssignedIdentityID"`
 	SubscriptionID               string `json:"subscriptionId"`
-	AADClientID                  string `json:"aadClientId"`
-	AADClientSecret              string `json:"aadClientSecret"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`
