@@ -70,6 +70,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
@@ -109,7 +110,6 @@ import (
 const (
 	finalizer                              = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigKey              = "kubeconfig"
-	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
 	resourceDeletionTimeout = 10 * time.Minute
@@ -156,6 +156,8 @@ func (s InfrastructureStatus) IsReady() bool {
 
 type HostedControlPlaneReconciler struct {
 	client.Client
+
+	components []component.ControlPlaneComponent
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
@@ -204,7 +206,15 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.ec2Client, r.awsSession = getEC2Client()
 
+	r.registerComponents()
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) registerComponents() {
+	r.components = append(r.components,
+		autoscaler.NewComponent(),
+		routecm.NewComponent(),
+	)
 }
 
 func getEC2Client() (ec2iface.EC2API, *session.Session) {
@@ -903,6 +913,23 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		errs = append(errs, err)
 	}
 
+	cpContext := component.ControlPlaneContext{
+		Context:                   ctx,
+		Client:                    r.Client,
+		HCP:                       hostedControlPlane,
+		CreateOrUpdate:            createOrUpdate,
+		ReleaseImageProvider:      releaseImageProvider,
+		UserReleaseImageProvider:  userReleaseImageProvider,
+		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		MetricsSet:                r.MetricsSet,
+	}
+	for _, c := range r.components {
+		r.Log.Info("Reconciling component", "name", c.Name())
+		if err := c.Reconcile(cpContext); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	missingImages := sets.New(releaseImageProvider.GetMissingImages()...).Insert(userReleaseImageProvider.GetMissingImages()...)
 	if missingImages.Len() == 0 {
@@ -1121,12 +1148,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
 	}
 
-	// Reconcile openshift route controller manager
-	r.Log.Info("Reconciling OpenShift Route Controller Manager")
-	if err := r.reconcileOpenShiftRouteControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager: %w", err)
-	}
-
 	// Reconcile cluster policy controller
 	r.Log.Info("Reconciling Cluster Policy Controller")
 	if err := r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
@@ -1236,11 +1257,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Disable machine management components if enabled
 	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableMachineManagement]; !exists {
-		r.Log.Info("Reconciling autoscaler")
-		if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile autoscaler: %w", err)
-		}
-
 		r.Log.Info("Reconciling machine approver")
 		if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile machine approver: %w", err)
@@ -3370,44 +3386,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := routecm.NewOpenShiftRouteControllerManagerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
-	config := manifests.OpenShiftRouteControllerManagerConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, config, func() error {
-		return routecm.ReconcileOpenShiftRouteControllerManagerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites(), p.Network)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager config: %w", err)
-	}
-
-	if err := r.Get(ctx, client.ObjectKeyFromObject(config), config); err != nil {
-		return fmt.Errorf("failed to get openshift controller manager config: %w", err)
-	}
-
-	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
-		service := manifests.OpenShiftRouteControllerManagerService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, service, func() error {
-			return routecm.ReconcileService(service, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile openshift route controller manager service: %w", err)
-		}
-
-		serviceMonitor := manifests.OpenShiftRouteControllerManagerServiceMonitor(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-			return routecm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile openshift route controller manager service monitor: %w", err)
-		}
-	}
-
-	deployment := manifests.OpenShiftRouteControllerManagerDeployment(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return routecm.ReconcileDeployment(deployment, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager deployment: %w", err)
-	}
-	return nil
-}
-
 func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -4570,13 +4548,6 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		}
 	}
 	return nil
-}
-
-// reconcileAutoscaler orchestrates reconciliation of autoscaler components using
-func (r *HostedControlPlaneReconciler) reconcileAutoscaler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	autoscalerImage := releaseImageProvider.GetImage(ImageStreamAutoscalerImage)
-	availabilityProberImage := releaseImageProvider.GetImage(util.AvailabilityProberImageName)
-	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, autoscalerImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
