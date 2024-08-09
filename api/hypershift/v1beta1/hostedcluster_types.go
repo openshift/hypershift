@@ -326,6 +326,9 @@ const (
 	// This annotation signals to the NodePool controller that it is safe to use TopologySpreadConstraints on a NodePool
 	// without triggering an unexpected update of KubeVirt VMs.
 	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
+
+	// IsKubeVirtRHCOSVolumeLabelName labels rhcos DataVolumes and PVCs, to be able to filter them, e.g. for backup
+	IsKubeVirtRHCOSVolumeLabelName = "hypershift.openshift.io/is-kubevirt-rhcos"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

@@ -10,7 +10,6 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	suppconfig "github.com/openshift/hypershift/support/config"
 	"go.uber.org/zap/zaptest"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -24,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	suppconfig "github.com/openshift/hypershift/support/config"
 )
 
 const (
@@ -1328,6 +1328,9 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "rhcos",
+						Labels: map[string]string{
+							hyperv1.IsKubeVirtRHCOSVolumeLabelName: "true",
+						},
 					},
 					Spec: v1beta1.DataVolumeSpec{
 						Source: &v1beta1.DataVolumeSource{
