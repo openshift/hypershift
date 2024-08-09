@@ -44,8 +44,6 @@ type RawCreateOptions struct {
 	OpenStackIngressFloatingIP string
 	OpenStackIngressProvider   hyperv1.OpenStackIngressProvider
 
-	externalDNSDomain string
-
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
 
@@ -117,7 +115,7 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	return validOpts, err
 }
 
-func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
+func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type:      hyperv1.OpenStackPlatform,
 		OpenStack: &hyperv1.OpenStackPlatformSpec{},
