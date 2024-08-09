@@ -12,3 +12,11 @@ func RequestCountCRD() *apiextensionsv1.CustomResourceDefinition {
 		},
 	}
 }
+
+func EtcdOperatorCRD() *apiextensionsv1.CustomResourceDefinition {
+	return &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "etcds.operator.openshift.io",
+		},
+	}
+}
