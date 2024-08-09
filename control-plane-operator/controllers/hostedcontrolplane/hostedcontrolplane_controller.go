@@ -1091,6 +1091,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		config.OwnerRefFrom(hostedControlPlane),
 		openShiftTrustedCABundleConfigMapForCPOExists,
 		r.ReleaseProvider.GetMirroredReleaseImage(),
+		useHCPRouter(hostedControlPlane),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
@@ -1634,7 +1635,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, useHCPRouter(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Konnectivity server external route: %w", err)
 		}
@@ -1677,7 +1678,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, useHCPRouter(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OAuth external public route: %w", err)
 		}
@@ -1699,7 +1700,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+			return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, !useHCPRouter(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OAuth external private route: %w", err)
 		}
