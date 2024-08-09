@@ -20,8 +20,9 @@ package v1beta1
 // OpenStackNodePoolPlatformApplyConfiguration represents an declarative configuration of the OpenStackNodePoolPlatform type for use
 // with apply.
 type OpenStackNodePoolPlatformApplyConfiguration struct {
-	Flavor    *string `json:"flavor,omitempty"`
-	ImageName *string `json:"imageName,omitempty"`
+	Flavor             *string                          `json:"flavor,omitempty"`
+	ImageName          *string                          `json:"imageName,omitempty"`
+	AdditionalNetworks []NetworkParamApplyConfiguration `json:"additionalNetworks,omitempty"`
 }
 
 // OpenStackNodePoolPlatformApplyConfiguration constructs an declarative configuration of the OpenStackNodePoolPlatform type for use with
@@ -43,5 +44,18 @@ func (b *OpenStackNodePoolPlatformApplyConfiguration) WithFlavor(value string) *
 // If called multiple times, the ImageName field is set to the value of the last call.
 func (b *OpenStackNodePoolPlatformApplyConfiguration) WithImageName(value string) *OpenStackNodePoolPlatformApplyConfiguration {
 	b.ImageName = &value
+	return b
+}
+
+// WithAdditionalNetworks adds the given value to the AdditionalNetworks field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the AdditionalNetworks field.
+func (b *OpenStackNodePoolPlatformApplyConfiguration) WithAdditionalNetworks(values ...*NetworkParamApplyConfiguration) *OpenStackNodePoolPlatformApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithAdditionalNetworks")
+		}
+		b.AdditionalNetworks = append(b.AdditionalNetworks, *values[i])
+	}
 	return b
 }
