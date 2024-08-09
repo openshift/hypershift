@@ -101,6 +101,7 @@ const (
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
 	HypershiftOperatorName                = "operator"
+	HostedClusterSchedulerName            = "hosted-cluster-scheduler"
 	ExternalDNSDeploymentName             = "external-dns"
 	HyperShiftInstallCLIVersionAnnotation = "hypershift.openshift.io/install-cli-version"
 )
@@ -385,7 +386,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		"--namespace=$(MY_NAMESPACE)",
 		"--pod-name=$(MY_NAME)",
 		"--metrics-addr=:9000",
-		fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", o.EnableDedicatedRequestServingIsolation),
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
@@ -753,6 +753,87 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		})
+	}
+
+	return deployment
+}
+
+type HostedClusterSchedulerDeployment struct {
+	Namespace           *corev1.Namespace
+	OperatorImage       string
+	ServiceAccount      *corev1.ServiceAccount
+	Images              map[string]string
+	EnableCIDebugOutput bool
+	EnableSizeTagging   bool
+}
+
+func (o HostedClusterSchedulerDeployment) Build() *appsv1.Deployment {
+	args := []string{
+		"run",
+		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
+	}
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+	envVars := []corev1.EnvVar{}
+
+	if o.EnableSizeTagging {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "ENABLE_SIZE_TAGGING",
+			Value: "1",
+		})
+	}
+
+	image := o.OperatorImage
+
+	replicas := int32(1)
+
+	deployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      HostedClusterSchedulerName,
+			Namespace: o.Namespace.Name,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": HostedClusterSchedulerName,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": HostedClusterSchedulerName,
+						"app":  HostedClusterSchedulerName,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:            HostedClusterSchedulerName,
+							Image:           image,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Env:             envVars,
+							Command:         []string{"/usr/bin/hosted-cluster-scheduler", "run"},
+							Args:            args,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("100Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
+								},
+							},
+							VolumeMounts: volumeMounts,
+						},
+					},
+					Volumes:            volumes,
+					ServiceAccountName: o.ServiceAccount.Name,
+				},
+			},
+		},
 	}
 
 	return deployment
