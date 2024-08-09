@@ -147,6 +147,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
 		}
 		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
+		EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
 	})
 }
 
