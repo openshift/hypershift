@@ -62,6 +62,9 @@ var (
 	// privileged is used to set the container security
 	// context to run container as unprivileged.
 	privileged = false
+
+	// readOnlyVerbs are RBAC related verbs limited to read actions
+	readOnlyVerbs = []string{"get", "list", "watch"}
 )
 
 type HyperShiftNamespace struct {
@@ -825,7 +828,7 @@ func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"route.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{""},
@@ -835,7 +838,7 @@ func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 					"nodes",
 					"pods",
 				},
-				Verbs: []string{"get", "list", "watch"},
+				Verbs: readOnlyVerbs,
 			},
 		},
 	}
@@ -952,7 +955,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"config.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"apiextensions.k8s.io"},
@@ -1087,7 +1090,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{cdicore.GroupName},
 				Resources: []string{"datavolumes"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"ipam.cluster.x-k8s.io"},
@@ -1146,7 +1149,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"certificates.k8s.io"},
 				Resources: []string{"certificatesigningrequests"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"certificates.k8s.io"},
@@ -1352,7 +1355,7 @@ func (o HyperShiftPrometheusRole) Build() *rbacv1.Role {
 					"endpoints",
 					"pods",
 				},
-				Verbs: []string{"get", "list", "watch"},
+				Verbs: readOnlyVerbs,
 			},
 		},
 	}
@@ -1551,27 +1554,36 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "hypershift-readers",
+			Labels: map[string]string{
+				"managed.openshift.io/aggregate-to-dedicated-readers": "true",
+				"managed.openshift.io/aggregate-to-backplane-srep":    "true",
+			},
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"hypershift.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
+			},
+			{
+				APIGroups: []string{"certificates.hypershift.openshift.io"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"config.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"apiextensions.k8s.io"},
 				Resources: []string{"customresourcedefinitions"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"networking.k8s.io"},
 				Resources: []string{"networkpolicies"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{
@@ -1585,17 +1597,17 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 					"cluster.x-k8s.io",
 				},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"operator.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"route.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"security.openshift.io"},
@@ -1605,7 +1617,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"rbac.authorization.k8s.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{""},
@@ -1619,32 +1631,32 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 					"serviceaccounts",
 					"services",
 				},
-				Verbs: []string{"get", "list", "watch"},
+				Verbs: readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"apps"},
 				Resources: []string{"deployments"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"etcd.database.coreos.com"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"machine.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
 				Resources: []string{"podmonitors"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 			{
 				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     readOnlyVerbs,
 			},
 		},
 	}
