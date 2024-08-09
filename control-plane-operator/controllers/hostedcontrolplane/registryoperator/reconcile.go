@@ -97,17 +97,19 @@ var (
 )
 
 type Params struct {
-	operatorImage    string
-	tokenMinterImage string
-	platform         hyperv1.PlatformType
-	issuerURL        string
-	releaseVersion   string
-	registryImage    string
-	prunerImage      string
-	deploymentConfig config.DeploymentConfig
+	operatorImage               string
+	tokenMinterImage            string
+	platform                    hyperv1.PlatformType
+	issuerURL                   string
+	releaseVersion              string
+	registryImage               string
+	prunerImage                 string
+	deploymentConfig            config.DeploymentConfig
+	ImageRegistryClientIdExists bool
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+	imageRegistryClientIdExists := hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hcp.Spec.Platform.Azure.MSIClientIDs != nil && len(hcp.Spec.Platform.Azure.MSIClientIDs.ImageRegistryMSIClientID) > 0
 	params := Params{
 		operatorImage:    releaseImageProvider.GetImage("cluster-image-registry-operator"),
 		tokenMinterImage: releaseImageProvider.GetImage("token-minter"),
@@ -142,7 +144,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 				},
 			},
 		},
+		ImageRegistryClientIdExists: imageRegistryClientIdExists,
 	}
+
 	params.deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -192,6 +196,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 				MountPath: "/var/run/secrets/openshift/serviceaccount",
 			},
 		)
+	case hyperv1.AzurePlatform:
+		if params.ImageRegistryClientIdExists {
+			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+				corev1.EnvVar{
+					Name:  "AZURE_MSI_AUTHENTICATION",
+					Value: "true",
+				})
+		}
 	}
 
 	params.deploymentConfig.ApplyTo(deployment)

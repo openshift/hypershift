@@ -31,30 +31,33 @@ const (
 )
 
 type Params struct {
-	IngressOperatorImage    string
-	IngressCanaryImage      string
-	HAProxyRouterImage      string
-	KubeRBACProxyImage      string
-	ReleaseVersion          string
-	TokenMinterImage        string
-	AvailabilityProberImage string
-	ProxyImage              string
-	Platform                hyperv1.PlatformType
-	DeploymentConfig        config.DeploymentConfig
-	ProxyConfig             *configv1.ProxySpec
-	NoProxy                 string
+	IngressOperatorImage     string
+	IngressCanaryImage       string
+	HAProxyRouterImage       string
+	KubeRBACProxyImage       string
+	ReleaseVersion           string
+	TokenMinterImage         string
+	AvailabilityProberImage  string
+	ProxyImage               string
+	Platform                 hyperv1.PlatformType
+	DeploymentConfig         config.DeploymentConfig
+	ProxyConfig              *configv1.ProxySpec
+	NoProxy                  string
+	IngressMSIClientIdExists bool
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
+	ingressMSIClientIdExists := platform == hyperv1.AzurePlatform && hcp.Spec.Platform.Azure.MSIClientIDs != nil && len(hcp.Spec.Platform.Azure.MSIClientIDs.IngressMSIClientID) > 0
 	p := Params{
-		IngressOperatorImage:    releaseImageProvider.GetImage("cluster-ingress-operator"),
-		IngressCanaryImage:      userReleaseImageProvider.GetImage("cluster-ingress-operator"),
-		HAProxyRouterImage:      userReleaseImageProvider.GetImage("haproxy-router"),
-		ReleaseVersion:          version,
-		TokenMinterImage:        releaseImageProvider.GetImage("token-minter"),
-		ProxyImage:              releaseImageProvider.GetImage(util.CPOImageName),
-		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
-		Platform:                platform,
+		IngressOperatorImage:     releaseImageProvider.GetImage("cluster-ingress-operator"),
+		IngressCanaryImage:       userReleaseImageProvider.GetImage("cluster-ingress-operator"),
+		HAProxyRouterImage:       userReleaseImageProvider.GetImage("haproxy-router"),
+		ReleaseVersion:           version,
+		TokenMinterImage:         releaseImageProvider.GetImage("token-minter"),
+		ProxyImage:               releaseImageProvider.GetImage(util.CPOImageName),
+		AvailabilityProberImage:  releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		Platform:                 platform,
+		IngressMSIClientIdExists: ingressMSIClientIdExists,
 	}
 	if hcp.Spec.Configuration != nil {
 		p.ProxyConfig = hcp.Spec.Configuration.Proxy
@@ -152,7 +155,8 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: ptr.To[int32](0640)}}},
 	}
 
-	if params.Platform == hyperv1.AWSPlatform {
+	switch params.Platform {
+	case hyperv1.AWSPlatform:
 		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts,
 			corev1.VolumeMount{Name: "serviceaccount-token", MountPath: "/var/run/secrets/openshift/serviceaccount"},
 		)
@@ -185,6 +189,14 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		})
 		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
 			corev1.Volume{Name: "serviceaccount-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}})
+	case hyperv1.AzurePlatform:
+		if params.IngressMSIClientIdExists {
+			dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+				corev1.EnvVar{
+					Name:  "AZURE_MSI_AUTHENTICATION",
+					Value: "true",
+				})
+		}
 	}
 
 	util.AvailabilityProber(
