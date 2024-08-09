@@ -10,6 +10,7 @@ FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
+                    /hypershift/bin/hosted-cluster-scheduler \
                     /hypershift/bin/control-plane-operator \
                     /hypershift/bin/control-plane-pki-operator \
      /usr/bin/

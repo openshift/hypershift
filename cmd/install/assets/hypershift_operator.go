@@ -98,6 +98,7 @@ const (
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
 	HypershiftOperatorName                = "operator"
+	HostedClusterSchedulerName            = "scheduler"
 	ExternalDNSDeploymentName             = "external-dns"
 	HyperShiftInstallCLIVersionAnnotation = "hypershift.openshift.io/install-cli-version"
 )
@@ -376,7 +377,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		"--namespace=$(MY_NAMESPACE)",
 		"--pod-name=$(MY_NAME)",
 		"--metrics-addr=:9000",
-		fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", o.EnableDedicatedRequestServingIsolation),
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
@@ -705,6 +705,38 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		deployment.Annotations = map[string]string{
 			HyperShiftInstallCLIVersionAnnotation: version.String(),
 		}
+	}
+
+	// if EnableDedicatedRequestServingIsolation is enabled in "HyperShiftOperatorDeployment"
+	// add a new container for the scheduler
+	if o.EnableDedicatedRequestServingIsolation {
+		schedulerContainer := corev1.Container{
+			Name: HostedClusterSchedulerName,
+			SecurityContext: &corev1.SecurityContext{
+				AllowPrivilegeEscalation: ptr.To(false),
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{
+						"ALL",
+					},
+				},
+				RunAsUser:              k8sutilspointer.Int64(1000),
+				ReadOnlyRootFilesystem: ptr.To(true),
+				Privileged:             ptr.To(false),
+			},
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Env:             envVars,
+			Command:         []string{"/usr/bin/hosted-cluster-scheduler", "run"},
+
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("100Mi"),
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+				},
+			},
+		}
+		// Append the new container to the existing deployment container list
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, schedulerContainer)
 	}
 
 	if o.AdditionalTrustBundle != nil {
