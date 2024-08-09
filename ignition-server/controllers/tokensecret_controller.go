@@ -23,19 +23,20 @@ import (
 )
 
 const (
-	TokenSecretReleaseKey             = "release"
-	TokenSecretConfigKey              = "config"
-	TokenSecretTokenKey               = "token"
-	TokenSecretOldTokenKey            = "old_token"
-	TokenSecretPayloadKey             = "payload"
-	TokenSecretMessageKey             = "message"
-	TokenSecretPullSecretHashKey      = "pull-secret-hash"
-	TokenSecretHCConfigurationHashKey = "hc-configuration-hash"
-	InvalidConfigReason               = "InvalidConfig"
-	TokenSecretReasonKey              = "reason"
-	TokenSecretAnnotation             = "hypershift.openshift.io/ignition-config"
-	TokenSecretNodePoolUpgradeType    = "hypershift.openshift.io/node-pool-upgrade-type"
-	TokenSecretTokenGenerationTime    = "hypershift.openshift.io/last-token-generation-time"
+	TokenSecretReleaseKey                   = "release"
+	TokenSecretConfigKey                    = "config"
+	TokenSecretTokenKey                     = "token"
+	TokenSecretOldTokenKey                  = "old_token"
+	TokenSecretPayloadKey                   = "payload"
+	TokenSecretMessageKey                   = "message"
+	TokenSecretPullSecretHashKey            = "pull-secret-hash"
+	TokenSecretHCConfigurationHashKey       = "hc-configuration-hash"
+	TokenSecretAdditionalTrustBundleHashKey = "additional-trust-bundle-hash"
+	InvalidConfigReason                     = "InvalidConfig"
+	TokenSecretReasonKey                    = "reason"
+	TokenSecretAnnotation                   = "hypershift.openshift.io/ignition-config"
+	TokenSecretNodePoolUpgradeType          = "hypershift.openshift.io/node-pool-upgrade-type"
+	TokenSecretTokenGenerationTime          = "hypershift.openshift.io/last-token-generation-time"
 	// Set the ttl 1h above the reconcile resync period so every existing
 	// token Secret has the chance to rotate their token ID during a reconciliation cycle
 	// while the expired ones get eventually garbageCollected.
@@ -79,7 +80,7 @@ func NewPayloadStore() *ExpiringCache {
 type IgnitionProvider interface {
 	// GetPayload returns the ignition payload content for
 	// the provided release image and a config string containing 0..N MachineConfig yaml definitions.
-	GetPayload(ctx context.Context, payloadImage, config string, pullSecretHash string, hcConfigurationHash string) ([]byte, error)
+	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error)
 }
 
 // TokenSecretReconciler watches token Secrets
@@ -260,9 +261,10 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	PayloadCacheMissTotal.Inc()
 	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])
 	hcConfigurationHash := string(tokenSecret.Data[TokenSecretHCConfigurationHashKey])
+	additionalTrustBundleHash := string(tokenSecret.Data[TokenSecretAdditionalTrustBundleHashKey])
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
-		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, hcConfigurationHash)
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash)
 		if err != nil {
 			return nil, fmt.Errorf("error getting ignition payload: %v", err)
 		}
