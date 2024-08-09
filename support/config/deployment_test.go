@@ -53,13 +53,13 @@ func TestSetReleaseImageAnnotation(t *testing.T) {
 	}
 }
 
-func TestSetMultizoneSpread(t *testing.T) {
+func TestSetMultizoneSpreadRequired(t *testing.T) {
 	labels := map[string]string{
 		"app":                         "etcd",
 		hyperv1.ControlPlaneComponent: "etcd",
 	}
 	cfg := &DeploymentConfig{}
-	cfg.setMultizoneSpread(labels)
+	cfg.setMultizoneSpread(labels, true)
 	if cfg.Scheduling.Affinity == nil {
 		t.Fatalf("Expecting affinity to be set on config")
 	}
@@ -73,6 +73,33 @@ func TestSetMultizoneSpread(t *testing.T) {
 		TopologyKey: corev1.LabelTopologyZone,
 	}
 	if !reflect.DeepEqual(expectedTerm, cfg.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0]) {
+		t.Fatalf("Unexpected anti-affinity term")
+	}
+}
+
+func TestSetMultizoneSpreadPreferred(t *testing.T) {
+	labels := map[string]string{
+		"app":                         "etcd",
+		hyperv1.ControlPlaneComponent: "etcd",
+	}
+	cfg := &DeploymentConfig{}
+	cfg.setMultizoneSpread(labels, false)
+	if cfg.Scheduling.Affinity == nil {
+		t.Fatalf("Expecting affinity to be set on config")
+	}
+	if len(cfg.Scheduling.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) == 0 {
+		t.Fatalf("Expecting one required pod antiaffinity rule")
+	}
+	expectedTerm := corev1.WeightedPodAffinityTerm{
+		Weight: 100,
+		PodAffinityTerm: corev1.PodAffinityTerm{
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			TopologyKey: corev1.LabelTopologyZone,
+		},
+	}
+	if !reflect.DeepEqual(expectedTerm, cfg.Scheduling.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0]) {
 		t.Fatalf("Unexpected anti-affinity term")
 	}
 }
