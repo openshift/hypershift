@@ -571,7 +571,6 @@ objects:
           - --namespace=$(MY_NAMESPACE)
           - --pod-name=$(MY_NAME)
           - --metrics-addr=:9000
-          - --enable-dedicated-request-serving-isolation=true
           - --enable-ocp-cluster-monitoring=false
           - --enable-ci-debug-output=false
           - --private-platform=AWS
@@ -656,6 +655,43 @@ objects:
           - mountPath: /etc/pki/ca-trust/extracted/pem
             name: trusted-ca-bundle
             readOnly: true
+        - command:
+          - /usr/bin/hosted-cluster-scheduler
+          - run
+          env:
+          - name: MY_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: MY_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: METRICS_SET
+            value: SRE
+          - name: CERT_ROTATION_SCALE
+            value: 24h0m0s
+          - name: AWS_SHARED_CREDENTIALS_FILE
+            value: /etc/provider/${AWS_PRIVATE_CREDS_SECRET_KEY}
+          - name: AWS_REGION
+            value: ${AWS_PRIVATE_REGION}
+          - name: AWS_SDK_LOAD_CONFIG
+            value: "1"
+          image: ${OPERATOR_IMG}:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          name: scheduler
+          resources:
+            requests:
+              cpu: 10m
+              memory: 100Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
         initContainers:
         - args:
           - init

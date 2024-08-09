@@ -45,7 +45,7 @@ all: build e2e tests
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
+build: hypershift-operator hosted-cluster-scheduler control-plane-operator control-plane-pki-operator hypershift product-cli
 
 .PHONY: sync
 sync:
@@ -81,6 +81,10 @@ tests:
 hypershift-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-operator ./hypershift-operator
 
+.PHONY: hosted-cluster-scheduler
+hosted-cluster-scheduler:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hosted-cluster-scheduler ./hosted-cluster-scheduler
+	
 .PHONY: control-plane-operator
 control-plane-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
