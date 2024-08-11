@@ -18,7 +18,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	corev1 "k8s.io/api/core/v1"
@@ -348,44 +348,27 @@ func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.Hos
 	*/
 }
 
-func DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePoolArch string) error {
-	if mgmtClusterCPUArch != nodePoolArch {
-		return fmt.Errorf("multi-arch hosted cluster is not enabled and "+
-			"management cluster and nodepool cpu architectures do not match; "+
-			"please use a multi-arch release image or a multi-arch release stream - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, nodePoolArch)
-	}
-
-	return nil
-}
-
-func GetMgmtClusterCPUArch(ctx context.Context) (string, error) {
-	cfg, err := util.GetConfig()
+func GetKubeClientSet() (kubeclient.Interface, error) {
+	cfg, err := cmdutil.GetConfig()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	kc, err := kubeclient.NewForConfig(cfg)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Get the API version in JSON format
-	versionJSON, err := kc.RESTClient().Get().AbsPath("/version").DoRaw(ctx)
+	return kc, nil
+}
+
+func GetMgmtClusterCPUArch(kc kubeclient.Interface) (string, error) {
+	info, err := kc.Discovery().ServerVersion()
 	if err != nil {
-		return "", fmt.Errorf("failed to get API version: %v", err)
-	}
-
-	// Unmarshal the version JSON so we can extract the platform field
-	var data map[string]interface{}
-	if err = json.Unmarshal(versionJSON, &data); err != nil {
 		return "", err
 	}
 
-	//Extract the platform field
-	platform, ok := data["platform"].(string)
-	if !ok {
-		return "", fmt.Errorf("failed to extract the platform info from the version JSON")
-	}
+	platform := info.Platform
 
 	// Split the platform into separate strings, we just want to check the CPU arch
 	// The normal structure should be something like 'linux/arm64'

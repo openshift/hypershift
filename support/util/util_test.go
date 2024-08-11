@@ -5,6 +5,10 @@ import (
 	"unicode/utf8"
 
 	. "github.com/onsi/gomega"
+
+	apiversion "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	fakekubeclient "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestCompressDecompress(t *testing.T) {
@@ -406,38 +410,6 @@ func TestParseNodeSelector(t *testing.T) {
 	}
 }
 
-func TestDoesMgmtClusterAndNodePoolCPUArchMatch(t *testing.T) {
-	tests := []struct {
-		name           string
-		mgmtClusterCPU string
-		nodePoolCPU    string
-		wantErr        bool
-	}{
-		{
-			name:           "Mgmt cluster cpu and nodepool cpu don't match",
-			mgmtClusterCPU: "arm64",
-			nodePoolCPU:    "amd64",
-			wantErr:        true,
-		},
-		{
-			name:           "Mgmt cluster cpu and nodepool cpu match",
-			mgmtClusterCPU: "arm64",
-			nodePoolCPU:    "arm64",
-			wantErr:        false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			err := DoesMgmtClusterAndNodePoolCPUArchMatch(tc.mgmtClusterCPU, tc.nodePoolCPU)
-			if tc.wantErr {
-				g.Expect(err).ToNot(BeNil())
-			} else {
-				g.Expect(err).To(BeNil())
-			}
-		})
-	}
-}
 func TestSanitizeIgnitionPayload(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -482,6 +454,46 @@ func TestSanitizeIgnitionPayload(t *testing.T) {
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
+		})
+	}
+}
+
+func TestGetMgmtClusterCPUArch(t *testing.T) {
+	fakeKubeClient := fakekubeclient.NewSimpleClientset()
+	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
+
+	if !ok {
+		t.Fatalf("failed to convert FakeDiscovery")
+	}
+
+	// if you want to fake a specific version
+	fakeDiscovery.FakedServerVersion = &apiversion.Info{
+		Platform: "linux/amd64",
+	}
+
+	tests := []struct {
+		Name         string
+		expectedArch string
+		expectedErr  bool
+	}{
+		{
+			Name:         "Nominal use case",
+			expectedArch: "amd64",
+			expectedErr:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			g := NewWithT(t)
+			mgmtClusterArch, err := GetMgmtClusterCPUArch(fakeKubeClient)
+			if tc.expectedErr {
+				g.Expect(err).ToNot(BeNil())
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(mgmtClusterArch).To(Equal(tc.expectedArch))
+			}
+
 		})
 	}
 }

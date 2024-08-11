@@ -195,3 +195,57 @@ func TestFindMatchingManifest(t *testing.T) {
 		})
 	}
 }
+
+func TestIsMultiArchManifestList(t *testing.T) {
+	pullSecretBytes := []byte("{\"auths\":{\"quay.io\":{\"auth\":\"\",\"email\":\"\"}}}")
+
+	testCases := []struct {
+		name                   string
+		image                  string
+		pullSecretBytes        []byte
+		expectedMultiArchImage bool
+		expectErr              bool
+	}{
+		{
+			name:                   "Check an amd64 image; no err",
+			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+			pullSecretBytes:        pullSecretBytes,
+			expectedMultiArchImage: false,
+			expectErr:              false,
+		},
+		{
+			name:                   "Check a ppc64le image; no err",
+			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes:        pullSecretBytes,
+			expectedMultiArchImage: false,
+			expectErr:              false,
+		},
+		{
+			name:                   "Check a multi-arch image; no err",
+			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-multi",
+			pullSecretBytes:        pullSecretBytes,
+			expectedMultiArchImage: true,
+			expectErr:              false,
+		},
+		{
+			name:                   "Bad pull secret; err",
+			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes:        []byte(""),
+			expectedMultiArchImage: false,
+			expectErr:              true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			isMultiArchImage, err := IsMultiArchManifestList(context.TODO(), tc.image, tc.pullSecretBytes)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(isMultiArchImage).To(Equal(tc.expectedMultiArchImage))
+			}
+		})
+	}
+}

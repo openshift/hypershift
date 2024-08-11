@@ -15,12 +15,23 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/cmd/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	hyperutil "github.com/openshift/hypershift/support/util"
+
+	"github.com/go-logr/logr"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,13 +41,6 @@ import (
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
-
-	"github.com/go-logr/logr"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
-	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/infraid"
 )
 
 func DefaultOptions() *RawCreateOptions {
@@ -576,6 +580,15 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		} else if !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
 		}
+
+		// Validate multi-arch aspects
+		kc, err := hyperutil.GetKubeClientSet()
+		if err != nil {
+			return nil, err
+		}
+		if err = validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc); err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate arch is only hyperv1.ArchitectureAMD64 or hyperv1.ArchitectureARM64 or hyperv1.ArchitecturePPC64LE
@@ -921,4 +934,45 @@ func parseTolerationString(str string) (*corev1.Toleration, error) {
 	}
 
 	return &toleration, nil
+}
+
+// validateMgmtClusterAndNodePoolCPUArchitectures checks if a multi-arch release image or release stream was provided.
+// If none were provided, checks to make sure the NodePool CPU arch and the management cluster CPU arch match; if they
+// do not, the CLI will return an error since the NodePool will fail to complete during runtime.
+func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *RawCreateOptions, kc kubeclient.Interface) error {
+	validMultiArchImage := false
+
+	// Check if the release image is multi-arch
+	if len(opts.ReleaseImage) > 0 && len(opts.PullSecretFile) > 0 {
+		pullSecret, err := os.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		validMultiArchImage, err = registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
+		if err != nil {
+			return err
+		}
+	}
+
+	// If not release image was provided, check if a release stream was provided instead and its multi-arch
+	if opts.ReleaseImage == "" && len(opts.ReleaseStream) > 0 && strings.Contains(opts.ReleaseStream, "multi") {
+		validMultiArchImage = true
+	}
+
+	// If a release image/stream is not multi-arch, check the mgmt & NodePool CPU architectures match
+	if !validMultiArchImage {
+		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(kc)
+		if err != nil {
+			return fmt.Errorf("failed to check mgmt cluster CPU arch: %v", err)
+		}
+
+		if !strings.EqualFold(mgmtClusterCPUArch, opts.Arch) {
+			return fmt.Errorf("multi-arch hosted cluster is not enabled and "+
+				"management cluster and nodepool cpu architectures do not match; "+
+				"please use a multi-arch release image or a multi-arch release stream - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, opts.Arch)
+		}
+	}
+
+	return nil
 }
