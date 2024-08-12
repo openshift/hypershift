@@ -1893,6 +1893,7 @@ func TestValidateReleaseImage(t *testing.T) {
 								"image-4.15.0": "4.15.0",
 								"image-4.16.0": "4.16.0",
 								"image-4.17.0": "4.17.0",
+								"image-4.18.0": "4.18.0",
 							},
 						},
 						&fakeimagemetadataprovider.FakeImageMetadataProvider{
