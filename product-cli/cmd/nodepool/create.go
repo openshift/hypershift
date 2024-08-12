@@ -24,6 +24,7 @@ func NewCreateCommand() *cobra.Command {
 		NodeCount:       2,
 		NodeUpgradeType: "",
 		ReleaseImage:    "",
+		FailureDomain:   "",
 	}
 
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "The name of the NodePool.")
@@ -35,6 +36,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying.")
 	cmd.PersistentFlags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine auto-repair with machine health checks.")
 	cmd.PersistentFlags().StringVar(&opts.Arch, "arch", opts.Arch, "The processor architecture for the NodePool (e.g. arm64, amd64)")
+	cmd.PersistentFlags().StringVar(&opts.FailureDomain, "failure-domain", opts.FailureDomain, "The failure domain for the NodePool.")
 
 	_ = cmd.MarkPersistentFlagRequired("name")
 

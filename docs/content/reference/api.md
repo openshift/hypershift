@@ -885,6 +885,18 @@ NOTE: This is set as optional to prevent validation from failing due to a limita
 TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>failureDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>FailureDomain is the preferred failure domain for the NodePool.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -7508,6 +7520,18 @@ string
 NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
 TODO Add s390x to enum validation once the architecture is supported</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>failureDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>FailureDomain is the preferred failure domain for the NodePool.</p>
 </td>
 </tr>
 </tbody>

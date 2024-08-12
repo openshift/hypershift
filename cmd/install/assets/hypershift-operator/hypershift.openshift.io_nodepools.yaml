@@ -156,6 +156,10 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              failureDomain:
+                description: FailureDomain is the preferred failure domain for the
+                  NodePool.
+                type: string
               management:
                 description: |-
                   Management specifies behavior for managing nodes in the pool, such as
@@ -1392,6 +1396,10 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              failureDomain:
+                description: FailureDomain is the preferred failure domain for the
+                  NodePool.
+                type: string
               management:
                 description: |-
                   Management specifies behavior for managing nodes in the pool, such as

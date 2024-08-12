@@ -119,6 +119,7 @@ metadata:
 spec:
   arch: amd64
   clusterName: bryans-cluster
+  failureDomain: ""
   management:
     autoRepair: false
     upgradeType: Replace

@@ -194,6 +194,10 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
+
+	// FailureDomain is the preferred failure domain for the NodePool.
+	// +optional
+	FailureDomain *string `json:"failureDomain,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.
