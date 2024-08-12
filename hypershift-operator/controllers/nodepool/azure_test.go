@@ -1,8 +1,9 @@
 package nodepool
 
 import (
-	"k8s.io/utils/ptr"
 	"testing"
+
+	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -387,7 +388,9 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							EnableEphemeralOSDisk:  true,
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "UserManaged",
-								StorageAccountURI:  "www.test.com",
+								UserManaged: &hyperv1.UserManagedDiagnostics{
+									StorageAccountURI: "www.test.com",
+								},
 							},
 							MachineIdentityID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
 						},
@@ -478,7 +481,9 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							EnableEphemeralOSDisk:  true,
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "UserManaged",
-								StorageAccountURI:  "www.test.com",
+								UserManaged: &hyperv1.UserManagedDiagnostics{
+									StorageAccountURI: "www.test.com",
+								},
 							},
 						},
 					},
@@ -502,7 +507,9 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							EnableEphemeralOSDisk:  true,
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "UserManaged",
-								StorageAccountURI:  "www.test.com",
+								UserManaged: &hyperv1.UserManagedDiagnostics{
+									StorageAccountURI: "www.test.com",
+								},
 							},
 						},
 					},
