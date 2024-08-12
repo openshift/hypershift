@@ -17,11 +17,15 @@ limitations under the License.
 
 package v1alpha1
 
+import (
+	v1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+)
+
 // DiagnosticsApplyConfiguration represents an declarative configuration of the Diagnostics type for use
 // with apply.
 type DiagnosticsApplyConfiguration struct {
-	StorageAccountType *string `json:"storageAccountType,omitempty"`
-	StorageAccountURI  *string `json:"storageAccountURI,omitempty"`
+	StorageAccountType *v1alpha1.AzureDiagnosticsStorageAccountType `json:"storageAccountType,omitempty"`
+	StorageAccountURI  *string                                      `json:"storageAccountURI,omitempty"`
 }
 
 // DiagnosticsApplyConfiguration constructs an declarative configuration of the Diagnostics type for use with
@@ -33,7 +37,7 @@ func Diagnostics() *DiagnosticsApplyConfiguration {
 // WithStorageAccountType sets the StorageAccountType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the StorageAccountType field is set to the value of the last call.
-func (b *DiagnosticsApplyConfiguration) WithStorageAccountType(value string) *DiagnosticsApplyConfiguration {
+func (b *DiagnosticsApplyConfiguration) WithStorageAccountType(value v1alpha1.AzureDiagnosticsStorageAccountType) *DiagnosticsApplyConfiguration {
 	b.StorageAccountType = &value
 	return b
 }
