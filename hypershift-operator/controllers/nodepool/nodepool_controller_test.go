@@ -3772,7 +3772,7 @@ spec:
 			name: "related known secret with correct hash untouched",
 			input: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "token-nodepool-name-da03707e",
+					Name:      "token-nodepool-name-64587037",
 					Namespace: "myns",
 					Annotations: map[string]string{
 						nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
@@ -3781,7 +3781,7 @@ spec:
 			},
 			expected: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "token-nodepool-name-da03707e",
+					Name:      "token-nodepool-name-64587037",
 					Namespace: "myns",
 					Annotations: map[string]string{
 						nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
