@@ -2295,6 +2295,29 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureDiagnosticsStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.Diagnostics">Diagnostics</a>)
+</p>
+<p>
+<p>AzureDiagnosticsStorageAccountType specifies the type of storage account for storing Azure VM diagnostics data.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Managed&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;UserManaged&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -3568,7 +3591,9 @@ available internally to the cluster exist.</p>
 <td>
 <code>storageAccountType</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType">
+AzureDiagnosticsStorageAccountType
+</a>
 </em>
 </td>
 <td>
