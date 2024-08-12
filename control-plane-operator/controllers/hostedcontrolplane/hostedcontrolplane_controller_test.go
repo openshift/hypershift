@@ -592,24 +592,17 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 					Name:      "autoscaler",
 				},
 			}
-			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "test-ns",
-					Name:      "test-secret",
-				},
-			}
+
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Name = "name"
 			hcp.Namespace = "namespace"
 			hcp.Spec.Autoscaling = test.AutoscalerOptions
 
 			cpContext := controlplanecomponent.ControlPlaneContext{
-				Hcp:                  hcp,
+				HCP:                  hcp,
 				ReleaseImageProvider: imageprovider.NewFromImages(nil),
 			}
-			reconciler := autoscaler.AutoscalerReconciler{
-				CapiKubeConfigSecret: secret,
-			}
+			reconciler := autoscaler.AutoscalerReconciler{}
 			err := reconciler.ReconcileDeployment(cpContext, deployment)
 			if err != nil {
 				t.Error(err)

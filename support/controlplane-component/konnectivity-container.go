@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
@@ -36,13 +35,13 @@ type KonnectivityContainerOptions struct {
 	DisableResolver                 bool
 }
 
-func (opts *KonnectivityContainerOptions) injectKonnectivityContainer(cpContext ControlPlaneContext, deployment *appsv1.Deployment) error {
+func (opts *KonnectivityContainerOptions) injectKonnectivityContainer(cpContext ControlPlaneContext, podSpec *corev1.PodSpec) error {
 	if opts.Mode == "" {
 		// programmer error.
 		panic("Konnectivity proxy mode must be specified!")
 	}
 
-	hcp := cpContext.Hcp
+	hcp := cpContext.HCP
 	var proxyAdditionalCAs []corev1.VolumeProjection
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		proxyAdditionalCAs = append(proxyAdditionalCAs, corev1.VolumeProjection{
@@ -66,8 +65,8 @@ func (opts *KonnectivityContainerOptions) injectKonnectivityContainer(cpContext 
 
 	image := cpContext.ReleaseImageProvider.GetImage(util.CPOImageName)
 
-	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs))
-	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, opts.buildVolumes(proxyAdditionalCAs)...)
+	podSpec.Containers = append(podSpec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs))
+	podSpec.Volumes = append(podSpec.Volumes, opts.buildVolumes(proxyAdditionalCAs)...)
 	return nil
 }
 

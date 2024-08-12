@@ -919,7 +919,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	cpContext := component.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
-		Hcp:                       hostedControlPlane,
+		HCP:                       hostedControlPlane,
 		CreateOrUpdate:            createOrUpdate,
 		ReleaseImageProvider:      releaseImageProvider,
 		UserReleaseImageProvider:  userReleaseImageProvider,

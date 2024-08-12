@@ -37,7 +37,7 @@ type RouteControllerManagerReconciler struct {
 }
 
 func NewComponent() component.ControlPlaneComponent {
-	return &component.ControlPlaneDeployment{
+	return &component.ControlPlaneWorkload{
 		DeploymentReconciler: &RouteControllerManagerReconciler{},
 		ResourcesReconcilers: []component.GenericReconciler{
 			component.NewReconcilerFor(&corev1.ConfigMap{}).
@@ -65,11 +65,6 @@ func (r *RouteControllerManagerReconciler) Name() string {
 	return ComponentName
 }
 
-// Predicate implements controlplanecomponent.DeploymentReconciler.
-func (r *RouteControllerManagerReconciler) Predicate(cpContext component.ControlPlaneContext) (bool, error) {
-	return true, nil
-}
-
 // ReconcileDeployment implements controlplanecomponent.DeploymentReconciler.
 func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
 	image := cpContext.ReleaseImageProvider.GetImage("route-controller-manager")
@@ -77,7 +72,7 @@ func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext compone
 	config := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ConfigMapName,
-			Namespace: cpContext.Hcp.Namespace,
+			Namespace: cpContext.HCP.Namespace,
 		},
 	}
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(config), config); err != nil {

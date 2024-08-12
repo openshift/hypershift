@@ -25,7 +25,7 @@ const (
 )
 
 func ReconcileOpenShiftRouteControllerManagerConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
-	hcp := cpContext.Hcp
+	hcp := cpContext.HCP
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
