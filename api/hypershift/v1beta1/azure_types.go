@@ -16,6 +16,7 @@ const (
 )
 
 // AzureNodePoolPlatform is the platform specific configuration for an Azure node pool.
+// +kubebuilder:validation:XValidation:rule="!has(self.diskStorageAccountType) || self.diskStorageAccountType != 'UltraSSD' || self.diskStorageAccountType <= 32,767",message=""
 type AzureNodePoolPlatform struct {
 	// vmSize is the Azure VM instance type to use for the nodes being created in the nodepool.
 	//
@@ -32,12 +33,12 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Required
 	Image AzureVMImage `json:"image"`
 
-	// diskSizeGB is the size in GB to assign to the OS disk. This should be between 16 and <TODO find a limit>.
+	// diskSizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk. This should be between 16 and 65,536.
 	// When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 	// The current default is 30.
-	// TODO: Is this GB or GiB?
 	//
 	// +kubebuilder:validation:Minimum=16
+	// +kubebuilder:validation:Maximum=65536
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
 
