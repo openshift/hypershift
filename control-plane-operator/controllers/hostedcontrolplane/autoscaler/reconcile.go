@@ -44,6 +44,27 @@ func (a *AutoscalerReconciler) Name() string {
 	return autoscalerName
 }
 
+// Volumes implements controlplanecomponent.DeploymentReconciler.
+func (a *AutoscalerReconciler) Volumes(cpContext component.ControlPlaneContext) component.Volumes {
+	volumeSource := component.SecretVolumeSource(manifests.KASServiceCAPIKubeconfigSecret(cpContext.HCP.Namespace, cpContext.HCP.Spec.InfraID).Name)
+	volumeSource.Secret.Items = []corev1.KeyToPath{
+		{
+			// TODO: should the key be published on status?
+			Key:  "value",
+			Path: "target-kubeconfig",
+		},
+	}
+
+	return component.Volumes{
+		"target-kubeconfig": component.Volume{
+			Source: volumeSource,
+			Mounts: map[string]string{
+				autoscalerName: "/mnt/kubeconfig",
+			},
+		},
+	}
+}
+
 func Predicate(cpContext component.ControlPlaneContext) (bool, error) {
 	hcp := cpContext.HCP
 
@@ -154,35 +175,11 @@ func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPl
 						Effect: corev1.TaintEffectNoSchedule,
 					},
 				},
-				Volumes: []corev1.Volume{
-					{
-						Name: "target-kubeconfig",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName:  manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID).Name,
-								DefaultMode: ptr.To[int32](0640),
-								Items: []corev1.KeyToPath{
-									{
-										// TODO: should the key be published on status?
-										Key:  "value",
-										Path: "target-kubeconfig",
-									},
-								},
-							},
-						},
-					},
-				},
 				Containers: []corev1.Container{
 					{
 						Name:            autoscalerName,
 						Image:           clusterAutoscalerImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "target-kubeconfig",
-								MountPath: "/mnt/kubeconfig",
-							},
-						},
 						Env: []corev1.EnvVar{
 							{
 								Name: "MY_NAMESPACE",

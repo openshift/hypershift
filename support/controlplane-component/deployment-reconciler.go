@@ -14,6 +14,7 @@ import (
 type DeploymentReconciler interface {
 	NamedComponent
 	ReconcileDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment) error
+	Volumes(cpContext ControlPlaneContext) Volumes
 }
 
 func (c *ControlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext) error {
@@ -54,6 +55,8 @@ func (c *ControlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneCo
 	if existingLabelSelector != nil {
 		deployment.Spec.Selector = existingLabelSelector
 	}
+
+	c.DeploymentReconciler.Volumes(cpContext).ApplyTo(&deployment.Spec.Template.Spec)
 
 	if c.KonnectivityContainerOpts != nil {
 		c.KonnectivityContainerOpts.injectKonnectivityContainer(cpContext, &deployment.Spec.Template.Spec)

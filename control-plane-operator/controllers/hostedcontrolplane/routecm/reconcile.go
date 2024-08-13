@@ -105,26 +105,43 @@ func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext compone
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image)),
 	}
-	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
-		util.BuildVolume(routeOCMVolumeConfig(), buildRouteOCMVolumeConfig),
-		util.BuildVolume(routeOCMVolumeServingCert(), buildRouteOCMVolumeServingCert),
-		util.BuildVolume(routeOCMVolumeKubeconfig(), buildRouteOCMVolumeKubeconfig),
-		util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
-	}
 
 	return nil
 }
 
 var (
-	volumeMounts = util.PodVolumeMounts{
-		routeOCMContainerMain().Name: {
-			routeOCMVolumeConfig().Name:       "/etc/kubernetes/config",
-			routeOCMVolumeServingCert().Name:  "/etc/kubernetes/certs",
-			routeOCMVolumeKubeconfig().Name:   "/etc/kubernetes/secrets/svc-kubeconfig",
-			common.VolumeTotalClientCA().Name: "/etc/kubernetes/client-ca", // comes from the generic OCM config
+	volumes = component.Volumes{
+		routeOCMVolumeConfig().Name: component.Volume{
+			Source: component.ConfigMapVolumeSource(ConfigMapName),
+			Mounts: map[string]string{
+				routeOCMContainerMain().Name: "/etc/kubernetes/config",
+			},
+		},
+		routeOCMVolumeServingCert().Name: component.Volume{
+			Source: component.SecretVolumeSource(manifests.OpenShiftRouteControllerManagerCertSecret("").Name),
+			Mounts: map[string]string{
+				routeOCMContainerMain().Name: "/etc/kubernetes/certs",
+			},
+		},
+		routeOCMVolumeKubeconfig().Name: component.Volume{
+			Source: component.SecretVolumeSource(manifests.KASServiceKubeconfigSecret("").Name),
+			Mounts: map[string]string{
+				routeOCMContainerMain().Name: "/etc/kubernetes/secrets/svc-kubeconfig",
+			},
+		},
+		common.VolumeTotalClientCA().Name: component.Volume{
+			Source: component.ConfigMapVolumeSource(manifests.TotalClientCABundle("").Name),
+			Mounts: map[string]string{
+				routeOCMContainerMain().Name: "/etc/kubernetes/client-ca", // comes from the generic OCM config
+			},
 		},
 	}
 )
+
+// Volumes implements controlplanecomponent.DeploymentReconciler.
+func (r *RouteControllerManagerReconciler) Volumes(cpContext component.ControlPlaneContext) component.Volumes {
+	return volumes
+}
 
 func openShiftRouteControllerManagerLabels() map[string]string {
 	return map[string]string{
@@ -146,12 +163,11 @@ func buildRouteOCMContainerMain(image string) func(*corev1.Container) {
 		c.Args = []string{
 			"start",
 			"--config",
-			path.Join(volumeMounts.Path(c.Name, routeOCMVolumeConfig().Name), configKey),
+			path.Join(volumes.Path(c.Name, routeOCMVolumeConfig().Name), configKey),
 			"--kubeconfig",
-			path.Join(volumeMounts.Path(c.Name, routeOCMVolumeKubeconfig().Name), kas.KubeconfigKey),
+			path.Join(volumes.Path(c.Name, routeOCMVolumeKubeconfig().Name), kas.KubeconfigKey),
 			"--namespace=openshift-route-controller-manager",
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.Ports = []corev1.ContainerPort{
 			{
 				Name:          "https",
@@ -210,31 +226,14 @@ func routeOCMVolumeConfig() *corev1.Volume {
 	}
 }
 
-func buildRouteOCMVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = ConfigMapName
-}
-
 func routeOCMVolumeKubeconfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "kubeconfig",
 	}
 }
 
-func buildRouteOCMVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = ptr.To[int32](0640)
-}
-
 func routeOCMVolumeServingCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "serving-cert",
 	}
-}
-
-func buildRouteOCMVolumeServingCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.OpenShiftRouteControllerManagerCertSecret("").Name
-	v.Secret.DefaultMode = ptr.To[int32](0640)
 }

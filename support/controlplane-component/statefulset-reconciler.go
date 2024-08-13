@@ -14,6 +14,7 @@ import (
 type StatefulSetReconciler interface {
 	NamedComponent
 	ReconcileStatefulSet(cpContext ControlPlaneContext, statefulSet *appsv1.StatefulSet) error
+	Volumes(cpContext ControlPlaneContext) Volumes
 }
 
 func (c *ControlPlaneWorkload) reconcileStatefulSet(cpContext ControlPlaneContext) error {
@@ -54,6 +55,8 @@ func (c *ControlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneC
 	if existingLabelSelector != nil {
 		statefulSet.Spec.Selector = existingLabelSelector
 	}
+
+	c.StatefulSetReconciler.Volumes(cpContext).ApplyTo(&statefulSet.Spec.Template.Spec)
 
 	if c.KonnectivityContainerOpts != nil {
 		c.KonnectivityContainerOpts.injectKonnectivityContainer(cpContext, &statefulSet.Spec.Template.Spec)
