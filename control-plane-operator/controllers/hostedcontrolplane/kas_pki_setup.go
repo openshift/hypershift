@@ -173,7 +173,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	}
 	totalClientCABundle = append(totalClientCABundle, hccoKubeconfigSigner)
 
-	// system:hosted-cluster-config-operator client cert
+	// system:hosted-cluster-config client cert
 	if _, err := reconcileSub(
 		manifests.HCCOClientCertSecret(hcp.Namespace),
 		hccoKubeconfigSigner,

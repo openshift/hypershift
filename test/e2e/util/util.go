@@ -17,6 +17,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/conditions"
@@ -27,6 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	k8sadmissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1170,6 +1172,107 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 		}
 
 	})
+}
+
+func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
+	if !util.IsPublicHC(hc) {
+		return // Admission policies are only validated in public clusters does not worth to test it in private ones.
+	}
+	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
+	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
+		t.Log("Waiting for ValidatingAdmissionPolicies to exist")
+		var expectedVAPCount int = 3
+		g := NewWithT(t)
+		start := time.Now()
+		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
+		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+
+			if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
+				t.Logf("Failed to list ValidatingAdmissionPolicies: %v", err)
+				return false, nil
+			}
+
+			if len(validatingAdmissionPolicies.Items) == 0 {
+				t.Log("No ValidatingAdmissionPolicies found")
+				return false, nil
+			}
+
+			if len(validatingAdmissionPolicies.Items) == expectedVAPCount {
+				t.Logf("Found at least %d ValidatingAdmissionPolicies", expectedVAPCount)
+				return true, nil
+			}
+
+			return true, nil
+		})
+		duration := time.Since(start).Round(time.Second)
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait for ValidatingAdmissionPolicies to exist in %s: %v", duration, err))
+
+		for _, vap := range validatingAdmissionPolicies.Items {
+			switch vap.Name {
+			case hccokasvap.AdmissionPolicyNameConfig:
+				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameConfig), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameConfig))
+			case hccokasvap.AdmissionPolicyNameMirror:
+				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameMirror), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameMirror))
+			case hccokasvap.AdmissionPolicyNameICSP:
+				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameICSP), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameICSP))
+			default:
+				t.Errorf("Unexpected ValidatingAdmissionPolicy %s found in the list", vap.Name)
+			}
+		}
+		g.Expect(expectedVAPCount).To(Equal(len(validatingAdmissionPolicies.Items)), fmt.Sprintf("Failed checking ValidatingAdmissionPolicies, there are %d VAP deployed and %d is expected", len(validatingAdmissionPolicies.Items), expectedVAPCount))
+		t.Logf("Successfully waited for ValidatingAdmissionPolicies to exist in %s", duration)
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesCheckDeniedRequests", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Log("Checking Denied KAS Requests for ValidatingAdmissionPolicies")
+		apiServer := &configv1.APIServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "cluster",
+			},
+		}
+		err := guestClient.Get(ctx, client.ObjectKeyFromObject(apiServer), apiServer)
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster apiserver configuration: %v", err))
+		g.Expect(apiServer).NotTo(BeNil(), "Apiserver configuration is nil")
+		apiServerCP := apiServer.DeepCopy()
+		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
+		err = guestClient.Update(ctx, apiServerCP)
+		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
+
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Log("Checking ClusterOperator status modifications are allowed")
+		network := &configv1.Network{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "cluster",
+			},
+		}
+		err := guestClient.Get(ctx, client.ObjectKeyFromObject(network), network)
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
+		g.Expect(network).NotTo(BeNil(), "network configuration is nil")
+		cpNetwork := network.DeepCopy()
+		cpNetwork.Status.ClusterNetworkMTU = 9180
+		err = guestClient.Update(ctx, cpNetwork)
+		g.Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Failed updating network status ClusterNetworkMTU field: %v", err))
+	})
+	if hc.Spec.OLMCatalogPlacement == hyperv1.GuestOLMCatalogPlacement {
+		t.Run("EnsureValidatingAdmissionPoliciesCheckAllowedRequest", func(t *testing.T) {
+			g := NewWithT(t)
+			t.Log("Checking Allowed KAS Requests for ValidatingAdmissionPolicies")
+			operatorHub := &configv1.OperatorHub{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+			}
+			err := guestClient.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub)
+			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
+			g.Expect(operatorHub).NotTo(BeNil(), "OperatorHub configuration is nil")
+			operatorHubCP := operatorHub.DeepCopy()
+			operatorHubCP.Spec.DisableAllDefaultSources = true
+			err = guestClient.Update(ctx, operatorHubCP)
+			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to update OperatorHub configuration: %v", err))
+		})
+	}
 }
 
 const (
