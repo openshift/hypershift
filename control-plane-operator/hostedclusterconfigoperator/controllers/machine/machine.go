@@ -115,7 +115,11 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hc
 
 	for _, machineAddress := range machine.Status.Addresses {
 		if machineAddress.Type == capiv1.MachineInternalIP {
-			if netip.MustParseAddr(machineAddress.Address).Is4() {
+			parsedAddr, err := netip.ParseAddr(machineAddress.Address)
+			if err != nil {
+				return fmt.Errorf("parsing machine address (%s) in machine %s: %w", machineAddress.Address, machine.Name, err)
+			}
+			if parsedAddr.Is4() {
 				ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)
 			} else {
 				ipv6MachineAddresses = append(ipv6MachineAddresses, machineAddress.Address)

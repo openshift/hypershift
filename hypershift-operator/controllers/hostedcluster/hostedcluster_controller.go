@@ -4424,11 +4424,11 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 // findAdvertiseAddress function returns a string and an error indicating the AdvertiseAddress for the hostedcluster.
 // if the advertise address is properly set, it will return that value and nil, otherwise will return an error.
 // if the advertise address is not set, it will return the default one based on the network primary stack.
-func findAdvertiseAddress(hc *hyperv1.HostedCluster) (net.IP, *field.Error) {
-	var advertiseAddress net.IP
+func findAdvertiseAddress(hc *hyperv1.HostedCluster) (netip.Addr, *field.Error) {
+	var advertiseAddress netip.Addr
 	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.AdvertiseAddress != nil {
-		ipaddr := net.ParseIP(*hc.Spec.Networking.APIServer.AdvertiseAddress)
-		if ipaddr == nil {
+		ipaddr, err := netip.ParseAddr(*hc.Spec.Networking.APIServer.AdvertiseAddress)
+		if err != nil {
 			return ipaddr, field.Invalid(field.NewPath("hc.Spec.Networking.APIServer.AdvertiseAddress"),
 				k8sutilspointer.String(ipaddr.String()),
 				fmt.Sprintf("advertise address set in HostedCluster %s is not parseable", *hc.Spec.Networking.APIServer.AdvertiseAddress),
@@ -4438,8 +4438,8 @@ func findAdvertiseAddress(hc *hyperv1.HostedCluster) (net.IP, *field.Error) {
 		return ipaddr, nil
 	}
 
-	ipaddr := net.ParseIP(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String())
-	if ipaddr == nil {
+	ipaddr, err := netip.ParseAddr(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String())
+	if err != nil {
 		return ipaddr, field.Invalid(field.NewPath("hc.Spec.Networking.ClusterNetwork[0].CIDR.IP"),
 			k8sutilspointer.String(ipaddr.String()),
 			fmt.Sprintf("Cluster Network ip address %s is not parseable", hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String()),
@@ -4447,11 +4447,11 @@ func findAdvertiseAddress(hc *hyperv1.HostedCluster) (net.IP, *field.Error) {
 	}
 
 	if strings.Contains(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String(), ".") {
-		advertiseAddress = net.ParseIP(config.DefaultAdvertiseIPv4Address)
+		advertiseAddress = netip.MustParseAddr(config.DefaultAdvertiseIPv4Address)
 	}
 
 	if strings.Contains(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String(), ":") {
-		advertiseAddress = net.ParseIP(config.DefaultAdvertiseIPv6Address)
+		advertiseAddress = netip.MustParseAddr(config.DefaultAdvertiseIPv6Address)
 	}
 
 	return advertiseAddress, nil
@@ -4520,7 +4520,6 @@ func validateNetworkStackAddresses(hc *hyperv1.HostedCluster) field.ErrorList {
 // the ClusterNetwork, ServiceNetwork and MachineNetwork
 func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList {
 	var errs field.ErrorList
-	var advAddress netip.Addr
 
 	networks := make(map[string]string, 0)
 
@@ -4542,8 +4541,6 @@ func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList
 		return errs
 	}
 
-	advAddress = netip.MustParseAddr(advAddr.String())
-
 	for fieldPath, cidr := range networks {
 		network, err := netip.ParsePrefix(cidr)
 		if err != nil {
@@ -4553,10 +4550,10 @@ func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList
 			))
 		}
 
-		if network.Contains(advAddress) {
+		if network.Contains(advAddr) {
 			errs = append(errs, field.Invalid(field.NewPath(fieldPath),
 				k8sutilspointer.String(cidr),
-				fmt.Sprintf("the field %s with content %s overlaps with the defined AdvertiseAddress %s prefix: %v", fieldPath, cidr, advAddress.String(), err),
+				fmt.Sprintf("the field %s with content %s overlaps with the defined AdvertiseAddress %s prefix: %v", fieldPath, cidr, advAddr.String(), err),
 			))
 		}
 	}

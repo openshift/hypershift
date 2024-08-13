@@ -448,7 +448,11 @@ kubectl --kubeconfig $kc config use-context default`,
 		},
 	}
 
-	if semver.MustParse(params.ReleaseVersion).Minor == uint64(12) {
+	parsedReleaseVersion, err := semver.Parse(params.ReleaseVersion)
+	if err != nil {
+		return fmt.Errorf("parsing ReleaseVersion (%s): %w", params.ReleaseVersion, err)
+	}
+	if parsedReleaseVersion.Minor == uint64(12) {
 		dep.Spec.Template.Spec.InitContainers = append(dep.Spec.Template.Spec.InitContainers, corev1.Container{
 			Command: []string{"/bin/bash"},
 			Args: []string{

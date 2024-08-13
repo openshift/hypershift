@@ -291,7 +291,8 @@ func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNode
 	}
 
 	if o.Memory != "" {
-		memory := apiresource.MustParse(o.Memory)
+		// TODO: add a debug trace for this error
+		memory, _ := apiresource.ParseQuantity(o.Memory)
 		platform.Compute.Memory = &memory
 	}
 	if o.Cores != 0 {

@@ -368,13 +368,21 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 
 	var clusterNetworkEntries []hyperv1.ClusterNetworkEntry
 	for _, cidr := range opts.ClusterCIDR {
-		clusterNetworkEntries = append(clusterNetworkEntries, hyperv1.ClusterNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
+		parsedCIDR, err := ipnet.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("parsing ClusterCIDR (%s): %w", cidr, err)
+		}
+		clusterNetworkEntries = append(clusterNetworkEntries, hyperv1.ClusterNetworkEntry{CIDR: *parsedCIDR})
 	}
 	prototype.Cluster.Spec.Networking.ClusterNetwork = clusterNetworkEntries
 
 	var serviceNetworkEntries []hyperv1.ServiceNetworkEntry
 	for _, cidr := range opts.ServiceCIDR {
-		serviceNetworkEntries = append(serviceNetworkEntries, hyperv1.ServiceNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
+		parsedCIDR, err := ipnet.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("parsing ServiceCIDR (%s): %w", cidr, err)
+		}
+		serviceNetworkEntries = append(serviceNetworkEntries, hyperv1.ServiceNetworkEntry{CIDR: *parsedCIDR})
 	}
 	prototype.Cluster.Spec.Networking.ServiceNetwork = serviceNetworkEntries
 

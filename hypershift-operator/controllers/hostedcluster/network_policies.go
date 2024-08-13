@@ -581,11 +581,15 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 		} else {
 			return fmt.Errorf("could not determine if %s is an IPv4 or IPv6 address", nodeAddress)
 		}
+		parsedNodeAddress, err := netip.ParseAddr(nodeAddress)
+		if err != nil {
+			return fmt.Errorf("parsing nodeport address (%s) from service %s: %w", nodeAddress, hcService.Service, err)
+		}
 		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{
 				{
 					IPBlock: &networkingv1.IPBlock{
-						CIDR: netip.PrefixFrom(netip.MustParseAddr(nodeAddress), prefixLength).String(),
+						CIDR: netip.PrefixFrom(parsedNodeAddress, prefixLength).String(),
 					},
 				},
 			},
