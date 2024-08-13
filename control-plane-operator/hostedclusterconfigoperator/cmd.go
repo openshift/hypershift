@@ -51,7 +51,6 @@ import (
 const (
 	defaultReleaseVersion    = "0.0.1-snapshot"
 	defaultKubernetesVersion = "0.0.1-snapshot-kubernetes"
-	konnectivityAgentImage   = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 )
 
 func NewCommand() *cobra.Command {
@@ -253,9 +252,6 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 				Delegate: &releaseinfo.CachedProvider{
 					Inner: &releaseinfo.RegistryClientProvider{},
 					Cache: map[string]*releaseinfo.ReleaseImage{},
-				},
-				ComponentImages: map[string]string{
-					"konnectivity-agent": konnectivityAgentImage,
 				},
 			},
 			RegistryOverrides: o.registryOverrides,
