@@ -141,6 +141,14 @@ spec:
                             MachineHealthCheckTimeout specifies an optional timeout for machinehealthchecks created
                             for HostedClusters with this specific size.
                           type: string
+                        maximumMutatingRequestsInflight:
+                          description: MaximumMutatingRequestsInflight specifies the
+                            maximum mutating requests in flight for Kube APIServer
+                          type: integer
+                        maximumRequestsInflight:
+                          description: MaximumRequestsInFlight specifies the maximum
+                            requests in flight for Kube APIServer
+                          type: integer
                         resourceRequests:
                           description: ResourceRequests allows specifying resource
                             requests for control plane pods.

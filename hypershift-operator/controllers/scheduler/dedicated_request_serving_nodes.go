@@ -793,6 +793,12 @@ func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx con
 			delete(hc.Annotations, hyperv1.MachineHealthCheckTimeoutAnnotation)
 		}
 	}
+	if sizeConfig.Effects != nil && sizeConfig.Effects.MaximumRequestsInflight != nil {
+		hc.Annotations[hyperv1.KubeAPIServerMaximumRequestsInFlight] = fmt.Sprint(*sizeConfig.Effects.MaximumRequestsInflight)
+	}
+	if sizeConfig.Effects != nil && sizeConfig.Effects.MaximumMutatingRequestsInflight != nil {
+		hc.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight] = fmt.Sprint(*sizeConfig.Effects.MaximumMutatingRequestsInflight)
+	}
 
 	var resourceRequestAnnotations map[string]string
 	if sizeConfig.Effects != nil {
