@@ -209,6 +209,7 @@ func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *c
 		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"},
 		Args: []string{
 			"run",
+			"--connect-directly-to-cloud-apis",
 		},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
@@ -231,6 +232,7 @@ func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *c
 		c.Args = append(c.Args, "--https-proxy", proxyConfig.HTTPSProxy)
 		c.Args = append(c.Args, "--no-proxy", noProxy)
 	}
+	proxy.SetEnvVars(&c.Env)
 	return c
 }
 
