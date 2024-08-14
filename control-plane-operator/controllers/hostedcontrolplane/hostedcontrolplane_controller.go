@@ -916,20 +916,27 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		errs = append(errs, err)
 	}
 
-	cpContext := component.ControlPlaneContext{
-		Context:                   ctx,
-		Client:                    r.Client,
-		HCP:                       hostedControlPlane,
-		CreateOrUpdate:            createOrUpdate,
-		ReleaseImageProvider:      releaseImageProvider,
-		UserReleaseImageProvider:  userReleaseImageProvider,
-		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
-		MetricsSet:                r.MetricsSet,
-	}
-	for _, c := range r.components {
-		r.Log.Info("Reconciling component", "name", c.Name())
-		if err := c.Reconcile(cpContext); err != nil {
-			errs = append(errs, err)
+	// reconcile components only when kube apiserver is fully ready
+	// TOOD(Mulham): remove when dependcnies managment abstraction is implemented.
+	kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeAPIServerDeployment), kubeAPIServerDeployment); err == nil {
+		if util.IsDeploymentReady(ctx, kubeAPIServerDeployment) {
+			cpContext := component.ControlPlaneContext{
+				Context:                   ctx,
+				Client:                    r.Client,
+				HCP:                       hostedControlPlane,
+				CreateOrUpdate:            createOrUpdate,
+				ReleaseImageProvider:      releaseImageProvider,
+				UserReleaseImageProvider:  userReleaseImageProvider,
+				SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+				MetricsSet:                r.MetricsSet,
+			}
+			for _, c := range r.components {
+				r.Log.Info("Reconciling component", "name", c.Name())
+				if err := c.Reconcile(cpContext); err != nil {
+					errs = append(errs, err)
+				}
+			}
 		}
 	}
 
