@@ -1135,14 +1135,41 @@ type Taint struct {
 	Effect corev1.TaintEffect `json:"effect"`
 }
 
+// AzureDiagnosticsStorageAccountType specifies the type of storage account for storing Azure VM diagnostics data.
+// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
+type AzureDiagnosticsStorageAccountType string
+
+func (a *AzureDiagnosticsStorageAccountType) String() string {
+	return string(*a)
+}
+
+func (a *AzureDiagnosticsStorageAccountType) Set(s string) error {
+	switch s {
+	case string(AzureDiagnosticsStorageAccountTypeDisabled), string(AzureDiagnosticsStorageAccountTypeManaged), string(AzureDiagnosticsStorageAccountTypeUserManaged):
+		*a = AzureDiagnosticsStorageAccountType(s)
+		return nil
+	default:
+		return fmt.Errorf("unknown Azure diagnostics storage account type: %s", s)
+	}
+}
+
+func (a *AzureDiagnosticsStorageAccountType) Type() string {
+	return "AzureDiagnosticsStorageAccountType"
+}
+
+const (
+	AzureDiagnosticsStorageAccountTypeDisabled    = AzureDiagnosticsStorageAccountType("Disabled")
+	AzureDiagnosticsStorageAccountTypeManaged     = AzureDiagnosticsStorageAccountType("Managed")
+	AzureDiagnosticsStorageAccountTypeUserManaged = AzureDiagnosticsStorageAccountType("UserManaged")
+)
+
 // Diagnostics specifies the diagnostics settings for a virtual machine.
 // +kubebuilder:validation:XValidation:rule="self.storageAccountType == 'UserManaged' ? has(self.storageAccountURI) : true", message="storageAccountURI is required when storageAccountType is UserManaged"
 type Diagnostics struct {
 	// StorageAccountType determines if the storage account for storing the diagnostics data
 	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
-	// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
 	// +kubebuilder:default:=Disabled
-	StorageAccountType string `json:"storageAccountType,omitempty"`
+	StorageAccountType AzureDiagnosticsStorageAccountType `json:"storageAccountType,omitempty"`
 	// StorageAccountURI is the URI of the user-managed storage account.
 	// The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
 	// but may differ if you are using Azure DNS zone endpoints.
