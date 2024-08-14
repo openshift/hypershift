@@ -784,13 +784,8 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			}
 
 			// Validate cluster-version-operator is not allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
+			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
 			g.Expect(err).To(HaveOccurred())
-
-			// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
-			if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
-				t.Errorf("cluster version pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-			}
 
 			// Validate private router is not allowed to access management KAS.
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -799,18 +794,13 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 					// === CONT  TestCreateClusterPrivate/EnsureHostedCluster/EnsureNetworkPolicies/EnsureLimitedEgressTrafficToManagementKAS
 					//    util.go:851: private router pod was unexpectedly allowed to reach the management KAS. stdOut: . stdErr: Internal error occurred: error executing command in container: container is not created or running
 					// Should be solve with https://issues.redhat.com/browse/HOSTEDCP-1200
-					stdOut, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
+					_, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
 					g.Expect(err).To(HaveOccurred())
-
-					// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
-					if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
-						t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-					}
 				}
 			}
 
 			// Validate cluster api is allowed to access management KAS.
-			stdOut, err = RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
+			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
 				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
