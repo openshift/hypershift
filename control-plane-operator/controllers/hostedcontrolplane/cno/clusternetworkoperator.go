@@ -53,6 +53,7 @@ type Images struct {
 	NetworkMetricsDaemon         string
 	NetworkCheckSource           string
 	NetworkCheckTarget           string
+	NetworkingConsolePlugin      string
 	CloudNetworkConfigController string
 	TokenMinter                  string
 	CLI                          string
@@ -94,6 +95,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			NetworkMetricsDaemon:         userReleaseImageProvider.GetImage("network-metrics-daemon"),
 			NetworkCheckSource:           userReleaseImageProvider.GetImage("cluster-network-operator"),
 			NetworkCheckTarget:           userReleaseImageProvider.GetImage("cluster-network-operator"),
+			NetworkingConsolePlugin:      userReleaseImageProvider.GetImage("networking-console-plugin"),
 			CloudNetworkConfigController: releaseImageProvider.GetImage("cloud-network-config-controller"),
 			TokenMinter:                  releaseImageProvider.GetImage("token-minter"),
 			CLI:                          releaseImageProvider.GetImage("cli"),
@@ -515,6 +517,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "NETWORK_METRICS_DAEMON_IMAGE", Value: params.Images.NetworkMetricsDaemon},
 			{Name: "NETWORK_CHECK_SOURCE_IMAGE", Value: params.Images.NetworkCheckSource},
 			{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: params.Images.NetworkCheckTarget},
+			{Name: "NETWORKING_CONSOLE_PLUGIN_IMAGE", Value: params.Images.NetworkingConsolePlugin},
 			{Name: "CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE", Value: params.Images.CloudNetworkConfigController},
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
 			{Name: "CLI_IMAGE", Value: params.Images.CLI},
