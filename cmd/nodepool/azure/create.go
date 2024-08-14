@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -16,15 +17,17 @@ import (
 )
 
 type AzurePlatformCreateOptions struct {
-	InstanceType           string
-	DiskSize               int32
-	AvailabilityZone       string
-	DiskEncryptionSetID    string
-	EnableEphemeralOSDisk  bool
-	DiskStorageAccountType string
-	SubnetID               string
-	ImageID                string
-	Arch                   string
+	InstanceType                  string
+	DiskSize                      int32
+	AvailabilityZone              string
+	DiagnosticsStorageAccountType hyperv1.AzureDiagnosticsStorageAccountType
+	DiagnosticsStorageAccountURI  string
+	DiskEncryptionSetID           string
+	EnableEphemeralOSDisk         bool
+	DiskStorageAccountType        string
+	SubnetID                      string
+	ImageID                       string
+	Arch                          string
 }
 
 type AzureMarketPlaceImageInfo struct {
@@ -56,6 +59,8 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "The instance type to use for the nodepool")
 	flags.Int32Var(&opts.DiskSize, "root-disk-size", opts.DiskSize, "The size of the root disk for machines in the NodePool (minimum 16)")
 	flags.StringVar(&opts.AvailabilityZone, "availability-zone", opts.AvailabilityZone, "The availabilityZone for the nodepool. Must be left unspecified if in a region that doesn't support AZs")
+	flags.Var(&opts.DiagnosticsStorageAccountType, "diagnostics-storage-account-type", "Specifies the type of storage account for storing diagnostics data. Supported values: Disabled, Managed, UserManaged.")
+	flags.StringVar(&opts.DiagnosticsStorageAccountURI, "diagnostics-storage-account-uri", opts.DiagnosticsStorageAccountURI, "Specifies the URI of the storage account for diagnostics data. Applicable only if --diagnostics-storage-account-type is set to UserManaged.")
 	flags.StringVar(&opts.DiskEncryptionSetID, "disk-encryption-set-id", opts.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the NodePool will be setup with ephemeral OS disks")
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
@@ -102,6 +107,10 @@ func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreat
 	}
 	if err := util.ValidateMarketplaceFlags(marketplaceImageInfo); err != nil {
 		return nil, err
+	}
+
+	if o.DiagnosticsStorageAccountType != hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged && len(o.DiagnosticsStorageAccountURI) > 0 {
+		return nil, fmt.Errorf("--diagnostics-storage-account-uri is applicable only if --diagnostics-storage-account-type is set to %s", hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged)
 	}
 
 	return &ValidatedAzurePlatformCreateOptions{
@@ -188,6 +197,13 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 		DiskStorageAccountType: o.DiskStorageAccountType,
 		SubnetID:               o.SubnetID,
 		Image:                  vmImage,
+	}
+
+	if len(o.DiagnosticsStorageAccountType) > 0 {
+		platform.Diagnostics = &hyperv1.Diagnostics{
+			StorageAccountType: o.DiagnosticsStorageAccountType,
+			StorageAccountURI:  o.DiagnosticsStorageAccountURI,
+		}
 	}
 
 	return platform
