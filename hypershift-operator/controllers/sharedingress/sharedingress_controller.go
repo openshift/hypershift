@@ -3,6 +3,8 @@ package sharedingress
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/cmd/log"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"os"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -46,11 +48,16 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
 	}
 
-	{
-		src := &corev1.Secret{}
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: assets.PullSecretName}, src); err != nil {
+	pullSecretPresent := false
+	src := &corev1.Secret{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: assets.PullSecretName}, src); err != nil {
+		if errors.IsNotFound(err) {
+			log.Log.Info(fmt.Sprintf("pull secret was not found in %s namespace, will not create pullsecret for sharedingress", r.Namespace))
+		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", src, err)
 		}
+	} else {
+		pullSecretPresent = true
 		dst := PullSecret()
 		_, err := r.createOrUpdate(ctx, r.Client, dst, func() error {
 			srcData, srcHasData := src.Data[".dockerconfigjson"]
@@ -69,7 +76,7 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if err := r.reconcileRouter(ctx); err != nil {
+	if err := r.reconcileRouter(ctx, pullSecretPresent); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -131,8 +138,8 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 	return config, routes, nil
 }
 
-func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context) error {
-	if err := r.reconcileDefaultServiceAccount(ctx); err != nil {
+func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecretPresent bool) error {
+	if err := r.reconcileDefaultServiceAccount(ctx, pullSecretPresent); err != nil {
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
@@ -197,10 +204,12 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context) error {
 	return nil
 }
 
-func (r *SharedIngressReconciler) reconcileDefaultServiceAccount(ctx context.Context) error {
+func (r *SharedIngressReconciler) reconcileDefaultServiceAccount(ctx context.Context, pullSecretPresent bool) error {
 	defaultSA := common.DefaultServiceAccount(RouterNamespace)
 	if _, err := r.createOrUpdate(ctx, r.Client, defaultSA, func() error {
-		util.EnsurePullSecret(defaultSA, PullSecret().Name)
+		if pullSecretPresent {
+			util.EnsurePullSecret(defaultSA, PullSecret().Name)
+		}
 		return nil
 	}); err != nil {
 		return err
