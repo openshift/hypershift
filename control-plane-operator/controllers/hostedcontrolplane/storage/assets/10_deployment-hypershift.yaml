@@ -11,7 +11,7 @@ spec:
   template:
     metadata:
       annotations:
-        openshift.io/required-scc: nonroot-v2
+        openshift.io/required-scc: restricted-v2
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       labels:
         name: cluster-storage-operator
@@ -132,7 +132,6 @@ spec:
           name: guest-kubeconfig
       securityContext:
         runAsNonRoot: true
-        runAsUser: 11411
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: cluster-storage-operator
