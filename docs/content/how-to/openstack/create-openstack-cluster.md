@@ -81,6 +81,7 @@ Here is an example of how to upload an RHCOS image to OpenStack:
 ```shell
 openstack image create --disk-format qcow2 --file rhcos-417.94.202407080309-0-openstack.x86_64.qcow2 rhcos
 ```
+
 ## Create a floating IP for the Ingress (optional)
 
 To get Ingress functional on day 1, you need to create a floating IP that will be used by the Ingress service.
@@ -105,7 +106,6 @@ variables and the `hcp` cli tool.
 !!! note
 
     The --release-image flag could be used to provision the HostedCluster with a specific OpenShift Release (the hypershift operator has a support matrix of releases supported by a given version of the operator)
-
 
 ```shell linenums="1"
 export CLUSTER_NAME=example
@@ -152,6 +152,15 @@ hcp create cluster openstack \
 
     A default NodePool will be created for the cluster with 2 vm worker replicas
     per the `--node-pool-replicas` flag.
+
+!!! note
+
+    To enable HA, the `--control-plane-availability-policy` flag can be set to `HighlyAvailable`.
+    This requires at least 3 worker nodes in the management cluster.
+    Pods will be scheduled across different nodes to ensure that the control plane is highly available.
+    When the management cluster worker nodes are spread across different availability zones,
+    the hosted control plane will be spread across different availability zones as well in `PreferredDuringSchedulingIgnoredDuringExecution` mode for
+    `PodAntiAffinity`.
 
 After a few moments we should see our hosted control plane pods up and running:
 
