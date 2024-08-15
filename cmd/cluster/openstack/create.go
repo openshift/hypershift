@@ -44,8 +44,6 @@ type RawCreateOptions struct {
 	OpenStackIngressFloatingIP string
 	OpenStackIngressProvider   hyperv1.OpenStackIngressProvider
 
-	externalDNSDomain string
-
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
 
@@ -105,6 +103,12 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
+	if opts.ExternalDNSDomain != "" {
+		err := fmt.Errorf("--external-dns-domain is not supported on OpenStack")
+		opts.Log.Error(err, "Failed to create cluster")
+		return nil, err
+	}
+
 	validOpts := &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -142,31 +146,7 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 		cluster.Spec.Platform.OpenStack.IngressProvider = hyperv1.OpenStackIngressProvider(o.OpenStackIngressProvider)
 	}
 
-	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
-	if o.externalDNSDomain != "" {
-		for i, svc := range cluster.Spec.Services {
-			switch svc.Service {
-			case hyperv1.APIServer:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("api-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-
-			case hyperv1.OAuthServer:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("oauth-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-
-			case hyperv1.Konnectivity:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("konnectivity-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-			case hyperv1.Ignition:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("ignition-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-			}
-		}
-	}
+	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
 
 	return nil
 }
