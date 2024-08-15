@@ -331,18 +331,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) SetupWithManager(ctx contex
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).
-		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			node := obj.(*corev1.Node)
-			if _, isReqServing := node.Labels[hyperv1.RequestServingComponentLabel]; !isReqServing {
-				return nil
-			}
-			if _, hasHCLabel := node.Labels[hyperv1.HostedClusterLabel]; !hasHCLabel {
-				return nil
-			}
-			name := node.Labels[HostedClusterNameLabel]
-			namespace := node.Labels[HostedClusterNamespaceLabel]
-			return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: namespace, Name: name}}}
-		})).
+		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.filterNodeEvents)).
 		Watches(&schedulingv1alpha1.ClusterSizingConfiguration{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			hostedClusters := &hyperv1.HostedClusterList{}
 			if err := r.List(ctx, hostedClusters); err != nil {
@@ -368,6 +357,39 @@ func (r *DedicatedServingComponentSchedulerAndSizer) SetupWithManager(ctx contex
 		})).
 		Named(requestServingSchedulerAndSizerName)
 	return builder.Complete(r)
+}
+
+func (r *DedicatedServingComponentSchedulerAndSizer) filterNodeEvents(ctx context.Context, obj client.Object) []reconcile.Request {
+	node := obj.(*corev1.Node)
+	if _, isReqServing := node.Labels[hyperv1.RequestServingComponentLabel]; !isReqServing {
+		return nil
+	}
+	if _, hasHCLabel := node.Labels[hyperv1.HostedClusterLabel]; !hasHCLabel {
+		// If a node is labeled with RequestServingComponentLabel, but not with HostedClusterLabel, check for
+		// its paired node by the OSDFleetManagerPairedNodesLabel. It could be that a hostedcluster has
+		// previously been scheduled to this pair of nodes, but a node was recreated for some reason.
+		pairLabel, isOSDFleetManagedPaired := node.Labels[OSDFleetManagerPairedNodesLabel]
+		if !isOSDFleetManagedPaired {
+			return nil
+		}
+		otherReqServingNodes := &corev1.NodeList{}
+		if err := r.List(ctx, otherReqServingNodes, client.MatchingLabels{OSDFleetManagerPairedNodesLabel: pairLabel}); err != nil {
+			return nil
+		}
+
+		for _, n := range otherReqServingNodes.Items {
+			if _, hasHCLabel := n.Labels[hyperv1.HostedClusterLabel]; hasHCLabel {
+				name := n.Labels[HostedClusterNameLabel]
+				namespace := n.Labels[HostedClusterNamespaceLabel]
+				return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: namespace, Name: name}}}
+			}
+		}
+
+		return nil
+	}
+	name := node.Labels[HostedClusterNameLabel]
+	namespace := node.Labels[HostedClusterNamespaceLabel]
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: namespace, Name: name}}}
 }
 
 func (r *DedicatedServingComponentSchedulerAndSizer) deletePairConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster) error {

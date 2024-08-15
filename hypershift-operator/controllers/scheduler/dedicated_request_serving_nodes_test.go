@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -796,5 +797,122 @@ func TestTakenNodePairLabels(t *testing.T) {
 		result, err := r.takenNodePairLabels(context.Background())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(result).To(Equal(baseline))
+	}
+}
+
+func TestFilterNodeEvents(t *testing.T) {
+	tests := []struct {
+		name          string
+		baselineNodes []client.Object
+		incomingNode  client.Object
+		expected      []reconcile.Request
+	}{
+		{
+			name:          "Incoming node is not a request serving node",
+			baselineNodes: []client.Object{},
+			incomingNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "node-1",
+					Labels: map[string]string{},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name:          "Incoming node is already a dedicated request serving node",
+			baselineNodes: []client.Object{},
+			incomingNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-1",
+					Labels: map[string]string{
+						hyperv1.RequestServingComponentLabel: "true",
+						OSDFleetManagerPairedNodesLabel:      "serving-1",
+						hyperv1.HostedClusterLabel:           "namespace-cluster",
+						HostedClusterNameLabel:               "cluster",
+						HostedClusterNamespaceLabel:          "namespace",
+					},
+				},
+			},
+			expected: []reconcile.Request{
+				{
+					NamespacedName: types.NamespacedName{
+						Namespace: "namespace",
+						Name:      "cluster",
+					},
+				},
+			},
+		},
+		{
+			name: "Incoming node is a request serving node, no hostedcluster label, no matching pair",
+			baselineNodes: []client.Object{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+						Labels: map[string]string{
+							hyperv1.RequestServingComponentLabel: "true",
+							OSDFleetManagerPairedNodesLabel:      "serving-1",
+							hyperv1.HostedClusterLabel:           "namespace-cluster",
+							HostedClusterNameLabel:               "cluster",
+							HostedClusterNamespaceLabel:          "namespace",
+						},
+					},
+				},
+			},
+			incomingNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-2",
+					Labels: map[string]string{
+						hyperv1.RequestServingComponentLabel: "true",
+						OSDFleetManagerPairedNodesLabel:      "serving-2",
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name: "Incoming node is a request serving node, no hostedcluster label, but existing pair with hostedcluster",
+			baselineNodes: []client.Object{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+						Labels: map[string]string{
+							hyperv1.RequestServingComponentLabel: "true",
+							OSDFleetManagerPairedNodesLabel:      "serving-1",
+							hyperv1.HostedClusterLabel:           "namespace-cluster",
+							HostedClusterNameLabel:               "cluster",
+							HostedClusterNamespaceLabel:          "namespace",
+						},
+					},
+				},
+			},
+			incomingNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-2",
+					Labels: map[string]string{
+						hyperv1.RequestServingComponentLabel: "true",
+						OSDFleetManagerPairedNodesLabel:      "serving-1",
+					},
+				},
+			},
+			expected: []reconcile.Request{
+				{
+					NamespacedName: types.NamespacedName{
+						Namespace: "namespace",
+						Name:      "cluster",
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := DedicatedServingComponentSchedulerAndSizer{
+				Client: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.baselineNodes...).Build(),
+			}
+			actual := r.filterNodeEvents(context.Background(), test.incomingNode)
+			g.Expect(actual).To(Equal(test.expected))
+		})
 	}
 }
