@@ -49,6 +49,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
 	flags.StringVar(&opts.AzureCCMMSIClientID, "azure-ccm-msi-client-id", opts.AzureCCMMSIClientID, "The client id of MSI related to the azure cloud controller manager.")
+	flags.StringVar(&opts.ClusterAPIAzureMSIClientID, "capz-msi-client-id", opts.ClusterAPIAzureMSIClientID, "The client id of MSI to be used with CAPZ.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -58,17 +59,18 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile        string
-	Location               string
-	EncryptionKeyID        string
-	AvailabilityZones      []string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
-	RHCOSImage             string
-	AzureCCMMSIClientID    string
+	CredentialsFile            string
+	Location                   string
+	EncryptionKeyID            string
+	AvailabilityZones          []string
+	ResourceGroupName          string
+	VnetID                     string
+	NetworkSecurityGroupID     string
+	ResourceGroupTags          map[string]string
+	SubnetID                   string
+	RHCOSImage                 string
+	AzureCCMMSIClientID        string
+	ClusterAPIAzureMSIClientID string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -203,6 +205,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			SecurityGroupID:   o.infra.SecurityGroupID,
 			MSIClientIDs: &hyperv1.ControlPlaneManagedServiceIdentities{
 				AzureCloudProviderMSIClientID: o.AzureCCMMSIClientID,
+				ClusterAPIAzureMSIClientID:    o.ClusterAPIAzureMSIClientID,
 			},
 		},
 	}
