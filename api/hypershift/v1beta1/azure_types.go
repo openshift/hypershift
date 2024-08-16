@@ -16,12 +16,21 @@ const (
 )
 
 // AzureNodePoolPlatform is the platform specific configuration for an Azure node pool.
-// +kubebuilder:validation:XValidation:rule="!has(self.diskStorageAccountType) || self.diskStorageAccountType != 'UltraSSD' || self.diskStorageAccountType <= 32,767",message=""
 type AzureNodePoolPlatform struct {
 	// vmSize is the Azure VM instance type to use for the nodes being created in the nodepool.
+	// The size naming convention is documented here https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions.
+	// Size names should start with a Family name, which is represented by one of more capital letters, and then be followed by the CPU count.
+	// This is followed by 0 or more additional features, represented by a, b, d, i, l, m, p, t, s, C, and NP, refer to the Azure documentation for an explanation of these features.
+	// Optionally an accelerator such as a GPU can be added, prefixed by an underscore, for example A100, H100 or MI300X.
+	// The size may also be versioned, in which case it should be suffixed with _v<version> where the version is a number.
+	// For example, "D32ads_v5" would be a suitable general purpose VM size, or "ND96_MI300X_v5" would represent a GPU accelerated VM.
 	//
-	// TODO: This should be validated with a regex, based on https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
+	// +kubebuilder:validation:Pattern=`^(Standard_|Basic_)?[A-Z]+[0-9]+(-[0-9]+)?[abdilmptsCNP]*(_[A-Z]*[0-9]+[A-Z]*)?(_v[0-9]+)?$`
 	// +kubebuilder:validation:Required
+	// + Azure VM size format described in https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
+	// + "[A-Z]+[0-9]+(-[0-9]+)?" - Series, size and constrained CPU size
+	// + "[abdilmptsCNP]*" - Additive features
+	// + "(_[A-Z]*[0-9]+[A-Z]*)?" - Optional accelerator types
 	VMSize string `json:"vmSize"`
 
 	// image is used to configure the VM boot image. If unset, the default image at the location below will be used and
@@ -33,27 +42,11 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Required
 	Image AzureVMImage `json:"image"`
 
-	// diskSizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk. This should be between 16 and 65,536.
-	// When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-	// The current default is 30.
-	//
-	// +kubebuilder:validation:Minimum=16
-	// +kubebuilder:validation:Maximum=65536
-	// +optional
-	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
-
-	// diskStorageAccountType is the disk storage account type to use.
-	// Valid values are Standard, StandardSSD, PremiumSSD and UltraSSD and omitted.
-	// Note that Standard means a HDD.
-	// The disk performance is tied to the disk type, please refer to the Azure documentation for further details
-	// https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison.
-	// When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-	// The current default is PremiumSSD.
-	//
-	// +kubebuilder:validation:Enum=Standard;StandardSSD;PremiumSSD;UltraSSD
-	// +optional
-	// TODO: Should all disk options come under a struct rather than be top level like this?
-	DiskStorageAccountType string `json:"diskStorageAccountType,omitempty"`
+	// osDisk provides configuration for the OS disk for the nodepool.
+	// This can be used to configure the size, storage account type, encryption options and whether the disk is persistent or ephemeral.
+	// When not provided, the platform will choose reasonable defaults which are subject to change over time.
+	// Review the fields within the osDisk for more details.
+	OSDisk AzureNodePoolOSDisk `json:"osDisk"`
 
 	// availabilityZone is the failure domain identifier where the VM should be attached to.
 	// This must not be specified for clusters in a location that does not support AvailabilityZone because... TODO: why?
@@ -72,25 +65,6 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Enum=Enabled;Disabled
 	// +optional
 	EncryptionAtHost string `json:"encryptionAtHost,omitempty"`
-
-	// diskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
-	// needs to exist in the same subscription id listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.SubscriptionID.
-	// DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
-	// listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.
-	// TODO: What does this do for a customer, why would they want to set it?
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
-	//
-	// +optional
-	DiskEncryptionSetID string `json:"diskEncryptionSetID,omitempty"`
-
-	// TODO: This shouldn't be a bool, but I don't know what the field is really for.
-	// Should it be coming under the disk parameters? We need to know what the impact of this is for users.
-	// Is this a particularly bad idea for control plane nodes, and does that matter for HCP, probably not.
-	//
-	// enableEphemeralOSDisk is a flag when set to true, will enable ephemeral OS disk.
-	//
-	// +optional
-	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
 
 	// subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
 	// different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
@@ -250,4 +224,89 @@ type UserManagedDiagnostics struct {
 	// +kubebuilder:validation:MaxLength=1024
 	// +kubebuilder:validation:Required
 	StorageAccountURI string `json:"storageAccountURI,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=Standard;StandardSSD;PremiumSSD;UltraSSD
+type AzureDiskStorageAccountType string
+
+const (
+	// StandardStorageAccountType is the standard HDD storage account type.
+	StandardStorageAccountType AzureDiskStorageAccountType = "Standard"
+
+	// StandardSSDStorageAccountType is the standard SSD storage account type.
+	StandardSSDStorageAccountType AzureDiskStorageAccountType = "StandardSSD"
+
+	// PremiumSSDStorageAccountType is the premium SSD storage account type.
+	PremiumSSDStorageAccountType AzureDiskStorageAccountType = "PremiumSSD"
+
+	// UltraSSDStorageAccountType is the ultra SSD storage account type.
+	UltraSSDStorageAccountType AzureDiskStorageAccountType = "UltraSSD"
+)
+
+// +kubebuilder:validation:Enum=Persistent;Ephemeral
+type AzureDiskPersistence string
+
+const (
+	// PersistentDiskPersistence is the persistent disk type.
+	PersistentDiskPersistence AzureDiskPersistence = "Persistent"
+
+	// EphemeralDiskPersistence is the ephemeral disk type.
+	EphemeralDiskPersistence AzureDiskPersistence = "Ephemeral"
+)
+
+// +kubebuilder:validation:XValidation:rule="!has(self.storageAccountType) || self.storageAccountType != 'UltraSSD' || self.sizeGiB <= 32,767",message="When not using storageAccountType UltraSSD, the sizeGiB value must be less than or equal to 32,767"
+type AzureNodePoolOSDisk struct {
+	// sizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
+	// This should be between 16 and 65,536 when using the UltraSSD storage account type and between 16 and 32,767 when using any other storage account type.
+	// When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default is 30.
+	//
+	// +kubebuilder:validation:Minimum=16
+	// +kubebuilder:validation:Maximum=65536
+	// +optional
+	SizeGB int32 `json:"sizeGB,omitempty"`
+
+	// storageAccountType is the disk storage account type to use.
+	// Valid values are Standard, StandardSSD, PremiumSSD and UltraSSD and omitted.
+	// Note that Standard means a HDD.
+	// The disk performance is tied to the disk type, please refer to the Azure documentation for further details
+	// https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison.
+	// When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default is PremiumSSD.
+	//
+	// +optional
+	DiskStorageAccountType AzureDiskStorageAccountType `json:"diskStorageAccountType,omitempty"`
+
+	// encryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
+	// Configuring a DiskEncyptionSet allows greater control over the encryption of the VM OS disk at rest.
+	// Can be used with either platform (Azure) managed, or customer managed encryption keys.
+	// This needs to exist in the same subscription id listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.SubscriptionID.
+	// DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+	// listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.
+	// The encryptionSetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Copmute/diskEncryptionSets/{resourceName}`.
+	// The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	// The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis and must not end with a period (.) character.
+	// The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.
+	// TODO: Are there other encryption related options we may want to expose, should this be in a struct as well?
+	//
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/diskEncryptionSets/.*$')", message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Copmute/diskEncryptionSets/{resourceName}`"
+	// +kubeubilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[4].matches('[a-zA-Z0-9-_\(\)\.]{1-90}')", message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis"
+	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')", message="the resourceGroupName in the encryptionSetID must not end with a period (.) character"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[8].matches('[a-zA-Z0-9-_]{1-80}')", message="The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores"
+	// +kubeubilder:validation:MinLength:=1
+	// +kubebuilder:validation:MaxLength:=285
+	// +optional
+	EncryptionSetID string `json:"encryptionSetID,omitempty"`
+
+	// persistence determines whether the OS disk should be persisted beyond the life of the VM.
+	// Valid values are Persistent and Ephemeral.
+	// When set to Ephmeral, the OS disk will not be persisted to Azure storage and implies restrictions to the VM size and caching type.
+	// Full details can be found in the Azure documentation https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks.
+	// Ephmeral disks are primarily used for stateless applications, provide lower latency than Persistent disks and also incur no storage costs.
+	// When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default is Persistent.
+	//
+	// +optional
+	Persistenct AzureDiskPersistence `json:"persistence,omitempty"`
 }
