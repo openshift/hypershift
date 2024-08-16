@@ -17,7 +17,7 @@ const (
 
 // ReconcileCloudConfig reconciles as expected by Nodes Kubelet.
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	cfg, err := AzureConfigWithoutCredentials(hcp, credentialsSecret)
 	if err != nil {
 		return err
 	}
@@ -37,10 +37,12 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane,
 
 // ReconcileCloudConfigWithCredentials reconciles as expected by KAS/KCM.
 func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	cfg, err := AzureConfigWithoutCredentials(hcp, credentialsSecret)
 	if err != nil {
 		return err
 	}
+
+	cfg.UserAssignedIdentityID = hcp.Spec.Platform.Azure.MSIClientIDs.AzureCloudProviderMSIClientID
 
 	cfg.UseInstanceMetadata = false
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
@@ -55,7 +57,7 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 	return nil
 }
 
-func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) (AzureConfig, error) {
+func AzureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) (AzureConfig, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(hcp.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return AzureConfig{}, fmt.Errorf("failed to determine subnet name from SubnetID: %w", err)
@@ -75,7 +77,6 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
 		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
 		UseManagedIdentityExtension:  true,
-		UserAssignedIdentityID:       hcp.Spec.Platform.Azure.MSIClientIDs.AzureCloudProviderMSIClientID,
 		SubscriptionID:               hcp.Spec.Platform.Azure.SubscriptionID,
 		ResourceGroup:                hcp.Spec.Platform.Azure.ResourceGroupName,
 		Location:                     hcp.Spec.Platform.Azure.Location,

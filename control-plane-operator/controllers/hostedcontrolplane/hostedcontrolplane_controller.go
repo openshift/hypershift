@@ -46,6 +46,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	hcpkms "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas/kms"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
@@ -2964,6 +2965,19 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			if hcp.Spec.SecretEncryption.KMS == nil {
 				return fmt.Errorf("kms metadata not specified")
 			}
+			if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+				credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+					return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+				}
+				// Reconcile KMS config secret
+				kmsConfigSecret := manifests.AzureKMSConfigSecret(hcp.Namespace)
+				if _, err := createOrUpdate(ctx, r, kmsConfigSecret, func() error {
+					return hcpkms.ReconcileKMSConfigWithCredentials(kmsConfigSecret, hcp, credentialsSecret)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
+				}
+			}
 			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
 				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
 			}); err != nil {
@@ -5204,24 +5218,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            fmt.Sprintf("failed to get azure credentials secret: %v", err),
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
+	options := &azidentity.ManagedIdentityCredentialOptions{
+		ID: azidentity.ClientID(hcp.Spec.Platform.Azure.MSIClientIDs.AzureKMSMSIClientID),
 	}
 
-	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-	clientID := string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	clientSecret := string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
-
-	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	cred, err := azidentity.NewManagedIdentityCredential(options)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 			fmt.Sprintf("failed to obtain azure client credential: %v", err))

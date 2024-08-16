@@ -50,6 +50,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
 	flags.StringVar(&opts.AzureCCMMSIClientID, "azure-ccm-msi-client-id", opts.AzureCCMMSIClientID, "The client id of MSI related to the azure cloud controller manager.")
 	flags.StringVar(&opts.ClusterAPIAzureMSIClientID, "capz-msi-client-id", opts.ClusterAPIAzureMSIClientID, "The client id of MSI to be used with CAPZ.")
+	flags.StringVar(&opts.AzureKMSMSIClientID, "kms-msi-client-id", opts.AzureKMSMSIClientID, "The client id of MSI to be used with KMS.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -71,6 +72,7 @@ type RawCreateOptions struct {
 	RHCOSImage                 string
 	AzureCCMMSIClientID        string
 	ClusterAPIAzureMSIClientID string
+	AzureKMSMSIClientID        string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -206,6 +208,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			MSIClientIDs: &hyperv1.ControlPlaneManagedServiceIdentities{
 				AzureCloudProviderMSIClientID: o.AzureCCMMSIClientID,
 				ClusterAPIAzureMSIClientID:    o.ClusterAPIAzureMSIClientID,
+				AzureKMSMSIClientID:           o.AzureKMSMSIClientID,
 			},
 		},
 	}
