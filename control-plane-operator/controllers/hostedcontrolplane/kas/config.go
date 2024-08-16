@@ -62,6 +62,14 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
+	namedCertificates := globalconfig.GetConfigNamedCertificates(p.NamedCertificates, kasNamedCertificateMountPathPrefix)
+	namedCertificates = append(namedCertificates, configv1.NamedCertificate{
+		Names: []string{},
+		CertInfo: configv1.CertInfo{
+			CertFile: cpath(kasVolumeServerExternalCert().Name, corev1.TLSCertKey),
+			KeyFile:  cpath(kasVolumeServerExternalCert().Name, corev1.TLSPrivateKeyKey),
+		},
+	})
 	config := &kcpv1.KubeAPIServerConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KubeAPIServerConfig",
@@ -110,10 +118,10 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 			ServingInfo: configv1.HTTPServingInfo{
 				ServingInfo: configv1.ServingInfo{
 					CertInfo: configv1.CertInfo{
-						CertFile: path.Join(volumeMounts.Path(kasContainerMain().Name, kasVolumeServerCert().Name), corev1.TLSCertKey),
-						KeyFile:  path.Join(volumeMounts.Path(kasContainerMain().Name, kasVolumeServerCert().Name), corev1.TLSPrivateKeyKey),
+						CertFile: path.Join(volumeMounts.Path(kasContainerMain().Name, kasVolumeServerInternalCert().Name), corev1.TLSCertKey),
+						KeyFile:  path.Join(volumeMounts.Path(kasContainerMain().Name, kasVolumeServerInternalCert().Name), corev1.TLSPrivateKeyKey),
 					},
-					NamedCertificates: globalconfig.GetConfigNamedCertificates(p.NamedCertificates, kasNamedCertificateMountPathPrefix),
+					NamedCertificates: namedCertificates,
 					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.KASPodPort),
 					BindNetwork:       "tcp4",
 					CipherSuites:      hcpconfig.CipherSuites(p.TLSSecurityProfile),
@@ -219,8 +227,8 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	args.Set("storage-backend", "etcd3")
 	args.Set("storage-media-type", "application/vnd.kubernetes.protobuf")
 	args.Set("strict-transport-security-directives", p.APIServerSTSDirectives)
-	args.Set("tls-cert-file", cpath(kasVolumeServerCert().Name, corev1.TLSCertKey))
-	args.Set("tls-private-key-file", cpath(kasVolumeServerCert().Name, corev1.TLSPrivateKeyKey))
+	args.Set("tls-cert-file", cpath(kasVolumeServerInternalCert().Name, corev1.TLSCertKey))
+	args.Set("tls-private-key-file", cpath(kasVolumeServerInternalCert().Name, corev1.TLSPrivateKeyKey))
 	config.APIServerArguments = args
 	return config
 }
