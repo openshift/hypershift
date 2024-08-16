@@ -2,7 +2,9 @@ package kas
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
@@ -21,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
@@ -99,7 +103,10 @@ func kasLabels() map[string]string {
 	}
 }
 
-func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
+func ReconcileKubeAPIServerDeployment(
+	ctx context.Context,
+	c client.Client,
+	deployment *appsv1.Deployment,
 	hcp *hyperv1.HostedControlPlane,
 	ownerRef config.OwnerRef,
 	deploymentConfig config.DeploymentConfig,
@@ -318,6 +325,21 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		case hyperv1.KMS:
 			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryptionData, images); err != nil {
 				return err
+			}
+
+			// Add the adapter-init and adapter-server containers for ARO HCP
+			if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+				deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers, azureutil.AdapterInitContainer())
+
+				azureCredentials, err := azureutil.GetAzureCredentialsFromSecret(ctx, c, hcp.Namespace, hcp.Spec.Platform.Azure.Credentials.Name)
+				if err != nil {
+					return err
+				}
+
+				deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, azureutil.AdapterServerContainer(string(azureCredentials.Data["AZURE_CLIENT_ID"]), string(azureCredentials.Data["AZURE_CLIENT_SECRET"]), string(azureCredentials.Data["AZURE_TENANT_ID"])))
+
+				// ARO HCP needs elevated privileges in order to run the adapter-init container
+				deploymentConfig.SetDefaultSecurityContext = false
 			}
 		case hyperv1.AESCBC:
 			err := applyAESCBCKeyHashAnnotation(&deployment.Spec.Template, aesCBCActiveKey, aesCBCBackupKey)

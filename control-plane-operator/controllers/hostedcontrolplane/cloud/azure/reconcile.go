@@ -1,12 +1,15 @@
 package azure
 
 import (
+	"context"
 	"fmt"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -22,7 +25,12 @@ func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.Owner
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *AzureParams, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func ReconcileDeployment(ctx context.Context, c client.Client, deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *AzureParams, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+	azureCredentials, err := azureutil.GetAzureCredentialsFromSecret(ctx, c, hcp.Namespace, hcp.Spec.Platform.Azure.Credentials.Name)
+	if err != nil {
+		return err
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: ccmLabels(),
@@ -35,8 +43,12 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 				Labels: ccmLabels(),
 			},
 			Spec: corev1.PodSpec{
+				InitContainers: []corev1.Container{
+					azureutil.AdapterInitContainer(),
+				},
 				Containers: []corev1.Container{
 					util.BuildContainer(ccmContainer(), buildCCMContainer(p, releaseImageProvider.GetImage("azure-cloud-controller-manager"), hcp.Namespace)),
+					azureutil.AdapterServerContainer(string(azureCredentials.Data["AZURE_CLIENT_ID"]), string(azureCredentials.Data["AZURE_CLIENT_SECRET"]), string(azureCredentials.Data["AZURE_TENANT_ID"])),
 				},
 				Volumes:            []corev1.Volume{},
 				ServiceAccountName: serviceAccountName,

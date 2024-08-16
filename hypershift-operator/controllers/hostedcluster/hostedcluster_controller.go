@@ -1586,6 +1586,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		proxy.SetEnvVars(&capiProviderDeploymentSpec.Template.Spec.Containers[0].Env)
 	}
 
+	// For ARO HCP, we need to add the Microsoft init and sidecar containers to the CAPI Provider deployment
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		azureCredentials, err := azureutil.GetAzureCredentialsFromSecret(ctx, r.Client, hcluster.Namespace, hcluster.Spec.Platform.Azure.Credentials.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		capiProviderDeploymentSpec.Template.Spec.Containers = append(capiProviderDeploymentSpec.Template.Spec.Containers, azureutil.AdapterServerContainer(string(azureCredentials.Data["AZURE_CLIENT_ID"]), string(azureCredentials.Data["AZURE_CLIENT_SECRET"]), string(azureCredentials.Data["AZURE_TENANT_ID"])))
+	}
+
 	// Reconcile cluster prometheus RBAC resources if enabled
 	if r.EnableOCPClusterMonitoring {
 		if err := r.reconcileClusterPrometheusRBAC(ctx, createOrUpdate, hcp.Namespace); err != nil {
@@ -2229,6 +2239,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
 		return reconcileControlPlaneOperatorDeployment(
+			ctx,
+			r.Client,
 			controlPlaneOperatorDeployment,
 			openShiftTrustedCABundleConfigMapExists,
 			hcluster,
@@ -2478,6 +2490,8 @@ func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedC
 }
 
 func reconcileControlPlaneOperatorDeployment(
+	ctx context.Context,
+	c client.Client,
 	deployment *appsv1.Deployment,
 	openShiftTrustedCABundleConfigMapExists bool,
 	hc *hyperv1.HostedCluster,
@@ -2819,6 +2833,26 @@ func reconcileControlPlaneOperatorDeployment(
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
+
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		if deployment.Spec.Template.Spec.InitContainers == nil {
+			deployment.Spec.Template.Spec.InitContainers = []corev1.Container{}
+		}
+
+		deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers, azureutil.AdapterInitContainer())
+
+		azureCredentials, err := azureutil.GetAzureCredentialsFromSecret(ctx, c, hcp.Namespace, hcp.Spec.Platform.Azure.Credentials.Name)
+		if err != nil {
+			return err
+		}
+
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, azureutil.AdapterServerContainer(string(azureCredentials.Data["AZURE_CLIENT_ID"]), string(azureCredentials.Data["AZURE_CLIENT_SECRET"]), string(azureCredentials.Data["AZURE_TENANT_ID"])))
+
+		// ARO HCP needs elevated privileges in order to run the adapter-init container
+		deployment.Spec.Template.Spec.SecurityContext = nil
+		deploymentConfig.SetDefaultSecurityContext = false
+	}
+
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
@@ -3188,11 +3222,18 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 	// Enforce ServiceAccount.
 	deployment.Spec.Template.Spec.ServiceAccountName = sa.Name
 
+	defaultSecurityContext := setDefaultSecurityContext
+
+	// For ARO HCP, the MI sidecar containers need privileged permissions to run
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		defaultSecurityContext = false
+	}
+
 	deploymentConfig := config.DeploymentConfig{
 		Scheduling: config.Scheduling{
 			PriorityClass: config.DefaultPriorityClass,
 		},
-		SetDefaultSecurityContext: setDefaultSecurityContext,
+		SetDefaultSecurityContext: defaultSecurityContext,
 		AdditionalLabels: map[string]string{
 			config.NeedManagementKASAccessLabel: "true",
 		},
@@ -4333,12 +4374,9 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 	}
 
 	// Verify the credentials secret contains the data fields we expect
-	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Namespace: hc.Namespace,
-		Name:      hc.Spec.Platform.Azure.Credentials.Name,
-	}}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		return fmt.Errorf("failed to get credentials secret for cluster: %w", err)
+	credentialsSecret, err := azureutil.GetAzureCredentialsFromSecret(ctx, r.Client, hc.Namespace, hc.Spec.Platform.Azure.Credentials.Name)
+	if err != nil {
+		return err
 	}
 
 	var errs []error
@@ -4346,12 +4384,6 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 		if _, found := credentialsSecret.Data[expectedKey]; !found {
 			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
 		}
-	}
-
-	// Verify the resource group locations match
-	err := azureutil.VerifyResourceGroupLocationsMatch(ctx, hc, credentialsSecret)
-	if err != nil {
-		errs = append(errs, err)
 	}
 
 	return utilerrors.NewAggregate(errs)

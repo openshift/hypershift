@@ -1,6 +1,7 @@
 package kms
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -216,7 +217,7 @@ func kasVolumeAzureKMSCredentials() *corev1.Volume {
 
 func buildVolumeAzureKMSCredentials(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.AzureProviderConfigWithCredentials("").Name,
+		SecretName: manifests.AzureKMSConfigSecret("").Name,
 		Items: []corev1.KeyToPath{
 			{
 				Key:  azure.CloudConfigKey,
@@ -224,4 +225,25 @@ func buildVolumeAzureKMSCredentials(v *corev1.Volume) {
 			},
 		},
 	}
+}
+
+func ReconcileKMSConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
+	cfg, err := azure.AzureConfigWithoutCredentials(hcp, credentialsSecret)
+	if err != nil {
+		return err
+	}
+
+	cfg.UserAssignedIdentityID = string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlaneManagedIdentities.AzureKMSManagedIdentityClientID)
+
+	cfg.UseInstanceMetadata = false
+	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
+	}
+
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[azure.CloudConfigKey] = serializedConfig
+	return nil
 }
