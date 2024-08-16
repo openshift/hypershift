@@ -50,11 +50,12 @@ type AzureNodePoolPlatform struct {
 
 	// availabilityZone is the failure domain identifier where the VM should be attached to.
 	// This must not be specified for clusters in a location that does not support AvailabilityZone because... TODO: why?
-	// Example values are TODO
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+	// Availability zones are identified by numbers, either 1, 2 or 3.
 	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=3
 	// +optional
-	AvailabilityZone string `json:"availabilityZone,omitempty"`
+	AvailabilityZone int32 `json:"availabilityZone,omitempty"`
 
 	// encryptionAtHost enables encryption at host on virtual machines. According to Microsoft documentation, this
 	// means data stored on the VM host is encrypted at rest and flows encrypted to the Storage service. See
@@ -71,8 +72,22 @@ type AzureNodePoolPlatform struct {
 	// exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
 	// HostedCluster.Spec.Platform.Azure.SubscriptionID.
 	// subnetID is immutable once set.
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+	// The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
+	// The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	// The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis and must not end with a period (.) character.
+	// The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
+	// The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
 	//
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`"
+	// +kubeubilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')",message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis"
+	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')",message="the resourceGroupName in the subnetID must not end with a period (.) character"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[8].matches('[a-zA-Z0-9-_\\.]{2,64}')",message="The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods"
+	// +kubebuilder:validation:XValidation:rule="!self.split('/')[8].endsWith('.') && !self.split('/')[8].endsWith('-')",message="the vnetName in the subnetID must not end with either a period (.) or hyphen (-) character"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[10].matches('[a-zA-Z0-9][a-zA-Z0-9-_\\.]{0,79}')",message="The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="!self.split('/')[10].endsWith('.') && !self.split('/')[10].endsWith('-')",message="the subnetName in the subnetID must not end with a period (.) or hyphen (-) character"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=355
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
 	// +kubebuilder:validation:Required
 	SubnetID string `json:"subnetID"`
@@ -104,8 +119,9 @@ type AzureNodePoolPlatform struct {
 type AzureVMImage struct {
 	// type is the type of image data that will be provided to the Azure VM.
 	// Valid values are "ImageID" and "AzureMarketplace".
-	// ImageID means ... TODO
-	// AzureMarketplace means ... TODO
+	// ImageID means is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
+	// AzureMarketplace means the VM will boot from an Azure Marketplace image.
+	// Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.
 	//
 	// +kubebuilder:validation:Required
 	// +unionDiscriminator
@@ -140,14 +156,14 @@ type MarketplaceImage struct {
 	Publisher string `json:"publisher"`
 
 	// offer specifies the name of a group of related images created by the publisher.
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths
+	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
 	//
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:Required
 	Offer string `json:"offer"`
 
 	// sku specifies an instance of an offer, such as a major release of a distribution.
-	// For example, 18.04-LTS, 2019-Datacenter.
+	// For example, 22_04-lts-gen2, 8-lvm-gen2.
 	// The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (_).
 	// TODO: What about length limits?
 	//
@@ -160,7 +176,7 @@ type MarketplaceImage struct {
 	// deployment time. Even if you use 'latest', the VM image will not automatically update after deploy time even if a
 	// new version becomes available.
 	//
-	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$|^latest$`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=32
 	Version string `json:"version"`
@@ -291,9 +307,9 @@ type AzureNodePoolOSDisk struct {
 	//
 	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/diskEncryptionSets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Copmute/diskEncryptionSets/{resourceName}`"
 	// +kubeubilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
-	// +kubebuilder:validation:XValidation:rule="self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1-90}')",message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')",message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis"
 	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')",message="the resourceGroupName in the encryptionSetID must not end with a period (.) character"
-	// +kubebuilder:validation:XValidation:rule="self.split('/')[8].matches('[a-zA-Z0-9-_]{1-80}')",message="The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[8].matches('[a-zA-Z0-9-_]{1,80}')",message="The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores"
 	// +kubeubilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=285
 	// +optional
@@ -308,5 +324,5 @@ type AzureNodePoolOSDisk struct {
 	// The current default is Persistent.
 	//
 	// +optional
-	Persistenct AzureDiskPersistence `json:"persistence,omitempty"`
+	Persistence AzureDiskPersistence `json:"persistence,omitempty"`
 }
