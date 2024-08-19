@@ -1076,6 +1076,96 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when autoscaling scaleDown is not configured properly it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when scaling is ScaleUpOnly and scaleDown is set it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								Scaling: hyperv1.ScaleUpOnly,
+								ScaleDown: &hyperv1.ScaleDownConfig{
+									DelayAfterAddSeconds: ptr.To(int32(300)),
+								},
+							}
+						},
+						expectedErrorSubstring: "scaleDown can only be set when scaling is ScaleUpAndScaleDown",
+					},
+					{
+						name: "when scaling is ScaleUpAndScaleDown and scaleDown is set it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								Scaling: hyperv1.ScaleUpAndScaleDown,
+								ScaleDown: &hyperv1.ScaleDownConfig{
+									DelayAfterAddSeconds: ptr.To(int32(300)),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when balancingIgnoredLabels contains invalid label keys it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when balancingIgnoredLabels contains invalid label key with special characters it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"invalid@label",
+								},
+							}
+						},
+						expectedErrorSubstring: "Each balancingIgnoredLabels item must be a valid label key",
+					},
+					{
+						name: "when balancingIgnoredLabels contains invalid label key starting with dash it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"-invalid-label",
+								},
+							}
+						},
+						expectedErrorSubstring: "Each balancingIgnoredLabels item must be a valid label key",
+					},
+					{
+						name: "when balancingIgnoredLabels contains invalid label key ending with dash it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"invalid-label-",
+								},
+							}
+						},
+						expectedErrorSubstring: "Each balancingIgnoredLabels item must be a valid label key",
+					},
+					{
+						name: "when balancingIgnoredLabels contains valid label keys it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"valid-label",
+									"valid.prefix.com/valid-suffix",
+									"topology.ebs.csi.aws.com/zone",
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
