@@ -3627,6 +3627,53 @@ NodePools associated with a control plane.</p>
 <tbody>
 <tr>
 <td>
+<code>scaling</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ScalingType">
+ScalingType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaling defines the scaling behavior for the cluster autoscaler.
+ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
+ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.
+When set to ScaleUpAndScaleDown, the scaleDown field can be used to configure scale down behavior.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scaleDown</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ScaleDownConfig">
+ScaleDownConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaleDown configures the behavior of the Cluster Autoscaler scale down operation.
+This field is only valid when scaling is set to ScaleUpAndScaleDown.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>balancingIgnoredLabels</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>balancingIgnoredLabels sets &ldquo;&ndash;balancing-ignore-label <label name>&rdquo; flag on cluster-autoscaler for each listed label.
+This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
+For example, if you have nodes with &ldquo;topology.ebs.csi.aws.com/zone&rdquo; label, you can add name of this label here
+to prevent cluster autoscaler from splitting nodes into different node groups based on its value.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>maxNodesTotal</code></br>
 <em>
 int32
@@ -3669,6 +3716,24 @@ duration string. The default is 15 minutes.</p>
 </tr>
 <tr>
 <td>
+<code>maxFreeDifferenceRatioPercent</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
+The value represents a percentage from 0 to 100.
+When set to 0, this means node groups must have exactly the same free resources to be considered similar (no difference allowed).
+When set to 100, this means node groups will be considered similar regardless of their free resource differences (any difference allowed).
+A value between 0 and 100 represents the maximum allowed difference ratio for free resources between node groups to be considered similar.
+When omitted, the autoscaler defaults to 10%.
+This affects the &ldquo;&ndash;max-free-difference-ratio&rdquo; flag on cluster-autoscaler.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>podPriorityThreshold</code></br>
 <em>
 int32
@@ -3681,6 +3746,27 @@ shouldn&rsquo;t trigger autoscaler actions, but only run when there are spare
 resources available. The default is -10.</p>
 <p>See the following for more details:
 <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption">https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>expanders</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ExpanderString">
+[]ExpanderString
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>expanders guide the autoscaler in choosing node groups during scale-out.
+Sets the order of expanders for scaling out node groups.
+Options include:
+* LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+* Priority - selects the group with the highest user-defined priority.
+* Random - selects a group randomly.
+If not specified, <code>[Priority, LeastWaste]</code> is the default.
+Maximum of 3 expanders can be specified.</p>
 </td>
 </tr>
 </tbody>
@@ -5014,6 +5100,31 @@ etcd-client.key: Client certificate key value
 </td>
 </tr>
 </tbody>
+</table>
+###ExpanderString { #hypershift.openshift.io/v1beta1.ExpanderString }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>ExpanderString contains the name of an expander to be used by the cluster autoscaler.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;LeastWaste&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Priority&#34;</p></td>
+<td><p>Selects the node group with the least idle resources.</p>
+</td>
+</tr><tr><td><p>&#34;Random&#34;</p></td>
+<td><p>Selects the node group with the highest priority.</p>
+</td>
+</tr></tbody>
 </table>
 ###Filter { #hypershift.openshift.io/v1beta1.Filter }
 <p>
@@ -11143,6 +11254,123 @@ RouterFilter
 </td>
 </tr>
 </tbody>
+</table>
+###ScaleDownConfig { #hypershift.openshift.io/v1beta1.ScaleDownConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>Configures when and how to scale down cluster nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>delayAfterAddSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterAddSeconds sets how long after scale up the scale down evaluation resumes in seconds.
+It must be between 0 and 86400 (24 hours).
+When set to 0, this means scale down evaluation will resume immediately after scale up, without any delay.
+When omitted, the autoscaler defaults to 600s (10 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delayAfterDeleteSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterDeleteSeconds sets how long after node deletion, scale down evaluation resumes, defaults to scan-interval.
+It must be between 0 and 86400 (24 hours).
+When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
+When omitted, the autoscaler defaults to 0s.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delayAfterFailureSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterFailureSeconds sets how long after a scale down failure, scale down evaluation resumes.
+It must be between 0 and 86400 (24 hours).
+When set to 0, this means scale down evaluation will resume immediately after a scale down failure, without any delay.
+When omitted, the autoscaler defaults to 180s (3 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>unneededDurationSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>unneededDurationSeconds establishes how long a node should be unneeded before it is eligible for scale down in seconds.
+It must be between 0 and 86400 (24 hours).
+When omitted, the autoscaler defaults to 600s (10 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>utilizationThresholdPercent</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>utilizationThresholdPercent determines the node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down.
+The value represents a percentage from 0 to 100.
+When set to 0, this means nodes will only be considered for scale down if they are completely idle (0% utilization).
+When set to 100, this means nodes will be considered for scale down regardless of their utilization level.
+A value between 0 and 100 represents the utilization threshold below which a node can be considered for scale down.
+When omitted, the autoscaler defaults to 50%.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ScalingType { #hypershift.openshift.io/v1beta1.ScalingType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>ScalingType defines the scaling behavior for the cluster autoscaler.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ScaleUpAndScaleDown&#34;</p></td>
+<td><p>ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.</p>
+</td>
+</tr><tr><td><p>&#34;ScaleUpOnly&#34;</p></td>
+<td><p>ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.</p>
+</td>
+</tr></tbody>
 </table>
 ###SecretEncryptionSpec { #hypershift.openshift.io/v1beta1.SecretEncryptionSpec }
 <p>
