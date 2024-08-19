@@ -3627,6 +3627,35 @@ NodePools associated with a control plane.</p>
 <tbody>
 <tr>
 <td>
+<code>scaleDown</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ScaleDownConfig">
+ScaleDownConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaleDown configures the behavior of the Cluster Autoscaler scale down operation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>balancingIgnoredLabels</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>balancingIgnoredLabels sets &ldquo;&ndash;balancing-ignore-label <label name>&rdquo; flag on cluster-autoscaler for each listed label.
+This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
+For example, if you have nodes with &ldquo;topology.ebs.csi.aws.com/zone&rdquo; label, you can add name of this label here
+to prevent cluster autoscaler from splitting nodes into different node groups based on its value.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>maxNodesTotal</code></br>
 <em>
 int32
@@ -3681,6 +3710,27 @@ shouldn&rsquo;t trigger autoscaler actions, but only run when there are spare
 resources available. The default is -10.</p>
 <p>See the following for more details:
 <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption">https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>expanders</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ExpanderString">
+[]ExpanderString
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>expanders guide the autoscaler in choosing node groups during scale-out.
+Sets the order of expanders for scaling out node groups.
+Options include:
+* LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+* Priority - selects the group with the highest user-defined priority.
+* Random - selects a group randomly.
+If not specified, <code>LeastWaste</code> is the default.
+Maximum of 3 expanders can be specified.</p>
 </td>
 </tr>
 </tbody>
@@ -5014,6 +5064,31 @@ etcd-client.key: Client certificate key value
 </td>
 </tr>
 </tbody>
+</table>
+###ExpanderString { #hypershift.openshift.io/v1beta1.ExpanderString }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>ExpanderString contains the name of an expander to be used by the cluster autoscaler.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;LeastWaste&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Priority&#34;</p></td>
+<td><p>Selects the node group with the least idle resources.</p>
+</td>
+</tr><tr><td><p>&#34;Random&#34;</p></td>
+<td><p>Selects the node group with the highest priority.</p>
+</td>
+</tr></tbody>
 </table>
 ###Filter { #hypershift.openshift.io/v1beta1.Filter }
 <p>
@@ -11140,6 +11215,113 @@ RouterFilter
 <td>
 <em>(Optional)</em>
 <p>filter specifies a filter to select an OpenStack router. If provided, cannot be empty.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ScaleDownConfig { #hypershift.openshift.io/v1beta1.ScaleDownConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>Configures when and how to scale down cluster nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>enabled</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>enabled determines whether the Cluster Autoscaler should scaled down this cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delayAfterAddSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterAddSeconds sets how long after scale up the scale down evaluation resumes in seconds
+It must be between 0 and 86400.
+When set to 0, this means scale down evaluation will resume immediately after scale up, without any delay.
+When omitted, the autoscaler defaults to 600s (10 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delayAfterDeleteSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterDeleteSeconds sets how long after node deletion, scale down evaluation resumes, defaults to scan-interval
+It must be between 0 and 86400.
+When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
+When omitted, the autoscaler defaults to 0s.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delayAfterFailureSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterFailureSeconds sets how long after a scale down failure, scale down evaluation resumes
+It must be between 0 and 86400.
+When set to 0, this means scale down evaluation will resume immediately after a scale down failure, without any delay.
+When omitted, the autoscaler defaults to 180s (3 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>unneededDurationSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>unneededDurationSeconds establishes how long a node should be unneeded before it is eligible for scale down in seconds
+It must be between 0 and 86400.
+When omitted, the autoscaler defaults to 600s (10 minutes).
+The default value is 600.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>utilizationThresholdPercent</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>utilizationThresholdPercent determines the node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down
+The value represents a percentage from 0 to 100.
+When set to 0, this means nodes will only be considered for scale down if they are completely idle (0% utilization).
+When set to 100, this means nodes will be considered for scale down regardless of their utilization level.
+A value between 0 and 100 represents the utilization threshold below which a node can be considered for scale down.
+When omitted, the autoscaler defaults to 50%.</p>
 </td>
 </tr>
 </tbody>
