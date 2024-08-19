@@ -51,6 +51,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.AzureCCMMSIClientID, "azure-ccm-msi-client-id", opts.AzureCCMMSIClientID, "The client id of MSI related to the azure cloud controller manager.")
 	flags.StringVar(&opts.ClusterAPIAzureMSIClientID, "capz-msi-client-id", opts.ClusterAPIAzureMSIClientID, "The client id of MSI to be used with CAPZ.")
 	flags.StringVar(&opts.AzureKMSMSIClientID, "kms-msi-client-id", opts.AzureKMSMSIClientID, "The client id of MSI to be used with KMS.")
+	flags.StringVar(&opts.ControlPlaneOperatorMSIClientID, "cpo-msi-client-id", opts.ControlPlaneOperatorMSIClientID, "The client id of MSI to be used with the CPO.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -60,19 +61,20 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile            string
-	Location                   string
-	EncryptionKeyID            string
-	AvailabilityZones          []string
-	ResourceGroupName          string
-	VnetID                     string
-	NetworkSecurityGroupID     string
-	ResourceGroupTags          map[string]string
-	SubnetID                   string
-	RHCOSImage                 string
-	AzureCCMMSIClientID        string
-	ClusterAPIAzureMSIClientID string
-	AzureKMSMSIClientID        string
+	CredentialsFile                 string
+	Location                        string
+	EncryptionKeyID                 string
+	AvailabilityZones               []string
+	ResourceGroupName               string
+	VnetID                          string
+	NetworkSecurityGroupID          string
+	ResourceGroupTags               map[string]string
+	SubnetID                        string
+	RHCOSImage                      string
+	AzureCCMMSIClientID             string
+	ClusterAPIAzureMSIClientID      string
+	AzureKMSMSIClientID             string
+	ControlPlaneOperatorMSIClientID string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -209,6 +211,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 				AzureCloudProviderMSIClientID: o.AzureCCMMSIClientID,
 				ClusterAPIAzureMSIClientID:    o.ClusterAPIAzureMSIClientID,
 				AzureKMSMSIClientID:           o.AzureKMSMSIClientID,
+				ControlPlaneMSIClientID:       o.ControlPlaneOperatorMSIClientID,
 			},
 		},
 	}
