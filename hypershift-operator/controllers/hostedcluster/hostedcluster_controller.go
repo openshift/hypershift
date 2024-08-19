@@ -1072,6 +1072,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
+		if err := pauseCAPICluster(ctx, r.Client, hcp); err != nil {
+			return ctrl.Result{}, err
+		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
@@ -3036,6 +3039,8 @@ func reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(binding *rbacv1.Rol
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
+		// make sure cluster is not paused.
+		cluster.Spec.Paused = false
 		return nil
 	}
 	infraCRGVK, err := apiutil.GVKForObject(infraCR, api.Scheme)
@@ -3062,6 +3067,29 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 		},
 	}
 
+	return nil
+}
+
+func pauseCAPICluster(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	if hcp == nil {
+		return nil
+	}
+
+	capiCluster := controlplaneoperator.CAPICluster(hcp.Namespace, hcp.Spec.InfraID)
+	err := c.Get(ctx, client.ObjectKeyFromObject(capiCluster), capiCluster)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get CAPI Cluster: %w", err)
+		}
+		return nil
+	}
+
+	if !capiCluster.Spec.Paused {
+		capiCluster.Spec.Paused = true
+		if err := c.Update(ctx, capiCluster); err != nil {
+			return fmt.Errorf("failed to update CAPI Cluster: %w", err)
+		}
+	}
 	return nil
 }
 
