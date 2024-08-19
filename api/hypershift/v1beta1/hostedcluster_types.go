@@ -2209,9 +2209,52 @@ type Release struct {
 	Image string `json:"image"`
 }
 
+// Configures when and how to scale down cluster nodes.
+type ScaleDownConfig struct {
+	// Should CA scale down the cluster
+	Enabled bool `json:"enabled"`
+
+	// How long after scale up that scale down evaluation resumes
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	DelayAfterAdd *string `json:"delayAfterAdd,omitempty"`
+
+	// How long after node deletion that scale down evaluation resumes, defaults to scan-interval
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	DelayAfterDelete *string `json:"delayAfterDelete,omitempty"`
+
+	// How long after scale down failure that scale down evaluation resumes
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	DelayAfterFailure *string `json:"delayAfterFailure,omitempty"`
+
+	// How long a node should be unneeded before it is eligible for scale down
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	UnneededTime *string `json:"unneededTime,omitempty"`
+
+	// Node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down
+	// +kubebuilder:validation:Pattern=(0.[0-9]+)
+	UtilizationThreshold *string `json:"utilizationThreshold,omitempty"`
+}
+
+// ExpanderString contains the name of an expander to be used by the cluster autoscaler.
+// +kubebuilder:validation:Enum=LeastWaste;Priority;Random;MostPods;LeastNodes;Price
+type ExpanderString string
+
+// These constants define the valid values for an ExpanderString
+const (
+	LeastWasteExpander ExpanderString = "LeastWaste" // Selects the node group with the least idle resources.
+	PriorityExpander   ExpanderString = "Priority"   // Selects the node group with the highest priority.
+	RandomExpander     ExpanderString = "Random"     // Selects a node group randomly.
+	MostPodsExpander   ExpanderString = "MostPods"   // Selects the node group that can fit the most pods.
+	LeastNodesExpander ExpanderString = "LeastNodes" // Selects the node group that uses the fewest nodes.
+	PriceExpander      ExpanderString = "Price"      // Selects the node group with the lowest cost.
+)
+
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all
 // NodePools associated with a control plane.
 type ClusterAutoscaling struct {
+	// Configuration of scale down operation
+	ScaleDown *ScaleDownConfig `json:"scaleDown,omitempty"`
+
 	// MaxNodesTotal is the maximum allowable number of nodes across all NodePools
 	// for a HostedCluster. The autoscaler will not grow the cluster beyond this
 	// number.
@@ -2241,6 +2284,21 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
+
+	// Sets the order of expanders for scaling out node groups.
+	// Expanders guide the autoscaler in choosing node groups during scale-out.
+	// Options include:
+	// * LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+	// * Priority - selects the group with the highest user-defined priority.
+	// * Random - selects a group randomly.
+	// * MostPods -  selects the node group that can fit the most pods.
+	// * LeastNodes - selects the node group that uses the fewest nodes.
+	// * Price - selects the node group with the lowest cost.
+	// If not specified, `Random` is the default.
+	// Maximum of 3 expanders can be specified.
+	// +optional
+
+	Expanders []ExpanderString `json:"expanders"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance

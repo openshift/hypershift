@@ -3,6 +3,7 @@ package autoscaler
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -25,25 +26,47 @@ const (
 	autoscalerName = "cluster-autoscaler"
 )
 
-func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(deployment)
+// ScaleDownArgs creates a list of command-line options for the cluster-autoscaler
+// based on the settings in the provided ScaleDownConfig object.
+func ScaleDownArgs(sdc *hyperv1.ScaleDownConfig) []string {
+	args := []string{}
 
-	autoscalerResources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("60Mi"),
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-		},
-	}
-	// preserve existing resource requirements
-	mainContainer := util.FindContainer(autoscalerName, deployment.Spec.Template.Spec.Containers)
-	if mainContainer != nil {
-		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
-			autoscalerResources = mainContainer.Resources
-		}
+	if sdc == nil || !sdc.Enabled {
+		return append(args, "--scale-down-enabled=false")
 	}
 
+	args = append(args, "--scale-down-enabled=true")
+
+	if sdc.DelayAfterAdd != nil {
+		arg := fmt.Sprintf("--scale-down-delay-after-add=%s", *sdc.DelayAfterAdd)
+		args = append(args, arg)
+	}
+
+	if sdc.DelayAfterDelete != nil {
+		arg := fmt.Sprintf("--scale-down-delay-after-delete=%s", *sdc.DelayAfterDelete)
+		args = append(args, arg)
+	}
+
+	if sdc.DelayAfterFailure != nil {
+		arg := fmt.Sprintf("--scale-down-delay-after-failure=%s", *sdc.DelayAfterFailure)
+		args = append(args, arg)
+	}
+
+	if sdc.UnneededTime != nil {
+		arg := fmt.Sprintf("--scale-down-unneeded-time=%s", *sdc.UnneededTime)
+		args = append(args, arg)
+	}
+
+	if sdc.UtilizationThreshold != nil {
+		arg := fmt.Sprintf("--scale-down-utilization-threshold=%s", *sdc.UtilizationThreshold)
+		args = append(args, arg)
+	}
+
+	return args
+}
+
+func AutoscalerArgs(options hyperv1.ClusterAutoscaling) []string {
 	args := []string{
-		"--expander=priority,least-waste",
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
@@ -61,37 +84,96 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		"--v=4",
 	}
 
+	if len(options.Expanders) > 0 {
+		expanders := make([]string, 0)
+
+		for _, e := range options.Expanders {
+			switch e {
+			case hyperv1.LeastWasteExpander:
+				expanders = append(expanders, "least-waste")
+			case hyperv1.PriorityExpander:
+				expanders = append(expanders, "priority")
+			case hyperv1.RandomExpander:
+				expanders = append(expanders, "random")
+			case hyperv1.MostPodsExpander:
+				expanders = append(expanders, "most-pods")
+			case hyperv1.LeastNodesExpander:
+				expanders = append(expanders, "least-nodes")
+			case hyperv1.PriceExpander:
+				expanders = append(expanders, "price")
+			default:
+				fmt.Printf("skipping unknown expander: %s", e)
+				continue
+			}
+		}
+		args = append(args, fmt.Sprintf("--expander=%s", strings.Join(expanders, ",")))
+
+	} else {
+		// default if no expanders are provided
+		args = append(args, "--expander=random")
+	}
+
 	ignoreLabels := GetIgnoreLabels()
+
 	for _, v := range ignoreLabels {
 		args = append(args, fmt.Sprintf("%s=%v", BalancingIgnoreLabelArg, v))
 	}
 
+	s := &options
+
 	// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
 	// from the cluster-autoscaler-operator and create some utility functions for these assignments.
 	if options.MaxNodesTotal != nil {
-		arg := fmt.Sprintf("%s=%d", "--max-nodes-total", *options.MaxNodesTotal)
+		arg := fmt.Sprintf("%s=%d", "--max-nodes-total", *s.MaxNodesTotal)
 		args = append(args, arg)
 	}
 
 	if options.MaxPodGracePeriod != nil {
-		arg := fmt.Sprintf("%s=%d", "--max-graceful-termination-sec", *options.MaxPodGracePeriod)
+		arg := fmt.Sprintf("%s=%d", "--max-graceful-termination-sec", *s.MaxPodGracePeriod)
 		args = append(args, arg)
 	}
 
 	if options.MaxNodeProvisionTime != "" {
-		arg := fmt.Sprintf("%s=%s", "--max-node-provision-time", options.MaxNodeProvisionTime)
+		arg := fmt.Sprintf("%s=%s", "--max-node-provision-time", s.MaxNodeProvisionTime)
 		args = append(args, arg)
 	}
 
 	if options.PodPriorityThreshold != nil {
-		arg := fmt.Sprintf("%s=%d", "--expendable-pods-priority-cutoff", *options.PodPriorityThreshold)
+		arg := fmt.Sprintf("%s=%d", "--expendable-pods-priority-cutoff", *s.PodPriorityThreshold)
 		args = append(args, arg)
 	}
+
+	if options.ScaleDown != nil {
+		args = append(args, ScaleDownArgs(s.ScaleDown)...)
+	}
+
+	return args
+}
+
+func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(deployment)
+
+	autoscalerResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("60Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(autoscalerName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			autoscalerResources = mainContainer.Resources
+		}
+	}
+
+	args := AutoscalerArgs(options)
 
 	labels := map[string]string{
 		"app":                         autoscalerName,
 		hyperv1.ControlPlaneComponent: autoscalerName,
 	}
+
 	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
 	// otherwise changing would prevent an upgrade from happening.
 	selector := map[string]string{

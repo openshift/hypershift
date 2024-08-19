@@ -5045,6 +5045,19 @@ spec:
                   Autoscaling specifies auto-scaling behavior that applies to all NodePools
                   associated with the control plane.
                 properties:
+                  expanders:
+                    items:
+                      description: ExpanderString contains the name of an expander
+                        to be used by the cluster autoscaler.
+                      enum:
+                      - LeastWaste
+                      - Priority
+                      - Random
+                      - MostPods
+                      - LeastNodes
+                      - Price
+                      type: string
+                    type: array
                   maxNodeProvisionTime:
                     description: |-
                       MaxNodeProvisionTime is the maximum time to wait for node provisioning
@@ -5078,6 +5091,41 @@ spec:
                       https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
                     format: int32
                     type: integer
+                  scaleDown:
+                    description: Configuration of scale down operation
+                    properties:
+                      delayAfterAdd:
+                        description: How long after scale up that scale down evaluation
+                          resumes
+                        pattern: ([0-9]*(\.[0-9]*)?[a-z]+)+
+                        type: string
+                      delayAfterDelete:
+                        description: How long after node deletion that scale down
+                          evaluation resumes, defaults to scan-interval
+                        pattern: ([0-9]*(\.[0-9]*)?[a-z]+)+
+                        type: string
+                      delayAfterFailure:
+                        description: How long after scale down failure that scale
+                          down evaluation resumes
+                        pattern: ([0-9]*(\.[0-9]*)?[a-z]+)+
+                        type: string
+                      enabled:
+                        description: Should CA scale down the cluster
+                        type: boolean
+                      unneededTime:
+                        description: How long a node should be unneeded before it
+                          is eligible for scale down
+                        pattern: ([0-9]*(\.[0-9]*)?[a-z]+)+
+                        type: string
+                      utilizationThreshold:
+                        description: Node utilization level, defined as sum of requested
+                          resources divided by capacity, below which a node can be
+                          considered for scale down
+                        pattern: (0.[0-9]+)
+                        type: string
+                    required:
+                    - enabled
+                    type: object
                 type: object
               channel:
                 description: |-
