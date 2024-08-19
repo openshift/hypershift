@@ -115,12 +115,16 @@ func TestAdaptDeployment(t *testing.T) {
 				MaxPodGracePeriod:    ptr.To[int32](300),
 				MaxNodeProvisionTime: "20m",
 				PodPriorityThreshold: ptr.To[int32](-5),
+				ScaleDown: &hyperv1.ScaleDownConfig{
+					DelayAfterAddSeconds: ptr.To[int32](600),
+				},
 			},
 			ExpectedArgs: []string{
 				"--max-nodes-total=100",
 				"--max-graceful-termination-sec=300",
 				"--max-node-provision-time=20m",
 				"--expendable-pods-priority-cutoff=-5",
+				"--scale-down-delay-after-add=600s",
 			},
 			expectedReplicas: 1,
 		},
@@ -132,7 +136,8 @@ func TestAdaptDeployment(t *testing.T) {
 			hcp.Spec.Autoscaling = tc.AutoscalerOptions
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				HCP: hcp,
+				Context: context.Background(),
+				HCP:     hcp,
 			}
 
 			g := NewGomegaWithT(t)
