@@ -171,7 +171,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--v=4",
 							"--leader-elect=true",
-							"--feature-gates=EKS=false",
+							"--feature-gates=EKS=false,ROSA=false",
 						},
 						Ports: []corev1.ContainerPort{
 							{
