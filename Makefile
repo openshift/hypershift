@@ -121,6 +121,11 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/addons/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
+# remove ROSA CRDs 
+	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_rosa*.yaml
+# remove EKS CRDs
+	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmanaged*.yaml
+	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsfargateprofiles.yaml
 
 .PHONY: cluster-api-provider-ibmcloud
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
@@ -162,7 +167,8 @@ release:
 .PHONY: delegating_client
 delegating_client:
 	go run ./cmd/infra/aws/delegatingclientgenerator/main.go > ./cmd/infra/aws/delegating_client.txt
-	mv ./cmd/infra/aws/delegating_client.{txt,go}
+	mv ./cmd/infra/aws/delegating_client.txt ./cmd/infra/aws/delegating_client.go
+	$(GO) fmt ./cmd/infra/aws/delegating_client.go
 
 # Run tests
 .PHONY: test
