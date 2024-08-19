@@ -1,0 +1,35 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-kubevirt-nodepool
+  namespace: clusters
+spec:
+  clusterName: example-kubevirt
+  management:
+    autoRepair: true
+    upgradeType: Replace
+    replace:
+      strategy: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 1
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 16Gi
+      rootVolume:
+        type: Persistent
+        persistent:
+          size: 120Gi
+      additionalNetworks:
+        - name: default/additional-network
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64
+  replicas: 3
+  nodeLabels:
+    node-role.kubernetes.io/worker: ""
+  taints:
+    - key: node-role.kubernetes.io/not-ready
+      effect: NoSchedule

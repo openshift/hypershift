@@ -1,0 +1,26 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-agent-nodepool
+  namespace: clusters
+spec:
+  clusterName: example-agent
+  management:
+    autoRepair: false
+    upgradeType: Replace
+    replace:
+      strategy: OnDelete
+  platform:
+    type: Agent
+    agent:
+      agentLabelSelector:
+        matchLabels:
+          example-label-key: example-label-value
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64
+  replicas: 3
+  nodeLabels:
+    node-role.kubernetes.io/worker: ""
+  taints:
+    - key: node-role.kubernetes.io/not-ready
+      effect: NoSchedule

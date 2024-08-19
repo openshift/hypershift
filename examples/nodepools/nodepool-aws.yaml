@@ -1,0 +1,34 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-aws-nodepool
+  namespace: clusters
+spec:
+  clusterName: example-aws
+  management:
+    autoRepair: true
+    upgradeType: Replace
+    replace:
+      strategy: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 1
+  platform:
+    type: AWS
+    aws:
+      instanceType: m5.large
+      rootVolume:
+        size: 120
+        type: gp3
+      securityGroups:
+        - id: sg-0123456789abcdef0
+      subnet:
+        id: subnet-0123456789abcdef0
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64
+  replicas: 3
+  nodeLabels:
+    node-role.kubernetes.io/worker: ""
+  taints:
+    - key: node-role.kubernetes.io/not-ready
+      effect: NoSchedule
