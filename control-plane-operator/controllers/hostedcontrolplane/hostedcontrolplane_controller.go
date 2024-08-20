@@ -2819,6 +2819,10 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if err := r.Get(ctx, client.ObjectKeyFromObject(bootstrapClientCertSecret), bootstrapClientCertSecret); err != nil {
 		return fmt.Errorf("failed to get bootstrap client cert secret: %w", err)
 	}
+	hccoClientCertSecret := manifests.HCCOClientCertSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(hccoClientCertSecret), hccoClientCertSecret); err != nil {
+		return fmt.Errorf("failed to get HCCO client cert secret: %w", err)
+	}
 
 	serviceKubeconfigSecret := manifests.KASServiceKubeconfigSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serviceKubeconfigSecret, func() error {
@@ -2836,6 +2840,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, hcp.Spec.InfraID, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CAPI service admin kubeconfig secret: %w", err)
+	}
+
+	hccoKubeconfigSecret := manifests.HCCOKubeconfigSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, hccoKubeconfigSecret, func() error {
+		return kas.ReconcileHCCOKubeconfigSecret(hccoKubeconfigSecret, hccoClientCertSecret, rootCA, p.OwnerRef, hcp.Spec.Platform.Type)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile HCCO kubeconfig secret: %w", err)
 	}
 
 	localhostKubeconfigSecret := manifests.KASLocalhostKubeconfigSecret(hcp.Namespace)

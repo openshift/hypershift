@@ -21,6 +21,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -61,6 +62,13 @@ var initialObjects = []client.Object{
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
+	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameConfig),
+	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameMirror),
+	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameICSP),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameConfig)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
+
 	fakeOperatorHub(),
 }
 

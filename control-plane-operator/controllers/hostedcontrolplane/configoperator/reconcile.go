@@ -232,6 +232,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 			},
 		}...)
 	}
+	// TODO (jparrill): Add RBAC specific needs for Agent platform
 	return nil
 }
 
@@ -443,7 +444,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 
 func buildHCCVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
+		SecretName:  manifests.HCCOKubeconfigSecret("").Name,
 		DefaultMode: pointer.Int32(0640),
 	}
 }
