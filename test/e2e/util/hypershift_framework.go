@@ -238,7 +238,7 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 				v.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
 					Name: serviceAccountSigningKeySecret.Name,
 				}
-				if platform == hyperv1.AWSPlatform {
+				if platform == hyperv1.AWSPlatform || platform == hyperv1.OpenStackPlatform {
 					if v.Spec.Configuration == nil {
 						v.Spec.Configuration = &hyperv1.ClusterConfiguration{}
 					}

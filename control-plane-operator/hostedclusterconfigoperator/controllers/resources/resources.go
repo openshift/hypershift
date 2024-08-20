@@ -72,7 +72,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -946,24 +945,42 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		}
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-		ingressFloatingIP := hcp.Spec.Platform.OpenStack.IngressFloatingIP
-		ingressProvider := hcp.Spec.Platform.OpenStack.IngressProvider
-		if err := openstackutil.ValidateIngressOptions(ingressProvider, ingressFloatingIP); err != nil {
-			errs = append(errs, err)
-			return errors.NewAggregate(errs)
-		}
+	// if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+	// 	ingressFloatingIP := hcp.Spec.Platform.OpenStack.IngressFloatingIP
+	// 	ingressProvider := hcp.Spec.Platform.OpenStack.IngressProvider
+	// 	if err := openstackutil.ValidateIngressOptions(ingressProvider, ingressFloatingIP); err != nil {
+	// 		errs = append(errs, err)
+	// 		return errors.NewAggregate(errs)
+	// 	}
 
-		// At this point validations have passed, so we can proceed with the reconciliation
-		if ingressProvider == hyperv1.OpenStackIngressProviderOctavia {
-			ingressDefaultIngressOctaviaService := manifests.IngressDefaultIngressOctaviaService()
-			if _, err := r.CreateOrUpdate(ctx, r.client, ingressDefaultIngressOctaviaService, func() error {
-				return ingress.ReconcileDefaultIngressOctaviaService(ingressDefaultIngressOctaviaService, ingressFloatingIP)
-			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile default ingress octavia service: %w", err))
-			}
-		}
-	}
+	// 	// At this point validations have passed, so we can proceed with the reconciliation
+	// 	if ingressProvider == hyperv1.OpenStackIngressProviderOctavia {
+	// 		ingressDefaultIngressOctaviaService := manifests.IngressDefaultIngressOctaviaService()
+	// 		if _, err := r.CreateOrUpdate(ctx, r.client, ingressDefaultIngressOctaviaService, func() error {
+	// 			return ingress.ReconcileDefaultIngressOctaviaService(ingressDefaultIngressOctaviaService, ingressFloatingIP)
+	// 		}); err != nil {
+	// 			errs = append(errs, fmt.Errorf("failed to reconcile default ingress octavia service: %w", err))
+	// 		}
+	// 	} else if hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AWSPlatform) {
+	// 		// This case is mainly for CI where the management cluster runs on AWS and the hosted cluster runs on OpenStack
+	// 		var externalIP string
+	// 		ingressDefaultRouterService := manifests.IngressDefaultRouterService()
+	// 		if err := r.client.Get(ctx, client.ObjectKeyFromObject(ingressDefaultRouterService), ingressDefaultRouterService); err != nil {
+	// 			if apierrors.IsNotFound(err) {
+	// 				errs = append(errs, fmt.Errorf("router-default service not found: %w", err))
+	// 			} else {
+	// 				errs = append(errs, fmt.Errorf("failed to get router-default service: %w", err))
+	// 			}
+	// 		}
+	// 		if ingressDefaultRouterService != nil && len(ingressDefaultRouterService.Status.LoadBalancer.Ingress) > 0 {
+	// 			externalIP = ingressDefaultRouterService.Status.LoadBalancer.Ingress[0].IP
+	// 		}
+	// 		if externalIP == "" {
+	// 			errs = append(errs, fmt.Errorf("external IP not found for router-default service"))
+	// 		}
+	// 		// TODO: now if externalIP is not empty, create the DNS record on the management cluster.
+	// 	}
+	// }
 
 	// Default Ingress is passed through as a subdomain of the infra/mgmt cluster
 	// for KubeVirt when the base domain passthrough feature is in use.

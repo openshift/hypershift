@@ -37,7 +37,7 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	}
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Ingress != nil && hcp.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS != nil {
 		nlb = hcp.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type == configv1.NLB
-		if hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
+		if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
 			loadBalancerScope = v1.InternalLoadBalancer
 		}
 	}

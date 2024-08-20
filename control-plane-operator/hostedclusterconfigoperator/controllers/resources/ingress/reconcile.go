@@ -56,6 +56,22 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
 			Name: manifests.IngressDefaultIngressControllerCert().Name,
 		}
+	case hyperv1.OpenStackPlatform:
+		if useNLB {
+			ingressController.Spec.EndpointPublishingStrategy.LoadBalancer = &operatorv1.LoadBalancerStrategy{
+				Scope: loadBalancerScope,
+				ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
+					Type: operatorv1.AWSLoadBalancerProvider,
+					AWS: &operatorv1.AWSLoadBalancerParameters{
+						Type:                          operatorv1.AWSNetworkLoadBalancer,
+						NetworkLoadBalancerParameters: &operatorv1.AWSNetworkLoadBalancerParameters{},
+					},
+				},
+			}
+		}
+		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
+			Name: manifests.IngressDefaultIngressControllerCert().Name,
+		}
 	case hyperv1.IBMCloudPlatform:
 		if isIBMCloudUPI {
 			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
