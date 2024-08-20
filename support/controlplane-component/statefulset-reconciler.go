@@ -37,8 +37,7 @@ func (c *controlPlaneWorkload) reconcileStatefulSet(cpContext ControlPlaneContex
 			return err
 		}
 
-		c.applyOptionsToStatefulSet(cpContext, statefulSet, existingResources, existingLabelSelector)
-		return nil
+		return c.applyOptionsToStatefulSet(cpContext, statefulSet, existingResources, existingLabelSelector)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile component's statefulSet: %v", err)
 	}
@@ -46,7 +45,7 @@ func (c *controlPlaneWorkload) reconcileStatefulSet(cpContext ControlPlaneContex
 	return nil
 }
 
-func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneContext, statefulSet *appsv1.StatefulSet, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) {
+func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneContext, statefulSet *appsv1.StatefulSet, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) error {
 	deploymentConfig := c.defaultDeploymentConfig(cpContext, statefulSet.Spec.Replicas)
 	deploymentConfig.Resources = existingResources
 	deploymentConfig.ApplyToStatefulSet(statefulSet)
@@ -61,4 +60,6 @@ func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneC
 	if c.konnectivityContainerOpts != nil {
 		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &statefulSet.Spec.Template.Spec)
 	}
+
+	return c.applyWatchedResourcesAnnotation(cpContext, &statefulSet.Spec.Template)
 }

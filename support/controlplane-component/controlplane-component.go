@@ -3,14 +3,19 @@ package controlplanecomponent
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -50,6 +55,8 @@ type controlPlaneWorkload struct {
 	resourcesReconcilers []GenericReconciler
 	// predicate is called at the begining, the component is disabled if it returns false.
 	predicate func(cpContext ControlPlaneContext) (bool, error)
+	// These resources will cause the Deployment/stateful to rollout when changed
+	watchedResources []client.Object
 
 	multiZoneSpreadLabels    map[string]string
 	isRequestServing         bool
@@ -180,6 +187,41 @@ func (c *controlPlaneWorkload) defaultDeploymentConfig(cpContext ControlPlaneCon
 	return deploymentConfig
 }
 
+func (c *controlPlaneWorkload) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
+	if c.watchedResources == nil {
+		return nil
+	}
+
+	var hashedData []string
+	for _, resource := range c.watchedResources {
+		if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: resource.GetName()}, resource); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+
+		switch obj := resource.(type) {
+		case *corev1.ConfigMap:
+			for _, value := range obj.Data {
+				hashedData = append(hashedData, util.HashSimple(value))
+			}
+		case *corev1.Secret:
+			for _, value := range obj.Data {
+				hashedData = append(hashedData, util.HashSimple(value))
+			}
+		}
+	}
+	// if not sorted, we could get a different value on each reconcilation loop and cause unneeded rollout.
+	slices.Sort(hashedData)
+
+	if podTemplate.Annotations == nil {
+		podTemplate.Annotations = map[string]string{}
+	}
+	podTemplate.Annotations["component.hypershift.openshift.io/config-hash"] = strings.Join(hashedData, "")
+	return nil
+}
+
 type controlPlaneWorkloadBuilder struct {
 	workload *controlPlaneWorkload
 }
@@ -216,6 +258,11 @@ func (b *controlPlaneWorkloadBuilder) WithPredicate(predicate func(cpContext Con
 
 func (b *controlPlaneWorkloadBuilder) ResourcesReconcilers(reconcilers ...GenericReconciler) *controlPlaneWorkloadBuilder {
 	b.workload.resourcesReconcilers = append(b.workload.resourcesReconcilers, reconcilers...)
+	return b
+}
+
+func (b *controlPlaneWorkloadBuilder) WatchResources(resources ...client.Object) *controlPlaneWorkloadBuilder {
+	b.workload.watchedResources = append(b.workload.watchedResources, resources...)
 	return b
 }
 

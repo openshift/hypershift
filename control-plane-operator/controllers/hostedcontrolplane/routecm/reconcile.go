@@ -1,7 +1,6 @@
 package routecm
 
 import (
-	"fmt"
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -16,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
@@ -54,6 +52,11 @@ func NewComponent() component.ControlPlaneComponent {
 				WithPredicate(component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices)).
 				Build(),
 		).
+		WatchResources(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ConfigMapName,
+			},
+		}).
 		Build()
 }
 
@@ -65,22 +68,6 @@ func (r *RouteControllerManagerReconciler) Name() string {
 // ReconcileDeployment implements controlplanecomponent.DeploymentReconciler.
 func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
 	image := cpContext.ReleaseImageProvider.GetImage("route-controller-manager")
-
-	config := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ConfigMapName,
-			Namespace: cpContext.HCP.Namespace,
-		},
-	}
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(config), config); err != nil {
-		return fmt.Errorf("failed to get openshift controller manager config: %w", err)
-	}
-
-	configBytes, ok := config.Data[configKey]
-	if !ok {
-		return fmt.Errorf("openshift controller manager configuration is not expected to be empty")
-	}
-	configHash := util.ComputeHash(configBytes)
 
 	maxSurge := intstr.FromInt(0)
 	maxUnavailable := intstr.FromInt(1)
@@ -95,9 +82,6 @@ func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext compone
 		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftRouteControllerManagerLabels()
-	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
-		configHashAnnotation: configHash,
-	}
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image)),
 	}

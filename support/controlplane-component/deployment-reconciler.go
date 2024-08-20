@@ -46,7 +46,7 @@ func (c *controlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext
 	return nil
 }
 
-func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) {
+func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) error {
 	deploymentConfig := c.defaultDeploymentConfig(cpContext, deployment.Spec.Replicas)
 	deploymentConfig.Resources = existingResources
 	deploymentConfig.ApplyTo(deployment)
@@ -61,4 +61,6 @@ func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneCo
 	if c.konnectivityContainerOpts != nil {
 		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &deployment.Spec.Template.Spec)
 	}
+
+	return c.applyWatchedResourcesAnnotation(cpContext, &deployment.Spec.Template)
 }
