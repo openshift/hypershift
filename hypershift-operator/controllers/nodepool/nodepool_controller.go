@@ -1209,6 +1209,11 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 		return fmt.Errorf("failed to list KubeVirt Machines: %w", err)
 	}
 
+	if len(kubevirtMachines.Items) == 0 {
+		// not setting the condition if there are no kubevirt machines present
+		return nil
+	}
+
 	numNotLiveMigratable := 0
 	messageMap := make(map[string][]string)
 	var mapReason, mapMessage string
