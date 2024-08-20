@@ -96,7 +96,6 @@ func NewCreateCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("rhcos-image")
 
 	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
