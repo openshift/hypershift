@@ -7,6 +7,8 @@
 *.dylib
 bin
 tools/bin
+go.work
+go.work.sum
 
 # Test binary, build with `go test -c`
 !vendor/**/*.test

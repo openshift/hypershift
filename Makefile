@@ -41,6 +41,15 @@ ifeq ("/","${HOME}")
 HOME=/tmp
 endif
 
+# Determine whether to use go work vendor or go mod vendor
+ifeq ($(wildcard go.work),)
+GOVENDOR=$(GO) mod vendor
+GOSYNC=
+else
+GOVENDOR=$(GO) work vendor
+GOSYNC=$(GO) work sync
+endif
+
 all: build e2e tests
 
 pre-commit: all verify test
@@ -49,7 +58,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator hyp
 
 .PHONY: sync
 sync:
-	$(GO) work sync
+	$(GOSYNC)
 
 .PHONY: update
 update: sync api-deps api api-docs deps clients
@@ -205,16 +214,16 @@ vet:
 .PHONY: deps
 deps:
 	$(GO) mod tidy
-	$(GO) work vendor
+	$(GOVENDOR)
 	$(GO) mod verify
 	$(GO) list -m -mod=readonly -json all > /dev/null
-	(cd hack/tools && $(GO) mod tidy && $(GO) work vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+	(cd hack/tools && $(GO) mod tidy && $(GOVENDOR) && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
 
 .PHONY: api-deps
 api-deps:
 	cd api && \
 	  $(GO) mod tidy && \
-	  $(GO) work vendor && \
+	  $(GOVENDOR) && \
 	  $(GO) mod verify && \
 	  $(GO) list -m -mod=readonly -json all > /dev/null
 
@@ -293,3 +302,9 @@ hypershift-install-aws-dev:
 .PHONY: run-operator-locally-aws-dev
 run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
+
+.PHONY: enable-workspaces
+enable-workspaces:
+	cp go.work.template go.work
+	sed -i.bak '/^replace github.com\/openshift\/hypershift\/api/d' go.mod
+	rm go.mod.bak
