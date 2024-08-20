@@ -17,7 +17,7 @@ type StatefulSetReconciler interface {
 	Volumes(cpContext ControlPlaneContext) Volumes
 }
 
-func (c *ControlPlaneWorkload) reconcileStatefulSet(cpContext ControlPlaneContext) error {
+func (c *controlPlaneWorkload) reconcileStatefulSet(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 
@@ -33,7 +33,7 @@ func (c *ControlPlaneWorkload) reconcileStatefulSet(cpContext ControlPlaneContex
 		// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
 		existingLabelSelector := statefulSet.Spec.Selector.DeepCopy()
 
-		if err := c.StatefulSetReconciler.ReconcileStatefulSet(cpContext, statefulSet); err != nil {
+		if err := c.statefulSetReconciler.ReconcileStatefulSet(cpContext, statefulSet); err != nil {
 			return err
 		}
 
@@ -46,19 +46,19 @@ func (c *ControlPlaneWorkload) reconcileStatefulSet(cpContext ControlPlaneContex
 	return nil
 }
 
-func (c *ControlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneContext, statefulSet *appsv1.StatefulSet, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) {
+func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneContext, statefulSet *appsv1.StatefulSet, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) {
 	deploymentConfig := c.defaultDeploymentConfig(cpContext, statefulSet.Spec.Replicas)
 	deploymentConfig.Resources = existingResources
 	deploymentConfig.ApplyToStatefulSet(statefulSet)
 
-	statefulSet.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(c.NeedsManagementKASAccess)
+	statefulSet.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(c.needsManagementKASAccess)
 	if existingLabelSelector != nil {
 		statefulSet.Spec.Selector = existingLabelSelector
 	}
 
-	c.StatefulSetReconciler.Volumes(cpContext).ApplyTo(&statefulSet.Spec.Template.Spec)
+	c.statefulSetReconciler.Volumes(cpContext).ApplyTo(&statefulSet.Spec.Template.Spec)
 
-	if c.KonnectivityContainerOpts != nil {
-		c.KonnectivityContainerOpts.injectKonnectivityContainer(cpContext, &statefulSet.Spec.Template.Spec)
+	if c.konnectivityContainerOpts != nil {
+		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &statefulSet.Spec.Template.Spec)
 	}
 }

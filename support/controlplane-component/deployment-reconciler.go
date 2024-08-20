@@ -17,7 +17,7 @@ type DeploymentReconciler interface {
 	Volumes(cpContext ControlPlaneContext) Volumes
 }
 
-func (c *ControlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext) error {
+func (c *controlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 
@@ -33,7 +33,7 @@ func (c *ControlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext
 		// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
 		existingLabelSelector := deployment.Spec.Selector.DeepCopy()
 
-		if err := c.DeploymentReconciler.ReconcileDeployment(cpContext, deployment); err != nil {
+		if err := c.deploymentReconciler.ReconcileDeployment(cpContext, deployment); err != nil {
 			return err
 		}
 
@@ -46,19 +46,19 @@ func (c *ControlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext
 	return nil
 }
 
-func (c *ControlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) {
+func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) {
 	deploymentConfig := c.defaultDeploymentConfig(cpContext, deployment.Spec.Replicas)
 	deploymentConfig.Resources = existingResources
 	deploymentConfig.ApplyTo(deployment)
 
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(c.NeedsManagementKASAccess)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(c.needsManagementKASAccess)
 	if existingLabelSelector != nil {
 		deployment.Spec.Selector = existingLabelSelector
 	}
 
-	c.DeploymentReconciler.Volumes(cpContext).ApplyTo(&deployment.Spec.Template.Spec)
+	c.deploymentReconciler.Volumes(cpContext).ApplyTo(&deployment.Spec.Template.Spec)
 
-	if c.KonnectivityContainerOpts != nil {
-		c.KonnectivityContainerOpts.injectKonnectivityContainer(cpContext, &deployment.Spec.Template.Spec)
+	if c.konnectivityContainerOpts != nil {
+		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &deployment.Spec.Template.Spec)
 	}
 }

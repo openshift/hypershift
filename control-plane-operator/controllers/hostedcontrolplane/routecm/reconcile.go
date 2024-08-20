@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -37,9 +36,9 @@ type RouteControllerManagerReconciler struct {
 }
 
 func NewComponent() component.ControlPlaneComponent {
-	return &component.ControlPlaneWorkload{
-		DeploymentReconciler: &RouteControllerManagerReconciler{},
-		ResourcesReconcilers: []component.GenericReconciler{
+	return component.NewDeploymentComponent(&RouteControllerManagerReconciler{}).
+		MultiZoneSpreadLabels(openShiftRouteControllerManagerLabels()).
+		ResourcesReconcilers(
 			component.NewReconcilerFor(&corev1.ConfigMap{}).
 				WithName(ConfigMapName).
 				WithReconcileFunction(ReconcileOpenShiftRouteControllerManagerConfig).
@@ -54,10 +53,8 @@ func NewComponent() component.ControlPlaneComponent {
 				WithReconcileFunction(ReconcileServiceMonitor).
 				WithPredicate(component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices)).
 				Build(),
-		},
-
-		MultiZoneSpreadLabels: openShiftRouteControllerManagerLabels(),
-	}
+		).
+		Build()
 }
 
 // Name implements controlplanecomponent.DeploymentReconciler.
@@ -101,7 +98,6 @@ func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext compone
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 		configHashAnnotation: configHash,
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image)),
 	}

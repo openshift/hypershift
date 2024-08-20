@@ -4,19 +4,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type Predicatefn func(cpContext ControlPlaneContext) bool
+type Predicate func(cpContext ControlPlaneContext) bool
 
 type GenericReconciler struct {
 	ReconcileFn func(cpContext ControlPlaneContext, resource client.Object) error
-	Manifestfn  func(hcpNamespace string) client.Object
-	Predicatefn Predicatefn
+	ManifestFn  func(hcpNamespace string) client.Object
+	PredicateFn Predicate
 }
 
 type genericReconcilerBuilder[T client.Object] struct {
 	name        string
 	forInput    T
 	reconcileFn func(cpContext ControlPlaneContext, resource T) error
-	predicatefn Predicatefn
+	predicatefn Predicate
 }
 
 func NewReconcilerFor[T client.Object](object T) *genericReconcilerBuilder[T] {
@@ -30,7 +30,7 @@ func (b *genericReconcilerBuilder[T]) WithReconcileFunction(reconcileFn func(cpC
 	return b
 }
 
-func (b *genericReconcilerBuilder[T]) WithPredicate(predicatefn Predicatefn) *genericReconcilerBuilder[T] {
+func (b *genericReconcilerBuilder[T]) WithPredicate(predicatefn Predicate) *genericReconcilerBuilder[T] {
 	b.predicatefn = predicatefn
 	return b
 }
@@ -46,19 +46,19 @@ func (b *genericReconcilerBuilder[T]) Build() GenericReconciler {
 			obj := resource.(T)
 			return b.reconcileFn(cpContext, obj)
 		},
-		Manifestfn: func(hcpNamespace string) client.Object {
+		ManifestFn: func(hcpNamespace string) client.Object {
 			object := b.forInput
 			object.SetNamespace(hcpNamespace)
 			object.SetName(b.name)
 
 			return object
 		},
-		Predicatefn: b.predicatefn,
+		PredicateFn: b.predicatefn,
 	}
 }
 
 // DisableIfAnnotationExist is a helper predicte for the common use case of disabling a resource when an annotation exists.
-func DisableIfAnnotationExist(annotation string) Predicatefn {
+func DisableIfAnnotationExist(annotation string) Predicate {
 	return func(cpContext ControlPlaneContext) bool {
 		if _, exists := cpContext.HCP.Annotations[annotation]; exists {
 			return false

@@ -917,7 +917,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// reconcile components only when kube apiserver is fully ready
-	// TOOD(Mulham): remove when dependcnies managment abstraction is implemented.
+	// TODO(Mulham): remove when dependcnies managment abstraction is implemented.
 	kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeAPIServerDeployment), kubeAPIServerDeployment); err == nil {
 		if util.IsDeploymentReady(ctx, kubeAPIServerDeployment) {

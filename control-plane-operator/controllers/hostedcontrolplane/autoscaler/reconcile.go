@@ -12,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -31,12 +32,11 @@ type AutoscalerReconciler struct {
 }
 
 func NewComponent() component.ControlPlaneComponent {
-	return &component.ControlPlaneWorkload{
-		DeploymentReconciler:     &AutoscalerReconciler{},
-		RBACReconciler:           component.NewRBACReconciler(autoscalerRoleRules()),
-		Predicate:                Predicate,
-		NeedsManagementKASAccess: true,
-	}
+	return component.NewDeploymentComponent(&AutoscalerReconciler{}).
+		WithRBAC(autoscalerRoleRules()).
+		WithPredicate(Predicate).
+		NeedsManagementKASAccess().
+		Build()
 }
 
 // Name implements controlplanecomponent.DeploymentReconciler.
@@ -79,8 +79,10 @@ func Predicate(cpContext component.ControlPlaneContext) (bool, error) {
 	}
 	// Resolve the kubeconfig secret for CAPI which the autoscaler is deployed alongside of.
 	capiKubeConfigSecret := manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID)
-	err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
-	if err != nil {
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
 		return false, fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
 	}
 
