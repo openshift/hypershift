@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/google/uuid"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 const (
@@ -185,6 +188,7 @@ type ExternalDNSDeployment struct {
 	DomainFilter      string
 	CredentialsSecret *corev1.Secret
 	TxtOwnerId        string
+	Proxy             *configv1.Proxy
 }
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
@@ -314,6 +318,11 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--azure-config-file=/etc/provider/credentials",
 		)
+	}
+
+	// Add proxy settings if cluster has a proxy
+	if o.Proxy != nil {
+		proxy.SetEnvVarsTo(&deployment.Spec.Template.Spec.Containers[0].Env, o.Proxy.Status.HTTPProxy, o.Proxy.Status.HTTPSProxy, o.Proxy.Status.NoProxy)
 	}
 
 	return deployment

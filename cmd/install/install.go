@@ -38,6 +38,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/install/assets"
@@ -608,6 +609,19 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	objects = append(objects, trustedCABundle)
 
 	if len(opts.ExternalDNSProvider) > 0 {
+		// Setting the proxy for external-dns is best-effort, ignore errors
+		proxy, _ := func() (*configv1.Proxy, error) {
+			proxy := &configv1.Proxy{}
+			client, err := util.GetClient()
+			if err != nil {
+				return nil, err
+			}
+			if err := client.Get(context.TODO(), crclient.ObjectKey{Name: "cluster"}, proxy); err != nil {
+				return nil, err
+			}
+			return proxy, nil
+		}()
+
 		externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
 			Namespace: operatorNamespace,
 		}.Build()
@@ -651,6 +665,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 			DomainFilter:      opts.ExternalDNSDomainFilter,
 			CredentialsSecret: externalDNSSecret,
 			TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
+			Proxy:             proxy,
 		}.Build()
 		objects = append(objects, externalDNSDeployment)
 
