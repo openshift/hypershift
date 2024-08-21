@@ -29,6 +29,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const SATokenIssuerSecret = "sa-token-issuer-key"
+
 func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
 	rawCreateOptions := &RawCreateOptions{
 		Location:           "eastus",
@@ -67,12 +69,15 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
 
 	if opts.TechPreviewEnabled {
 		flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
 		flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
 		flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
 		flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
+		flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
 		flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
 	}
 }
@@ -84,22 +89,25 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile             string
-	Location                    string
-	EncryptionKeyID             string
-	AvailabilityZones           []string
-	ResourceGroupName           string
-	VnetID                      string
-	NetworkSecurityGroupID      string
-	ResourceGroupTags           map[string]string
-	SubnetID                    string
-	RHCOSImage                  string
-	KMSClientID                 string
-	KMSCertName                 string
-	TechPreviewEnabled          bool
-	DNSZoneRGName               string
-	ManagedIdentitiesFile       string
-	AssignServicePrincipalRoles bool
+	CredentialsFile                  string
+	Location                         string
+	EncryptionKeyID                  string
+	AvailabilityZones                []string
+	ResourceGroupName                string
+	VnetID                           string
+	NetworkSecurityGroupID           string
+	ResourceGroupTags                map[string]string
+	SubnetID                         string
+	RHCOSImage                       string
+	KMSClientID                      string
+	KMSCertName                      string
+	TechPreviewEnabled               bool
+	DNSZoneRGName                    string
+	ManagedIdentitiesFile            string
+	DataPlaneIdentitiesFile          string
+	AssignServicePrincipalRoles      bool
+	IssuerURL                        string
+	ServiceAccountTokenIssuerKeyPath string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -249,6 +257,14 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	cluster.Spec.InfraID = o.infra.InfraID
 
+	cluster.Spec.IssuerURL = o.IssuerURL
+
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		cluster.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
+			Name: o.name + SATokenIssuerSecret,
+		}
+	}
+
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type: hyperv1.AzurePlatform,
 		Azure: &hyperv1.AzurePlatformSpec{
@@ -264,6 +280,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	if o.TechPreviewEnabled {
 		cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
+		cluster.Spec.Platform.Azure.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
 	}
 
 	if o.encryptionKey != nil {
@@ -325,6 +342,19 @@ func credentialSecret(namespace, name string) *corev1.Secret {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name + "-cloud-credentials",
+			Namespace: namespace,
+		},
+	}
+}
+
+func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
 			Namespace: namespace,
 		},
 	}
@@ -447,6 +477,8 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 }
 
 func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
+	var objects []crclient.Object
+
 	secret := credentialSecret(o.namespace, o.name)
 	secret.Data = map[string][]byte{
 		"AZURE_SUBSCRIPTION_ID": []byte(o.creds.SubscriptionID),
@@ -454,7 +486,22 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 		"AZURE_CLIENT_ID":       []byte(o.creds.ClientID),
 		"AZURE_CLIENT_SECRET":   []byte(o.creds.ClientSecret),
 	}
-	return []crclient.Object{secret}, nil
+	objects = append(objects, secret)
+
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		privateKey, err := os.ReadFile(o.ServiceAccountTokenIssuerKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		saSecret := serviceAccountTokenIssuerSecret(o.namespace, o.name+SATokenIssuerSecret)
+		saSecret.Data = map[string][]byte{
+			"key": privateKey,
+		}
+		objects = append(objects, saSecret)
+	}
+
+	return objects, nil
 }
 
 var _ core.Platform = (*CreateOptions)(nil)
@@ -522,6 +569,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		TechPreviewEnabled:          azureOpts.TechPreviewEnabled,
 		DNSZoneRG:                   azureOpts.DNSZoneRGName,
 		ManagedIdentitiesFile:       azureOpts.ManagedIdentitiesFile,
+		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
 	}, nil
 }
