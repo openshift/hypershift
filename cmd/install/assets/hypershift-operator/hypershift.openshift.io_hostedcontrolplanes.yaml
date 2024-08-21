@@ -8205,6 +8205,44 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      dataPlaneMSIClientIDs:
+                        description: |-
+                          dataPlaneMSIClientIDs contains the client IDs related to the managed identities needed for the following data
+                          plane components: image registry, CSI Disk, CSI File, ingress, and cloud network config controller.
+                        properties:
+                          cloudNetworkConfigMSIClientID:
+                            description: |-
+                              cloudNetworkConfigMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+                              with the cloud network config controller. The managed identity is expected to be in
+                              AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                          diskMSIClientID:
+                            description: |-
+                              diskMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                              the CSI Disk driver. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                          fileMSIClientID:
+                            description: |-
+                              fileMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                              the CSI File driver. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                          imageRegistryMSIClientID:
+                            description: |-
+                              imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                              the image registry controller. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                          ingressMSIClientID:
+                            description: |-
+                              IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+                              the ingress controller. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+                            type: string
+                        required:
+                        - cloudNetworkConfigMSIClientID
+                        - diskMSIClientID
+                        - fileMSIClientID
+                        - imageRegistryMSIClientID
+                        - ingressMSIClientID
+                        type: object
                       location:
                         description: |-
                           Location is the Azure region in where all the cloud infrastructure resources will be created.
@@ -8280,6 +8318,7 @@ spec:
                           rule: self == oldSelf
                     required:
                     - credentials
+                    - dataPlaneMSIClientIDs
                     - location
                     - resourceGroup
                     - subnetID

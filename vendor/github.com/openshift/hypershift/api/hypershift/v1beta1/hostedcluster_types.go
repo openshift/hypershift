@@ -1850,6 +1850,51 @@ type AzurePlatformSpec struct {
 	// +immutable
 	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// dataPlaneMSIClientIDs contains the client IDs related to the managed identities needed for the following data
+	// plane components: image registry, CSI Disk, CSI File, ingress, and cloud network config controller.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	DataPlaneMSIClientIDs *DataPlaneManagedServiceIdentities `json:"dataPlaneMSIClientIDs"`
+}
+
+type DataPlaneManagedServiceIdentities struct {
+	// imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the image registry controller. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	ImageRegistryMSIClientID string `json:"imageRegistryMSIClientID"`
+
+	// diskMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the CSI Disk driver. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	DiskMSIClientID string `json:"diskMSIClientID"`
+
+	// fileMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the CSI File driver. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	FileMSIClientID string `json:"fileMSIClientID"`
+
+	// IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+	// the ingress controller. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	IngressMSIClientID string `json:"ingressMSIClientID"`
+
+	// cloudNetworkConfigMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+	// with the cloud network config controller. The managed identity is expected to be in
+	// AzurePlatformSpec.ResourceGroupName.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	CloudNetworkConfigMSIClientID string `json:"cloudNetworkConfigMSIClientID"`
 }
 
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.
