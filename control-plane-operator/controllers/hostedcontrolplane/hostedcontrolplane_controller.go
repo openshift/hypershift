@@ -75,6 +75,8 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -3641,17 +3643,66 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				return fmt.Errorf("failed to reconcile catalogs: %w", err)
 			}
 
-			catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
-			if !overrideImages {
-				isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
-				if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-					return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
+			isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
+
+			if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
+				catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
+				if !overrideImages {
+					if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
+						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
+					}); err != nil {
+						return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
+					}
+				} else {
+					if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
+						return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
+					}
 				}
-			} else if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
-				if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
-					return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
+			} else {
+				if !overrideImages {
+					pullSecret := common.PullSecret(hcp.Namespace)
+					if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+						return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
+					}
+
+					for name, catalog := range olm.CatalogToImage {
+						imageRef, err := reference.Parse(catalog)
+						if err != nil {
+							return fmt.Errorf("failed to parse catalog image %s: %w", catalog, err)
+						}
+
+						if len(isImageRegistryOverrides) > 0 {
+							for registrySource, registryDest := range isImageRegistryOverrides {
+								if strings.Contains(imageRef.Exact(), registrySource) {
+									imageRef, err = reference.Parse(strings.Replace(imageRef.Exact(), registrySource, registryDest[0], 1))
+									if err != nil {
+										return fmt.Errorf("failed to parse registry override image %s: %w", registryDest[0], err)
+									}
+								}
+							}
+						}
+
+						listDigest, err := registryclient.GetListDigest(ctx, imageRef.Exact(), pullSecret.Data[corev1.DockerConfigJsonKey])
+						if err != nil {
+							return fmt.Errorf("failed to get manifest for image %s: %v", imageRef.Exact(), err)
+						}
+						imageRef.ID = listDigest.String()
+
+						catalogOverrides := map[string]*string{
+							"redhat-operators":    &p.RedHatOperatorsCatalogImageOverride,
+							"certified-operators": &p.CertifiedOperatorsCatalogImageOverride,
+							"community-operators": &p.CommunityOperatorsCatalogImageOverride,
+							"redhat-marketplace":  &p.RedHatMarketplaceCatalogImageOverride,
+						}
+
+						if override, exists := catalogOverrides[name]; exists {
+							if ptr.Deref(override, "") == "" {
+								*override = imageRef.Exact()
+							}
+						} else {
+							return fmt.Errorf("unknown catalog for catalog image override %s", name)
+						}
+					}
 				}
 			}
 
