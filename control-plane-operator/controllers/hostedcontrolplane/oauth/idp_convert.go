@@ -15,17 +15,23 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	kas "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/konnectivityproxy"
+	supportproxy "github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/util"
+	"golang.org/x/net/http/httpproxy"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/cache"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/net"
+	clientcmd "k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -92,7 +98,7 @@ func convertIdentityProviders(ctx context.Context, identityProviders []configv1.
 		if _, ok := providerOverrides[idp.Name]; ok {
 			providerConfigOverride = providerOverrides[idp.Name]
 		}
-		data, err := convertProviderConfigToIDPData(ctx, &idp.IdentityProviderConfig, providerConfigOverride, i, volumeMountInfo, kclient, namespace)
+		data, err := convertProviderConfigToIDPData(ctx, &idp.IdentityProviderConfig, providerConfigOverride, i, volumeMountInfo, kclient, namespace, false)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to apply IDP %s config: %v", idp.Name, err))
 			continue
@@ -135,6 +141,7 @@ func convertProviderConfigToIDPData(
 	idpVolumeMounts *IDPVolumeMountInfo,
 	kclient crclient.Client,
 	namespace string,
+	skipKonnectivityDialer bool,
 ) (*idpData, error) {
 	const missingProviderFmt string = "type %s was specified, but its configuration is missing"
 
@@ -345,7 +352,7 @@ func convertProviderConfigToIDPData(
 			openIDProvider.URLs = configOverride.URLs
 			openIDProvider.Claims = configOverride.Claims
 		} else {
-			urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA)
+			urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA, skipKonnectivityDialer)
 			if err != nil {
 				return nil, err
 			}
@@ -385,6 +392,7 @@ func convertProviderConfigToIDPData(
 				namespace,
 				openIDConfig.CA,
 				openIDConfig.ClientSecret,
+				skipKonnectivityDialer,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("error attempting password grant flow: %v", err)
@@ -420,9 +428,80 @@ func convertProviderConfigToIDPData(
 	return data, nil
 }
 
+const (
+	konnectivityClientDataCertKey = "tls.crt"
+	konnectivityClientDataKey     = "tls.key"
+	konnectivityCADataKey         = "ca.crt"
+	kubeconfigDataKey             = "kubeconfig"
+)
+
+func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, namespace string) (konnectivityproxy.ProxyDialer, error) {
+	konnectivityClientSecret := manifests.KonnectivityClientSecret(namespace)
+	if err := kclient.Get(ctx, crclient.ObjectKeyFromObject(konnectivityClientSecret), konnectivityClientSecret); err != nil {
+		return nil, fmt.Errorf("failed to get konnectivity client secret: %w", err)
+	}
+	konnectivityClientCert, exists := konnectivityClientSecret.Data[konnectivityClientDataCertKey]
+	if !exists || len(konnectivityClientCert) == 0 {
+		return nil, errors.New("konnectivity client secret has not been populated")
+	}
+
+	konnectivityClientCertKey, exists := konnectivityClientSecret.Data[konnectivityClientDataKey]
+	if !exists || len(konnectivityClientCertKey) == 0 {
+		return nil, errors.New("konnectivity client secret key has not been populated")
+	}
+
+	konnectivityCAConfigMap := manifests.KonnectivityCAConfigMap(namespace)
+	if err := kclient.Get(ctx, crclient.ObjectKeyFromObject(konnectivityCAConfigMap), konnectivityCAConfigMap); err != nil {
+		return nil, fmt.Errorf("failed to get konnectivity CA config map: %w", err)
+	}
+	konnectivityCA, exists := konnectivityCAConfigMap.Data[konnectivityCADataKey]
+	if !exists || len(konnectivityCA) == 0 {
+		return nil, errors.New("konnectivity CA config map has not been populated")
+	}
+
+	kubeconfigSecret := manifests.KASServiceKubeconfigSecret(namespace)
+	if err := kclient.Get(ctx, crclient.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
+		return nil, fmt.Errorf("failed to get kubeconfig secret: %w", err)
+	}
+	kubeconfigData, exists := kubeconfigSecret.Data[kubeconfigDataKey]
+	if !exists || len(kubeconfigData) == 0 {
+		return nil, fmt.Errorf("kubeconfig secret has not been populated")
+	}
+
+	guestClusterConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigSecret.Data["kubeconfig"])
+	if err != nil {
+		return nil, fmt.Errorf("failed to create REST config from kubeconfig: %w", err)
+	}
+
+	guestClusterClient, err := crclient.New(guestClusterConfig, crclient.Options{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client for guest cluster: %w", err)
+	}
+
+	opts := konnectivityproxy.Options{
+		CABytes:                         []byte(konnectivityCA),
+		ClientCertBytes:                 konnectivityClientCert,
+		ClientKeyBytes:                  konnectivityClientCertKey,
+		KonnectivityHost:                manifests.KonnectivityServerLocalService("").Name,
+		KonnectivityPort:                kas.KonnectivityServerLocalPort,
+		ConnectDirectlyToCloudAPIs:      false,
+		ResolveFromManagementClusterDNS: true,
+		ResolveFromGuestClusterDNS:      true,
+		ResolveBeforeDial:               false,
+		DisableResolver:                 false,
+		Client:                          guestClusterClient,
+		Log:                             ctrl.LoggerFrom(ctx),
+	}
+	konnectivityDialer, err := konnectivityproxy.NewKonnectivityDialer(opts)
+	if err != nil {
+		return nil, err
+	}
+	return konnectivityDialer, nil
+}
+
 // discoverOpenIDURLs retrieves basic information about an OIDC server with hostname
 // given by the `issuer` argument
-func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, key, namespace string, ca configv1.ConfigMapNameReference) (*osinv1.OpenIDURLs, error) {
+func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, key, namespace string, ca configv1.ConfigMapNameReference, skipKonnectivityDialer bool) (*osinv1.OpenIDURLs, error) {
 	issuer = strings.TrimRight(issuer, "/") // TODO make impossible via validation and remove
 	wellKnown := issuer + "/.well-known/openid-configuration"
 
@@ -440,7 +519,7 @@ func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, ke
 	}
 	req = req.WithContext(reqCtx)
 
-	rt, err := transportForCARef(ctx, kclient, namespace, ca.Name, key)
+	rt, err := transportForCARef(ctx, kclient, namespace, ca.Name, key, skipKonnectivityDialer)
 	if err != nil {
 		return nil, err
 	}
@@ -497,6 +576,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 	namespace string,
 	caRererence configv1.ConfigMapNameReference,
 	clientSecretReference configv1.SecretNameReference,
+	skipKonnectivityDialer bool,
 ) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	secret := &corev1.Secret{
@@ -522,7 +602,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 		return false, fmt.Errorf("the referenced secret does not contain a value for the 'clientSecret' key")
 	}
 
-	transport, err := transportForCARef(ctx, kclient, namespace, caRererence.Name, corev1.ServiceAccountRootCAKey)
+	transport, err := transportForCARef(ctx, kclient, namespace, caRererence.Name, corev1.ServiceAccountRootCAKey, skipKonnectivityDialer)
 	if err != nil {
 		return false, fmt.Errorf("couldn't get a transport for the referenced CA: %v", err)
 	}
@@ -596,37 +676,101 @@ func isValidURL(rawurl string, optional bool) bool {
 	return u.Scheme == "https" && len(u.Host) > 0 && len(u.Fragment) == 0
 }
 
-func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, name, key string) (http.RoundTripper, error) {
+func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, caName, caKey string, skipKonnectivityDialer bool) (http.RoundTripper, error) {
+	var konnectivityDialer konnectivityproxy.ProxyDialer
+	var userProxyConfig *httpproxy.Config
+	var userProxyTrustedCA string
+
 	// copy default transport
 	transport := net.SetTransportDefaults(&http.Transport{
 		TLSClientConfig: &tls.Config{},
 	})
+	roots := x509.NewCertPool()
 
-	if len(name) == 0 {
+	if !skipKonnectivityDialer {
+		var err error
+		// Build dialer for konnectivity.
+		konnectivityDialer, err = buildKonnectivityDialer(ctx, kclient, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build konnectivity dialer: %w", err)
+		}
+
+		// Fetch user Proxy info.
+		hcpList := &hyperv1.HostedControlPlaneList{}
+		if err := kclient.List(ctx, hcpList, crclient.InNamespace(namespace)); err != nil {
+			return nil, fmt.Errorf("failed to get hosted control plane list: %w", err)
+		}
+		if len(hcpList.Items) != 1 {
+			return nil, fmt.Errorf("expected one hosted control plane, got %d", len(hcpList.Items))
+		}
+		hcp := hcpList.Items[0]
+
+		if hcp.Spec.Configuration != nil {
+			if proxy := hcp.Spec.Configuration.Proxy; proxy != nil {
+				userProxyConfig = &httpproxy.Config{
+					HTTPProxy:  proxy.HTTPProxy,
+					HTTPSProxy: proxy.HTTPSProxy,
+					NoProxy:    supportproxy.DefaultNoProxy(&hcp),
+				}
+
+				if proxy.TrustedCA.Name != "" {
+					proxyTrustedCAConfigMap := &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      proxy.TrustedCA.Name,
+							Namespace: namespace,
+						},
+					}
+					if err = kclient.Get(ctx, crclient.ObjectKeyFromObject(proxyTrustedCAConfigMap), proxyTrustedCAConfigMap); err != nil {
+						return nil, fmt.Errorf("failed to get proxy trusted CA config map: %w", err)
+					}
+					userProxyTrustedCA = proxyTrustedCAConfigMap.Data["ca-bundle.crt"]
+				}
+			}
+		}
+	}
+
+	// Set konnectivity dialer values for transport.
+	if konnectivityDialer != nil {
+		transport.DialContext = konnectivityDialer.DialContext
+	}
+	if userProxyConfig != nil {
+		userProxyFunc := userProxyConfig.ProxyFunc()
+		transport.Proxy = func(req *http.Request) (*url.URL, error) {
+			return userProxyFunc(req.URL)
+		}
+	}
+	if userProxyTrustedCA != "" {
+		if ok := roots.AppendCertsFromPEM([]byte(userProxyTrustedCA)); !ok {
+			return nil, fmt.Errorf("error appending proxy trusted CA to transport RootCAs")
+		}
+		transport.TLSClientConfig.RootCAs = roots
+	}
+
+	if len(caName) == 0 {
 		return transport, nil
 	}
 
+	// Add CA to transport RootCAs.
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      caName,
 			Namespace: namespace,
 		},
 	}
 	if err := kclient.Get(ctx, crclient.ObjectKeyFromObject(cm), cm); err != nil {
 		return nil, err
 	}
-	caData := []byte(cm.Data[key])
+	caData := []byte(cm.Data[caKey])
 	if len(caData) == 0 {
-		caData = cm.BinaryData[key]
+		caData = cm.BinaryData[caKey]
 	}
 	if len(caData) == 0 {
-		return nil, fmt.Errorf("config map %s/%s has no ca data at key %s", namespace, name, key)
+		return nil, fmt.Errorf("config map %s/%s has no ca data at key %s", namespace, caName, caKey)
 	}
 
-	roots := x509.NewCertPool()
 	if ok := roots.AppendCertsFromPEM(caData); !ok {
 		// avoid logging data that could contain keys
-		return nil, errors.New("error loading cert pool from ca data")
+		return nil, errors.New("error appending ca to transport RootCAs")
 	}
 	transport.TLSClientConfig.RootCAs = roots
 	return transport, nil
