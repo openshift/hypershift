@@ -24,7 +24,7 @@ const (
 	configKey = "config.yaml"
 )
 
-func ReconcileOpenShiftRouteControllerManagerConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func (r *RouteControllerManagerReconciler) reconcileConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
 	hcp := cpContext.HCP
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
@@ -40,7 +40,7 @@ func ReconcileOpenShiftRouteControllerManagerConfig(cpContext component.ControlP
 	if hcp.Spec.Configuration != nil {
 		networkConfig = hcp.Spec.Configuration.Network
 	}
-	if err := reconcileConfig(config, minTLSVersion(hcp), cipherSuites(hcp), networkConfig); err != nil {
+	if err := reconcileConfig(config, minTLSVersion(hcp), cipherSuites(hcp), networkConfig, r.Volumes(cpContext)); err != nil {
 		return err
 	}
 	configStr, err := util.SerializeResource(config, api.Scheme)
@@ -51,7 +51,7 @@ func ReconcileOpenShiftRouteControllerManagerConfig(cpContext component.ControlP
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string, networkConfig *configv1.NetworkSpec) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string, networkConfig *configv1.NetworkSpec, volumes component.Volumes) error {
 	cpath := func(volume, file string) string {
 		dir := volumes.Path(routeOCMContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -73,8 +73,8 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLS
 		ServingInfo: configv1.ServingInfo{
 			BindAddress: fmt.Sprintf("0.0.0.0:%d", servingPort),
 			CertInfo: configv1.CertInfo{
-				CertFile: cpath(routeOCMVolumeServingCert().Name, corev1.TLSCertKey),
-				KeyFile:  cpath(routeOCMVolumeServingCert().Name, corev1.TLSPrivateKeyKey),
+				CertFile: cpath(servingCertVolumeName, corev1.TLSCertKey),
+				KeyFile:  cpath(servingCertVolumeName, corev1.TLSPrivateKeyKey),
 			},
 			ClientCA:      cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey),
 			MinTLSVersion: minTLSVersion,

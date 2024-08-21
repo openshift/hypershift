@@ -42,7 +42,8 @@ func TestReconcileOpenShiftRouteControllerManagerConfig(t *testing.T) {
 			Namespace: hcp.Namespace,
 		},
 	}
-	if err := ReconcileOpenShiftRouteControllerManagerConfig(controlplanecomponent.ControlPlaneContext{HCP: hcp}, configMap); err != nil {
+	recnciler := &RouteControllerManagerReconciler{}
+	if err := recnciler.reconcileConfigMap(controlplanecomponent.ControlPlaneContext{HCP: hcp}, configMap); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	configMapYaml, err := util.SerializeResource(configMap, api.Scheme)

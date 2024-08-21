@@ -2,6 +2,7 @@ package autoscaler
 
 import (
 	"fmt"
+	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -24,6 +25,9 @@ const (
 	autoscalerName = "cluster-autoscaler"
 
 	ImageStreamAutoscalerImage = "cluster-autoscaler"
+
+	kubeconfigVolumeName = "kubeconfig"
+	kubeconfigKey        = "target-kubeconfig"
 )
 
 var _ component.DeploymentReconciler = &AutoscalerReconciler{}
@@ -51,12 +55,12 @@ func (a *AutoscalerReconciler) Volumes(cpContext component.ControlPlaneContext) 
 		{
 			// TODO: should the key be published on status?
 			Key:  "value",
-			Path: "target-kubeconfig",
+			Path: kubeconfigKey,
 		},
 	}
 
 	return component.Volumes{
-		"target-kubeconfig": component.Volume{
+		kubeconfigVolumeName: component.Volume{
 			Source: volumeSource,
 			Mounts: map[string]string{
 				autoscalerName: "/mnt/kubeconfig",
@@ -94,6 +98,7 @@ func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPl
 	hcp := cpContext.HCP
 	options := hcp.Spec.Autoscaling
 
+	volumes := a.Volumes(cpContext)
 	clusterAutoscalerImage := cpContext.ReleaseImageProvider.GetImage(ImageStreamAutoscalerImage)
 	availabilityProberImage := cpContext.ReleaseImageProvider.GetImage(util.AvailabilityProberImageName)
 
@@ -108,7 +113,7 @@ func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPl
 		"--expander=priority,least-waste",
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+		fmt.Sprintf("--kubeconfig=%s", path.Join(volumes.Path(autoscalerName, kubeconfigVolumeName), kubeconfigKey)),
 		"--clusterapi-cloud-config-authoritative",
 		// TODO (alberto): Is this a fair assumption?
 		// There's currently pods with local storage e.g grafana and image-registry.

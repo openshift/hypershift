@@ -26,6 +26,10 @@ const (
 
 	configHashAnnotation       = "openshift-route-controller-manager.hypershift.openshift.io/config-hash"
 	servingPort          int32 = 8443
+
+	configVolumeName      = "config"
+	kubeconfigVolumeName  = "kubeconfig"
+	servingCertVolumeName = "serving-cert"
 )
 
 var _ component.DeploymentReconciler = &RouteControllerManagerReconciler{}
@@ -34,12 +38,13 @@ type RouteControllerManagerReconciler struct {
 }
 
 func NewComponent() component.ControlPlaneComponent {
-	return component.NewDeploymentComponent(&RouteControllerManagerReconciler{}).
+	reconciler := &RouteControllerManagerReconciler{}
+	return component.NewDeploymentComponent(reconciler).
 		MultiZoneSpreadLabels(openShiftRouteControllerManagerLabels()).
 		ResourcesReconcilers(
 			component.NewReconcilerFor(&corev1.ConfigMap{}).
 				WithName(ConfigMapName).
-				WithReconcileFunction(ReconcileOpenShiftRouteControllerManagerConfig).
+				WithReconcileFunction(reconciler.reconcileConfigMap).
 				Build(),
 			component.NewReconcilerFor(&corev1.Service{}).
 				WithName(ComponentName).
@@ -68,14 +73,8 @@ func (r *RouteControllerManagerReconciler) Name() string {
 // ReconcileDeployment implements controlplanecomponent.DeploymentReconciler.
 func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
 	image := cpContext.ReleaseImageProvider.GetImage("route-controller-manager")
+	volumes := r.Volumes(cpContext)
 
-	maxSurge := intstr.FromInt(0)
-	maxUnavailable := intstr.FromInt(1)
-	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-		MaxSurge:       &maxSurge,
-		MaxUnavailable: &maxUnavailable,
-	}
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: openShiftRouteControllerManagerLabels(),
@@ -83,27 +82,28 @@ func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext compone
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftRouteControllerManagerLabels()
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
-		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image)),
+		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image, volumes)),
 	}
 
 	return nil
 }
 
-var (
-	volumes = component.Volumes{
-		routeOCMVolumeConfig().Name: component.Volume{
+// Volumes implements controlplanecomponent.DeploymentReconciler.
+func (r *RouteControllerManagerReconciler) Volumes(cpContext component.ControlPlaneContext) component.Volumes {
+	return component.Volumes{
+		configVolumeName: component.Volume{
 			Source: component.ConfigMapVolumeSource(ConfigMapName),
 			Mounts: map[string]string{
 				routeOCMContainerMain().Name: "/etc/kubernetes/config",
 			},
 		},
-		routeOCMVolumeServingCert().Name: component.Volume{
+		servingCertVolumeName: component.Volume{
 			Source: component.SecretVolumeSource(manifests.OpenShiftRouteControllerManagerCertSecret("").Name),
 			Mounts: map[string]string{
 				routeOCMContainerMain().Name: "/etc/kubernetes/certs",
 			},
 		},
-		routeOCMVolumeKubeconfig().Name: component.Volume{
+		kubeconfigVolumeName: component.Volume{
 			Source: component.SecretVolumeSource(manifests.KASServiceKubeconfigSecret("").Name),
 			Mounts: map[string]string{
 				routeOCMContainerMain().Name: "/etc/kubernetes/secrets/svc-kubeconfig",
@@ -116,11 +116,6 @@ var (
 			},
 		},
 	}
-)
-
-// Volumes implements controlplanecomponent.DeploymentReconciler.
-func (r *RouteControllerManagerReconciler) Volumes(cpContext component.ControlPlaneContext) component.Volumes {
-	return volumes
 }
 
 func openShiftRouteControllerManagerLabels() map[string]string {
@@ -136,16 +131,16 @@ func routeOCMContainerMain() *corev1.Container {
 	}
 }
 
-func buildRouteOCMContainerMain(image string) func(*corev1.Container) {
+func buildRouteOCMContainerMain(image string, volumes component.Volumes) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"route-controller-manager"}
 		c.Args = []string{
 			"start",
 			"--config",
-			path.Join(volumes.Path(c.Name, routeOCMVolumeConfig().Name), configKey),
+			path.Join(volumes.Path(c.Name, configVolumeName), configKey),
 			"--kubeconfig",
-			path.Join(volumes.Path(c.Name, routeOCMVolumeKubeconfig().Name), kas.KubeconfigKey),
+			path.Join(volumes.Path(c.Name, kubeconfigVolumeName), kas.KubeconfigKey),
 			"--namespace=openshift-route-controller-manager",
 		}
 		c.Ports = []corev1.ContainerPort{
@@ -197,23 +192,5 @@ func buildRouteOCMContainerMain(image string) func(*corev1.Container) {
 			FailureThreshold: 10,
 			TimeoutSeconds:   5,
 		}
-	}
-}
-
-func routeOCMVolumeConfig() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "config",
-	}
-}
-
-func routeOCMVolumeKubeconfig() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "kubeconfig",
-	}
-}
-
-func routeOCMVolumeServingCert() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "serving-cert",
 	}
 }

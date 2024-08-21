@@ -47,6 +47,9 @@ func (c *controlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext
 }
 
 func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) error {
+	// apply volumes first, as deploymentConfig checks for local volumes to set PodSafeToEvictLocalVolumesKey annotation
+	c.deploymentReconciler.Volumes(cpContext).ApplyTo(&deployment.Spec.Template.Spec)
+
 	deploymentConfig := c.defaultDeploymentConfig(cpContext, deployment.Spec.Replicas)
 	deploymentConfig.Resources = existingResources
 	deploymentConfig.ApplyTo(deployment)
@@ -55,8 +58,6 @@ func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneCo
 	if existingLabelSelector != nil {
 		deployment.Spec.Selector = existingLabelSelector
 	}
-
-	c.deploymentReconciler.Volumes(cpContext).ApplyTo(&deployment.Spec.Template.Spec)
 
 	if c.konnectivityContainerOpts != nil {
 		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &deployment.Spec.Template.Spec)
