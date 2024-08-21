@@ -3150,8 +3150,34 @@ spec:
                             - network
                             - nodePoolManagement
                             type: object
+                          dataPlane:
+                            description: |-
+                              dataPlane contains the client IDs of all the managed identities on the data plane needing to authenticate with
+                              Azure's API.
+                            properties:
+                              diskMSIClientID:
+                                description: diskMSIClientID is the client ID of a
+                                  pre-existing managed identity ID associated with
+                                  the CSI Disk driver.
+                                type: string
+                              fileMSIClientID:
+                                description: fileMSIClientID is the client ID of a
+                                  pre-existing managed identity ID associated with
+                                  the CSI File driver.
+                                type: string
+                              imageRegistryMSIClientID:
+                                description: |-
+                                  imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
+                                  registry controller.
+                                type: string
+                            required:
+                            - diskMSIClientID
+                            - fileMSIClientID
+                            - imageRegistryMSIClientID
+                            type: object
                         required:
                         - controlPlane
+                        - dataPlane
                         type: object
                       resourceGroup:
                         default: default

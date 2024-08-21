@@ -3284,6 +3284,20 @@ ControlPlaneManagedIdentities
 authenticate with Azure&rsquo;s API.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>dataPlane</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.DataPlaneManagedIdentities">
+DataPlaneManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>dataPlane contains the client IDs of all the managed identities on the data plane needing to authenticate with
+Azure&rsquo;s API.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
@@ -4519,6 +4533,59 @@ string
 <p>privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
 This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
 Once set, this value is immutable.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###DataPlaneManagedIdentities { #hypershift.openshift.io/v1beta1.DataPlaneManagedIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">AzureResourceManagedIdentities</a>)
+</p>
+<p>
+<p>DataPlaneManagedIdentities contains the client IDs of all the managed identities on the data plane needing to
+authenticate with Azure&rsquo;s API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>imageRegistryMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
+registry controller.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>diskMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI Disk driver.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fileMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>fileMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI File driver.</p>
 </td>
 </tr>
 </tbody>
