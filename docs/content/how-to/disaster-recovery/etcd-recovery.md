@@ -4,6 +4,24 @@
 
 Etcd pods for hosted clusters run as part of a statefulset (etcd). The statefulset relies on persistent storage to store etcd data per member. In the case of a HighlyAvailable control plane, the size of the statefulset is 3 and each member (etcd-N) has its own PersistentVolumeClaim (etcd-data-N).
 
+### Automatic Recovery of Removed Members
+
+In certain circumstances, an etcd member is removed from the cluster. This could be due to networking issues (sdn or dns of management cluster). The hypershift operator can automatically recover from this situation by enabling automatic etcd recovery (--enable-etcd-recovery), which is set to true by default.
+
+If this is enabled, then the HyperShift operator will attempt to recover the health of an etcd cluster if the following conditions are met:
+
+* The hosted cluster is configured to run HighlyAvailable (`spec.controllerAvailabilityPolicy = HighlyAvailable`)
+* Etcd is managed by HyperShift (`spec.etcd.managementType = Managed`)
+* Only one member of the etcd cluster is failing (quorum is not lost)
+
+The recovery procedure consists of the following:
+* If a member has been removed from the etcd cluster, re-add the missing member by executing the `member add` command
+* Delete the etcd member's pod and pvc
+
+Once this is done, the `reset-member` init container of the removed pod should be able to complete the recovery.
+
+To disable this default behavior, install HyperShift with `--enable-etcd-recovery=false`
+
 ### Checking cluster health
 
 Execute into a running etcd pod:

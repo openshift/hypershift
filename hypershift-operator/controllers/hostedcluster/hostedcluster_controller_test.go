@@ -1077,7 +1077,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
 			return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
 		},
-		now: metav1.Now,
+		EnableEtcdRecovery: true,
+		now:                metav1.Now,
 	}
 
 	r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
@@ -1099,9 +1100,14 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	watchedResources := sets.String{}
 	for _, resource := range r.managedResources() {
 		resourceType := fmt.Sprintf("%T", resource)
-		// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
-		// but never create an Endpoints resource
-		if resourceType == "*v1.Endpoints" {
+		switch resourceType {
+		case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet":
+			// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
+			// but never create an Endpoints resource
+
+			// We only create a Job when etcd recovery is needed
+
+			// We don't create a StatefulSet but we watch them for etcd health check and recovery
 			continue
 		}
 		watchedResources.Insert(resourceType)

@@ -62,7 +62,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	k8sutilspointer "k8s.io/utils/pointer"
-	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -70,7 +69,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -82,7 +80,6 @@ import (
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
@@ -138,6 +135,11 @@ const (
 
 	etcdEncKeyPostfix    = "-etcd-encryption-key"
 	managedServiceEnvVar = "MANAGED_SERVICE"
+
+	jobHostedClusterNameLabel      = "hypershift.openshift.io/cluster-name"
+	jobHostedClusterNamespaceLabel = "hypershift.openshift.io/cluster-namespace"
+
+	etcdCheckRequeueInterval = 10 * time.Second
 )
 
 var (
@@ -192,6 +194,8 @@ type HostedClusterReconciler struct {
 	CertRotationScale time.Duration
 
 	EnableCVOManagementClusterMetricsAccess bool
+
+	EnableEtcdRecovery bool
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -252,6 +256,13 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
+	}
+
+	if r.EnableEtcdRecovery {
+		managedResources = append(managedResources, []client.Object{
+			&appsv1.StatefulSet{},
+			&batchv1.Job{},
+		}...)
 	}
 	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -1463,10 +1474,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Reconcile the ETCD Recovery member
-	if hcluster.Spec.Etcd.ManagementType == hyperv1.Managed {
-		if err := r.reconcileETCDMemberRecovery(ctx, hcluster, createOrUpdate); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile etcd recovery member: %w", err)
+	// Reconcile the ETCD member recovery
+	var requeueAfter *time.Duration
+	if r.EnableEtcdRecovery &&
+		hcluster.Spec.Etcd.ManagementType == hyperv1.Managed &&
+		hcluster.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		var err error
+		if requeueAfter, err = r.reconcileETCDMemberRecovery(ctx, hcluster, createOrUpdate); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to perform etcd member recovery: %w", err)
 		}
 	}
 
@@ -1786,7 +1801,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	log.Info("successfully reconciled")
-	return ctrl.Result{}, nil
+	result := ctrl.Result{}
+	if requeueAfter != nil {
+		result.RequeueAfter = *requeueAfter
+	}
+	return result, nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
@@ -2338,228 +2357,6 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 	}
 
 	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
-}
-
-func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN) error {
-	log := ctrl.LoggerFrom(ctx)
-	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-
-	// Preliminary checks to see if we need to proceed with the recovery procedure
-	if hcluster.Spec.ControllerAvailabilityPolicy != hyperv1.HighlyAvailable {
-		log.Info("skipping etcd member recovery procedure because the cluster is not HA")
-		if err := r.cleanupEtcdRecoveryObjects(ctx, hcluster); err != nil {
-			return fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
-		}
-		return nil
-	}
-
-	etcdPodList := &corev1.PodList{}
-	if err := r.List(ctx, etcdPodList, crclient.InNamespace(hcpNS), crclient.MatchingLabels{
-		"app": "etcd",
-	}); err != nil {
-		return fmt.Errorf("failed to list etcd pods: %w", err)
-	}
-
-	var failingEtcdPod *corev1.Pod
-	for _, pod := range etcdPodList.Items {
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 && containerStatus.Name == "etcd" {
-				log.Info("etcd container is in waiting state and has been restarted, triggering recovery procedure")
-				failingEtcdPod = &pod
-			}
-		}
-	}
-
-	// Passed more than 3 minutes since the pod creation time
-	// requeue
-	if (metav1.Now().Sub(failingEtcdPod.CreationTimestamp.Time)) < 3*time.Minute {
-		log.Info("waiting for several minutes in order to verify if ETCD is available")
-		return nil
-	}
-
-	log.Info("there are sympthoms of ETCD cluster degradation, triggering recovery procedure")
-
-	// ETCD Recovery ServiceAccount
-	recoverySA := etcdrecoverymanifests.EtcdRecoveryServiceAccount(hcpNS)
-	if _, err := createOrUpdate(ctx, r.Client, recoverySA, func() error {
-		hyperutil.EnsurePullSecret(recoverySA, common.PullSecret("").Name)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd-recovery Job service account: %w", err)
-	}
-
-	// Grab the ETCD endpoints
-	etcdEPs, err := getEtcdEndpoints(ctx, r.Client, hcpNS)
-	if err != nil {
-		return fmt.Errorf("failed to get etcd endpoints: %w", err)
-	}
-
-	// Check the recovery job
-	recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
-	exists, finished, ok, err := r.checkEtcdRecoveryJobCompletion(ctx, recoveryJob)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to check etcd recovery job completion: %w", err)
-		}
-	}
-
-	// Reconcile ETCD Recovery Job
-	if !exists {
-		if _, err := createOrUpdate(ctx, r.Client, recoveryJob, func() error {
-			return r.reconcileEtcdRecoveryJob(recoveryJob, recoverySA, etcdEPs)
-		}); err != nil {
-			return fmt.Errorf("failed to create etcd recovery job: %w", err)
-		}
-	}
-
-	if !finished {
-		return fmt.Errorf("waiting for etcd recovery job to complete")
-	}
-
-	if !ok {
-		// Create metric to alert on this case
-		return fmt.Errorf("etcd recovery job failed")
-	}
-
-	// Cleanup ETCD Recovery objects
-	if err := r.cleanupEtcdRecoveryObjects(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
-	}
-
-	return nil
-}
-
-// checkEtcdRecoveryJobCompletion checks the status of the ETCD recovery job and returns 3 booleans:
-// - The first boolean indicates if the job exists or not.
-// - The second boolean indicates if the job has finished or not.
-// - The third boolean indicates if the job has completed successfully.
-func (r *HostedClusterReconciler) checkEtcdRecoveryJobCompletion(ctx context.Context, job *batchv1.Job) (bool, bool, bool, error) {
-	log := ctrl.LoggerFrom(ctx)
-
-	// Check the job's status
-	if err := r.Get(ctx, client.ObjectKeyFromObject(job), job); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, false, false, nil
-		}
-
-		return false, false, false, fmt.Errorf("failed to get etcd recovery job: %w", err)
-	}
-
-	// Job failed
-	if job.Status.Failed > 0 {
-		return true, true, false, fmt.Errorf("etcd recovery job failed")
-	}
-
-	// Job still running
-	if job.Status.Succeeded == 0 {
-		return true, false, false, nil
-	}
-
-	log.Info("etcd recovery job completed successfully")
-	return true, true, true, nil
-}
-
-func (r *HostedClusterReconciler) cleanupEtcdRecoveryObjects(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-
-	// ETCD Recovery ServiceAccount cleanup
-	recoverySA := etcdrecoverymanifests.EtcdRecoveryServiceAccount(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoverySA); err != nil {
-		return fmt.Errorf("failed to cleanup etcd-recovery job service account: %w", err)
-	}
-
-	// Reconcile ETCD Recovery Job cleanup
-	recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
-	if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, recoveryJob); err != nil {
-		return fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
-	}
-
-	return nil
-}
-
-func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, recoverySA *corev1.ServiceAccount, etcdEndpoints string) error {
-	job.Spec = batchv1.JobSpec{
-		Template: corev1.PodTemplateSpec{
-			Spec: corev1.PodSpec{
-				Containers: []corev1.Container{
-					{
-						Name:            "etcd-recovery",
-						Image:           "quay.io/jparrill/hypershift:OCPBUGS-24400v3-3",
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Command: []string{
-							"/usr/bin/hypershift-operator",
-						},
-						Args: []string{
-							"--etcd-endpoints",
-							etcdEndpoints,
-							"--etcd-ca-cert",
-							"/etc/etcd/tls/etcd-ca/ca.crt",
-							"--etcd-client-cert",
-							"/etc/etcd/tls/client/etcd-client.crt",
-							"--etcd-client-key",
-							"/etc/etcd/tls/client/etcd-client.key",
-							"recover",
-						},
-						Env: []corev1.EnvVar{
-							{
-								Name:  "NAMESPACE",
-								Value: job.Namespace,
-							},
-						},
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								MountPath: "/etc/etcd/tls/client",
-								Name:      "client-tls",
-							},
-							{
-								MountPath: "/etc/etcd/tls/etcd-ca",
-								Name:      "etcd-ca",
-							},
-							{
-								MountPath: "/root/.kube/config",
-								Name:      "kubeconfig",
-							},
-						},
-					},
-				},
-				RestartPolicy:      corev1.RestartPolicyNever,
-				ServiceAccountName: recoverySA.Name,
-				Volumes: []corev1.Volume{
-					{
-						Name: "client-tls",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName:  cpomanifests.EtcdClientSecret("").Name,
-								DefaultMode: ptr.To(int32(420)),
-							},
-						},
-					},
-					{
-						Name: "etcd-ca",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: cpomanifests.EtcdSignerCAConfigMap("").Name,
-								},
-								DefaultMode: ptr.To(int32(420)),
-							},
-						},
-					},
-					{
-						Name: "kubeconfig",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName:  cpomanifests.KASServiceKubeconfigSecret("").Name,
-								DefaultMode: ptr.To(int32(420)),
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	return nil
 }
 
 // reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
@@ -4137,6 +3934,35 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 				}
 			}
 		}
+		if _, isStatefulset := obj.(*appsv1.StatefulSet); isStatefulset {
+			if obj.GetName() != "etcd" {
+				return []reconcile.Request{}
+			}
+			hcpList := &hyperv1.HostedControlPlaneList{}
+			if err := c.List(ctx, hcpList, client.InNamespace(obj.GetNamespace())); err != nil {
+				log.Error(err, "failed to list hcp")
+				return []reconcile.Request{}
+			}
+			if len(hcpList.Items) == 1 {
+				hcAnnotation := hcpList.Items[0].Annotations[HostedClusterAnnotation]
+				if hcAnnotation != "" {
+					return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
+				}
+			}
+			return []reconcile.Request{}
+		}
+		if _, isJob := obj.(*batchv1.Job); isJob {
+			if obj.GetName() != etcdrecoverymanifests.EtcdRecoveryJob("").Name {
+				return []reconcile.Request{}
+			}
+			name := obj.GetLabels()[jobHostedClusterNameLabel]
+			namespace := obj.GetLabels()[jobHostedClusterNamespaceLabel]
+			if name != "" && namespace != "" {
+				return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: name, Namespace: namespace}}}
+			}
+			return []reconcile.Request{}
+		}
+
 		var hostedClusterName string
 		if obj.GetAnnotations() != nil {
 			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
@@ -5518,29 +5344,4 @@ func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditi
 	}
 
 	return nil
-}
-
-func getEtcdEndpoints(ctx context.Context, c client.Client, namespace string) (string, error) {
-	etcdEndpoints := make([]string, 0)
-
-	etcd0Pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      "etcd-0",
-		},
-	}
-	if err := c.Get(ctx, crclient.ObjectKeyFromObject(etcd0Pod), etcd0Pod); err != nil {
-		return "", fmt.Errorf("failed to get etcd-0 pod: %w", err)
-	}
-
-	for _, envVars := range etcd0Pod.Spec.Containers[0].Env {
-		if envVars.Name == "INITIAL_CLUSTER" {
-			rawEtcdEndpoints := strings.Split(envVars.Value, ",")
-			for _, rawEtcdEndpoint := range rawEtcdEndpoints {
-				etcdEndpoints = append(etcdEndpoints, strings.Split(rawEtcdEndpoint, "=")[1])
-			}
-		}
-	}
-
-	return strings.Join(etcdEndpoints, ","), nil
 }
