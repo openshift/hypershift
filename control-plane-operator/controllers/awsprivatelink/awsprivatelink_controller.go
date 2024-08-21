@@ -577,7 +577,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	for _, recordName := range recordNames {
 		fqdn := fmt.Sprintf("%s.%s", recordName, zoneName)
 		fqdns = append(fqdns, fqdn)
-		err = createRecord(ctx, route53Client, zoneID, fqdn, *(endpointDNSEntries[0].DnsName))
+		err = CreateRecord(ctx, route53Client, zoneID, fqdn, *(endpointDNSEntries[0].DnsName), "CNAME")
 		if err != nil {
 			return err
 		}
@@ -751,7 +751,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	for _, fqdn := range awsEndpointService.Status.DNSNames {
 		if fqdn != "" && zoneID != "" {
-			record, err := findRecord(ctx, route53Client, zoneID, fqdn)
+			record, err := FindRecord(ctx, route53Client, zoneID, fqdn, "CNAME")
 			if err != nil {
 				if awsErr, ok := err.(awserr.Error); ok {
 					if awsErr.Code() == route53.ErrCodeNoSuchHostedZone {
@@ -763,7 +763,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 				return false, err
 			}
 			if record != nil {
-				err = deleteRecord(ctx, route53Client, zoneID, record)
+				err = DeleteRecord(ctx, route53Client, zoneID, record)
 				if err != nil {
 					return false, err
 				}
