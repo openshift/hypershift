@@ -279,11 +279,11 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = ptr.To(true)
 	}
 
-	if kvPlatform.NodeSelector != nil && len(kvPlatform.NodeSelector) > 0 {
+	if len(kvPlatform.NodeSelector) > 0 {
 		template.Spec.Template.Spec.NodeSelector = kvPlatform.NodeSelector
 	}
 
-	if kvPlatform.KubevirtHostDevices != nil && len(kvPlatform.KubevirtHostDevices) > 0 {
+	if len(kvPlatform.KubevirtHostDevices) > 0 {
 		hostDevices := []kubevirtv1.HostDevice{}
 		for _, hostDevice := range kvPlatform.KubevirtHostDevices {
 			for i := 1; i <= hostDevice.Count; i++ {

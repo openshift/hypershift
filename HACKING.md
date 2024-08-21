@@ -111,3 +111,31 @@ Then update the associated CRD files:
 ```shell
 $ make api
 ```
+
+### How to use go workspaces
+
+Create a directory that will be the parent of the hypershift
+code repository:
+
+```shell
+$ mkdir hypershift_ws
+```
+
+Under that directory, either move an existing hypershift repository or just clone hypershift again
+
+```shell
+$ cd hypershift_ws
+$ git clone git@github.com:openshift/hypershift
+```
+
+Initialize the go workspace
+```shell
+go work init
+go work use ./hypershift
+go work use ./hypershift/api
+go work sync
+go work vendor
+```
+
+Now when running vscode, open the workspace directory to work
+with hypershift code.

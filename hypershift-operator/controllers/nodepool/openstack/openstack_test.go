@@ -102,7 +102,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 				return
 			}
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
-				t.Errorf(cmp.Diff(tc.expected, result))
+				t.Error(cmp.Diff(tc.expected, result))
 			}
 		})
 	}
