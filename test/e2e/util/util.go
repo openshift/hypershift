@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -17,6 +18,9 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -33,6 +37,7 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	kapierror "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -1378,8 +1383,109 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 	})
 }
 
+func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
+	t.Helper()
+	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	defaultIngressRouterService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "router-default",
+			Namespace: "openshift-ingress",
+		},
+	}
+
+	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		getErr := guestClient.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressRouterService), defaultIngressRouterService)
+		if apierrors.IsNotFound(getErr) {
+			return false, nil
+		}
+		if len(defaultIngressRouterService.Status.LoadBalancer.Ingress) == 0 {
+			return false, nil
+		}
+		return getErr == nil, err
+	}); err != nil {
+		return "", fmt.Errorf("router-default service did't become available: %v", err)
+	}
+
+	routerDefaultIP := defaultIngressRouterService.Status.LoadBalancer.Ingress[0].IP
+	if routerDefaultIP == "" {
+		return "", fmt.Errorf("router-default service does not have an IP")
+	}
+
+	t.Logf("router-default service IP: %s", routerDefaultIP)
+	return routerDefaultIP, nil
+}
+
+func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
+	t.Helper()
+	g := NewWithT(t)
+
+	t.Logf("Creating Ingress Route53 Record for HostedCluster %s", hostedCluster.Name)
+	if clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile == "" {
+		t.Skip("AWS credentials file is not provided")
+	}
+	// This is hardcoded too in aws CreateInfraOptions
+	awsRegion := "us-east-1"
+
+	routerDefaultIP, err := getIngressRouterDefaultIP(t, ctx, client, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get router-default service IP")
+
+	awsSession, err := clusterOpts.AWSPlatform.Credentials.GetSession("e2e-openstack-dns-record-on-aws", nil, awsRegion)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create AWS session")
+
+	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	g.Expect(route53Client).ToNot(BeNil(), "failed to create Route53 client")
+
+	clusterName := hostedCluster.Name
+	baseDomain := hostedCluster.Spec.DNS.BaseDomain
+	zoneID, err := awsinfra.LookupZone(ctx, route53Client, hostedCluster.Spec.DNS.BaseDomain, false)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to lookup Route53 hosted zone %s", baseDomain)
+
+	err = awsprivatelink.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, "A")
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create Route53 record")
+	t.Logf("Created Route53 record for HostedCluster %s: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
+}
+
+func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
+	t.Helper()
+	g := NewWithT(t)
+
+	t.Logf("Deleting Ingress Route53 Records for HostedCluster %s", hostedCluster.Name)
+	if clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile == "" {
+		t.Skip("AWS credentials file is not provided")
+	}
+	// This is hardcoded too in aws CreateInfraOptions
+	awsRegion := "us-east-1"
+
+	awsSession, err := clusterOpts.AWSPlatform.Credentials.GetSession("e2e-openstack-dns-record-on-aws", nil, awsRegion)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create AWS session")
+
+	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	g.Expect(route53Client).ToNot(BeNil(), "failed to create Route53 client")
+
+	clusterName := hostedCluster.Name
+	baseDomain := hostedCluster.Spec.DNS.BaseDomain
+	zoneID, err := awsinfra.LookupZone(ctx, route53Client, hostedCluster.Spec.DNS.BaseDomain, false)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to lookup Route53 hosted zone %s", baseDomain)
+
+	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, "A")
+	g.Expect(err).ToNot(HaveOccurred(), "failed to find Route53 record %s", "*.apps."+clusterName+"."+baseDomain)
+
+	if len(record.ResourceRecords) == 0 {
+		t.Logf("Route53 record for HostedCluster %s not found: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
+	} else {
+		err = awsprivatelink.DeleteRecord(ctx, route53Client, zoneID, record)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to delete Route53 record %s", "*.apps."+clusterName+"."+baseDomain)
+		t.Logf("Deleted Route53 record for HostedCluster %s: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
+	}
+}
+
 func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	g := NewWithT(t)
+
+	if hostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform && clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
+		createIngressRoute53Record(t, ctx, client, hostedCluster, clusterOpts)
+	}
 
 	// Sanity check the cluster by waiting for the nodes to report ready
 	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
