@@ -272,7 +272,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 			}
 			actualImage := updated.Spec.ReleaseImage
 			if !equality.Semantic.DeepEqual(test.ExpectedImage, actualImage) {
-				t.Errorf(cmp.Diff(test.ExpectedImage, actualImage))
+				t.Error(cmp.Diff(test.ExpectedImage, actualImage))
 			}
 		})
 	}
@@ -349,7 +349,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			actualCondition.Reason = ""
 			actualCondition.Message = ""
 			if !equality.Semantic.DeepEqual(test.ExpectedCondition, actualCondition) {
-				t.Errorf(cmp.Diff(test.ExpectedCondition, actualCondition))
+				t.Error(cmp.Diff(test.ExpectedCondition, actualCondition))
 			}
 		})
 	}

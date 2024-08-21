@@ -250,7 +250,10 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.17.1 // indirect
 )
 
-replace github.com/google/cel-go => github.com/google/cel-go v0.17.7
+replace (
+	github.com/google/cel-go => github.com/google/cel-go v0.17.7
+	github.com/openshift/hypershift/api => ./api
+)
 
 // These are because of github.com/openshift/cluster-node-tuning-operator@v0.0.0-20240131125539-0e319439e65a
 replace (

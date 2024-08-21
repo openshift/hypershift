@@ -2893,7 +2893,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		if err != nil {
 			return fmt.Errorf("failed to get user oauth metadata configmap: %w", err)
 		}
-		if userOauthMetadataConfigMap.Data == nil || len(userOauthMetadataConfigMap.Data) == 0 {
+		if len(userOauthMetadataConfigMap.Data) == 0 {
 			return fmt.Errorf("user oauth metadata configmap %s has no data", userOauthMetadataConfigMap.Name)
 		}
 		var ok bool
