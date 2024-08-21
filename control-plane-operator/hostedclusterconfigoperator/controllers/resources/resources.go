@@ -12,7 +12,6 @@ import (
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -1492,26 +1491,31 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		}
 
 		secretData := map[string][]byte{
-			"azure_client_id":       referenceCredentialsSecret.Data["AZURE_CLIENT_ID"],
-			"azure_client_secret":   referenceCredentialsSecret.Data["AZURE_CLIENT_SECRET"],
-			"azure_region":          []byte(hcp.Spec.Platform.Azure.Location),
-			"azure_resource_prefix": []byte(hcp.Name + "-" + hcp.Spec.InfraID),
-			"azure_resourcegroup":   []byte(hcp.Spec.Platform.Azure.ResourceGroupName),
-			"azure_subscription_id": referenceCredentialsSecret.Data["AZURE_SUBSCRIPTION_ID"],
-			"azure_tenant_id":       referenceCredentialsSecret.Data["AZURE_TENANT_ID"],
+			"azure_federated_token_file": []byte("/var/run/secrets/openshift/serviceaccount/token"),
+			"azure_region":               []byte(hcp.Spec.Platform.Azure.Location),
+			"azure_resource_prefix":      []byte(hcp.Name + "-" + hcp.Spec.InfraID),
+			"azure_resourcegroup":        []byte(hcp.Spec.Platform.Azure.ResourceGroupName),
+			"azure_subscription_id":      referenceCredentialsSecret.Data["AZURE_SUBSCRIPTION_ID"],
+			"azure_tenant_id":            referenceCredentialsSecret.Data["AZURE_TENANT_ID"],
 		}
 
+		// The ingress controller fails if this secret is not provided. The controller runs on the control plane side. In managed azure, we are
+		// overriding the Azure credentials authentication method to always use client certificate authentication. This secret is just created
+		// so that the ingress controller does not fail. The data in the secret is never used by the ingress controller due to the aforementioned
+		// override to use client certificate authentication.
 		ingressCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, ingressCredentialSecret, func() error {
+			secretData["azure_client_id"] = []byte("fakeClientID")
 			ingressCredentialSecret.Data = secretData
 			return nil
 		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed tom reconcile guest cluster ingress operator secret: %w", err))
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster ingress operator secret: %w", err))
 		}
 
-		csiCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, csiCredentialSecret, func() error {
-			csiCredentialSecret.Data = secretData
+		azureDiskCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, azureDiskCSISecret, func() error {
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.DiskMSIClientID)
+			azureDiskCSISecret.Data = secretData
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster CSI secret: %w", err))
@@ -1519,23 +1523,17 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 
 		imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
 			imageRegistrySecret.Data = secretData
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
 		}
 
-		cloudNetworkConfigControllerSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cloud-network-config-controller", Name: "cloud-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, cloudNetworkConfigControllerSecret, func() error {
-			cloudNetworkConfigControllerSecret.Data = secretData
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster cloud-network-config-controller secret: %w", err))
-		}
-
-		csiDriverSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, csiDriverSecret, func() error {
-			csiDriverSecret.Data = secretData
+		azureFileCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, azureFileCSISecret, func() error {
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.FileMSIClientID)
+			azureFileCSISecret.Data = secretData
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile csi driver secret: %w", err))
