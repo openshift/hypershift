@@ -21,6 +21,7 @@ package v1beta1
 // with apply.
 type AzureResourceManagedIdentitiesApplyConfiguration struct {
 	ControlPlane *ControlPlaneManagedIdentitiesApplyConfiguration `json:"controlPlane,omitempty"`
+	DataPlane    *DataPlaneManagedIdentitiesApplyConfiguration    `json:"dataPlane,omitempty"`
 }
 
 // AzureResourceManagedIdentitiesApplyConfiguration constructs an declarative configuration of the AzureResourceManagedIdentities type for use with
@@ -34,5 +35,13 @@ func AzureResourceManagedIdentities() *AzureResourceManagedIdentitiesApplyConfig
 // If called multiple times, the ControlPlane field is set to the value of the last call.
 func (b *AzureResourceManagedIdentitiesApplyConfiguration) WithControlPlane(value *ControlPlaneManagedIdentitiesApplyConfiguration) *AzureResourceManagedIdentitiesApplyConfiguration {
 	b.ControlPlane = value
+	return b
+}
+
+// WithDataPlane sets the DataPlane field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DataPlane field is set to the value of the last call.
+func (b *AzureResourceManagedIdentitiesApplyConfiguration) WithDataPlane(value *DataPlaneManagedIdentitiesApplyConfiguration) *AzureResourceManagedIdentitiesApplyConfiguration {
+	b.DataPlane = value
 	return b
 }
