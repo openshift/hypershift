@@ -405,6 +405,10 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	if dumpErr != nil {
 		t.Errorf("Failed to dump cluster: %v", dumpErr)
 	}
+
+	if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+		deleteIngressRoute53Records(t, ctx, hc, opts)
+	}
 }
 
 // archive re-packs the dir into the destination

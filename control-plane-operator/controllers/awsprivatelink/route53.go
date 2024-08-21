@@ -33,10 +33,10 @@ func lookupZoneID(ctx context.Context, client route53iface.Route53API, name stri
 	return cleanZoneID(*res.Id), nil
 }
 
-func createRecord(ctx context.Context, client route53iface.Route53API, zondID, name, value string) error {
+func CreateRecord(ctx context.Context, client route53iface.Route53API, zondID, name, value, recordType string) error {
 	record := &route53.ResourceRecordSet{
 		Name: aws.String(name),
-		Type: aws.String("CNAME"),
+		Type: aws.String(recordType),
 		TTL:  aws.Int64(300),
 		ResourceRecords: []*route53.ResourceRecord{
 			{
@@ -88,9 +88,8 @@ func fqdn(name string) string {
 	}
 }
 
-func findRecord(ctx context.Context, client route53iface.Route53API, id, name string) (*route53.ResourceRecordSet, error) {
+func FindRecord(ctx context.Context, client route53iface.Route53API, id, name, recordType string) (*route53.ResourceRecordSet, error) {
 	recordName := fqdn(strings.ToLower(name))
-	recordType := "CNAME"
 	input := &route53.ListResourceRecordSetsInput{
 		HostedZoneId:    aws.String(id),
 		StartRecordName: aws.String(recordName),
@@ -125,7 +124,7 @@ func findRecord(ctx context.Context, client route53iface.Route53API, id, name st
 	return record, nil
 }
 
-func deleteRecord(ctx context.Context, client route53iface.Route53API, id string, record *route53.ResourceRecordSet) error {
+func DeleteRecord(ctx context.Context, client route53iface.Route53API, id string, record *route53.ResourceRecordSet) error {
 	changeBatch := &route53.ChangeBatch{
 		Changes: []*route53.Change{
 			{
