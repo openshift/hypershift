@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/openshift/hypershift/cmd/log"
+	supportconfig "github.com/openshift/hypershift/support/config"
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -213,7 +214,18 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		}
 	}
 
-	// TODO(alberto): set PDBs.
+	routerDeploymentOwnerRef := supportconfig.OwnerRefFrom(deployment)
+
+	pdb := RouterPodDisruptionBudget()
+	if result, err := r.createOrUpdate(ctx, r.Client, pdb, func() error {
+		ReconcileRouterPodDisruptionBudget(pdb, routerDeploymentOwnerRef)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
+	} else {
+		log.Log.Info("reconciled etcd pdb", "result", result)
+	}
+
 	// TODO(alberto): set Network policies.
 
 	return nil

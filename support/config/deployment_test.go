@@ -59,7 +59,7 @@ func TestSetMultizoneSpreadRequired(t *testing.T) {
 		hyperv1.ControlPlaneComponent: "etcd",
 	}
 	cfg := &DeploymentConfig{}
-	cfg.setMultizoneSpread(labels, true)
+	cfg.SetMultizoneSpread(labels, true)
 	if cfg.Scheduling.Affinity == nil {
 		t.Fatalf("Expecting affinity to be set on config")
 	}
@@ -83,7 +83,7 @@ func TestSetMultizoneSpreadPreferred(t *testing.T) {
 		hyperv1.ControlPlaneComponent: "etcd",
 	}
 	cfg := &DeploymentConfig{}
-	cfg.setMultizoneSpread(labels, false)
+	cfg.SetMultizoneSpread(labels, false)
 	if cfg.Scheduling.Affinity == nil {
 		t.Fatalf("Expecting affinity to be set on config")
 	}
