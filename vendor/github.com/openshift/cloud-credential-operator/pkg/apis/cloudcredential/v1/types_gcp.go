@@ -29,10 +29,28 @@ type GCPProviderSpec struct {
 	// PredefinedRoles is the list of GCP pre-defined roles
 	// that the CredentialsRequest requires.
 	PredefinedRoles []string `json:"predefinedRoles"`
-	// SkipServiceCheck can be set to true to skip the check whether the requested roles
+	// Permissions is the list of GCP permissions required to create a more fine-grained custom role to
+	// satisfy the CredentialsRequest.
+	// The Permissions field may be provided in addition to PredefinedRoles. When both fields are specified,
+	// the service account will have union of permissions defined from both Permissions and PredefinedRoles.
+	// +optional
+	Permissions []string `json:"permissions,omitempty"`
+	// SkipServiceCheck can be set to true to skip the check whether the requested roles or permissions
 	// have the necessary services enabled
 	// +optional
 	SkipServiceCheck bool `json:"skipServiceCheck,omitempty"`
+
+	// The following fields are only required for Google Workload Identity Federation.
+
+	// ServiceAccountEmail that will be impersonated during Workload Identity Federation.
+	// +optional
+	ServiceAccountEmail string `json:"serviceAccountEmail,omitempty"`
+
+	// Audience that will be used with Workload Identity Federation.
+	// It should be formatted as follows:
+	// "//iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/<POOL_ID>/providers/<PROVIDER_ID>"
+	// For more information see https://cloud.google.com/iam/docs/workload-identity-federation-with-other-providers#create-credential-config
+	Audience string `json:"audience,omitempty"`
 }
 
 // GCPProviderStatus contains the status of the GCP credentials request.
@@ -41,4 +59,9 @@ type GCPProviderStatus struct {
 	metav1.TypeMeta `json:",inline"`
 	// ServiceAccountID is the ID of the service account created in GCP for the requested credentials.
 	ServiceAccountID string `json:"serviceAccountID"`
+	// RoleID is the ID of the custom role created in GCP for the requested permissions apart from
+	// permissions granted by the pre-defined roles.
+	// RoleID is set by the Cloud Credential Operator controllers and should not be set manually.
+	// +optional
+	RoleID string `json:"roleID,omitempty"`
 }
