@@ -72,7 +72,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -943,6 +942,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 
 func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
+	log := ctrl.LoggerFrom(ctx)
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
@@ -965,19 +965,21 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 
 	if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform {
 		ingressFloatingIP := hcp.Spec.Platform.OpenStack.IngressFloatingIP
-		ingressProvider := hcp.Spec.Platform.OpenStack.IngressProvider
-		if err := openstackutil.ValidateIngressOptions(ingressProvider, ingressFloatingIP); err != nil {
-			errs = append(errs, err)
-			return errors.NewAggregate(errs)
-		}
-
-		// At this point validations have passed, so we can proceed with the reconciliation
-		if ingressProvider == hyperv1.OpenStackIngressProviderOctavia {
-			ingressDefaultIngressOctaviaService := manifests.IngressDefaultIngressOctaviaService()
-			if _, err := r.CreateOrUpdate(ctx, r.client, ingressDefaultIngressOctaviaService, func() error {
-				return ingress.ReconcileDefaultIngressOctaviaService(ingressDefaultIngressOctaviaService, ingressFloatingIP)
-			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile default ingress octavia service: %w", err))
+		if ingressFloatingIP != "" {
+			ingressDefaultRouterIngressService := manifests.IngressRouterDefaultIngressService()
+			err := r.client.Get(ctx, client.ObjectKeyFromObject(ingressDefaultRouterIngressService), ingressDefaultRouterIngressService)
+			if apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("ingress router-default service not found: %w", err))
+			} else if err != nil {
+				errs = append(errs, fmt.Errorf("failed to retrieve ingress router-default service: %w", err))
+			} else if ingressDefaultRouterIngressService.Spec.LoadBalancerIP != ingressFloatingIP {
+				if _, err := r.CreateOrUpdate(ctx, r.client, ingressDefaultRouterIngressService, func() error {
+					log.Info("updating ingress router-default service with floating IP", "ingressFloatingIP", ingressFloatingIP)
+					ingressDefaultRouterIngressService.Spec.LoadBalancerIP = ingressFloatingIP
+					return nil
+				}); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile ingress router-default service: %w", err))
+				}
 			}
 		}
 	}

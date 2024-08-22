@@ -1935,42 +1935,6 @@ type OpenStackPlatformSpec struct {
 	//
 	// +optional
 	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
-
-	// IngressProvider specifies the ingress provider to use for the cluster.
-	// Valid values are None and Octavia.
-	// The default value is None which means Ingress is not enabled.
-	// Octavia provider is experimental and might be replaced in the future.
-	// When Octavia is selected, a floating IP has to be provided in IngressFloatingIP.
-	//
-	// +default=None
-	// +kubebuilder:default=None
-	// +kubebuilder:validation:Enum=None;Octavia
-	// +optional
-	IngressProvider OpenStackIngressProvider `json:"ingressProvider,omitempty"`
-}
-
-// OpenStackIngressProvider specifies the ingress provider to use for the cluster.
-type OpenStackIngressProvider string
-
-const (
-	// OpenStackIngressProviderNone is the default value and means no ingress provider is used.
-	OpenStackIngressProviderNone OpenStackIngressProvider = OpenStackIngressProvider("None")
-
-	// OpenStackIngressProviderOctavia is the value to use when using Octavia as the ingress provider.
-	OpenStackIngressProviderOctavia OpenStackIngressProvider = OpenStackIngressProvider("Octavia")
-)
-
-func (p *OpenStackIngressProvider) String() string {
-	return string(*p)
-}
-
-func (p *OpenStackIngressProvider) Set(s string) error {
-	*p = OpenStackIngressProvider(s)
-	return nil
-}
-
-func (p *OpenStackIngressProvider) Type() string {
-	return "OpenStackIngressProvider"
 }
 
 // OpenStackIdentityReference is a reference to an infrastructure

@@ -8,7 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,7 +30,6 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
-	flags.Var(&opts.OpenStackIngressProvider, "openstack-ingress-provider", "The provider for the ingress controller (can be 'none' which is the default or 'octavia') (optional)")
 	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (required)")
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
@@ -42,7 +40,6 @@ type RawCreateOptions struct {
 	OpenStackCACertFile        string
 	OpenStackExternalNetworkID string
 	OpenStackIngressFloatingIP string
-	OpenStackIngressProvider   hyperv1.OpenStackIngressProvider
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
@@ -99,10 +96,6 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
-	if err := openstackutil.ValidateIngressOptions(o.OpenStackIngressProvider, o.OpenStackIngressFloatingIP); err != nil {
-		return nil, err
-	}
-
 	if opts.ExternalDNSDomain != "" {
 		err := fmt.Errorf("--external-dns-domain is not supported on OpenStack")
 		opts.Log.Error(err, "Failed to create cluster")
@@ -140,10 +133,6 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 
 	if o.OpenStackIngressFloatingIP != "" {
 		cluster.Spec.Platform.OpenStack.IngressFloatingIP = o.OpenStackIngressFloatingIP
-	}
-
-	if o.OpenStackIngressProvider != "" {
-		cluster.Spec.Platform.OpenStack.IngressProvider = hyperv1.OpenStackIngressProvider(o.OpenStackIngressProvider)
 	}
 
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
