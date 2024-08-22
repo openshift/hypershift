@@ -5,8 +5,9 @@ Install an OCP cluster running on VMs within a management OCP cluster
 ## Limitations
 
 * The HyperShift Operator with OpenStack support is currently in development and is not intended for production use.
-* Ingress can work with Octavia at installation time or disabled (default) and the user can figure it out on day 2 (e.g. by using MetalLB).
 * OpenStack CSI (Cinder and Manila) are not functional.
+* Operators running in the workload cluster (e.g. console) won't be operational on day 1 and a manual and documented
+  action is required to make them work on day 2.
 
 ## Prerequisites
 
@@ -14,7 +15,7 @@ Install an OCP cluster running on VMs within a management OCP cluster
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
-* OpenStack Octavia service must be running if Ingress with Octavia is enabled.
+* OpenStack Octavia service must be running if Ingress is configured with an Octavia load balancer.
 
 ## Installing HyperShift Operator and cli tooling
 
@@ -81,18 +82,6 @@ Here is an example of how to upload an RHCOS image to OpenStack:
 ```shell
 openstack image create --disk-format qcow2 --file rhcos-417.94.202407080309-0-openstack.x86_64.qcow2 rhcos
 ```
-## Create a floating IP for the Ingress (optional)
-
-To get Ingress functional on day 1, you need to create a floating IP that will be used by the Ingress service.
-
-```shell
-openstack floating ip create <external-network>
-```
-
-## Update the DNS record for the Ingress (optional)
-
-To get Ingress functional on day 1, you need to create a DNS record for the following wildcard domain that needs to point to the Ingress floating IP:
-`*.apps.<cluster-name>.<base-domain>`
 
 ## Create a HostedCluster
 
@@ -131,9 +120,6 @@ export CA_CERT_PATH="$HOME/ca.crt"
 # SSH Key for the nodepool VMs
 export SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
-export INGRESS_FLOATING_IP="<ingress-floating-ip>"
-export INGRESS_PROVIDER="Octavia"
-
 hcp create cluster openstack \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
@@ -143,9 +129,7 @@ hcp create cluster openstack \
 --openstack-credentials-file $CLOUDS_YAML \
 --openstack-external-network-id $EXTERNAL_ID \
 --openstack-node-image-name $IMAGE_NAME \
---openstack-node-flavor $FLAVOR \
---openstack-ingress-floating-ip $INGRESS_FLOATING_IP \
---openstack-ingress-provider $INGRESS_PROVIDER
+--openstack-node-flavor $FLAVOR
 ```
 
 !!! note
@@ -210,6 +194,20 @@ oc --kubeconfig $CLUSTER_NAME-kubeconfig get clusterversion
 NAME      VERSION       AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.17.0        True        False         5m39s   Cluster version is 4.17.0
 ```
+
+## Ingress and DNS
+
+Once the workload cluster is deploying, the Ingress controller will be installed
+and a router named `router-default` will be created in the `openshift-ingress` namespace.
+
+You'll need to update your DNS with the external IP of that router so Ingress (and dependent operators like console) can work.
+You can run this command to get the external IP:
+
+```shell
+oc --kubeconfig $CLUSTER_NAME-kubeconfig -n openshift-ingress get service/router-default -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+Now you need to create a DNS A record for `*.apps.<cluster-name>.<base-domain>` that matches the returned IP address.
 
 ## Scaling an existing NodePool
 
