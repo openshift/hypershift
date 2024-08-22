@@ -28,7 +28,7 @@ spec:
         type: PersistentVolume
     managementType: Managed
   fips: false
-  infraID: bryans-cluster-mbm2m
+  infraID: fakeInfraID
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14

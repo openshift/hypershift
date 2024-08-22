@@ -39,7 +39,7 @@ spec:
         type: PersistentVolume
     managementType: Managed
   fips: false
-  infraID: example-sffhb
+  infraID: fakeInfraID
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
