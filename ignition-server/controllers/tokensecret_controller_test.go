@@ -25,7 +25,7 @@ var (
 
 type fakeIgnitionProvider struct{}
 
-func (p *fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string, pullSecretHash string, hcConfigurationHash string) (payload []byte, err error) {
+func (p *fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) (payload []byte, err error) {
 	return []byte(fakePayload), nil
 }
 
