@@ -30,10 +30,17 @@ if [[ -z "${SEARCH_TERMS}" ]]; then
     exit 1
 fi
 
-echo -e "\n===== Searching HO Image ====="
+echo -e "\n===== Searching Latest (4.16 -> 4.18) HO Image ====="
 docker pull quay.io/acm-d/rhtap-hypershift-operator:latest --quiet
-echo "Image: quay.io/acm-d/rhtap-hypershift-operator:latest"
 docker run -it --entrypoint=sh quay.io/acm-d/rhtap-hypershift-operator:latest -c "${SHELL_CMD}" 2>/dev/null
+echo "============================================="
+echo -e "\n===== Searching 4.14 HO Image ====="
+docker pull quay.io/openshift/origin-base:4.14 --quiet
+docker run -it --entrypoint=sh quay.io/openshift/origin-base:4.14 -c "${SHELL_CMD}" 2>/dev/null
+echo "============================================="
+echo -e "\n===== Searching 4.15 HO Image ====="
+docker pull quay.io/openshift/origin-base:4.15 --quiet
+docker run -it --entrypoint=sh quay.io/openshift/origin-base:4.15 -c "${SHELL_CMD}" 2>/dev/null
 echo "============================================="
 
 for version in 4.14 4.15 4.16 4.17 4.18; do
