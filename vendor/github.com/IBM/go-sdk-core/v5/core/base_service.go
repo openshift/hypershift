@@ -20,8 +20,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -84,14 +85,17 @@ type BaseService struct {
 // parameters and service options will be performed before instance creation.
 func NewBaseService(options *ServiceOptions) (*BaseService, error) {
 	if HasBadFirstOrLastChar(options.URL) {
-		return nil, fmt.Errorf(ERRORMSG_PROP_INVALID, "URL")
+		err := fmt.Errorf(ERRORMSG_PROP_INVALID, "URL")
+		return nil, SDKErrorf(err, "", "bad-char", getComponentInfo())
 	}
 
 	if IsNil(options.Authenticator) {
-		return nil, fmt.Errorf(ERRORMSG_NO_AUTHENTICATOR)
+		err := fmt.Errorf(ERRORMSG_NO_AUTHENTICATOR)
+		return nil, SDKErrorf(err, "", "missing-auth", getComponentInfo())
 	}
 
 	if err := options.Authenticator.Validate(); err != nil {
+		err = RepurposeSDKProblem(err, "auth-validation-failed")
 		return nil, err
 	}
 
@@ -130,6 +134,7 @@ func (service *BaseService) ConfigureService(serviceName string) error {
 	// Try to load service properties from external config.
 	serviceProps, err := getServiceProperties(serviceName)
 	if err != nil {
+		err = RepurposeSDKProblem(err, "get-props-error")
 		return err
 	}
 
@@ -141,6 +146,7 @@ func (service *BaseService) ConfigureService(serviceName string) error {
 		if url, ok := serviceProps[PROPNAME_SVC_URL]; ok && url != "" {
 			err := service.SetURL(url)
 			if err != nil {
+				err = RepurposeSDKProblem(err, "set-url-fail")
 				return err
 			}
 		}
@@ -204,13 +210,14 @@ func (service *BaseService) ConfigureService(serviceName string) error {
 //
 // Deprecated: use SetServiceURL instead.
 func (service *BaseService) SetURL(url string) error {
-	return service.SetServiceURL(url)
+	return RepurposeSDKProblem(service.SetServiceURL(url), "set-url-fail")
 }
 
 // SetServiceURL sets the service URL.
 func (service *BaseService) SetServiceURL(url string) error {
 	if HasBadFirstOrLastChar(url) {
-		return fmt.Errorf(ERRORMSG_PROP_INVALID, "URL")
+		err := fmt.Errorf(ERRORMSG_PROP_INVALID, "URL")
+		return SDKErrorf(err, "", "bad-char", getComponentInfo())
 	}
 
 	service.Options.URL = url
@@ -332,7 +339,6 @@ func (service *BaseService) SetUserAgent(userAgentString string) {
 	service.UserAgent = userAgentString
 }
 
-//
 // Request invokes the specified HTTP request and returns the response.
 //
 // Parameters:
@@ -347,7 +353,6 @@ func (service *BaseService) SetUserAgent(userAgentString string) {
 // detailedResponse: a DetailedResponse instance containing the status code, headers, etc.
 //
 // err: a non-nil error object if an error occurred
-//
 func (service *BaseService) Request(req *http.Request, result interface{}) (detailedResponse *DetailedResponse, err error) {
 	// Add default headers.
 	if service.DefaultHeaders != nil {
@@ -374,22 +379,33 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 	// Add authentication to the outbound request.
 	if IsNil(service.Options.Authenticator) {
 		err = fmt.Errorf(ERRORMSG_NO_AUTHENTICATOR)
+		err = SDKErrorf(err, "", "missing-auth", getComponentInfo())
 		return
 	}
 
-	authError := service.Options.Authenticator.Authenticate(req)
-	if authError != nil {
-		err = fmt.Errorf(ERRORMSG_AUTHENTICATE_ERROR, authError.Error())
-		castErr, ok := authError.(*AuthenticationError)
-		if ok {
-			detailedResponse = castErr.Response
+	authenticateError := service.Options.Authenticator.Authenticate(req)
+	if authenticateError != nil {
+		var authErr *AuthenticationError
+		var sdkErr *SDKProblem
+		if errors.As(authenticateError, &authErr) {
+			detailedResponse = authErr.Response
+			err = SDKErrorf(authErr.HTTPProblem, fmt.Sprintf(ERRORMSG_AUTHENTICATE_ERROR, authErr.Error()), "auth-request-failed", getComponentInfo())
+		} else if errors.As(authenticateError, &sdkErr) {
+			sdkErr := RepurposeSDKProblem(authenticateError, "auth-failed")
+			// For compatibility.
+			sdkErr.(*SDKProblem).Summary = fmt.Sprintf(ERRORMSG_AUTHENTICATE_ERROR, authenticateError.Error())
+			err = sdkErr
+		} else {
+			// External authenticators that implement the core interface might return a standard error.
+			// Handle that by wrapping it here.
+			err = SDKErrorf(err, fmt.Sprintf(ERRORMSG_AUTHENTICATE_ERROR, authenticateError.Error()), "custom-auth-failed", getComponentInfo())
 		}
 		return
 	}
 
 	// If debug is enabled, then dump the request.
 	if GetLogger().IsLogLevelEnabled(LevelDebug) {
-		buf, dumpErr := httputil.DumpRequestOut(req, req.Body != nil)
+		buf, dumpErr := httputil.DumpRequestOut(req, !IsNil(req.Body))
 		if dumpErr == nil {
 			GetLogger().Debug("Request:\n%s\n", RedactSecrets(string(buf)))
 		} else {
@@ -400,16 +416,18 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 	// Invoke the request, then check for errors during the invocation.
 	var httpResponse *http.Response
 	httpResponse, err = service.Client.Do(req)
+
 	if err != nil {
 		if strings.Contains(err.Error(), SSL_CERTIFICATION_ERROR) {
 			err = fmt.Errorf(ERRORMSG_SSL_VERIFICATION_FAILED + "\n" + err.Error())
 		}
+		err = SDKErrorf(err, "", "no-connection-made", getComponentInfo())
 		return
 	}
 
 	// If debug is enabled, then dump the response.
 	if GetLogger().IsLogLevelEnabled(LevelDebug) {
-		buf, dumpErr := httputil.DumpResponse(httpResponse, httpResponse.Body != nil)
+		buf, dumpErr := httputil.DumpResponse(httpResponse, !IsNil(httpResponse.Body))
 		if err == nil {
 			GetLogger().Debug("Response:\n%s\n", RedactSecrets(string(buf)))
 		} else {
@@ -417,59 +435,16 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 		}
 	}
 
-	// Start to populate the DetailedResponse.
-	detailedResponse = &DetailedResponse{
-		StatusCode: httpResponse.StatusCode,
-		Headers:    httpResponse.Header,
-	}
-
-	contentType := httpResponse.Header.Get(CONTENT_TYPE)
-
-	// If the operation was unsuccessful, then set up the DetailedResponse
-	// and error objects appropriately.
+	// If the operation was unsuccessful, then set up and return
+	// the DetailedResponse and error objects appropriately.
 	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
-
-		var responseBody []byte
-
-		// First, read the response body into a byte array.
-		if httpResponse.Body != nil {
-			var readErr error
-
-			defer httpResponse.Body.Close()
-			responseBody, readErr = ioutil.ReadAll(httpResponse.Body)
-			if readErr != nil {
-				err = fmt.Errorf(ERRORMSG_READ_RESPONSE_BODY, readErr.Error())
-				return
-			}
-		}
-
-		// If the responseBody is empty, then just return a generic error based on the status code.
-		if len(responseBody) == 0 {
-			err = fmt.Errorf(http.StatusText(httpResponse.StatusCode))
-			return
-		}
-
-		// For a JSON-based error response body, decode it into a map (generic JSON object).
-		if IsJSONMimeType(contentType) {
-			// Return the error response body as a map, along with an
-			// error object containing our best guess at an error message.
-			responseMap, decodeErr := decodeAsMap(responseBody)
-			if decodeErr == nil {
-				detailedResponse.Result = responseMap
-				err = fmt.Errorf(getErrorMessage(responseMap, detailedResponse.StatusCode))
-				return
-			}
-		}
-
-		// For a non-JSON response or if we tripped while decoding the JSON response,
-		// just return the response body byte array in the RawResult field along with
-		// an error object that contains the generic error message for the status code.
-		detailedResponse.RawResult = responseBody
-		err = fmt.Errorf(http.StatusText(httpResponse.StatusCode))
+		detailedResponse, err = processErrorResponse(httpResponse)
+		err = RepurposeSDKProblem(err, "error-response")
 		return
 	}
 
 	// Operation was successful and we are expecting a response, so process the response.
+	detailedResponse, contentType := getDetailedResponseAndContentType(httpResponse)
 	if !IsNil(result) {
 		resultType := reflect.TypeOf(result).String()
 
@@ -482,10 +457,11 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 		} else {
 
 			// First, read the response body into a byte array.
-			defer httpResponse.Body.Close()
-			responseBody, readErr := ioutil.ReadAll(httpResponse.Body)
+			defer httpResponse.Body.Close() // #nosec G307
+			responseBody, readErr := io.ReadAll(httpResponse.Body)
 			if readErr != nil {
 				err = fmt.Errorf(ERRORMSG_READ_RESPONSE_BODY, readErr.Error())
+				err = SDKErrorf(err, "", "cant-read-success-res-body", getComponentInfo())
 				return
 			}
 
@@ -502,6 +478,7 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 					// Error decoding the response body.
 					// Return the response body in RawResult, along with an error.
 					err = fmt.Errorf(ERRORMSG_UNMARSHAL_RESPONSE_BODY, decodeErr.Error())
+					err = SDKErrorf(err, "", "res-body-decode-error", getComponentInfo())
 					detailedResponse.RawResult = responseBody
 					return
 				}
@@ -532,11 +509,77 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 				// But make sure we save the bytes we read in the DetailedResponse for debugging purposes
 				detailedResponse.Result = responseBody
 				err = fmt.Errorf(ERRORMSG_UNEXPECTED_RESPONSE, contentType, resultType)
+				err = SDKErrorf(err, "", "unparsable-result-field", getComponentInfo())
 				return
 			}
 		}
+	} else if !IsNil(httpResponse.Body) {
+		// We weren't expecting a response, but we have a reponse body,
+		// so we need to close it now since we're not going to consume it.
+		_ = httpResponse.Body.Close()
 	}
 
+	return
+}
+
+// getDetailedResponseAndContentType starts to populate the DetailedResponse
+// and extracts the Content-Type header value from the response.
+func getDetailedResponseAndContentType(httpResponse *http.Response) (detailedResponse *DetailedResponse, contentType string) {
+	if httpResponse != nil {
+		contentType = httpResponse.Header.Get(CONTENT_TYPE)
+		detailedResponse = &DetailedResponse{
+			StatusCode: httpResponse.StatusCode,
+			Headers:    httpResponse.Header,
+		}
+	}
+	return
+}
+
+func processErrorResponse(httpResponse *http.Response) (detailedResponse *DetailedResponse, err *SDKProblem) {
+	detailedResponse, contentType := getDetailedResponseAndContentType(httpResponse)
+
+	var responseBody []byte
+
+	// First, read the response body into a byte array.
+	if !IsNil(httpResponse.Body) {
+		var readErr error
+
+		defer httpResponse.Body.Close() // #nosec G307
+		responseBody, readErr = io.ReadAll(httpResponse.Body)
+		if readErr != nil {
+			httpErr := httpErrorf(http.StatusText(httpResponse.StatusCode), detailedResponse)
+			err = SDKErrorf(httpErr, fmt.Sprintf(ERRORMSG_READ_RESPONSE_BODY, readErr.Error()), "cant-read-error-body", getComponentInfo())
+			return
+		}
+	}
+
+	// If the responseBody is empty, then just return a generic error based on the status code.
+	if len(responseBody) == 0 {
+		httpErr := httpErrorf(http.StatusText(httpResponse.StatusCode), detailedResponse)
+		err = SDKErrorf(httpErr, "", "no-error-body", getComponentInfo())
+		return
+	}
+
+	// For a JSON-based error response body, decode it into a map (generic JSON object).
+	if IsJSONMimeType(contentType) {
+		// Return the error response body as a map, along with an
+		// error object containing our best guess at an error message.
+		responseMap, decodeErr := decodeAsMap(responseBody)
+		if decodeErr == nil {
+			detailedResponse.Result = responseMap
+			errorMsg := getErrorMessage(responseMap, detailedResponse.StatusCode)
+			httpErr := httpErrorf(errorMsg, detailedResponse)
+			err = SDKErrorf(httpErr, "", "json-error-body", getComponentInfo())
+			return
+		}
+	}
+
+	// For a non-JSON response or if we tripped while decoding the JSON response,
+	// just return the response body byte array in the RawResult field along with
+	// an error object that contains the generic error message for the status code.
+	detailedResponse.RawResult = responseBody
+	httpErr := httpErrorf(http.StatusText(httpResponse.StatusCode), detailedResponse)
+	err = SDKErrorf(httpErr, "", "non-json-error-body", getComponentInfo())
 	return
 }
 
@@ -550,21 +593,25 @@ type Errors struct {
 // response.
 type Error struct {
 	Message string `json:"message,omitempty"`
+	Code    string `json:"code,omitempty"`
 }
 
 // decodeAsMap: Decode the specified JSON byte-stream into a map (akin to a generic JSON object).
 // Notes:
-// 1) This function will return the map (result of decoding the byte-stream) as well as the raw
-// byte buffer.  We return the byte buffer in addition to the decoded map so that the caller can
-// re-use (if necessary) the stream of bytes after we've consumed them via the JSON decode step.
-// 2) The primary return value of this function will be:
-//    a) an instance of map[string]interface{} if the specified byte-stream was successfully
-//       decoded as JSON.
-//    b) the string form of the byte-stream if the byte-stream could not be successfully
-//       decoded as JSON.
-// 3) This function will close the io.ReadCloser before returning.
+//  1. This function will return the map (result of decoding the byte-stream) as well as the raw
+//     byte buffer.  We return the byte buffer in addition to the decoded map so that the caller can
+//     re-use (if necessary) the stream of bytes after we've consumed them via the JSON decode step.
+//  2. The primary return value of this function will be:
+//     a) an instance of map[string]interface{} if the specified byte-stream was successfully
+//     decoded as JSON.
+//     b) the string form of the byte-stream if the byte-stream could not be successfully
+//     decoded as JSON.
+//  3. This function will close the io.ReadCloser before returning.
 func decodeAsMap(byteBuffer []byte) (result map[string]interface{}, err error) {
 	err = json.NewDecoder(bytes.NewReader(byteBuffer)).Decode(&result)
+	if err != nil {
+		err = SDKErrorf(err, "", "decode-error", getComponentInfo())
+	}
 	return
 }
 
@@ -610,6 +657,39 @@ func getErrorMessage(responseMap map[string]interface{}, statusCode int) string 
 	return http.StatusText(statusCode)
 }
 
+// getErrorCode tries to retrieve an error code from the decoded response body (map).
+func getErrorCode(responseMap map[string]interface{}) string {
+
+	// If the response contained the "errors" field, then try to deserialize responseMap
+	// into an array of Error structs, then return the first entry's "Message" field.
+	if _, ok := responseMap["errors"]; ok {
+		var errors Errors
+		responseBuffer, _ := json.Marshal(responseMap)
+		if err := json.Unmarshal(responseBuffer, &errors); err == nil {
+			return errors.Errors[0].Code
+		}
+	}
+
+	// Return the "code" field if present and is a string.
+	if val, ok := responseMap["code"]; ok {
+		errorCode, ok := val.(string)
+		if ok {
+			return errorCode
+		}
+	}
+
+	// Return the "errorCode" field if present and is a string.
+	if val, ok := responseMap["errorCode"]; ok {
+		errorCode, ok := val.(string)
+		if ok {
+			return errorCode
+		}
+	}
+
+	// If we couldn't find a code, return an empty string
+	return ""
+}
+
 // isRetryableClient() will return true if and only if "client" is
 // an http.Client instance that is configured for automatic retries.
 // A retryable client is a client whose transport is a
@@ -634,21 +714,21 @@ func isRetryableClient(client *http.Client) bool {
 // - Result: "normal" request processing without any automatic retries being performed
 //
 // In a scenario where retries ARE enabled:
-// - BaseService.Client will be a "shim" http.Client instance
-// - BaseService.Client.Transport will be an instance of retryablehttp.RoundTripper
-// - BaseService.Client.Do() calls retryablehttp.RoundTripper.RoundTrip() (via the shim)
-//   to invoke the request
-// - The retryablehttp.RoundTripper instance is configured with the retryablehttp.Client
-//   instance which holds the various retry config properties (max retries, max interval, etc.)
-// - The retryablehttp.RoundTripper.RoundTrip() method triggers the retry logic in the retryablehttp.Client
-// - The retryablehttp.Client instance's HTTPClient field holds a "normal" http.Client instance,
-//   which is used to invoke individual requests within the retry loop.
-// - To summarize, there are three client instances used for request processing in this scenario:
-//   - The "shim" http.Client instance (BaseService.Client)
-//   - The retryablehttp.Client instance that implements the retry logic
-//   - The "normal" http.Client instance embedded in the retryablehttp.Client which is used to invoke
+//   - BaseService.Client will be a "shim" http.Client instance
+//   - BaseService.Client.Transport will be an instance of retryablehttp.RoundTripper
+//   - BaseService.Client.Do() calls retryablehttp.RoundTripper.RoundTrip() (via the shim)
+//     to invoke the request
+//   - The retryablehttp.RoundTripper instance is configured with the retryablehttp.Client
+//     instance which holds the various retry config properties (max retries, max interval, etc.)
+//   - The retryablehttp.RoundTripper.RoundTrip() method triggers the retry logic in the retryablehttp.Client
+//   - The retryablehttp.Client instance's HTTPClient field holds a "normal" http.Client instance,
+//     which is used to invoke individual requests within the retry loop.
+//   - To summarize, there are three client instances used for request processing in this scenario:
+//     1. The "shim" http.Client instance (BaseService.Client)
+//     2. The retryablehttp.Client instance that implements the retry logic
+//     3. The "normal" http.Client instance embedded in the retryablehttp.Client which is used to invoke
 //     individual requests within the retry logic
-// - Result: Each request is invoked such that the automatic retry logic is employed
+//   - Result: Each request is invoked such that the automatic retry logic is employed
 func (service *BaseService) EnableRetries(maxRetries int, maxRetryInterval time.Duration) {
 	if isRetryableClient(service.Client) {
 		// If retries are already enabled, then we just need to adjust
@@ -764,17 +844,17 @@ func IBMCloudSDKRetryPolicy(ctx context.Context, resp *http.Response, err error)
 		if v, ok := err.(*url.Error); ok {
 			// Don't retry if the error was due to too many redirects.
 			if redirectsErrorRe.MatchString(v.Error()) {
-				return false, v
+				return false, SDKErrorf(v, "", "too-many-redirects", getComponentInfo())
 			}
 
 			// Don't retry if the error was due to an invalid protocol scheme.
 			if schemeErrorRe.MatchString(v.Error()) {
-				return false, v
+				return false, SDKErrorf(v, "", "invalid-scheme", getComponentInfo())
 			}
 
 			// Don't retry if the error was due to TLS cert verification failure.
 			if _, ok := v.Err.(x509.UnknownAuthorityError); ok {
-				return false, v
+				return false, SDKErrorf(v, "", "cert-failure", getComponentInfo())
 			}
 		}
 
