@@ -783,7 +783,7 @@ roleRef:
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: User
-  name: system:hosted-cluster-config
+  name: system:hosted-cluster-config-operator
 EOF
 
 /usr/bin/render \
