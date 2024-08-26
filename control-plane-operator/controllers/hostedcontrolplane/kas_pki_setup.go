@@ -160,29 +160,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	}
 
 	// ----------
-	//	HCCO signer
-	// ----------
-
-	hccoKubeconfigSigner, err := reconcileSigner(
-		manifests.HCCOSigner(hcp.Namespace),
-		pki.ReconcileHCCOSigner,
-	)
-
-	if err != nil {
-		return err
-	}
-	totalClientCABundle = append(totalClientCABundle, hccoKubeconfigSigner)
-
-	// system:hosted-cluster-config-operator client cert
-	if _, err := reconcileSub(
-		manifests.HCCOClientCertSecret(hcp.Namespace),
-		hccoKubeconfigSigner,
-		pki.ReconcileHCCOClientCertSecret,
-	); err != nil {
-		return err
-	}
-
-	// ----------
 	//	CSR signer
 	// ----------
 
