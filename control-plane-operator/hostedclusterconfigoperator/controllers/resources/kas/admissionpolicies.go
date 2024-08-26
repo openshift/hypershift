@@ -57,6 +57,16 @@ func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
+// adapted from from https://github.com/openshift/cluster-network-operator/blob/c21e13f626cfcb21fdbd42076b57d00cebb064ca/pkg/controller/infrastructureconfig/predicates.go#L23
+func isOnPremPlatform(platformType hyperv1.PlatformType) bool {
+	switch platformType {
+	case hyperv1.OpenStackPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
 func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	// Config AdmissionPolicy
 	configAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameConfig}
@@ -68,7 +78,6 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 		"featuregates",
 		"images",
 		"imagecontentpolicies",
-		"infrastructures",
 		"ingresses",
 		"proxies",
 		"schedulers",
@@ -78,6 +87,9 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
 		configResources = append(configResources, "operatorhubs")
+	}
+	if !isOnPremPlatform(hcp.Spec.Platform.Type) {
+		configResources = append(configResources, "infrastructures")
 	}
 	configAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
 	configAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(configResources, configAPIVersion, configAPIGroup, []k8sadmissionv1beta1.OperationType{"UPDATE", "DELETE"})
