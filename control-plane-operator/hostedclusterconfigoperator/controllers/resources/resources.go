@@ -43,7 +43,6 @@ import (
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -278,20 +277,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling kubernetes.default endpoints and endpointslice")
 	if err := r.reconcileKASEndpoints(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints and endpointslice: %w", err))
-	}
-
-	releaseImageVersion, err := semver.Parse(releaseImage.Version())
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
-	}
-
-	// The exception for IBMCloudPlatform is due to the fact that the IBM will include new certificates for HCCO from 4.17 version
-	if !(hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && (releaseImageVersion.Major == 4 && releaseImageVersion.Minor < 17)) {
-		// Apply new ValidatingAdmissionPolicy to restrict the modification/deletion of certain
-		// objects from the DataPlane which are managed by the HCCO.
-		if err := kas.ReconcileKASValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile validating admission policies: %w", err))
-		}
 	}
 
 	log.Info("reconciling install configmap")

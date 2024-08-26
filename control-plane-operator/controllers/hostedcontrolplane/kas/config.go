@@ -189,7 +189,6 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)
 	featureGates = append(featureGates, "StructuredAuthenticationConfiguration=true")
-	featureGates = append(featureGates, "ValidatingAdmissionPolicy=true")
 	args.Set("feature-gates", featureGates...)
 	args.Set("goaway-chance", "0")
 	args.Set("http2-max-streams-per-connection", "2000")
