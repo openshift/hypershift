@@ -108,13 +108,13 @@ func formatFrames(pcs []uintptr, componentName string) []sdkStackFrame {
 }
 
 type sparseSDKProblem struct {
-	ID string
+	ID       string
 	Function string
 }
 
 func newSparseSDKProblem(prob *SDKProblem) *sparseSDKProblem {
 	return &sparseSDKProblem{
-		ID: prob.GetID(),
+		ID:       prob.GetID(),
 		Function: prob.Function,
 	}
 }
