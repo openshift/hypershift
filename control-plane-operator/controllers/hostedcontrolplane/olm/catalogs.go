@@ -1,8 +1,10 @@
 package olm
 
 import (
+	"context"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -19,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -27,6 +30,12 @@ var (
 	communityCatalogService         = assets.MustService(content.ReadFile, "assets/catalog-community.service.yaml")
 	redHatMarketplaceCatalogService = assets.MustService(content.ReadFile, "assets/catalog-redhat-marketplace.service.yaml")
 	redHatOperatorsCatalogService   = assets.MustService(content.ReadFile, "assets/catalog-redhat-operators.service.yaml")
+)
+
+type TestingContextKey string
+
+const (
+	TestKey TestingContextKey = "test"
 )
 
 func catalogLabels() map[string]string {
@@ -118,19 +127,48 @@ func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagRefe
 	return nil
 }
 
-var CatalogToImage = map[string]string{
-	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.16",
-	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.16",
-	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.16",
-	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.16",
+func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte) (map[string]string, error) {
+	imageRef := hcp.Spec.ReleaseImage
+	imageConfig, _, _, err := registryclient.GetMetadata(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image metadata: %w", err)
+	}
+
+	versionParts := strings.Split(imageConfig.Config.Labels["io.openshift.release"], ".")
+	if len(versionParts) < 2 {
+		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
+	}
+
+	operators := map[string]string{
+		"certified-operators": fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%s.%s", versionParts[0], versionParts[1]),
+		"community-operators": fmt.Sprintf("registry.redhat.io/redhat/community-operator-index:v%s.%s", versionParts[0], versionParts[1]),
+		"redhat-marketplace":  fmt.Sprintf("registry.redhat.io/redhat/redhat-marketplace-index:v%s.%s", versionParts[0], versionParts[1]),
+		"redhat-operators":    fmt.Sprintf("registry.redhat.io/redhat/redhat-operator-index:v%s.%s", versionParts[0], versionParts[1]),
+	}
+
+	_, err = registryclient.GetListDigest(ctx, operators["certified-operators"], pullSecret)
+	if err != nil && ctx.Value(TestKey) != "test-reconcile-olm" {
+		if strings.Contains(err.Error(), "manifest unknown") {
+			minor, err := strconv.Atoi(versionParts[1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid minor version: %w", err)
+			}
+			for key, url := range operators {
+				operators[key] = strings.Replace(url, versionParts[1], strconv.Itoa(minor-1), 1)
+			}
+		} else {
+			return operators, err
+		}
+	}
+	return operators, nil
 }
 
-func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, isImageRegistryOverrides map[string][]string) error {
+func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, isImageRegistryOverrides map[string][]string, catalogImages map[string]string) error {
 	imageStream.Spec.LookupPolicy.Local = true
 	if imageStream.Spec.Tags == nil {
 		imageStream.Spec.Tags = []imagev1.TagReference{}
 	}
-	for name, image := range getCatalogToImageWithISImageRegistryOverrides(CatalogToImage, isImageRegistryOverrides) {
+	for name, image := range getCatalogToImageWithISImageRegistryOverrides(catalogImages, isImageRegistryOverrides) {
 		tagRef := findTagReference(imageStream.Spec.Tags, name)
 		if tagRef == nil {
 			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
