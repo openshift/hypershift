@@ -20,6 +20,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -123,8 +124,10 @@ var cpObjects = []client.Object{
 // be included in the list of initial objects.  Error injection is suppressed
 // for the initial objects.
 func TestReconcileErrorHandling(t *testing.T) {
-
 	// get initial number of creates with no get errors
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, olm.TestKey, "test-reconcile-olm")
+
 	var totalCreates int
 	{
 		fakeClient := &testClient{
@@ -143,7 +146,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
-		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
 			t.Fatalf("unexpected: %v", err)
 		}
@@ -166,7 +169,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
-		r.Reconcile(context.Background(), controllerruntime.Request{})
+		r.Reconcile(ctx, controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
 			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
 		}
@@ -181,6 +184,8 @@ func TestReconcileOLM(t *testing.T) {
 	fakeCPService.Spec.ClusterIP = "172.30.108.248"
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, olm.TestKey, "test-reconcile-olm")
+	pullSecret := fakePullSecret()
 
 	testCases := []struct {
 		name                string
@@ -258,7 +263,7 @@ func TestReconcileOLM(t *testing.T) {
 		Build()
 	hcCLient := fake.NewClientBuilder().
 		WithScheme(api.Scheme).
-		WithObjects(rootCA).
+		WithObjects(rootCA, pullSecret).
 		Build()
 
 	r := &reconciler{
@@ -270,10 +275,10 @@ func TestReconcileOLM(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 			hcp.Spec.Configuration = tc.hcpClusterConfig
 			hcp.Spec.OLMCatalogPlacement = tc.olmCatalogPlacement
-			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 			g.Expect(errs).To(BeEmpty(), "unexpected errors")
 			hcOpHub := manifests.OperatorHub()
 			err := r.client.Get(ctx, client.ObjectKeyFromObject(hcOpHub), hcOpHub)
@@ -293,6 +298,8 @@ func fakeHCP() *hyperv1.HostedControlPlane {
 	hcp := manifests.HostedControlPlane("bar", "foo")
 	hcp.Status.ControlPlaneEndpoint.Host = "server"
 	hcp.Status.ControlPlaneEndpoint.Port = 1234
+	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: "pull-secret"}
+	hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64"
 	return hcp
 }
 
@@ -308,7 +315,14 @@ func fakeIngressCert() *corev1.Secret {
 func fakePullSecret() *corev1.Secret {
 	s := manifests.PullSecret("bar")
 	s.Data = map[string][]byte{
-		corev1.DockerConfigJsonKey: []byte("data"),
+		corev1.DockerConfigJsonKey: []byte(`{
+		"auths": {
+			"registry.redhat.io/redhat/": {
+				"auth": "dXNlcm5hbWU6cGFzc3dvcmQ=",
+				"email": "user@example.com"
+			}
+		}
+	}`),
 	}
 	return s
 }

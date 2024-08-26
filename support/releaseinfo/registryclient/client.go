@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	dockerarchive "github.com/openshift/hypershift/support/thirdparty/docker/pkg/archive"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
@@ -37,7 +38,7 @@ const (
 // ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the
 // list of files to extract. It returns a map with file contents or an error.
 func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, files ...string) (map[string][]byte, error) {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func allFound(content map[string][]byte) bool {
 }
 
 func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return err
 	}
@@ -172,7 +173,7 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 		return fmt.Errorf("invalid pattern: %w", err)
 	}
 
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return err
 	}
@@ -234,20 +235,20 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 	return nil
 }
 
-func getMetadata(ctx context.Context, imageRef string, pullSecret []byte) ([]distribution.Descriptor, distribution.BlobStore, error) {
+func GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
 	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
 	}
 	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
+		return nil, nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
 	}
-	_, layers, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
+	imageConfig, layers, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to obtain image layers for %s: %w", imageRef, err)
+		return nil, nil, nil, fmt.Errorf("failed to obtain image layers for %s: %w", imageRef, err)
 	}
-	return layers, repo.Blobs(ctx), nil
+	return imageConfig, layers, repo.Blobs(ctx), nil
 }
 
 // GetRepoSetup connects to a repo and pulls the imageRef's docker image information from the repo. Returns the repo and the docker image.
