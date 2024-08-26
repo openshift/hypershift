@@ -954,7 +954,6 @@ type AzureNodePoolPlatform struct {
 	// Hosted Cluster specification respectively, HostedCluster.Spec.Platform.Azure.SubscriptionID and
 	// HostedCluster.Spec.Platform.Azure.ResourceGroupName.
 	//
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Image is immutable"
 	// +kubebuilder:validation:Required
 	Image AzureVMImage `json:"image"`
 
