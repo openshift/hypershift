@@ -2940,14 +2940,28 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 			return nil
 		}
 	case hyperv1.AzurePlatform:
+		var err error
 		template = &capiazure.AzureMachineTemplate{}
+		machineTemplateSpec, err = azureMachineTemplateSpec(nodePool)
+		if err != nil {
+			return nil, nil, "", err
+		}
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capiazure.AzureMachineTemplate)
-			spec, err := azureMachineTemplateSpec(hcluster, nodePool, o.Spec)
-			if err != nil {
-				return err
+
+			// The azure api requires passing a public key. This key is randomly generated, the private portion is thrown away and the public key
+			// gets written to the template.
+			sshKey := o.Spec.Template.Spec.SSHPublicKey
+			if sshKey == "" {
+				sshKey, err = generateSSHPubkey()
+				if err != nil {
+					return fmt.Errorf("failed to generate a SSH key: %w", err)
+				}
 			}
-			o.Spec = *spec
+
+			o.Spec = *machineTemplateSpec.(*capiazure.AzureMachineTemplateSpec)
+			o.Spec.Template.Spec.SSHPublicKey = sshKey
+
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}
@@ -3012,7 +3026,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 
 func generateMachineTemplateName(nodePool *hyperv1.NodePool, machineTemplateSpecJSON []byte) string {
 	// using HashStruct(machineTemplateSpecJSON) ensures a rolling upgrade is triggered
-	// by creating a new template with a differnt name if any field changes.
+	// by creating a new template with a different name if any field changes.
 	return getName(nodePool.GetName(), supportutil.HashSimple(machineTemplateSpecJSON),
 		validation.DNS1123SubdomainMaxLength)
 }
