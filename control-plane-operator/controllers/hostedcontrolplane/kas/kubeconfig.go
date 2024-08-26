@@ -58,8 +58,3 @@ func ReconcileExternalKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.C
 func ReconcileBootstrapKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, externalURL string) error {
 	return pki.ReconcileKubeConfig(secret, cert, ca, externalURL, "", manifests.KubeconfigScopeBootstrap, ownerRef)
 }
-
-func ReconcileHCCOKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, platformType hyperv1.PlatformType) error {
-	svcURL := InClusterKASURL(platformType)
-	return pki.ReconcileKubeConfig(secret, cert, ca, svcURL, "", "service", ownerRef)
-}

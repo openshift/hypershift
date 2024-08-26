@@ -230,14 +230,6 @@ func SystemAdminClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "system-admin-client")
 }
 
-func HCCOSigner(ns string) *corev1.Secret {
-	return secretFor(ns, "hcco-signer")
-}
-
-func HCCOClientCertSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "hcco-client")
-}
-
 func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kas-bootstrap-client")
 }

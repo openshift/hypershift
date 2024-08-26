@@ -49,10 +49,6 @@ func ReconcileAdminKubeconfigSigner(secret *corev1.Secret, ownerRef config.Owner
 	return reconcileSelfSignedCA(secret, ownerRef, "admin-kubeconfig-signer", "openshift")
 }
 
-func ReconcileHCCOSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSelfSignedCA(secret, ownerRef, "hcco-signer", "openshift")
-}
-
 func ReconcileKubeCSRSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSelfSignedCA(secret, ownerRef, "kube-csr-signer", "openshift")
 }

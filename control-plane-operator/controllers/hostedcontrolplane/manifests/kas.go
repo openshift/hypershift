@@ -63,15 +63,6 @@ func KASServiceCAPIKubeconfigSecret(controlPlaneNamespace, infraID string) *core
 	}
 }
 
-func HCCOKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "hcco-kubeconfig",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
 func KASExternalKubeconfigSecret(controlPlaneNamespace string, ref *hyperv1.KubeconfigSecretRef) *corev1.Secret {
 	s := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
