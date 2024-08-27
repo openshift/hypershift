@@ -170,7 +170,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 				return
 			}
 			if !equality.Semantic.DeepEqual(&tc.expected.Spec, result) {
-				t.Errorf(cmp.Diff(&tc.expected.Spec, result))
+				t.Error(cmp.Diff(&tc.expected.Spec, result))
 			}
 		})
 	}

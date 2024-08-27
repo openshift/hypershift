@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -203,7 +203,7 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv
 
 	if c.ec2Client == nil {
 		errorReason := "no AWS EC2 client"
-		ctrllog.Log.Error(fmt.Errorf(errorReason), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as the client used to query AWS API is not properly initialized")
+		ctrllog.Log.Error(errors.New(errorReason), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as the client used to query AWS API is not properly initialized")
 
 		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: errorReason}
 	}
@@ -212,7 +212,7 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv
 
 	if awsPlatform == nil {
 		errorReason := "spec.platform.aws missing in node pool"
-		ctrllog.Log.Error(fmt.Errorf(errorReason), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as its specification is inconsistent")
+		ctrllog.Log.Error(errors.New(errorReason), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as its specification is inconsistent")
 
 		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: errorReason}
 	}
@@ -252,7 +252,7 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv
 		}
 
 		unresolvedErrorReason = "unexpected AWS output"
-		ctrllog.Log.Error(fmt.Errorf(unresolvedErrorReason), "unexpected output for EC2 verb 'describe-instance-types' while querying the following EC2 instance type: "+ec2InstanceType)
+		ctrllog.Log.Error(errors.New(unresolvedErrorReason), "unexpected output for EC2 verb 'describe-instance-types' while querying the following EC2 instance type: "+ec2InstanceType)
 	} else {
 		unresolvedErrorReason = "failed to call AWS"
 		ctrllog.Log.Error(err, "failed to call AWS to resolve the number of vCpus per node for the following EC2 instance type: "+ec2InstanceType)

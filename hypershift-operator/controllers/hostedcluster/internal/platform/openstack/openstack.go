@@ -76,7 +76,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	// If no MachineNetwork is provided, use a default CIDR block.
 	// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
 	// See https://github.com/openshift/hypershift/pull/4287
-	if hcluster.Spec.Networking.MachineNetwork == nil || len(hcluster.Spec.Networking.MachineNetwork) == 0 {
+	if len(hcluster.Spec.Networking.MachineNetwork) == 0 {
 		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
 	} else {
 		machineNetworks = hcluster.Spec.Networking.MachineNetwork

@@ -319,11 +319,11 @@ func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNode
 		platform.NetworkInterfaceMultiQueue = o.MultiQueue
 	}
 
-	if o.VmNodeSelector != nil && len(o.VmNodeSelector) > 0 {
+	if len(o.VmNodeSelector) > 0 {
 		platform.NodeSelector = o.VmNodeSelector
 	}
 
-	if o.KubevirtHostDevices != nil && len(o.KubevirtHostDevices) > 0 {
+	if len(o.KubevirtHostDevices) > 0 {
 		platform.KubevirtHostDevices = o.KubevirtHostDevices
 	}
 	return platform

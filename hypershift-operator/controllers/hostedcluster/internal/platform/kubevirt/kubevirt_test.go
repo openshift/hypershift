@@ -83,7 +83,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 				t.Fatalf("ReconcileCAPIInfraCR: Got unexpected error: %v (expectedErr: %v)", err, tc.expectedErr)
 			} else {
 				if !equality.Semantic.DeepEqual(expectedResult, result) {
-					t.Errorf(cmp.Diff(expectedResult, result))
+					t.Error(cmp.Diff(expectedResult, result))
 				}
 
 			}
