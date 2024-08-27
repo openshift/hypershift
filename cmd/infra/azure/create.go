@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"os"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/go-uuid"
@@ -556,7 +557,7 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	if err != nil {
 		return "", fmt.Errorf("failed to list storage account keys: %w", err)
 	}
-	if storageAccountKeyResult.Keys == nil || len(storageAccountKeyResult.Keys) == 0 || storageAccountKeyResult.Keys[0].Value == nil {
+	if len(storageAccountKeyResult.Keys) == 0 || storageAccountKeyResult.Keys[0].Value == nil {
 		return "", errors.New("no storage account keys exist")
 	}
 

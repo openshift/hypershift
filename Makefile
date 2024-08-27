@@ -19,7 +19,7 @@ GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
-GO=GO111MODULE=on GOFLAGS=-mod=vendor go
+GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
@@ -47,12 +47,8 @@ pre-commit: all verify test
 
 build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
 
-.PHONY: sync
-sync:
-	$(GO) work sync 
-
 .PHONY: update
-update: sync api-deps api api-docs deps clients app-sre-saas-template
+update: api-deps api api-docs deps clients app-sre-saas-template
 
 .PHONY: verify
 verify: update staticcheck fmt vet
@@ -220,16 +216,16 @@ vet:
 .PHONY: deps
 deps:
 	$(GO) mod tidy
-	$(GO) work vendor
+	$(GO) mod vendor
 	$(GO) mod verify
 	$(GO) list -m -mod=readonly -json all > /dev/null
-	(cd hack/tools && $(GO) mod tidy && $(GO) work vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
 
 .PHONY: api-deps
 api-deps:
 	cd api && \
 	  $(GO) mod tidy && \
-	  $(GO) work vendor && \
+	  $(GO) mod vendor && \
 	  $(GO) mod verify && \
 	  $(GO) list -m -mod=readonly -json all > /dev/null
 
