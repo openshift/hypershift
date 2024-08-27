@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
@@ -77,6 +78,14 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
 		providerImage = override
 	}
+
+	featureGates := []string{
+		"EKS=false",
+	}
+	if p.payloadVersion != nil && p.payloadVersion.Major == 4 && p.payloadVersion.Minor > 15 {
+		featureGates = append(featureGates, "ROSA=false")
+	}
+
 	defaultMode := int32(0640)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
@@ -171,7 +180,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--v=4",
 							"--leader-elect=true",
-							"--feature-gates=EKS=false,ROSA=false",
+							fmt.Sprintf("--feature-gates=%s", strings.Join(featureGates, ",")),
 						},
 						Ports: []corev1.ContainerPort{
 							{
