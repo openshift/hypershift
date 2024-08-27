@@ -62,7 +62,7 @@ func (a Azure) ReconcileCAPIInfraCR(
 	}
 
 	if _, err := createOrUpdate(ctx, client, azureCluster, func() error {
-		return reconcileAzureCluster(azureCluster, hcluster, apiEndpoint, azureClusterIdentity, controlPlaneNamespace)
+		return reconcileAzureCluster(ctx, client, azureCluster, hcluster, apiEndpoint, azureClusterIdentity)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile Azure CAPI cluster: %w", err)
 	}
@@ -214,7 +214,7 @@ func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster 
 	return nil
 }
 
-func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
+func reconcileAzureCluster(ctx context.Context, c client.Client, azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity) error {
 	if azureCluster.Annotations == nil {
 		azureCluster.Annotations = map[string]string{}
 	}
@@ -242,6 +242,22 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 
 	azureCluster.Status.Ready = true
 
+	// To prevent CAPZ from creating Azure VMs with both Availability Zone and Availability Set configured
+	// (which results in an error), ensure AzureCluster.Status.FailureDomains is populated when any NodePool
+	// specifies an Availability Zone.
+	npList, err := listNodePools(ctx, c, hcluster.Namespace, hcluster.Name)
+	if err != nil {
+		return err
+	}
+	for _, np := range npList {
+		if len(np.Spec.Platform.Azure.AvailabilityZone) > 0 {
+			azureCluster.Status.FailureDomains = capiv1.FailureDomains{
+				"1": capiv1.FailureDomainSpec{},
+			}
+			break
+		}
+	}
+
 	azureCluster.Spec.IdentityRef = &corev1.ObjectReference{Name: azureClusterIdentity.Name, Namespace: azureClusterIdentity.Namespace}
 
 	return nil
@@ -265,4 +281,18 @@ func reconcileAzureClusterIdentity(ctx context.Context, c client.Client, hcluste
 		},
 	}
 	return nil
+}
+
+func listNodePools(ctx context.Context, c client.Client, clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := c.List(ctx, nodePoolList); err != nil {
+		return nil, fmt.Errorf("error listing NodePools: %w", err)
+	}
+	var filtered []hyperv1.NodePool
+	for i, nodePool := range nodePoolList.Items {
+		if nodePool.Namespace == clusterNamespace && nodePool.Spec.ClusterName == clusterName {
+			filtered = append(filtered, nodePoolList.Items[i])
+		}
+	}
+	return filtered, nil
 }
