@@ -96,64 +96,9 @@ func Predicate(cpContext component.ControlPlaneContext) (bool, error) {
 // reconcileDeployment implements controlplanecomponent.DeploymentReconciler.
 func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
-	options := hcp.Spec.Autoscaling
 
-	volumes := a.Volumes(cpContext)
 	clusterAutoscalerImage := cpContext.ReleaseImageProvider.GetImage(ImageStreamAutoscalerImage)
 	availabilityProberImage := cpContext.ReleaseImageProvider.GetImage(util.AvailabilityProberImageName)
-
-	autoscalerResources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("60Mi"),
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-		},
-	}
-
-	args := []string{
-		"--expander=priority,least-waste",
-		"--cloud-provider=clusterapi",
-		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-		fmt.Sprintf("--kubeconfig=%s", path.Join(volumes.Path(autoscalerName, kubeconfigVolumeName), kubeconfigKey)),
-		"--clusterapi-cloud-config-authoritative",
-		// TODO (alberto): Is this a fair assumption?
-		// There's currently pods with local storage e.g grafana and image-registry.
-		// Without this option after after a scaling out operation and an “unfortunate” reschedule
-		// we might end up locked with three nodes.
-		"--skip-nodes-with-local-storage=false",
-		"--alsologtostderr",
-		fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
-		fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
-		fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
-		"--balance-similar-node-groups=true",
-		"--v=4",
-	}
-
-	ignoreLabels := GetIgnoreLabels()
-	for _, v := range ignoreLabels {
-		args = append(args, fmt.Sprintf("%s=%v", BalancingIgnoreLabelArg, v))
-	}
-
-	// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
-	// from the cluster-autoscaler-operator and create some utility functions for these assignments.
-	if options.MaxNodesTotal != nil {
-		arg := fmt.Sprintf("%s=%d", "--max-nodes-total", *options.MaxNodesTotal)
-		args = append(args, arg)
-	}
-
-	if options.MaxPodGracePeriod != nil {
-		arg := fmt.Sprintf("%s=%d", "--max-graceful-termination-sec", *options.MaxPodGracePeriod)
-		args = append(args, arg)
-	}
-
-	if options.MaxNodeProvisionTime != "" {
-		arg := fmt.Sprintf("%s=%s", "--max-node-provision-time", options.MaxNodeProvisionTime)
-		args = append(args, arg)
-	}
-
-	if options.PodPriorityThreshold != nil {
-		arg := fmt.Sprintf("%s=%d", "--expendable-pods-priority-cutoff", *options.PodPriorityThreshold)
-		args = append(args, arg)
-	}
 
 	labels := map[string]string{
 		"app":                         autoscalerName,
@@ -183,52 +128,7 @@ func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPl
 					},
 				},
 				Containers: []corev1.Container{
-					{
-						Name:            autoscalerName,
-						Image:           clusterAutoscalerImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Env: []corev1.EnvVar{
-							{
-								Name: "MY_NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-						},
-						Resources: autoscalerResources,
-						Command:   []string{"/usr/bin/cluster-autoscaler"},
-						Args:      args,
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 60,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							PeriodSeconds:    10,
-							SuccessThreshold: 1,
-							FailureThreshold: 3,
-							TimeoutSeconds:   5,
-						},
-						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8085}},
-					},
+					buildContainer(clusterAutoscalerImage, hcp.Spec.Autoscaling, a.Volumes(cpContext)),
 				},
 			},
 		},
@@ -242,6 +142,76 @@ func (a *AutoscalerReconciler) ReconcileDeployment(cpContext component.ControlPl
 	}
 
 	return nil
+}
+
+func buildContainer(image string, options hyperv1.ClusterAutoscaling, volumes component.Volumes) corev1.Container {
+	builder := component.NewContainer(autoscalerName).
+		Image(image).
+		Command("/usr/bin/cluster-autoscaler").
+		WithEnv("MY_NAMESPACE", &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{
+				FieldPath: "metadata.namespace",
+			},
+		}).
+		WithPort(corev1.ContainerPort{
+			Name:          "metrics",
+			ContainerPort: 8085,
+		}).
+		WithMemoryResourcesRequest(resource.MustParse("60Mi")).
+		WithCPUResourcesRequest(resource.MustParse("10m")).
+		WithHTTPLivnessProbe(&corev1.HTTPGetAction{
+			Path:   "/health-check",
+			Port:   intstr.FromInt(8085),
+			Scheme: corev1.URISchemeHTTP,
+		}).
+		WithHTTPReadinessProbe(&corev1.HTTPGetAction{
+			Path:   "/health-check",
+			Port:   intstr.FromInt(8085),
+			Scheme: corev1.URISchemeHTTP,
+		}).
+		WithArgs(
+			"--expander=priority,least-waste",
+			"--cloud-provider=clusterapi",
+			"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
+			fmt.Sprintf("--kubeconfig=%s", path.Join(volumes.Path(autoscalerName, kubeconfigVolumeName), kubeconfigKey)),
+			"--clusterapi-cloud-config-authoritative",
+			// TODO (alberto): Is this a fair assumption?
+			// There's currently pods with local storage e.g grafana and image-registry.
+			// Without this option after after a scaling out operation and an “unfortunate” reschedule
+			// we might end up locked with three nodes.
+			"--skip-nodes-with-local-storage=false",
+			"--alsologtostderr",
+			fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
+			fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
+			fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+			"--balance-similar-node-groups=true",
+			"--v=4",
+		)
+
+	ignoreLabels := GetIgnoreLabels()
+	for _, v := range ignoreLabels {
+		builder.WithArgs(fmt.Sprintf("%s=%v", BalancingIgnoreLabelArg, v))
+	}
+
+	// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
+	// from the cluster-autoscaler-operator and create some utility functions for these assignments.
+	if options.MaxNodesTotal != nil {
+		builder.WithArgs(fmt.Sprintf("--max-nodes-total=%d", *options.MaxNodesTotal))
+	}
+
+	if options.MaxPodGracePeriod != nil {
+		builder.WithArgs(fmt.Sprintf("--max-graceful-termination-sec=%d", *options.MaxPodGracePeriod))
+	}
+
+	if options.MaxNodeProvisionTime != "" {
+		builder.WithArgs(fmt.Sprintf("--max-node-provision-time=%s", options.MaxNodeProvisionTime))
+	}
+
+	if options.PodPriorityThreshold != nil {
+		builder.WithArgs(fmt.Sprintf("--expendable-pods-priority-cutoff=%d", *options.PodPriorityThreshold))
+	}
+
+	return builder.Build()
 }
 
 func autoscalerRoleRules() []rbacv1.PolicyRule {

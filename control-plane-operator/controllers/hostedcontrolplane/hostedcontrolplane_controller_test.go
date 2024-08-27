@@ -599,8 +599,10 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 			hcp.Spec.Autoscaling = test.AutoscalerOptions
 
 			cpContext := controlplanecomponent.ControlPlaneContext{
-				HCP:                  hcp,
-				ReleaseImageProvider: imageprovider.NewFromImages(nil),
+				HCP: hcp,
+				ReleaseImageProvider: imageprovider.NewFromImages(map[string]string{
+					autoscaler.ImageStreamAutoscalerImage: "test-image",
+				}),
 			}
 			reconciler := autoscaler.AutoscalerReconciler{}
 			err := reconciler.ReconcileDeployment(cpContext, deployment)

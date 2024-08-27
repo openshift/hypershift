@@ -53,7 +53,7 @@ func (r *RouteControllerManagerReconciler) reconcileConfigMap(cpContext componen
 
 func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string, networkConfig *configv1.NetworkSpec, volumes component.Volumes) error {
 	cpath := func(volume, file string) string {
-		dir := volumes.Path(routeOCMContainerMain().Name, volume)
+		dir := volumes.Path(ComponentName, volume)
 		return path.Join(dir, file)
 	}
 	cfg.TypeMeta = metav1.TypeMeta{

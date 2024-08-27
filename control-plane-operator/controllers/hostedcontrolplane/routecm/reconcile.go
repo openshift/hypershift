@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -73,7 +72,6 @@ func (r *RouteControllerManagerReconciler) Name() string {
 // ReconcileDeployment implements controlplanecomponent.DeploymentReconciler.
 func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
 	image := cpContext.ReleaseImageProvider.GetImage("route-controller-manager")
-	volumes := r.Volumes(cpContext)
 
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{
@@ -82,7 +80,7 @@ func (r *RouteControllerManagerReconciler) ReconcileDeployment(cpContext compone
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftRouteControllerManagerLabels()
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
-		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image, volumes)),
+		buildContainer(image, r.Volumes(cpContext)),
 	}
 
 	return nil
@@ -94,25 +92,25 @@ func (r *RouteControllerManagerReconciler) Volumes(cpContext component.ControlPl
 		configVolumeName: component.Volume{
 			Source: component.ConfigMapVolumeSource(ConfigMapName),
 			Mounts: map[string]string{
-				routeOCMContainerMain().Name: "/etc/kubernetes/config",
+				ComponentName: "/etc/kubernetes/config",
 			},
 		},
 		servingCertVolumeName: component.Volume{
 			Source: component.SecretVolumeSource(manifests.OpenShiftRouteControllerManagerCertSecret("").Name),
 			Mounts: map[string]string{
-				routeOCMContainerMain().Name: "/etc/kubernetes/certs",
+				ComponentName: "/etc/kubernetes/certs",
 			},
 		},
 		kubeconfigVolumeName: component.Volume{
 			Source: component.SecretVolumeSource(manifests.KASServiceKubeconfigSecret("").Name),
 			Mounts: map[string]string{
-				routeOCMContainerMain().Name: "/etc/kubernetes/secrets/svc-kubeconfig",
+				ComponentName: "/etc/kubernetes/secrets/svc-kubeconfig",
 			},
 		},
 		common.VolumeTotalClientCA().Name: component.Volume{
 			Source: component.ConfigMapVolumeSource(manifests.TotalClientCABundle("").Name),
 			Mounts: map[string]string{
-				routeOCMContainerMain().Name: "/etc/kubernetes/client-ca", // comes from the generic OCM config
+				ComponentName: "/etc/kubernetes/client-ca", // comes from the generic OCM config
 			},
 		},
 	}
@@ -125,72 +123,36 @@ func openShiftRouteControllerManagerLabels() map[string]string {
 	}
 }
 
-func routeOCMContainerMain() *corev1.Container {
-	return &corev1.Container{
-		Name: "route-controller-manager",
-	}
-}
-
-func buildRouteOCMContainerMain(image string, volumes component.Volumes) func(*corev1.Container) {
-	return func(c *corev1.Container) {
-		c.Image = image
-		c.Command = []string{"route-controller-manager"}
-		c.Args = []string{
-			"start",
-			"--config",
-			path.Join(volumes.Path(c.Name, configVolumeName), configKey),
-			"--kubeconfig",
-			path.Join(volumes.Path(c.Name, kubeconfigVolumeName), kas.KubeconfigKey),
-			"--namespace=openshift-route-controller-manager",
-		}
-		c.Ports = []corev1.ContainerPort{
-			{
-				Name:          "https",
-				ContainerPort: servingPort,
-				Protocol:      corev1.ProtocolTCP,
+func buildContainer(image string, volumes component.Volumes) corev1.Container {
+	return component.NewContainer(ComponentName).
+		Image(image).
+		Command("route-controller-manager").
+		WithArgs("start").
+		WithArgs("--config", path.Join(volumes.Path(ComponentName, configVolumeName), configKey)).
+		WithArgs("--kubeconfig", path.Join(volumes.Path(ComponentName, kubeconfigVolumeName), kas.KubeconfigKey)).
+		WithArgs("--namespace=openshift-route-controller-manager").
+		WithPort(corev1.ContainerPort{
+			Name:          "https",
+			ContainerPort: servingPort,
+			Protocol:      corev1.ProtocolTCP,
+		}).
+		WithStringEnv("POD_NAMESPACE", "openshift-route-controller-manager").
+		WithEnv("POD_NAME", &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{
+				FieldPath: "metadata.name",
 			},
-		}
-		c.Env = []corev1.EnvVar{
-			{
-				Name: "POD_NAME",
-				ValueFrom: &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						FieldPath: "metadata.name",
-					},
-				},
-			},
-			{
-				Name:  "POD_NAMESPACE",
-				Value: "openshift-route-controller-manager",
-			},
-		}
-		c.Resources = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("100Mi"),
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-			},
-		}
-		c.LivenessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromInt(int(servingPort)),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			InitialDelaySeconds: 30,
-			TimeoutSeconds:      5,
-		}
-		c.ReadinessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromInt(int(servingPort)),
-					Scheme: corev1.URISchemeHTTPS,
-				},
-			},
-			FailureThreshold: 10,
-			TimeoutSeconds:   5,
-		}
-	}
+		}).
+		WithMemoryResourcesRequest(resource.MustParse("100Mi")).
+		WithCPUResourcesRequest(resource.MustParse("100m")).
+		WithHTTPLivnessProbe(&corev1.HTTPGetAction{
+			Path:   "/healthz",
+			Port:   intstr.FromInt(int(servingPort)),
+			Scheme: corev1.URISchemeHTTPS,
+		}).
+		WithHTTPReadinessProbe(&corev1.HTTPGetAction{
+			Path:   "/healthz",
+			Port:   intstr.FromInt(int(servingPort)),
+			Scheme: corev1.URISchemeHTTPS,
+		}).
+		Build()
 }
