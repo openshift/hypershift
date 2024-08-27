@@ -51,7 +51,8 @@ var (
 			kasVolumeConfig().Name:                 "/etc/kubernetes/config",
 			kasVolumeAuditConfig().Name:            "/etc/kubernetes/audit",
 			kasVolumeKonnectivityCA().Name:         "/etc/kubernetes/certs/konnectivity-ca",
-			kasVolumeServerCert().Name:             "/etc/kubernetes/certs/server",
+			kasVolumeServerInternalCert().Name:     "/etc/kubernetes/certs/server-internal",
+			kasVolumeServerExternalCert().Name:     "/etc/kubernetes/certs/server-external",
 			kasVolumeAggregatorCert().Name:         "/etc/kubernetes/certs/aggregator",
 			common.VolumeAggregatorCA().Name:       "/etc/kubernetes/certs/aggregator-ca",
 			common.VolumeTotalClientCA().Name:      "/etc/kubernetes/certs/client-ca",
@@ -214,7 +215,8 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeAuthConfig(), buildKASVolumeAuthConfig),
 				util.BuildVolume(kasVolumeAuditConfig(), buildKASVolumeAuditConfig),
 				util.BuildVolume(kasVolumeKonnectivityCA(), buildKASVolumeKonnectivityCA),
-				util.BuildVolume(kasVolumeServerCert(), buildKASVolumeServerCert),
+				util.BuildVolume(kasVolumeServerInternalCert(), buildKASVolumeServerInternalCert),
+				util.BuildVolume(kasVolumeServerExternalCert(), buildKASVolumeServerExternalCert),
 				util.BuildVolume(kasVolumeAggregatorCert(), buildKASVolumeAggregatorCert),
 				util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
 				util.BuildVolume(kasVolumeServiceAccountKey(), buildKASVolumeServiceAccountKey),
@@ -563,18 +565,30 @@ func buildKASVolumeKonnectivityCA(v *corev1.Volume) {
 	}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
-
-func kasVolumeServerCert() *corev1.Volume {
+func kasVolumeServerInternalCert() *corev1.Volume {
 	return &corev1.Volume{
-		Name: "server-crt",
+		Name: "server-internal-crt",
 	}
 }
-func buildKASVolumeServerCert(v *corev1.Volume) {
+func kasVolumeServerExternalCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "server-external-crt",
+	}
+}
+func buildKASVolumeServerInternalCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
 	v.Secret.DefaultMode = pointer.Int32(0640)
-	v.Secret.SecretName = manifests.KASServerCertSecret("").Name
+	v.Secret.SecretName = manifests.KASServerInternalCertSecret("").Name
+}
+
+func buildKASVolumeServerExternalCert(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.SecretName = manifests.KASServerExternalCertSecret("").Name
 }
 
 func kasVolumeKubeletClientCA() *corev1.Volume {
