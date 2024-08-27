@@ -160,7 +160,7 @@ graph TD
 
 ### Control Plane Operator
 
-The **Control Plane Operator** is a deployed by the HyperShift Operator into a hosted control plane namespace and manages the rollout of a single version of the the hosted cluster's control plane.
+The **Control Plane Operator** is deployed by the HyperShift Operator into a hosted control plane namespace and manages the rollout of a single version of the the hosted cluster's control plane.
 
 The Control Plane Operator is versioned in lockstep with a specific OCP version and is decoupled from the management cluster's version.
 
