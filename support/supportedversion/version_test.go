@@ -31,11 +31,23 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		platform               hyperv1.PlatformType
 	}{
 		{
-			name:                   "Releases before 4.8 are not supported",
+			name:                   "Releases before 4.14 are not supported",
 			currentVersion:         v("4.8.0"),
 			nextVersion:            v("4.7.0"),
 			latestVersionSupported: v("4.12.0"),
-			minVersionSupported:    v("4.10.0"),
+			minVersionSupported:    v("4.13.0"),
+			expectError:            true,
+			platform:               hyperv1.NonePlatform,
+		},
+		{
+			name:           "versions > LatestSupportedVersion are not supported",
+			currentVersion: v("4.15.0"),
+			nextVersion: &semver.Version{
+				Major: LatestSupportedVersion.Major,
+				Minor: LatestSupportedVersion.Minor + 1,
+			},
+			latestVersionSupported: v("4.20.0"),
+			minVersionSupported:    v("4.14.0"),
 			expectError:            true,
 			platform:               hyperv1.NonePlatform,
 		},

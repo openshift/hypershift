@@ -10,6 +10,7 @@ import (
 
 	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"k8s.io/utils/ptr"
 )
 
 // LatestSupportedVersion is the latest minor OCP version supported by the
@@ -61,7 +62,11 @@ func maxInt64(a, b uint64) uint64 {
 	return b
 }
 
-func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
+func IsValidReleaseVersion(version, currentVersion, maxSupportedVersion, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
+	if maxSupportedVersion.GT(LatestSupportedVersion) {
+		maxSupportedVersion = ptr.To(LatestSupportedVersion)
+	}
+
 	if version.LT(semver.MustParse("4.8.0")) {
 		return fmt.Errorf("releases before 4.8 are not supported. Attempting to use: %q", version)
 	}
@@ -83,8 +88,8 @@ func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minS
 		return fmt.Errorf("cannot use OVNKubernetes with OCP version %q < 4.11", version)
 	}
 
-	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
-		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", LatestSupportedVersion, version)
+	if (version.Major == maxSupportedVersion.Major && version.Minor > maxSupportedVersion.Minor) || version.Major > maxSupportedVersion.Major {
+		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", maxSupportedVersion, version)
 	}
 
 	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
