@@ -324,7 +324,7 @@ const buildTrustAnchorScript = `
 
 set -euo pipefail
 
-cp -f /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/
+cp -f -r /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/
 
 if ! [[ -f /run/service-ca-signer/service-ca.crt ]]; then
    exit 0
