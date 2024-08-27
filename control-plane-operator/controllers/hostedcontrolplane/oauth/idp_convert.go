@@ -15,7 +15,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	kas "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	"golang.org/x/net/http/httpproxy"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/cache"
@@ -435,7 +436,7 @@ const (
 	kubeconfigDataKey             = "kubeconfig"
 )
 
-func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, namespace string) (konnectivityproxy.ProxyDialer, error) {
+func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, namespace string, restMapper *meta.RESTMapper) (konnectivityproxy.ProxyDialer, error) {
 	konnectivityClientSecret := manifests.KonnectivityClientSecret(namespace)
 	if err := kclient.Get(ctx, crclient.ObjectKeyFromObject(konnectivityClientSecret), konnectivityClientSecret); err != nil {
 		return nil, fmt.Errorf("failed to get konnectivity client secret: %w", err)
@@ -473,7 +474,11 @@ func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, names
 		return nil, fmt.Errorf("failed to create REST config from kubeconfig: %w", err)
 	}
 
-	guestClusterClient, err := crclient.New(guestClusterConfig, crclient.Options{})
+	clientOptions := crclient.Options{}
+	if restMapper != nil {
+		clientOptions.Mapper = *restMapper
+	}
+	guestClusterClient, err := crclient.New(guestClusterConfig, clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client for guest cluster: %w", err)
 	}
@@ -519,7 +524,7 @@ func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, ke
 	}
 	req = req.WithContext(reqCtx)
 
-	rt, err := transportForCARef(ctx, kclient, namespace, ca.Name, key, skipKonnectivityDialer)
+	rt, err := transportForCARef(ctx, kclient, namespace, ca.Name, key, skipKonnectivityDialer, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -602,7 +607,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 		return false, fmt.Errorf("the referenced secret does not contain a value for the 'clientSecret' key")
 	}
 
-	transport, err := transportForCARef(ctx, kclient, namespace, caRererence.Name, corev1.ServiceAccountRootCAKey, skipKonnectivityDialer)
+	transport, err := transportForCARef(ctx, kclient, namespace, caRererence.Name, corev1.ServiceAccountRootCAKey, skipKonnectivityDialer, nil)
 	if err != nil {
 		return false, fmt.Errorf("couldn't get a transport for the referenced CA: %v", err)
 	}
@@ -676,7 +681,7 @@ func isValidURL(rawurl string, optional bool) bool {
 	return u.Scheme == "https" && len(u.Host) > 0 && len(u.Fragment) == 0
 }
 
-func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, caName, caKey string, skipKonnectivityDialer bool) (http.RoundTripper, error) {
+func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, caName, caKey string, skipKonnectivityDialer bool, restMapper *meta.RESTMapper) (http.RoundTripper, error) {
 	var konnectivityDialer konnectivityproxy.ProxyDialer
 	var userProxyConfig *httpproxy.Config
 	var userProxyTrustedCA string
@@ -690,7 +695,7 @@ func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, 
 	if !skipKonnectivityDialer {
 		var err error
 		// Build dialer for konnectivity.
-		konnectivityDialer, err = buildKonnectivityDialer(ctx, kclient, namespace)
+		konnectivityDialer, err = buildKonnectivityDialer(ctx, kclient, namespace, restMapper)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build konnectivity dialer: %w", err)
 		}

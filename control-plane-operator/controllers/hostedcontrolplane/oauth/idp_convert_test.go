@@ -12,12 +12,13 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/restmapper"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -357,7 +358,9 @@ users:
 			).Build()
 
 			// Run function.
-			transport, err := transportForCARef(context.Background(), client, namespace, caName, caKey, false)
+			// Create a fake RESTMapper as otherwise this client go version requires the fake kubeconfig kas address to be a valid serving URL.
+			restMapper := restmapper.NewDiscoveryRESTMapper([]*restmapper.APIGroupResources{})
+			transport, err := transportForCARef(context.Background(), client, namespace, caName, caKey, false, &restMapper)
 			g.Expect(err).ToNot(HaveOccurred())
 			tr := transport.(*http.Transport)
 
