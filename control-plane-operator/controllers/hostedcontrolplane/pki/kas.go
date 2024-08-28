@@ -24,8 +24,7 @@ const (
 	ServiceSignerPublicKey  = "service-account.pub"
 )
 
-func ReconcileKASServerInternalCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, internalAPIAddress string, serviceCIDRs []string, nodeInternalAPIServerIP string) error {
-	svc := manifests.KubeAPIServerService(secret.Namespace)
+func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress string, serviceCIDRs []string, nodeInternalAPIServerIP string) error {
 	svcAddresses := make([]string, 0)
 
 	for _, serviceCIDR := range serviceCIDRs {
@@ -38,9 +37,10 @@ func ReconcileKASServerInternalCertSecret(secret, ca *corev1.Secret, ownerRef co
 
 	dnsNames := []string{
 		"localhost",
-		svc.Name,
-		fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace),
-		fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace),
+		"kubernetes",
+		"kubernetes.default",
+		"kubernetes.default.svc",
+		"kubernetes.default.svc.cluster.local",
 	}
 	apiServerIPs := []string{
 		"127.0.0.1",
@@ -49,28 +49,27 @@ func ReconcileKASServerInternalCertSecret(secret, ca *corev1.Secret, ownerRef co
 	apiServerIPs = append(apiServerIPs, svcAddresses...)
 	apiServerIPs = append(apiServerIPs, nodeInternalAPIServerIP)
 
-	if isNumericIP(internalAPIAddress) {
-		apiServerIPs = append(apiServerIPs, internalAPIAddress)
-	} else {
-		dnsNames = append(dnsNames, internalAPIAddress)
-	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes-internal", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, apiServerIPs)
-}
-
-func ReconcileKASServerExternalCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress string) error {
-	dnsNames := []string{
-		"kubernetes",
-		"kubernetes.default",
-		"kubernetes.default.svc",
-		"kubernetes.default.svc.cluster.local",
-	}
-	apiServerIPs := []string{}
 	if isNumericIP(externalAPIAddress) {
 		apiServerIPs = append(apiServerIPs, externalAPIAddress)
 	} else {
 		dnsNames = append(dnsNames, externalAPIAddress)
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes-external", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, apiServerIPs)
+	if isNumericIP(internalAPIAddress) {
+		apiServerIPs = append(apiServerIPs, internalAPIAddress)
+	} else {
+		dnsNames = append(dnsNames, internalAPIAddress)
+	}
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, apiServerIPs)
+}
+
+func ReconcileKASServerPrivateCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	svc := manifests.KubeAPIServerService(secret.Namespace)
+	dnsNames := []string{
+		svc.Name,
+		fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace),
+		fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace),
+	}
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes-private", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, nil)
 }
 
 func ReconcileKASKubeletClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
