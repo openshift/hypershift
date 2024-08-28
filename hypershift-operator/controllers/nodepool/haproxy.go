@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"net"
 	"net/url"
 	"slices"
 	"strconv"
@@ -125,7 +126,10 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 	var apiserverProxy string
 	var noProxy string
 	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" && util.ConnectsThroughInternetToControlplane(hcluster.Spec.Platform) {
-		apiserverProxy = hcluster.Spec.Configuration.Proxy.HTTPSProxy
+		apiserverProxy, err = joinDefaultPortIfMissing(hcluster.Spec.Configuration.Proxy.HTTPSProxy)
+		if err != nil {
+			return "", true, fmt.Errorf("failed to parse .Spec.Configuration.Proxy.HTTPSProxy: %v", err)
+		}
 		noProxy = hcluster.Spec.Configuration.Proxy.NoProxy
 	}
 
@@ -468,4 +472,24 @@ func apiServerIPUnit() ignitionapi.Unit {
 		Contents: &content,
 		Enabled:  pointer.Bool(true),
 	}
+}
+
+func joinDefaultPortIfMissing(addr string) (string, error) {
+	parsedUrl, err := url.Parse(addr)
+	if err != nil {
+		return "", err
+	}
+	if parsedUrl.Scheme == "" {
+		return "", fmt.Errorf("url scheme must be specified")
+	}
+
+	if parsedUrl.Port() == "" {
+		if parsedUrl.Scheme == "https" {
+			parsedUrl.Host = net.JoinHostPort(parsedUrl.Hostname(), "443")
+		} else {
+			parsedUrl.Host = net.JoinHostPort(parsedUrl.Hostname(), "80")
+		}
+	}
+
+	return parsedUrl.String(), nil
 }
