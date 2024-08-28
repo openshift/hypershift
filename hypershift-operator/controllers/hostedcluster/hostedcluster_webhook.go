@@ -55,6 +55,19 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtim
 			isTrue := true
 			hcluster.Spec.Platform.Kubevirt.BaseDomainPassthrough = &isTrue
 		}
+	case hyperv1.OpenStackPlatform:
+		if hcluster.Spec.Platform.OpenStack == nil {
+			hcluster.Spec.Platform.OpenStack = &hyperv1.OpenStackPlatformSpec{}
+		}
+		if hcluster.Spec.DNS.BaseDomain == "" {
+			isTrue := true
+			hcluster.Spec.Platform.OpenStack.BaseDomainPassthrough = &isTrue
+		}
+	}
+
+	// Common values for Kubvirt and OpenStack
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform:
 		if hcluster.Spec.Networking.NetworkType == "" {
 			hcluster.Spec.Networking.NetworkType = hyperv1.OVNKubernetes
 		}

@@ -966,6 +966,9 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform {
 		ingressFloatingIP := hcp.Spec.Platform.OpenStack.IngressFloatingIP
 		if ingressFloatingIP != "" {
+			if wantBaseDomainPassThrough(hcp) {
+				errs = append(errs, fmt.Errorf("ingress floating IP is not supported with base domain passthrough"))
+			}
 			ingressDefaultRouterIngressService := manifests.IngressRouterDefaultIngressService()
 			err := r.client.Get(ctx, client.ObjectKeyFromObject(ingressDefaultRouterIngressService), ingressDefaultRouterIngressService)
 			if apierrors.IsNotFound(err) {
@@ -986,11 +989,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 
 	// Default Ingress is passed through as a subdomain of the infra/mgmt cluster
 	// for KubeVirt when the base domain passthrough feature is in use.
-	if hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
-		hcp.Spec.Platform.Kubevirt != nil &&
-		hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil &&
-		*hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough {
-
+	if wantBaseDomainPassThrough(hcp) {
 		// Here we are creating a route and service in the hosted control plane namespace
 		// while in the HCCO (which typically only works on the guest client, not the mgmt client).
 		//
@@ -1008,7 +1007,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		}
 
 		var namespace string
-		if hcp.Spec.Platform.Kubevirt.Credentials != nil {
+		if hcp.Spec.Platform.Kubevirt != nil && hcp.Spec.Platform.Kubevirt.Credentials != nil {
 			namespace = hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
 		} else {
 			namespace = hcp.Namespace
@@ -1017,31 +1016,64 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		// Manifests for infra/mgmt cluster passthrough service
 		cpService := manifests.IngressDefaultIngressPassthroughService(namespace)
 
-		cpService.Name = fmt.Sprintf("%s-%s",
-			manifests.IngressDefaultIngressPassthroughServiceName,
-			hcp.Spec.Platform.Kubevirt.GenerateID)
+		switch hcp.Spec.Platform.Type {
+		case hyperv1.KubevirtPlatform:
+			cpService.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughServiceName,
+				hcp.Spec.Platform.Kubevirt.GenerateID)
+		default:
+			cpService.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughServiceName,
+				// the lenght might be too long for the name, so we might need to do like Kubevirt with GenerateID
+				// which has a fixed length (10 characters).
+				hcp.Spec.InfraID)
+		}
 
 		// Manifests for infra/mgmt cluster passthrough routes
 		cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(namespace)
 
-		cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
-			manifests.IngressDefaultIngressPassthroughRouteName,
-			hcp.Spec.Platform.Kubevirt.GenerateID)
+		switch hcp.Spec.Platform.Type {
+		case hyperv1.KubevirtPlatform:
+			cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughRouteName,
+				hcp.Spec.Platform.Kubevirt.GenerateID)
+		default:
+			cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughRouteName,
+				// the lenght might be too long for the name, so we might need to do like Kubevirt with GenerateID
+				// which has a fixed length (10 characters).
+				hcp.Spec.InfraID)
+		}
 
 		if _, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, cpService, func() error {
 			return ingress.ReconcileDefaultIngressPassthroughService(cpService, defaultIngressNodePortService, hcp)
 		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough service: %w", err))
+			errs = append(errs, fmt.Errorf("failed to reconcile ingress passthrough service: %w", err))
 		}
 
 		if _, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, cpPassthroughRoute, func() error {
 			return ingress.ReconcileDefaultIngressPassthroughRoute(cpPassthroughRoute, cpService, hcp)
 		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough route: %w", err))
+			errs = append(errs, fmt.Errorf("failed to reconcile ingress passthrough route: %w", err))
 		}
 	}
 
 	return errors.NewAggregate(errs)
+}
+
+func wantBaseDomainPassThrough(hcp *hyperv1.HostedControlPlane) bool {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		return hcp.Spec.Platform.Kubevirt != nil &&
+			hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil &&
+			*hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough
+	case hyperv1.OpenStackPlatform:
+		return hcp.Spec.Platform.OpenStack != nil &&
+			hcp.Spec.Platform.OpenStack.BaseDomainPassthrough != nil &&
+			*hcp.Spec.Platform.OpenStack.BaseDomainPassthrough
+	default:
+		return false
+	}
 }
 
 func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

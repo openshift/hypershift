@@ -651,7 +651,7 @@ func (o *options) Complete() error {
 		if len(o.ArtifactDir) == 0 {
 			o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
 		}
-		if len(o.configurableClusterOptions.BaseDomain) == 0 && o.Platform != hyperv1.KubevirtPlatform {
+		if len(o.configurableClusterOptions.BaseDomain) == 0 && o.Platform != hyperv1.KubevirtPlatform && o.Platform != hyperv1.OpenStackPlatform {
 			// TODO: make this an envvar with change to openshift/release, then change here
 			o.configurableClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}

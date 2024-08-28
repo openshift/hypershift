@@ -40,6 +40,13 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
 			Name: manifests.IngressDefaultIngressControllerCert().Name,
 		}
+	case hyperv1.OpenStackPlatform:
+		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+			Type: operatorv1.NodePortServiceStrategyType,
+		}
+		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
+			Name: manifests.IngressDefaultIngressControllerCert().Name,
+		}
 	case hyperv1.AWSPlatform:
 		if useNLB {
 			ingressController.Spec.EndpointPublishingStrategy.LoadBalancer = &operatorv1.LoadBalancerStrategy{
@@ -141,7 +148,11 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 	// secondary networks.
 	service.Spec.Selector = map[string]string{}
 
-	service.Spec.Type = corev1.ServiceTypeClusterIP
+	if hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		service.Spec.Type = corev1.ServiceTypeClusterIP
+	} else {
+		service.Spec.Type = corev1.ServiceTypeLoadBalancer
+	}
 	service.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
 
 	return nil
