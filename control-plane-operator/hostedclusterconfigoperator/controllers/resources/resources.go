@@ -365,6 +365,23 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		}
 	}
 
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Image != nil && hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name != "" {
+		additionalTrustedCAName := hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name
+		src := &corev1.ConfigMap{}
+		err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: additionalTrustedCAName}, src)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to get image registry additional trusted CA configmap %s: %w", additionalTrustedCAName, err))
+		} else {
+			dst := manifests.ImageRegistryAdditionalTrustedCAConfigMap(additionalTrustedCAName)
+			if _, err := r.CreateOrUpdate(ctx, r.client, dst, func() error {
+				dst.Data = src.Data
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile image registry additional trusted CA configmap %s: %w", additionalTrustedCAName, err))
+			}
+		}
+	}
+
 	log.Info("reconciling ingress controller")
 	if err := r.reconcileIngressController(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
