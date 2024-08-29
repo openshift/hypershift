@@ -16,18 +16,7 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 )
 
-func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, existing capiazure.AzureMachineTemplateSpec) (*capiazure.AzureMachineTemplateSpec, error) {
-	// The azure api requires passing a public key. This key is randomly generated, the private portion is thrown away and the public key
-	// gets written to the template.
-	sshKey := existing.Template.Spec.SSHPublicKey
-	if sshKey == "" {
-		var err error
-		sshKey, err = generateSSHPubkey()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate a SSH key: %w", err)
-		}
-	}
-
+func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine subnet name for Azure machine: %w", err)
@@ -49,7 +38,6 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		NetworkInterfaces: []capiazure.NetworkInterface{{
 			SubnetName: subnetName,
 		}},
-		SSHPublicKey:  sshKey,
 		FailureDomain: failureDomain(nodePool),
 	}}}
 

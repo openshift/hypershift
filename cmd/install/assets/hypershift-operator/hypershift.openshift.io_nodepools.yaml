@@ -1958,9 +1958,6 @@ spec:
                         required:
                         - azureImageType
                         type: object
-                        x-kubernetes-validations:
-                        - message: Image is immutable
-                          rule: self == oldSelf
                       machineIdentityID:
                         description: |-
                           MachineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. This
