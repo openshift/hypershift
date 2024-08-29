@@ -28,11 +28,17 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		ControlPlaneImage:       util.HCPControlPlaneReleaseImage(hcp),
-		Image:                   hcp.Spec.ReleaseImage,
+		Image:                   releaseImageProvider.GetImage("cluster-version-operator"),
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ClusterID:               hcp.Spec.ClusterID,
 		PlatformType:            hcp.Spec.Platform.Type,
 	}
+	// fallback to hcp.Spec.ReleaseImage if "cluster-version-operator" image is not available.
+	// This could happen for example in local dev enviroments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
+	if p.Image == "" {
+		p.Image = hcp.Spec.ReleaseImage
+	}
+
 	if enableCVOManagementClusterMetricsAccess {
 		p.DeploymentConfig.AdditionalLabels = map[string]string{
 			config.NeedMetricsServerAccessLabel: "true",
