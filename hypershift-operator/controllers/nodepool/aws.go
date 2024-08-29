@@ -123,6 +123,7 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 				RootVolume:               rootVolume,
 				AdditionalTags:           tags,
 				InstanceMetadataOptions:  instanceMetadataOptions,
+				Tenancy:                  nodePool.Spec.Platform.AWS.Tenancy,
 			},
 		},
 	}

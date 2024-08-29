@@ -1378,6 +1378,22 @@ resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
 for the user.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>tenancy</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Tenancy indicates if instance should run on shared or single-tenant hardware.</p>
+<p>Possible values:
+default: NodePool instances run on shared hardware.
+dedicated: Each NodePool instance runs on single-tenant hardware.
+host: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformSpec { #hypershift.openshift.io/v1beta1.AWSPlatformSpec }

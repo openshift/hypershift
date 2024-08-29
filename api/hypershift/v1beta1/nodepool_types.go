@@ -832,6 +832,17 @@ type AWSNodePoolPlatform struct {
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
+
+	// Tenancy indicates if instance should run on shared or single-tenant hardware.
+	//
+	// Possible values:
+	// default: NodePool instances run on shared hardware.
+	// dedicated: Each NodePool instance runs on single-tenant hardware.
+	// host: NodePool instances run on user's pre-allocated dedicated hosts.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum:=default;dedicated;host
+	Tenancy string `json:"tenancy,omitempty"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID or filters.
