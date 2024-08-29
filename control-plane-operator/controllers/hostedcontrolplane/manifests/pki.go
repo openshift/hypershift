@@ -188,12 +188,12 @@ func EtcdMetricsClientSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-metrics-client-tls")
 }
 
-func KASServerInternalCertSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "kas-server-internal-crt")
+func KASServerCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "kas-server-crt")
 }
 
-func KASServerExternalCertSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "kas-server-external-crt")
+func KASServerPrivateCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "kas-server-private-crt")
 }
 
 func KASKubeletClientCertSecret(ns string) *corev1.Secret {
