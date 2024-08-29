@@ -5,7 +5,6 @@ Install an OCP cluster running on VMs within a management OCP cluster
 ## Limitations
 
 * The HyperShift Operator with OpenStack support is currently in development and is not intended for production use.
-* Ingress can work with Octavia at installation time or disabled (default) and the user can figure it out on day 2 (e.g. by using MetalLB).
 * OpenStack CSI (Cinder and Manila) are not functional.
 
 ## Prerequisites
@@ -14,7 +13,7 @@ Install an OCP cluster running on VMs within a management OCP cluster
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
-* OpenStack Octavia service must be running if Ingress with Octavia is enabled.
+* OpenStack Octavia service must be running if Ingress is configured with an Octavia load balancer.
 
 ## Installing HyperShift Operator and cli tooling
 
@@ -132,7 +131,6 @@ export CA_CERT_PATH="$HOME/ca.crt"
 export SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
 export INGRESS_FLOATING_IP="<ingress-floating-ip>"
-export INGRESS_PROVIDER="Octavia"
 
 hcp create cluster openstack \
 --name $CLUSTER_NAME \
@@ -144,8 +142,7 @@ hcp create cluster openstack \
 --openstack-external-network-id $EXTERNAL_ID \
 --openstack-node-image-name $IMAGE_NAME \
 --openstack-node-flavor $FLAVOR \
---openstack-ingress-floating-ip $INGRESS_FLOATING_IP \
---openstack-ingress-provider $INGRESS_PROVIDER
+--openstack-ingress-floating-ip $INGRESS_FLOATING_IP
 ```
 
 !!! note
@@ -161,6 +158,12 @@ hcp create cluster openstack \
     When the management cluster worker nodes are spread across different availability zones,
     the hosted control plane will be spread across different availability zones as well in `PreferredDuringSchedulingIgnoredDuringExecution` mode for
     `PodAntiAffinity`.
+
+!!! note
+    If you don't use a pre-created floating IP, you'll need to update your DNS so Ingress can work.
+    You should create a DNS A record for `*.apps.<cluster-name>.<base-domain>` that matches the external IP
+    which was assigned for the `router-default` service.
+    Once you have generated a kubeconfig, you can find that IP with `oc -n openshift-ingress get service/router-default`.
 
 After a few moments we should see our hosted control plane pods up and running:
 

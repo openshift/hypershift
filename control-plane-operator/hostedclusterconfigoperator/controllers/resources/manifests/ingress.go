@@ -35,10 +35,10 @@ func IngressDefaultIngressNodePortService() *corev1.Service {
 	}
 }
 
-func IngressDefaultIngressOctaviaService() *corev1.Service {
+func IngressRouterDefaultIngressService() *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "octavia-ingress",
+			Name:      "router-default",
 			Namespace: "openshift-ingress",
 		},
 	}
