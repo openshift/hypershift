@@ -2187,20 +2187,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
 	}
 
-	// Internal KAS server secret
-	kasServerInternalSecret := manifests.KASServerInternalCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasServerInternalSecret, func() error {
-		return pki.ReconcileKASServerInternalCertSecret(kasServerInternalSecret, rootCASecret, p.OwnerRef, p.InternalAPIAddress, p.ServiceCIDR, p.NodeInternalAPIServerIP)
+	// KAS server secret
+	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kasServerSecret, func() error {
+		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR, p.NodeInternalAPIServerIP)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas server internal secret: %w", err)
+		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
 
-	// External KAS server secret
-	kasServerExternalSecret := manifests.KASServerExternalCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasServerExternalSecret, func() error {
-		return pki.ReconcileKASServerExternalCertSecret(kasServerExternalSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress)
+	// KAS server private secret
+	kasServerPrivateSecret := manifests.KASServerPrivateCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kasServerPrivateSecret, func() error {
+		return pki.ReconcileKASServerPrivateCertSecret(kasServerPrivateSecret, rootCASecret, p.OwnerRef)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas server external secret: %w", err)
+		return fmt.Errorf("failed to reconcile kas server private secret: %w", err)
 	}
 
 	totalKASClientCABundle := pkimanifests.TotalKASClientCABundle(hcp.Namespace)
