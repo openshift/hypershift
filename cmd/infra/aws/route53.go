@@ -18,7 +18,7 @@ import (
 
 func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API) (string, error) {
 	name := o.BaseDomain
-	id, err := lookupZone(ctx, client, name, false)
+	id, err := LookupZone(ctx, client, name, false)
 	if err != nil {
 		logger.Error(err, "Public zone not found", "name", name)
 		return "", err
@@ -27,7 +27,7 @@ func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.L
 	return id, nil
 }
 
-func lookupZone(ctx context.Context, client route53iface.Route53API, name string, isPrivateZone bool) (string, error) {
+func LookupZone(ctx context.Context, client route53iface.Route53API, name string, isPrivateZone bool) (string, error) {
 	var res *route53.HostedZone
 	f := func(resp *route53.ListHostedZonesOutput, lastPage bool) (shouldContinue bool) {
 		for idx, zone := range resp.HostedZones {
@@ -53,7 +53,7 @@ func lookupZone(ctx context.Context, client route53iface.Route53API, name string
 }
 
 func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API, name, vpcID string) (string, error) {
-	id, err := lookupZone(ctx, client, name, true)
+	id, err := LookupZone(ctx, client, name, true)
 	if err == nil {
 		logger.Info("Found existing private zone", "name", name, "id", id)
 		err := setSOAMinimum(ctx, client, id, name)
@@ -128,7 +128,7 @@ func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, client ro
 
 func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client route53iface.Route53API) error {
 	name := o.BaseDomain
-	id, err := lookupZone(ctx, client, name, false)
+	id, err := LookupZone(ctx, client, name, false)
 	if err != nil {
 		return nil
 	}
