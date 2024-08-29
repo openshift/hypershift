@@ -27,6 +27,7 @@ type AWSNodePoolPlatformApplyConfiguration struct {
 	SecurityGroups  []AWSResourceReferenceApplyConfiguration `json:"securityGroups,omitempty"`
 	RootVolume      *VolumeApplyConfiguration                `json:"rootVolume,omitempty"`
 	ResourceTags    []AWSResourceTagApplyConfiguration       `json:"resourceTags,omitempty"`
+	Tenancy         *string                                  `json:"tenancy,omitempty"`
 }
 
 // AWSNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AWSNodePoolPlatform type for use with
@@ -98,5 +99,13 @@ func (b *AWSNodePoolPlatformApplyConfiguration) WithResourceTags(values ...*AWSR
 		}
 		b.ResourceTags = append(b.ResourceTags, *values[i])
 	}
+	return b
+}
+
+// WithTenancy sets the Tenancy field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Tenancy field is set to the value of the last call.
+func (b *AWSNodePoolPlatformApplyConfiguration) WithTenancy(value string) *AWSNodePoolPlatformApplyConfiguration {
+	b.Tenancy = &value
 	return b
 }
