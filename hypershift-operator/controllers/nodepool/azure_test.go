@@ -525,9 +525,12 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			cluster := &hyperv1.HostedCluster{}
 
-			azureSpec, err := azureMachineTemplateSpec(cluster, tc.nodePool, testAzureMachineTemplateSpec)
+			azureSpec, err := azureMachineTemplateSpec(tc.nodePool)
+			if azureSpec != nil && azureSpec.Template.Spec.SSHPublicKey == "" {
+				azureSpec.Template.Spec.SSHPublicKey = testAzureMachineTemplateSpec.Template.Spec.SSHPublicKey
+			}
+
 			if tc.expectedErr {
 				g.Expect(err.Error()).To(Equal(tc.expectedErrMsg))
 			} else {
