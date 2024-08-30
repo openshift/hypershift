@@ -28,6 +28,32 @@ In addition:
       role.kubernetes.io/infra: "" 
 ```
 
+## Custom Taints and Tolerations
+
+By default, pods for a Hosted Cluster tolerate the "control-plane" and
+"cluster" taints, however it is also possible to use custom taints on
+nodes and allow Hosted Clusters to tolerate those taints on a per
+Hosted Cluster basis by setting `HostedCluster.spec.tolerations`. E.g
+```yaml
+  spec:
+    tolerations:
+    - effect: NoSchedule
+      key: kubernetes.io/custom
+      operator: Exists
+```
+
+Tolerations can also be set on the Hosted Cluster while creating a cluster
+using the `--tolerations` hcp cli argument. E.g
+```bash
+--toleration="key=kubernetes.io/custom,operator=Exists,effect=NoSchedule"
+```
+
+Usage of custom tolerations in concert with nodeSelectors allows for fine
+granular control of Hosted Cluster pod placement on a per Hosted Cluster
+basis. This control allows for groups of Hosted Clusters to be colocated
+and isolated from other Hosted Clusters. It also allows for custom
+placement of Hosted Clusters within infra and master nodes.
+
 ## Scheduling Topology Options 
 
 Cluster Service Providers may choose how hosted control planes are isolated or co-located. The three different options are:
