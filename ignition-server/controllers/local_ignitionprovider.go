@@ -319,7 +319,15 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			}
 			log.Info("copying file", "src", srcPath, "dest", destPath)
 			if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, srcPath, file); err != nil {
-				return fmt.Errorf("failed to extract image file: %w", err)
+				if suffix == "" {
+					return fmt.Errorf("failed to extract image file: %w", err)
+				}
+				// The MCO image in the NodePool release image does not contain the suffixed binary, try to extract the unsuffixed binary
+				srcPath = filepath.Join("usr/bin/", name)
+				log.Info("suffixed binary not found, copying file", "src", srcPath, "dest", destPath)
+				if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, filepath.Join("usr/bin/", name), file); err != nil {
+					return fmt.Errorf("failed to extract image file: %w", err)
+				}
 			}
 			if err := file.Close(); err != nil {
 				return fmt.Errorf("failed to close file: %w", err)
