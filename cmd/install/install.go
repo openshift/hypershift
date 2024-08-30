@@ -555,44 +555,65 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 //
 // The CRDs are filtered based on the options provided. If the option ExcludeEtcdManifests is set to true, the CRDs
 // related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
-// to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
+// to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook. And
+// if the option ManagedService is set to AroHCP, the CRDs under prereqs-azure are included in the list.
 func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) []crclient.Object {
 	var crds []crclient.Object
-	crds = append(
-		crds, assets.CustomResourceDefinitions(
-			func(path string) bool {
-				if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
-					return false
-				}
-				return true
-			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-				if crd.Spec.Group == "hypershift.openshift.io" {
-					if !opts.EnableConversionWebhook {
-						return
-					}
-					if crd.Annotations != nil {
-						crd.Annotations = map[string]string{}
-					}
-					crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
-					crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
-						Strategy: apiextensionsv1.WebhookConverter,
-						Webhook: &apiextensionsv1.WebhookConversion{
-							ClientConfig: &apiextensionsv1.WebhookClientConfig{
-								Service: &apiextensionsv1.ServiceReference{
-									Namespace: operatorNamespace.Name,
-									Name:      operatorService.Name,
-									Port:      pointer.Int32(443),
-									Path:      pointer.String("/convert"),
-								},
-							},
-							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
-						},
-					}
-				}
-			},
-		)...,
+	crds = append(crds, setupCRDsWithFilters(opts, operatorNamespace, operatorService, func(path string) bool {
+		if opts.ManagedService == hyperv1.AroHCP && strings.Contains(path, "prereqs-azure") {
+			return true
+		}
+		return false
+	})...,
+	)
+	crds = append(crds, setupCRDsWithFilters(opts, operatorNamespace, operatorService, func(path string) bool {
+		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
+			return false
+		}
+		return true
+	})...,
 	)
 	return crds
+}
+
+// setupCRDsWithFilters returns the CRDs from all the manifests under the assets directory as list of CustomResourceDefinition objects
+//
+// You can pass a list of filters to filter the CRDs based on the path of the manifest file. The filters are applied in
+// the order they are passed. If a filter returns false, the CRD is excluded from the list.
+func setupCRDsWithFilters(opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service, filters ...func(path string) bool) []crclient.Object {
+	return assets.CustomResourceDefinitions(
+		func(path string) bool {
+			pass := true
+			for _, filter := range filters {
+				pass = pass && filter(path)
+			}
+			return pass
+		}, func(crd *apiextensionsv1.CustomResourceDefinition) {
+			if crd.Spec.Group == "hypershift.openshift.io" {
+				if !opts.EnableConversionWebhook {
+					return
+				}
+				if crd.Annotations != nil {
+					crd.Annotations = map[string]string{}
+				}
+				crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+				crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: operatorNamespace.Name,
+								Name:      operatorService.Name,
+								Port:      pointer.Int32(443),
+								Path:      pointer.String("/convert"),
+							},
+						},
+						ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
+					},
+				}
+			}
+		},
+	)
 }
 
 // setupMonitoring creates the Prometheus resources for monitoring

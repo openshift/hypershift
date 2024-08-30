@@ -41,6 +41,13 @@ ifeq ("/","${HOME}")
 HOME=/tmp
 endif
 
+# Prometheus CRDs
+PROM_CRDS = "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/refs/heads/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml" \
+			"https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/refs/heads/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml" \
+			"https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/refs/heads/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"
+
+OS_ROUTE_CRD = "https://raw.githubusercontent.com/openshift/api/3e5de946111c67cb1f2b09ff7da569012d15931d/route/v1/zz_generated.crd-manifests/routes-Default.crd.yaml"
+
 all: build e2e tests
 
 pre-commit: all verify test
@@ -96,7 +103,7 @@ product-cli:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack api-docs download-prometheus-crds download-route-crd
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -117,7 +124,7 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/addons/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
-# remove ROSA CRDs 
+# remove ROSA CRDs
 	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_rosa*.yaml
 # remove EKS CRDs
 	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmanaged*.yaml
@@ -289,3 +296,30 @@ hypershift-install-aws-dev:
 .PHONY: run-operator-locally-aws-dev
 run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
+
+
+.PHONY:
+download-prometheus-crds:
+	@for crd in $(PROM_CRDS); do \
+		curl -f -s -w "%{http_code}" $$crd > /dev/null 2>&1; \
+		if [ $$? -eq 0 ]; then \
+			echo "Downloading `basename $$crd` -> $$crd"; \
+			curl -s $$crd -o cmd/install/assets/prereqs-azure/`basename $$crd`; \
+			echo "	Saved cmd/install/assets/prereqs-azure/`basename $$crd`"; \
+		else \
+			echo "Failed to download $$crd"; \
+		fi; \
+	done
+
+.PHONY:
+download-route-crd:
+	@for crd in $(OS_ROUTE_CRD); do \
+		curl -f -s -w "%{http_code}" $$crd > /dev/null 2>&1; \
+		if [ $$? -eq 0 ]; then \
+			echo "Downloading `basename $$crd` -> $$crd"; \
+			curl -s $$crd -o cmd/install/assets/prereqs-azure/route.openshift.io_routes.yaml; \
+			echo "	Saved cmd/install/assets/prereqs-azure/route.openshift.io_routes.yaml"; \
+		else \
+			echo "Failed to download $$crd"; \
+		fi; \
+	done

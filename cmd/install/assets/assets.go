@@ -13,6 +13,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+//go:embed prereqs-azure/*
 //go:embed hypershift-operator/*
 //go:embed cluster-api/*
 //go:embed cluster-api-provider-aws/*
