@@ -715,6 +715,21 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
+	// Check if dedicated request serving isolation is enabled
+	if opts.EnableDedicatedRequestServingIsolation {
+		schedulerDeployment := assets.HostedClusterSchedulerDeployment{
+			Namespace:           operatorNamespace,
+			OperatorImage:       opts.HyperShiftImage,
+			ServiceAccount:      operatorServiceAccount,
+			Images:              images,
+			EnableCIDebugOutput: opts.EnableCIDebugOutput,
+			EnableSizeTagging:   opts.EnableSizeTagging,
+		}.Build()
+		objects = append(objects, schedulerDeployment)
+	} else {
+		fmt.Printf("Dedicated request serving isolation controllers disabled")
+	}
+
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
 	}.Build()
