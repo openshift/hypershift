@@ -48,7 +48,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
 
 .PHONY: update
-update: api-deps api api-docs deps clients app-sre-saas-template
+update: api-deps api api-docs deps clients
 
 .PHONY: verify
 verify: update staticcheck fmt vet
@@ -159,27 +159,6 @@ release:
 delegating_client:
 	go run ./cmd/infra/aws/delegatingclientgenerator/main.go > ./cmd/infra/aws/delegating_client.txt
 	mv ./cmd/infra/aws/delegating_client.{txt,go}
-
-.PHONY: app-sre-saas-template
-app-sre-saas-template: hypershift
-	bin/hypershift install \
-		--oidc-storage-provider-s3-bucket-name=bucket \
-		--oidc-storage-provider-s3-secret=oidc-s3-creds \
-		--oidc-storage-provider-s3-region=us-east-1 \
-		--oidc-storage-provider-s3-secret-key=credentials \
-		--platform-monitoring=None \
-		--enable-ci-debug-output=false \
-		--enable-admin-rbac-generation=true \
-		--private-platform=AWS \
-		--aws-private-region=eu-east-1 \
-		--aws-private-secret=aws-credentials \
-		--aws-private-secret-key=credentials \
-		--external-dns-provider=aws \
-		--external-dns-secret=dns-credentials \
-		--external-dns-domain-filter=service.hypershift.example.org \
-		--external-dns-txt-owner-id=txt-owner-id \
-		--metrics-set=SRE \
-		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 
 # Run tests
 .PHONY: test
