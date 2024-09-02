@@ -41,6 +41,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
@@ -469,32 +470,9 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	}.Build()
 	objects = append(objects, operatorNamespace)
 
-	operatorServiceAccount := assets.HyperShiftOperatorServiceAccount{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, operatorServiceAccount)
-
-	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
-		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
-	}.Build()
-	objects = append(objects, operatorClusterRole)
-
-	operatorClusterRoleBinding := assets.HyperShiftOperatorClusterRoleBinding{
-		ClusterRole:    operatorClusterRole,
-		ServiceAccount: operatorServiceAccount,
-	}.Build()
-	objects = append(objects, operatorClusterRoleBinding)
-
-	operatorRole := assets.HyperShiftOperatorRole{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, operatorRole)
-
-	operatorRoleBinding := assets.HyperShiftOperatorRoleBinding{
-		ServiceAccount: operatorServiceAccount,
-		Role:           operatorRole,
-	}.Build()
-	objects = append(objects, operatorRoleBinding)
+	// Setup RBAC resources
+	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
+	objects = append(objects, rbacObjs...)
 
 	if opts.EnableDefaultingWebhook {
 		mutatingWebhookConfiguration := assets.HyperShiftMutatingWebhookConfiguration{
@@ -510,169 +488,149 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		objects = append(objects, validatingWebhookConfiguration)
 	}
 
-	if len(opts.PullSecretFile) > 0 {
-		pullSecretBytes, err := os.ReadFile(opts.PullSecretFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
-		}
-
-		pullSecret := assets.HyperShiftPullSecret{
-			Namespace:       operatorNamespace.Name,
-			PullSecretBytes: pullSecretBytes,
-		}.Build()
-		objects = append(objects, pullSecret)
+	// Setup Secrets
+	oidcSecret, operatorCredentialsSecret, secretObjs, err := setupAuth(opts, operatorNamespace)
+	if err != nil {
+		return nil, nil, err
 	}
+	objects = append(objects, secretObjs...)
 
-	// In OpenShift management clusters, this RoleBinding is brought in through openshift/cluster-kube-apiserver-operator.
-	// In ARO HCP, Hosted Clusters are running on AKS management clusters, so we need to provide this through the HO.
-	if opts.ManagedService == hyperv1.AroHCP {
-		roleBinding := assets.KubeSystemRoleBinding{
-			Namespace: "kube-system",
-		}.Build()
-		objects = append(objects, roleBinding)
+	// Setup CA resources
+	userCABundleCM, trustedCABundle, caObjs, err := setupCA(opts, operatorNamespace)
+	if err != nil {
+		return nil, nil, err
 	}
+	objects = append(objects, caObjs...)
 
-	var oidcSecret *corev1.Secret
-	if opts.OIDCStorageProviderS3Credentials != "" {
-		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		oidcSecret = assets.HyperShiftOperatorOIDCProviderS3Secret{
-			Namespace:                      operatorNamespace,
-			OIDCStorageProviderS3CredBytes: oidcCreds,
-			CredsKey:                       opts.OIDCStorageProviderS3CredentialsSecretKey,
-		}.Build()
-		objects = append(objects, oidcSecret)
-	} else if opts.OIDCStorageProviderS3CredentialsSecret != "" {
-		oidcSecret = &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: operatorNamespace.Name,
-				Name:      opts.OIDCStorageProviderS3CredentialsSecret,
-			},
-		}
-	}
-
-	var operatorCredentialsSecret *corev1.Secret
-	switch hyperv1.PlatformType(opts.PrivatePlatform) {
-	case hyperv1.AWSPlatform:
-		if opts.AWSPrivateCreds != "" {
-			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
-				Namespace:  operatorNamespace,
-				CredsBytes: credBytes,
-				CredsKey:   opts.AWSPrivateCredentialsSecretKey,
-			}.Build()
-			objects = append(objects, operatorCredentialsSecret)
-		} else if opts.AWSPrivateCredentialsSecret != "" {
-			operatorCredentialsSecret = &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: operatorNamespace.Name,
-					Name:      opts.AWSPrivateCredentialsSecret,
-				},
-			}
-		}
-	}
-
-	var userCABundleCM *corev1.ConfigMap
-	if opts.AdditionalTrustBundle != "" {
-		userCABundle, err := os.ReadFile(opts.AdditionalTrustBundle)
-		if err != nil {
-			return nil, nil, err
-		}
-		userCABundleCM = &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "user-ca-bundle",
-				Namespace: operatorNamespace.Name,
-			},
-			Data: map[string]string{
-				"ca-bundle.crt": string(userCABundle),
-			},
-		}
-		objects = append(objects, userCABundleCM)
-	}
-
-	trustedCABundle := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: operatorNamespace.Name,
-			Name:      "openshift-config-managed-trusted-ca-bundle",
-			Labels: map[string]string{
-				"config.openshift.io/inject-trusted-cabundle": "true",
-			},
-		},
-	}
-	objects = append(objects, trustedCABundle)
-
+	// Setup ExternalDNS resources
 	if len(opts.ExternalDNSProvider) > 0 {
-		// Setting the proxy for external-dns is best-effort, ignore errors
-		proxy, _ := func() (*configv1.Proxy, error) {
-			proxy := &configv1.Proxy{}
-			client, err := util.GetClient()
-			if err != nil {
-				return nil, err
-			}
-			if err := client.Get(context.TODO(), crclient.ObjectKey{Name: "cluster"}, proxy); err != nil {
-				return nil, err
-			}
-			return proxy, nil
-		}()
+		extDNSObjs, err := setupExternalDNS(opts, operatorNamespace)
+		if err != nil {
+			return nil, nil, err
+		}
+		objects = append(objects, extDNSObjs...)
+	}
 
-		externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
-			Namespace: operatorNamespace,
-		}.Build()
-		objects = append(objects, externalDNSServiceAccount)
+	// Setup HyperShift Operator Deployment and Service
+	operatorService, operatorObjs := setupOperatorResources(
+		opts, userCABundleCM, trustedCABundle, operatorNamespace, operatorServiceAccount, operatorCredentialsSecret,
+		oidcSecret, images,
+	)
+	objects = append(objects, operatorObjs...)
 
-		externalDNSClusterRole := assets.ExternalDNSClusterRole{}.Build()
-		objects = append(objects, externalDNSClusterRole)
+	// Setup Monitoring resources
+	monitoringObjs := setupMonitoring(opts, operatorNamespace)
+	objects = append(objects, monitoringObjs...)
 
-		externalDNSClusterRoleBinding := assets.ExternalDNSClusterRoleBinding{
-			ClusterRole:    externalDNSClusterRole,
-			ServiceAccount: externalDNSServiceAccount,
-		}.Build()
-		objects = append(objects, externalDNSClusterRoleBinding)
+	crds = setupCRDs(opts, operatorNamespace, operatorService)
 
-		var externalDNSSecret *corev1.Secret
-		if opts.ExternalDNSCredentials != "" {
-			externalDNSCreds, err := os.ReadFile(opts.ExternalDNSCredentials)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			externalDNSSecret = assets.ExternalDNSCredsSecret{
-				Namespace:  operatorNamespace,
-				CredsBytes: externalDNSCreds,
-			}.Build()
-			objects = append(objects, externalDNSSecret)
-		} else if opts.ExternalDNSCredentialsSecret != "" {
-			externalDNSSecret = &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: operatorNamespace.Name,
-					Name:      opts.ExternalDNSCredentialsSecret,
-				},
+	// Set the GVK for all the objects
+	setGVK := func(objsList ...[]crclient.Object) error {
+		for _, objs := range objsList {
+			for idx := range objs {
+				gvk, err := apiutil.GVKForObject(objs[idx], hyperapi.Scheme)
+				if err != nil {
+					return fmt.Errorf("failed to look up gvk for %T: %w", objs[idx], err)
+				}
+				// Everything that embeds metav1.TypeMeta implements this
+				objs[idx].(interface {
+					SetGroupVersionKind(gvk schema.GroupVersionKind)
+				}).SetGroupVersionKind(gvk)
 			}
 		}
+		return nil
+	}
 
-		externalDNSDeployment := assets.ExternalDNSDeployment{
-			Namespace:         operatorNamespace,
-			Image:             opts.ExternalDNSImage,
-			ServiceAccount:    externalDNSServiceAccount,
-			Provider:          assets.ExternalDNSProvider(opts.ExternalDNSProvider),
-			DomainFilter:      opts.ExternalDNSDomainFilter,
-			CredentialsSecret: externalDNSSecret,
-			TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
-			Proxy:             proxy,
-		}.Build()
-		objects = append(objects, externalDNSDeployment)
+	if err := setGVK(objects, crds); err != nil {
+		return nil, nil, err
+	}
 
-		podMonitor := assets.ExternalDNSPodMonitor{
-			Namespace: operatorNamespace,
+	return crds, objects, nil
+}
+
+// setupCRDs returns the CRDs from all the manifests under the assets directory as list of CustomResourceDefinition objects
+//
+// The CRDs are filtered based on the options provided. If the option ExcludeEtcdManifests is set to true, the CRDs
+// related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
+// to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
+func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) []crclient.Object {
+	var crds []crclient.Object
+	crds = append(
+		crds, assets.CustomResourceDefinitions(
+			func(path string) bool {
+				if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
+					return false
+				}
+				return true
+			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
+				if crd.Spec.Group == "hypershift.openshift.io" {
+					if !opts.EnableConversionWebhook {
+						return
+					}
+					if crd.Annotations != nil {
+						crd.Annotations = map[string]string{}
+					}
+					crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+					crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+						Strategy: apiextensionsv1.WebhookConverter,
+						Webhook: &apiextensionsv1.WebhookConversion{
+							ClientConfig: &apiextensionsv1.WebhookClientConfig{
+								Service: &apiextensionsv1.ServiceReference{
+									Namespace: operatorNamespace.Name,
+									Name:      operatorService.Name,
+									Port:      pointer.Int32(443),
+									Path:      pointer.String("/convert"),
+								},
+							},
+							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
+						},
+					}
+				}
+			},
+		)...,
+	)
+	return crds
+}
+
+// setupMonitoring creates the Prometheus resources for monitoring
+//
+// This includes:
+// - Role for Prometheus
+// - RoleBinding for Prometheus
+// - ServiceMonitor for HyperShift
+// - RecordingRule for HyperShift
+// - AlertingRule for HyperShift (if SLOsAlerts is enabled)
+// - MonitoringDashboardTemplate for HC monitoring dashboards (if MonitoringDashboards is enabled)
+func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclient.Object {
+	var objects []crclient.Object
+
+	prometheusRole := assets.HyperShiftPrometheusRole{
+		Namespace: operatorNamespace,
+	}.Build()
+	objects = append(objects, prometheusRole)
+
+	prometheusRoleBinding := assets.HyperShiftOperatorPrometheusRoleBinding{
+		Namespace:                  operatorNamespace,
+		Role:                       prometheusRole,
+		EnableOCPClusterMonitoring: opts.PlatformMonitoring.IsEnabled(),
+	}.Build()
+	objects = append(objects, prometheusRoleBinding)
+
+	serviceMonitor := assets.HyperShiftServiceMonitor{
+		Namespace: operatorNamespace,
+	}.Build()
+	objects = append(objects, serviceMonitor)
+
+	recordingRule := assets.HypershiftRecordingRule{
+		Namespace: operatorNamespace,
+	}.Build()
+	objects = append(objects, recordingRule)
+
+	if opts.SLOsAlerts {
+		alertingRule := assets.HypershiftAlertingRule{
+			Namespace: &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-monitoring"}},
 		}.Build()
-		objects = append(objects, podMonitor)
+		objects = append(objects, alertingRule)
 	}
 
 	if opts.MonitoringDashboards {
@@ -681,7 +639,13 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		}.Build()
 		objects = append(objects, monitoringDashboardTemplate)
 	}
+	return objects
+}
 
+// setupOperatorResources creates the operator Deployment and Service resources.
+//
+// Returns the Service and a list of resources to apply.
+func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		AdditionalTrustBundle:                   userCABundleCM,
 		OpenShiftTrustBundle:                    trustedCABundle,
@@ -713,135 +677,311 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		ManagedService:                          opts.ManagedService,
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 	}.Build()
-	objects = append(objects, operatorDeployment)
-
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
 	}.Build()
-	objects = append(objects, operatorService)
 
-	prometheusRole := assets.HyperShiftPrometheusRole{
+	return operatorService, []crclient.Object{operatorDeployment, operatorService}
+}
+
+// setupExternalDNS creates the resources for external-dns
+//
+// This includes:
+// - ServiceAccount for external-dns
+// - ClusterRole for external-dns
+// - ClusterRoleBinding for external-dns
+// - Secret for external-dns credentials
+// - Deployment for external-dns
+// - PodMonitor for external-dns
+func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crclient.Object, error) {
+	var objects []crclient.Object
+
+	// Setting the proxy for external-dns is best-effort, ignore errors
+	proxy, _ := func() (*configv1.Proxy, error) {
+		proxy := &configv1.Proxy{}
+		client, err := util.GetClient()
+		if err != nil {
+			return nil, err
+		}
+		if err := client.Get(context.TODO(), crclient.ObjectKey{Name: "cluster"}, proxy); err != nil {
+			return nil, err
+		}
+		return proxy, nil
+	}()
+
+	externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
 		Namespace: operatorNamespace,
 	}.Build()
-	objects = append(objects, prometheusRole)
+	objects = append(objects, externalDNSServiceAccount)
 
-	prometheusRoleBinding := assets.HyperShiftOperatorPrometheusRoleBinding{
-		Namespace:                  operatorNamespace,
-		Role:                       prometheusRole,
-		EnableOCPClusterMonitoring: opts.PlatformMonitoring.IsEnabled(),
+	externalDNSClusterRole := assets.ExternalDNSClusterRole{}.Build()
+	objects = append(objects, externalDNSClusterRole)
+
+	externalDNSClusterRoleBinding := assets.ExternalDNSClusterRoleBinding{
+		ClusterRole:    externalDNSClusterRole,
+		ServiceAccount: externalDNSServiceAccount,
 	}.Build()
-	objects = append(objects, prometheusRoleBinding)
+	objects = append(objects, externalDNSClusterRoleBinding)
 
-	serviceMonitor := assets.HyperShiftServiceMonitor{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, serviceMonitor)
+	var externalDNSSecret *corev1.Secret
+	if opts.ExternalDNSCredentials != "" {
+		externalDNSCreds, err := os.ReadFile(opts.ExternalDNSCredentials)
+		if err != nil {
+			return nil, err
+		}
 
-	recordingRule := assets.HypershiftRecordingRule{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, recordingRule)
-
-	if opts.SLOsAlerts {
-		alertingRule := assets.HypershiftAlertingRule{
-			Namespace: &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-monitoring"}},
+		externalDNSSecret = assets.ExternalDNSCredsSecret{
+			Namespace:  operatorNamespace,
+			CredsBytes: externalDNSCreds,
 		}.Build()
-		objects = append(objects, alertingRule)
+		objects = append(objects, externalDNSSecret)
+	} else if opts.ExternalDNSCredentialsSecret != "" {
+		externalDNSSecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: operatorNamespace.Name,
+				Name:      opts.ExternalDNSCredentialsSecret,
+			},
+		}
 	}
 
-	crds = append(crds, assets.CustomResourceDefinitions(func(path string) bool {
-		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
-			return false
+	externalDNSDeployment := assets.ExternalDNSDeployment{
+		Namespace:         operatorNamespace,
+		Image:             opts.ExternalDNSImage,
+		ServiceAccount:    externalDNSServiceAccount,
+		Provider:          assets.ExternalDNSProvider(opts.ExternalDNSProvider),
+		DomainFilter:      opts.ExternalDNSDomainFilter,
+		CredentialsSecret: externalDNSSecret,
+		TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
+		Proxy:             proxy,
+	}.Build()
+	objects = append(objects, externalDNSDeployment)
+
+	podMonitor := assets.ExternalDNSPodMonitor{
+		Namespace: operatorNamespace,
+	}.Build()
+	objects = append(objects, podMonitor)
+
+	return objects, nil
+}
+
+// setupCA creates the CA resources for the HyperShift operator.
+// This includes:
+// - User trusted CA bundle ConfigMap
+// - Managed trusted CA bundle ConfigMap
+//
+// Returns the user trusted CA bundle ConfigMap, managed trusted CA bundle ConfigMap, and a list of resources to apply
+func setupCA(opts Options, operatorNamespace *corev1.Namespace) (*corev1.ConfigMap, *corev1.ConfigMap, []crclient.Object, error) {
+	objects := make([]crclient.Object, 0, 1)
+	var userCABundleCM *corev1.ConfigMap
+	if opts.AdditionalTrustBundle != "" {
+		userCABundle, err := os.ReadFile(opts.AdditionalTrustBundle)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		return true
-	}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-		if crd.Spec.Group == "hypershift.openshift.io" {
-			if !opts.EnableConversionWebhook {
-				return
+		userCABundleCM = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-ca-bundle",
+				Namespace: operatorNamespace.Name,
+			},
+			Data: map[string]string{
+				"ca-bundle.crt": string(userCABundle),
+			},
+		}
+		objects = append(objects, userCABundleCM)
+	}
+
+	trustedCABundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: operatorNamespace.Name,
+			Name:      "openshift-config-managed-trusted-ca-bundle",
+			Labels: map[string]string{
+				"config.openshift.io/inject-trusted-cabundle": "true",
+			},
+		},
+	}
+	objects = append(objects, trustedCABundle)
+	return userCABundleCM, trustedCABundle, objects, nil
+}
+
+// setupRBAC creates the RBAC resources for the HyperShift operator.
+//
+// This includes:
+// - HO ServiceAccount
+// - HO ClusterRole
+// - HO ClusterRoleBinding
+// - HO Role (for the HO to manage resources in its own namespace such as the lease resource)
+// - HO RoleBinding
+// - Platform specific RBAC (e.g. missing RBAC in AKS that are present in OpenShift)
+// - Client and Reader RBAC (if admin RBAC is enabled)
+//
+// Returns the HO ServiceAccount and a list of resources to apply
+func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.ServiceAccount, []crclient.Object) {
+	objects := []crclient.Object{}
+	operatorServiceAccount := assets.HyperShiftOperatorServiceAccount{
+		Namespace: operatorNamespace,
+	}.Build()
+	objects = append(objects, operatorServiceAccount)
+
+	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
+		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
+	}.Build()
+	objects = append(objects, operatorClusterRole)
+
+	operatorClusterRoleBinding := assets.HyperShiftOperatorClusterRoleBinding{
+		ClusterRole:    operatorClusterRole,
+		ServiceAccount: operatorServiceAccount,
+	}.Build()
+	objects = append(objects, operatorClusterRoleBinding)
+
+	operatorRole := assets.HyperShiftOperatorRole{
+		Namespace: operatorNamespace,
+	}.Build()
+	objects = append(objects, operatorRole)
+
+	operatorRoleBinding := assets.HyperShiftOperatorRoleBinding{
+		ServiceAccount: operatorServiceAccount,
+		Role:           operatorRole,
+	}.Build()
+	objects = append(objects, operatorRoleBinding)
+
+	// In OpenShift management clusters, this RoleBinding is brought in through openshift/cluster-kube-apiserver-operator.
+	// In ARO HCP, Hosted Clusters are running on AKS management clusters, so we need to provide this through the HO.
+	if opts.ManagedService == hyperv1.AroHCP {
+		roleBinding := assets.KubeSystemRoleBinding{
+			Namespace: "kube-system",
+		}.Build()
+		objects = append(objects, roleBinding)
+	}
+
+	if opts.EnableAdminRBACGeneration {
+		clientObjs := setupAdminRBAC(operatorNamespace)
+		objects = append(objects, clientObjs...)
+	}
+
+	return operatorServiceAccount, objects
+}
+
+// setupAdminRBAC creates the RBAC resources for the HyperShift client and reader.
+//
+// This includes:
+// - HyperShift client ClusterRole
+// - HyperShift client ServiceAccount
+// - HyperShift client ClusterRoleBinding
+// - HyperShift reader ClusterRole
+// - HyperShift reader ClusterRoleBinding
+func setupAdminRBAC(operatorNamespace *corev1.Namespace) []crclient.Object {
+	var objects []crclient.Object
+	// hypershift-client admin persona for hostedclusters and nodepools creation
+	clientClusterRole := assets.HyperShiftClientClusterRole{}.Build()
+	objects = append(objects, clientClusterRole)
+
+	clientServiceAccount := assets.HyperShiftClientServiceAccount{
+		Namespace: operatorNamespace,
+	}.Build()
+	objects = append(objects, clientServiceAccount)
+
+	clientRoleBinding := assets.HyperShiftClientClusterRoleBinding{
+		ClusterRole:    clientClusterRole,
+		ServiceAccount: clientServiceAccount,
+		GroupName:      "hypershift-client",
+	}.Build()
+	objects = append(objects, clientRoleBinding)
+
+	// hypershift-reader admin persona for inspecting hosted controlplanes and the operator
+	readerClusterRole := assets.HyperShiftReaderClusterRole{}.Build()
+	objects = append(objects, readerClusterRole)
+
+	readerRoleBinding := assets.HyperShiftReaderClusterRoleBinding{
+		ClusterRole: readerClusterRole,
+		GroupName:   "hypershift-readers",
+	}.Build()
+	objects = append(objects, readerRoleBinding)
+	return objects
+}
+
+// setupAuth creates the Secret & Config required for the HyperShift operator.
+//
+// This includes:
+// - Pull secret
+// - OIDC S3 credentials secret
+// - Platform specific secrets (e.g. AWS credentials)
+//
+// Returns the OIDC S3 credentials secret, operator credentials secret, and a list of resources to apply
+func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secret, *corev1.Secret, []crclient.Object, error) {
+	var objects []crclient.Object
+	var operatorCredentialsSecret *corev1.Secret
+	var oidcSecret *corev1.Secret
+
+	if len(opts.PullSecretFile) > 0 {
+		pullSecretBytes, err := os.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		pullSecret := assets.HyperShiftPullSecret{
+			Namespace:       operatorNamespace.Name,
+			PullSecretBytes: pullSecretBytes,
+		}.Build()
+		objects = append(objects, pullSecret)
+	}
+
+	if opts.OIDCStorageProviderS3Credentials != "" {
+		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		oidcSecret = assets.HyperShiftOperatorOIDCProviderS3Secret{
+			Namespace:                      operatorNamespace,
+			OIDCStorageProviderS3CredBytes: oidcCreds,
+			CredsKey:                       opts.OIDCStorageProviderS3CredentialsSecretKey,
+		}.Build()
+		objects = append(objects, oidcSecret)
+	} else if opts.OIDCStorageProviderS3CredentialsSecret != "" {
+		oidcSecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: operatorNamespace.Name,
+				Name:      opts.OIDCStorageProviderS3CredentialsSecret,
+			},
+		}
+	}
+
+	switch hyperv1.PlatformType(opts.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		if opts.AWSPrivateCreds != "" {
+			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
+			if err != nil {
+				return nil, nil, nil, err
 			}
-			if crd.Annotations != nil {
-				crd.Annotations = map[string]string{}
-			}
-			crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
-			crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
-				Strategy: apiextensionsv1.WebhookConverter,
-				Webhook: &apiextensionsv1.WebhookConversion{
-					ClientConfig: &apiextensionsv1.WebhookClientConfig{
-						Service: &apiextensionsv1.ServiceReference{
-							Namespace: operatorNamespace.Name,
-							Name:      operatorService.Name,
-							Port:      pointer.Int32(443),
-							Path:      pointer.String("/convert"),
-						},
-					},
-					ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
+
+			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
+				Namespace:  operatorNamespace,
+				CredsBytes: credBytes,
+				CredsKey:   opts.AWSPrivateCredentialsSecretKey,
+			}.Build()
+			objects = append(objects, operatorCredentialsSecret)
+		} else if opts.AWSPrivateCredentialsSecret != "" {
+			operatorCredentialsSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: operatorNamespace.Name,
+					Name:      opts.AWSPrivateCredentialsSecret,
 				},
 			}
 		}
-	})...)
-
-	if opts.EnableAdminRBACGeneration {
-		// hypershift-client admin persona for hostedclusters and nodepools creation
-		clientClusterRole := assets.HyperShiftClientClusterRole{}.Build()
-		objects = append(objects, clientClusterRole)
-
-		clientServiceAccount := assets.HyperShiftClientServiceAccount{
-			Namespace: operatorNamespace,
-		}.Build()
-		objects = append(objects, clientServiceAccount)
-
-		clientRoleBinding := assets.HyperShiftClientClusterRoleBinding{
-			ClusterRole:    clientClusterRole,
-			ServiceAccount: clientServiceAccount,
-			GroupName:      "hypershift-client",
-		}.Build()
-		objects = append(objects, clientRoleBinding)
-
-		// hypershift-reader admin persona for inspecting hosted controlplanes and the operator
-		readerClusterRole := assets.HyperShiftReaderClusterRole{}.Build()
-		objects = append(objects, readerClusterRole)
-
-		readerRoleBinding := assets.HyperShiftReaderClusterRoleBinding{
-			ClusterRole: readerClusterRole,
-			GroupName:   "hypershift-readers",
-		}.Build()
-		objects = append(objects, readerRoleBinding)
 	}
-
 	if opts.OIDCStorageProviderS3BucketName != "" {
-		objects = append(objects, &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "kube-public",
-				Name:      "oidc-storage-provider-s3-config",
+		objects = append(
+			objects, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "kube-public",
+					Name:      "oidc-storage-provider-s3-config",
+				},
+				Data: map[string]string{
+					"name":   opts.OIDCStorageProviderS3BucketName,
+					"region": opts.OIDCStorageProviderS3Region,
+				},
 			},
-			Data: map[string]string{
-				"name":   opts.OIDCStorageProviderS3BucketName,
-				"region": opts.OIDCStorageProviderS3Region,
-			},
-		})
+		)
 	}
-
-	for idx := range objects {
-		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.Scheme)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to look up gvk for %T: %w", objects[idx], err)
-		}
-		// Everything that embeds metav1.TypeMeta implements this
-		objects[idx].(interface {
-			SetGroupVersionKind(gvk schema.GroupVersionKind)
-		}).SetGroupVersionKind(gvk)
-	}
-
-	for idx := range crds {
-		gvk, err := apiutil.GVKForObject(crds[idx], hyperapi.Scheme)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to look up gvk for %T: %w", crds[idx], err)
-		}
-		// Everything that embeds metav1.TypeMeta implements this
-		crds[idx].(interface {
-			SetGroupVersionKind(gvk schema.GroupVersionKind)
-		}).SetGroupVersionKind(gvk)
-	}
-
-	return crds, objects, nil
+	return oidcSecret, operatorCredentialsSecret, objects, nil
 }
