@@ -161,8 +161,8 @@ github.com/IBM-Cloud/power-go-client/power/client/service_instances
 github.com/IBM-Cloud/power-go-client/power/client/storage_types
 github.com/IBM-Cloud/power-go-client/power/client/swagger_spec
 github.com/IBM-Cloud/power-go-client/power/models
-# github.com/IBM/go-sdk-core/v5 v5.14.1
-## explicit; go 1.19
+# github.com/IBM/go-sdk-core/v5 v5.17.4
+## explicit; go 1.20
 github.com/IBM/go-sdk-core/v5/core
 # github.com/IBM/ibm-cos-sdk-go v1.9.4
 ## explicit; go 1.11
@@ -409,6 +409,12 @@ github.com/felixge/httpsnoop
 # github.com/fsnotify/fsnotify v1.7.0
 ## explicit; go 1.17
 github.com/fsnotify/fsnotify
+# github.com/gabriel-vasile/mimetype v1.4.3
+## explicit; go 1.20
+github.com/gabriel-vasile/mimetype
+github.com/gabriel-vasile/mimetype/internal/charset
+github.com/gabriel-vasile/mimetype/internal/json
+github.com/gabriel-vasile/mimetype/internal/magic
 # github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 ## explicit
 github.com/ghodss/yaml
@@ -436,8 +442,8 @@ github.com/go-openapi/analysis/internal/flatten/operations
 github.com/go-openapi/analysis/internal/flatten/replace
 github.com/go-openapi/analysis/internal/flatten/schutils
 github.com/go-openapi/analysis/internal/flatten/sortref
-# github.com/go-openapi/errors v0.20.3
-## explicit; go 1.14
+# github.com/go-openapi/errors v0.21.0
+## explicit; go 1.19
 github.com/go-openapi/errors
 # github.com/go-openapi/jsonpointer v0.20.0
 ## explicit; go 1.18
@@ -463,7 +469,7 @@ github.com/go-openapi/runtime/yamlpc
 # github.com/go-openapi/spec v0.20.4
 ## explicit; go 1.13
 github.com/go-openapi/spec
-# github.com/go-openapi/strfmt v0.21.7
+# github.com/go-openapi/strfmt v0.22.1
 ## explicit; go 1.19
 github.com/go-openapi/strfmt
 # github.com/go-openapi/swag v0.22.4
@@ -479,7 +485,7 @@ github.com/go-playground/locales/currency
 # github.com/go-playground/universal-translator v0.18.1
 ## explicit; go 1.18
 github.com/go-playground/universal-translator
-# github.com/go-playground/validator/v10 v10.13.0
+# github.com/go-playground/validator/v10 v10.19.0
 ## explicit; go 1.18
 github.com/go-playground/validator/v10
 # github.com/gobuffalo/flect v1.0.2
@@ -559,7 +565,7 @@ github.com/google/gofuzz/bytesource
 # github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 ## explicit; go 1.13
 github.com/google/shlex
-# github.com/google/uuid v1.4.0
+# github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
 # github.com/gorilla/mux v1.8.0
@@ -591,8 +597,8 @@ github.com/grpc-ecosystem/grpc-gateway/v2/utilities
 # github.com/hashicorp/go-cleanhttp v0.5.2
 ## explicit; go 1.13
 github.com/hashicorp/go-cleanhttp
-# github.com/hashicorp/go-retryablehttp v0.7.4
-## explicit; go 1.13
+# github.com/hashicorp/go-retryablehttp v0.7.7
+## explicit; go 1.19
 github.com/hashicorp/go-retryablehttp
 # github.com/hashicorp/go-uuid v1.0.1
 ## explicit
@@ -625,9 +631,10 @@ github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1
 ## explicit; go 1.11
 github.com/kylelemons/godebug/diff
 github.com/kylelemons/godebug/pretty
-# github.com/leodido/go-urn v1.2.3
-## explicit; go 1.16
+# github.com/leodido/go-urn v1.4.0
+## explicit; go 1.18
 github.com/leodido/go-urn
+github.com/leodido/go-urn/scim/schema
 # github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de
 ## explicit
 github.com/liggitt/tabwriter
@@ -1032,8 +1039,8 @@ go.etcd.io/etcd/server/v3/wal/walpb
 # go.etcd.io/etcd/tests/v3 v3.5.10
 ## explicit; go 1.20
 go.etcd.io/etcd/tests/v3/integration
-# go.mongodb.org/mongo-driver v1.12.1
-## explicit; go 1.13
+# go.mongodb.org/mongo-driver v1.14.0
+## explicit; go 1.18
 go.mongodb.org/mongo-driver/bson
 go.mongodb.org/mongo-driver/bson/bsoncodec
 go.mongodb.org/mongo-driver/bson/bsonoptions
@@ -1121,7 +1128,7 @@ go.uber.org/zap/internal/ztest
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
 go.uber.org/zap/zaptest
-# golang.org/x/crypto v0.16.0
+# golang.org/x/crypto v0.21.0
 ## explicit; go 1.18
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
@@ -1148,7 +1155,7 @@ golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 golang.org/x/exp/constraints
 golang.org/x/exp/maps
 golang.org/x/exp/slices
-# golang.org/x/net v0.19.0
+# golang.org/x/net v0.23.0
 ## explicit; go 1.18
 golang.org/x/net/context
 golang.org/x/net/html
@@ -1172,14 +1179,14 @@ golang.org/x/oauth2/internal
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.15.0
+# golang.org/x/sys v0.20.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.15.0
+# golang.org/x/term v0.18.0
 ## explicit; go 1.18
 golang.org/x/term
 # golang.org/x/text v0.14.0
