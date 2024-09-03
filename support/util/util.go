@@ -19,6 +19,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	corev1 "k8s.io/api/core/v1"
@@ -384,6 +385,47 @@ func GetMgmtClusterCPUArch(kc kubeclient.Interface) (string, error) {
 	}
 
 	return platformParts[1], nil
+}
+
+// DetermineHostedClusterPayloadArch returns the HostedCluster payload's CPU architecture type
+func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, imageMetadataProvider ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
+	var pullSecret corev1.Secret
+	if err := c.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return "", fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+
+	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to determine if release image multi-arch: %w", err)
+	}
+
+	if isMultiArchReleaseImage {
+		return hyperv1.Multi, nil
+	}
+
+	arch, err := getImageArchitecture(ctx, hc.Spec.Release.Image, pullSecretBytes, imageMetadataProvider)
+	if err != nil {
+		return "", err
+	}
+	return arch, nil
+}
+
+func getImageArchitecture(ctx context.Context, image string, pullSecretBytes []byte, imageMetadataProvider ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
+	imageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, image, pullSecretBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up image metadata for %s: %w", image, err)
+	}
+
+	if imageMetadata != nil && len(imageMetadata.Architecture) > 0 {
+		// Uppercase this value since it will be lowercase, but the API expects the arch to be in uppercase
+		return hyperv1.ToPayloadArch(imageMetadata.Architecture), nil
+	}
+
+	return "", fmt.Errorf("failed to find image CPU architecture for %s", image)
 }
 
 // PredicatesForHostedClusterAnnotationScoping returns predicate filters for all event types that will ignore incoming

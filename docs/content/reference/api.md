@@ -4464,6 +4464,21 @@ plane&rsquo;s current state.</p>
 </tr>
 <tr>
 <td>
+<code>payloadArch</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PayloadArchType">
+PayloadArchType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
+Multi, ARM64, AMD64, S390X, or PPC64LE.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>platform</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.PlatformStatus">
@@ -7952,6 +7967,32 @@ to an external network is not possible or desirable, e.g. if using a provider ne
 </td>
 </tr>
 </tbody>
+</table>
+###PayloadArchType { #hypershift.openshift.io/v1beta1.PayloadArchType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AMD64&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;ARM64&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Multi&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;PPC64LE&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;S390X&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###PersistentVolumeAccessMode { #hypershift.openshift.io/v1beta1.PersistentVolumeAccessMode }
 <p>
