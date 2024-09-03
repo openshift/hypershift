@@ -513,7 +513,7 @@ func validateMultiArch(ctx context.Context, o *RawCreateOptions, opts *core.Crea
 	}
 
 	// Check if a release stream was provided instead and its multi-arch
-	if len(opts.ReleaseStream) > 0 && strings.Contains(opts.ReleaseStream, "multi") {
+	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) > 0 && strings.Contains(opts.ReleaseStream, "multi") {
 		validMultiArchImage = true
 	}
 
