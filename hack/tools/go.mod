@@ -6,7 +6,7 @@ toolchain go1.23.0
 
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
-	gotest.tools/gotestsum v1.11.0
+	gotest.tools/gotestsum v1.12.0
 	honnef.co/go/tools v0.5.1
 	k8s.io/code-generator v0.30.1
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
@@ -15,7 +15,7 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
-	github.com/bitfield/gotestdox v0.2.1 // indirect
+	github.com/bitfield/gotestdox v0.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dnephin/pflag v1.0.7 // indirect
 	github.com/fatih/color v1.16.0 // indirect
