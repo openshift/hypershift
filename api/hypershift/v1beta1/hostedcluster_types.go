@@ -21,6 +21,7 @@ func init() {
 			&HostedClusterList{},
 		)
 		metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
+
 		return nil
 	})
 }
@@ -2696,6 +2697,34 @@ type AESCBCSpec struct {
 	BackupKey *corev1.LocalObjectReference `json:"backupKey,omitempty"`
 }
 
+type PayloadArchType string
+
+const (
+	AMD64   PayloadArchType = "AMD64"
+	PPC64LE PayloadArchType = "PPC64LE"
+	S390X   PayloadArchType = "S390X"
+	ARM64   PayloadArchType = "ARM64"
+	Multi   PayloadArchType = "Multi"
+)
+
+// ToPayloadArch converts a string to payloadArch.
+func ToPayloadArch(arch string) PayloadArchType {
+	switch arch {
+	case "amd64", string(AMD64):
+		return AMD64
+	case "arm64", string(ARM64):
+		return ARM64
+	case "ppc64le", string(PPC64LE):
+		return PPC64LE
+	case "s390x", string(S390X):
+		return S390X
+	case "multi", string(Multi):
+		return Multi
+	default:
+		return ""
+	}
+}
+
 // HostedClusterStatus is the latest observed status of a HostedCluster.
 type HostedClusterStatus struct {
 	// Version is the status of the release version applied to the
@@ -2739,6 +2768,12 @@ type HostedClusterStatus struct {
 	// +patchMergeKey=type
 	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
+	// Multi, ARM64, AMD64, S390X, or PPC64LE.
+	// +kubebuilder:validation:Enum=Multi;ARM64;AMD64;PPC64LE;S390X
+	// +optional
+	PayloadArch PayloadArchType `json:"payloadArch,omitempty"`
 
 	// Platform contains platform-specific status of the HostedCluster
 	// +optional

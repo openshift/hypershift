@@ -215,6 +215,7 @@ const (
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
 	InvalidImageReason                    = "InvalidImage"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
+	PayloadArchNotFoundReason             = "PayloadArchNotFound"
 
 	InvalidIAMRoleReason = "InvalidIAMRole"
 

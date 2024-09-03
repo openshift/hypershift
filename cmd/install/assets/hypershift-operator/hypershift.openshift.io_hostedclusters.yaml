@@ -9913,6 +9913,17 @@ spec:
                   with the name of an identity provider defined on the HostedCluster.
                   This is populated after the infrastructure is ready.
                 type: string
+              payloadArch:
+                description: |-
+                  payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
+                  Multi, ARM64, AMD64, S390X, or PPC64LE.
+                enum:
+                - Multi
+                - ARM64
+                - AMD64
+                - PPC64LE
+                - S390X
+                type: string
               platform:
                 description: Platform contains platform-specific status of the HostedCluster
                 properties:
