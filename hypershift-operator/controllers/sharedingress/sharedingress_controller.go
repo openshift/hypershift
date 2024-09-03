@@ -3,9 +3,10 @@ package sharedingress
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/openshift/hypershift/cmd/log"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"os"
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -19,6 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 type SharedIngressReconciler struct {
@@ -34,9 +38,20 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	mgr.GetCache().IndexField(context.Background(), &corev1.Service{}, "metadata.name", func(o client.Object) []string {
 		return []string{o.GetName()}
 	})
+
+	// A channel is used to generate an initial sync event.
+	// Afterwards, the controller syncs on HostedClusters.
+	initialSync := make(chan event.GenericEvent)
+
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
+		WatchesRawSource(source.Channel(initialSync, &handler.EnqueueRequestForObject{})).
 		Named("SharedIngressController")
+
+	go func() {
+		initialSync <- event.GenericEvent{Object: &hyperv1.HostedCluster{}}
+	}()
+
 	return builder.Complete(r)
 }
 
