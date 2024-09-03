@@ -503,11 +503,20 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ObservedGeneration: nodePool.Generation,
 		})
 	} else {
+		if err = validateHCPayloadSupportsNodePoolCPUArch(hcluster, nodePool); err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidArchPlatform,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolInvalidArchPlatform,
+				Message:            err.Error(),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, err
+		}
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidArchPlatform,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("CPU arch %s is supported for platform: %s", nodePool.Spec.Arch, nodePool.Spec.Platform.Type),
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
@@ -3453,6 +3462,19 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 		}
 	}
 	return nil
+}
+
+// validateHCPayloadSupportsNodePoolCPUArch validates the HostedCluster payload can support the NodePool's CPU arch
+func validateHCPayloadSupportsNodePoolCPUArch(hc *hyperv1.HostedCluster, np *hyperv1.NodePool) error {
+	if strings.EqualFold(hc.Status.PayloadArch, "multi") {
+		return nil
+	}
+
+	if strings.EqualFold(hc.Status.PayloadArch, np.Spec.Arch) {
+		return nil
+	}
+
+	return fmt.Errorf("NodePool CPU arch, %s, is not supported by the HostedCluster payload type, %s; either change the NodePool CPU arch or use a multi-arch release image", np.Spec.Arch, hc.Status.PayloadArch)
 }
 
 // reconcileMirroredConfigs mirrors configs into
