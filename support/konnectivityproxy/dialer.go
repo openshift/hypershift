@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/net/proxy"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -28,6 +30,7 @@ type ProxyDialer interface {
 	proxy.ContextDialer
 	proxy.Dialer
 	socks5.NameResolver
+	IsCloudAPI(string) bool
 }
 
 // Options specifies the inputs for creating a Konnectivity dialer.
@@ -61,6 +64,13 @@ type Options struct {
 	// before worker nodes are present in the cluster.
 	// See https://github.com/openshift/hypershift/pull/1601
 	ConnectDirectlyToCloudAPIs bool
+
+	// ExcludeCloudAPIHosts is a list of hostnames to exclude when determining if a particular
+	// hostname is a CloudAPI hostname.
+	// This is needed in the case when we use an internal proxy whose hostname ends in
+	// one of the cloud API suffixes we check. We should not need to use the management cluster
+	// proxy to get to the endpoint.
+	ExcludeCloudAPIHosts []string
 
 	// ResolveFromManagementClusterDNS tells the dialer to fallback to the management
 	// cluster's DNS (and direct dialer) initially until the konnectivity tunnel is available.
@@ -171,6 +181,7 @@ func NewKonnectivityDialer(opts Options) (ProxyDialer, error) {
 		connectDirectlyToCloudAPIs:      opts.ConnectDirectlyToCloudAPIs,
 		resolveFromManagementClusterDNS: opts.ResolveFromManagementClusterDNS,
 		resolveBeforeDial:               opts.ResolveBeforeDial,
+		excludeCloudHosts:               sets.NewString(opts.ExcludeCloudAPIHosts...),
 	}
 	proxy.proxyResolver = proxyResolver{
 		client:                       opts.Client,
@@ -180,6 +191,7 @@ func NewKonnectivityDialer(opts Options) (ProxyDialer, error) {
 		mustResolve:                  opts.ResolveBeforeDial,
 		dnsFallback:                  &proxy.fallbackToMCDNS,
 		log:                          opts.Log,
+		isCloudAPI:                   proxy.IsCloudAPI,
 	}
 	proxy.proxyResolver.guestClusterResolver = &guestClusterResolver{
 		client:               opts.Client,
@@ -211,6 +223,11 @@ type konnectivityProxy struct {
 
 	tlsConfigOnce sync.Once
 	tlsConfig     *tls.Config
+
+	httpDialerOnce sync.Once
+	httpDialer     proxy.Dialer
+
+	excludeCloudHosts sets.String
 }
 
 func (p *konnectivityProxy) Dial(network, address string) (net.Conn, error) {
@@ -240,18 +257,23 @@ func (p *konnectivityProxy) getTLSConfig() *tls.Config {
 // DialContext dials the specified address using the specified context. It implements the upstream
 // proxy.Dialer interface.
 func (p *konnectivityProxy) DialContext(ctx context.Context, network string, requestAddress string) (net.Conn, error) {
+	log := p.log.WithName("konnectivityProxy.DialContext")
+	log.V(4).Info("Dial called", "network", network, "requestAddress", requestAddress)
 	requestHost, requestPort, err := net.SplitHostPort(requestAddress)
 	if err != nil {
 		return nil, fmt.Errorf("invalid address (%s): %w", requestAddress, err)
 	}
+	log.V(4).Info("Host and port determined", "requestHost", requestHost, "requestPort", requestPort)
 	// return a dial direct function which respects any proxy environment settings
-	if p.connectDirectlyToCloudAPIs && isCloudAPI(requestHost) {
-		return p.dialDirectWithProxy(ctx, network, requestAddress)
+	if p.connectDirectlyToCloudAPIs && p.IsCloudAPI(requestHost) {
+		p.log.V(4).Info("Host name is cloud API, dialing through mgmt cluster proxy if present")
+		return p.dialDirectWithProxy(network, requestAddress)
 	}
 
 	// return a dial direct function ignoring any proxy environment settings
 	shouldDNSFallback := p.fallbackToMCDNS.get()
 	if shouldDNSFallback && p.resolveFromManagementClusterDNS {
+		log.V(4).Info("Should DNS fallback is set to true and resolve from management cluster DNS is true, dialing direct")
 		return p.dialDirectWithoutProxy(ctx, network, requestAddress)
 	}
 
@@ -260,43 +282,52 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 
 	// connect to the konnectivity server address and get a TLS connection
 	konnectivityServerAddress := net.JoinHostPort(p.konnectivityHost, fmt.Sprintf("%d", p.konnectivityPort))
+	log.V(4).Info("Dialing konnectivity server", "address", konnectivityServerAddress)
 	konnectivityConnection, err := tls.Dial("tcp", konnectivityServerAddress, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("dialing proxy %q failed: %v", konnectivityServerAddress, err)
 	}
 
 	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
+		log.V(4).Info("Host name must be resolved before dialing", "host", requestHost)
 		_, ip, err := p.Resolve(ctx, requestHost)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
 		}
+		p.log.V(4).Info("Host name resolved", "ip", ip.String())
 		requestAddress = net.JoinHostPort(ip.String(), requestPort)
 	}
 
 	// The CONNECT command sent to the Konnectivity server opens a TCP connection
 	// to the request host via the konnectivity tunnel.
 	connectString := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, requestHost)
+	log.V(4).Info("Sending connect string to konnectivity server", "connectString", connectString)
 	_, err = fmt.Fprintf(konnectivityConnection, "%s", connectString)
 	if err != nil {
+		log.V(4).Error(err, "Failed to write string to konnectivity server connection")
 		return nil, err
 	}
 
 	// read HTTP response and return the connection
 	br := bufio.NewReader(konnectivityConnection)
+	p.log.V(4).Info("Reading response from konnectivity server")
 	res, err := http.ReadResponse(br, nil)
 	if err != nil {
 		return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %v",
 			requestAddress, konnectivityServerAddress, err)
 	}
 	if res.StatusCode != 200 {
+		log.V(4).Info("Status code was not 200", "statusCode", res.StatusCode)
 		return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", konnectivityServerAddress, requestAddress, res.Status)
 	}
 	// It's safe to discard the bufio.Reader here and return the original TCP conn directly because we only use this
 	// for TLS. In TLS, the client speaks first, so we know there's no unbuffered data, but we can double-check.
 	if br.Buffered() > 0 {
+		log.V(4).Info("The response contained buffered data, none expected")
 		return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT proxy %q",
 			br.Buffered(), konnectivityServerAddress)
 	}
+	log.V(4).Info("Successfully created connection through konnectivity")
 	return konnectivityConnection, nil
 }
 
@@ -314,8 +345,21 @@ func (p *konnectivityProxy) dialDirectWithoutProxy(ctx context.Context, network,
 }
 
 // dialDirectWithProxy directly connect to the target, respecting any local proxy settings from the environment
-func (p *konnectivityProxy) dialDirectWithProxy(ctx context.Context, network, addr string) (net.Conn, error) {
-	return proxy.Dial(ctx, network, addr)
+func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn, error) {
+	p.httpDialerOnce.Do(func() {
+		if proxyURLStr := os.Getenv("HTTPS_PROXY"); proxyURLStr != "" {
+			proxyURL, err := url.Parse(proxyURLStr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to parse HTTPS_PROXY(%s): %v", proxyURLStr, err)
+			} else {
+				p.httpDialer = newHTTPDialer(proxyURL)
+			}
+		}
+		if p.httpDialer == nil {
+			p.httpDialer = proxy.Direct
+		}
+	})
+	return p.httpDialer.Dial(network, addr)
 }
 
 type syncBool struct {
@@ -335,7 +379,7 @@ func (f *syncBool) set(valueToSet bool) {
 	f.value = valueToSet
 }
 
-// isCloudAPI is a hardcoded list of domains that should not be routed through Konnectivity but be reached
+// IsCloudAPI is a hardcoded list of domains that should not be routed through Konnectivity but be reached
 // through the management cluster. This is needed to support management clusters with a proxy configuration,
 // as the components themselves already have proxy env vars pointing to the socks proxy (this binary). If we then
 // actually end up proxying or not depends on the env for this binary.
@@ -343,11 +387,21 @@ func (f *syncBool) set(valueToSet bool) {
 // AWS: https://docs.aws.amazon.com/general/latest/gr/rande.html#regional-endpoints
 // AZURE: https://docs.microsoft.com/en-us/rest/api/azure/#how-to-call-azure-rest-apis-with-curl
 // IBMCLOUD: https://cloud.ibm.com/apidocs/iam-identity-token-api#endpoints
-func isCloudAPI(host string) bool {
-	return strings.HasSuffix(host, ".amazonaws.com") ||
+func (p *konnectivityProxy) IsCloudAPI(host string) bool {
+	log := p.log.WithName("konnectivityProxy.IsCloudAPI")
+	log.V(4).Info("Determining whether host is cloud API", "host", host)
+	if p.excludeCloudHosts.Has(host) {
+		log.V(4).Info("Host is in the list of exclude hosts, returnin false")
+		return false
+	}
+	if strings.HasSuffix(host, ".amazonaws.com") ||
 		strings.HasSuffix(host, ".microsoftonline.com") ||
 		strings.HasSuffix(host, "azure.com") ||
-		strings.HasSuffix(host, "cloud.ibm.com")
+		strings.HasSuffix(host, "cloud.ibm.com") {
+		log.V(4).Info("Host has one of the cloud API suffixes, returning true")
+		return true
+	}
+	return false
 }
 
 func isIP(address string) bool {

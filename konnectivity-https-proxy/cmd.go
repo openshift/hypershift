@@ -9,11 +9,13 @@ import (
 	"os"
 
 	"github.com/elazarl/goproxy"
+	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpproxy"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,10 +24,14 @@ import (
 )
 
 func NewStartCommand() *cobra.Command {
+	zLogger := zap.New(
+		zap.UseDevMode(true),
+		zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+			o.EncodeTime = zapcore.RFC3339TimeEncoder
+		}),
+	)
+	log.SetLogger(zLogger)
 	l := log.Log.WithName("konnectivity-https-proxy")
-	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
-		o.EncodeTime = zapcore.RFC3339TimeEncoder
-	})))
 	cmd := &cobra.Command{
 		Use:   "konnectivity-https-proxy",
 		Short: "Runs the konnectivity https proxy server.",
@@ -66,6 +72,41 @@ func NewStartCommand() *cobra.Command {
 		opts.Client = c
 		opts.Log = l
 
+		var proxyTLS *tls.Config
+		var proxyURLHostPort *string
+		proxyHostNames := sets.NewString()
+
+		if len(httpsProxyURL) > 0 {
+			u, err := url.Parse(httpsProxyURL)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: failed to parse HTTPS proxy URL: %v", err)
+				os.Exit(1)
+			}
+			hostName, _, err := net.SplitHostPort(u.Host)
+			if err == nil {
+				proxyHostNames.Insert(hostName)
+			}
+			l.V(4).Info("Data plane HTTPS proxy is set", "hostname", hostName, "url", u.String())
+			proxyURLHostPort = ptr.To(u.Host)
+		}
+		if len(httpProxyURL) > 0 {
+			u, err := url.Parse(httpProxyURL)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: failed to parse HTTP proxy URL: %v", err)
+				os.Exit(1)
+			}
+			hostName, _, err := net.SplitHostPort(u.Host)
+			if err == nil {
+				proxyHostNames.Insert(hostName)
+			}
+			l.V(4).Info("Data plane HTTP proxy is set", "hostname", hostName, "url", u.String())
+			if proxyURLHostPort == nil {
+				proxyURLHostPort = ptr.To(u.Host)
+			}
+		}
+		l.V(4).Info("Excluding API hosts from isCloudAPI check", "hosts", proxyHostNames.List())
+		opts.ExcludeCloudAPIHosts = proxyHostNames.List()
+
 		konnectivityDialer, err := konnectivityproxy.NewKonnectivityDialer(opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to initialize konnectivity dialer: %v", err)
@@ -82,24 +123,6 @@ func NewStartCommand() *cobra.Command {
 		httpProxy := goproxy.NewProxyHttpServer()
 		httpProxy.Verbose = true
 
-		var proxyTLS *tls.Config
-		var proxyURLHostPort *string
-
-		if len(httpsProxyURL) > 0 {
-			u, err := url.Parse(httpsProxyURL)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: failed to parse HTTPS proxy URL: %v", err)
-				os.Exit(1)
-			}
-			proxyURLHostPort = ptr.To(u.Host)
-		} else if len(httpProxyURL) > 0 {
-			u, err := url.Parse(httpProxyURL)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: failed to parse HTTP proxy URL: %v", err)
-				os.Exit(1)
-			}
-			proxyURLHostPort = ptr.To(u.Host)
-		}
 		if proxyURLHostPort != nil {
 			host, _, err := net.SplitHostPort(*proxyURLHostPort)
 			if err != nil {
@@ -113,14 +136,22 @@ func NewStartCommand() *cobra.Command {
 		httpProxy.Tr = &http.Transport{
 			TLSClientConfig: proxyTLS,
 			Proxy: func(req *http.Request) (*url.URL, error) {
-				return userProxyFunc(req.URL)
+				l.V(4).Info("Determining whether request should be proxied", "url", req.URL)
+				u, err := userProxyFunc(req.URL)
+				if err != nil {
+					l.V(4).Error(err, "failed to determine whether request should be proxied")
+					return nil, err
+				}
+				l.V(4).Info("Should proxy", "url", u)
+				return u, nil
 			},
 			Dial: konnectivityDialer.Dial,
 		}
 		if httpsProxyURL != "" {
-			httpProxy.ConnectDial = httpProxy.NewConnectDialToProxy(httpsProxyURL)
+			httpProxy.ConnectDialWithReq = connectDialFunc(l, httpProxy, httpsProxyURL, opts.ConnectDirectlyToCloudAPIs, konnectivityDialer.IsCloudAPI, userProxyFunc)
 		} else {
 			httpProxy.ConnectDial = nil
+			httpProxy.ConnectDialWithReq = nil
 		}
 		err = http.ListenAndServe(fmt.Sprintf(":%d", servingPort), httpProxy)
 		if err != nil {
@@ -130,4 +161,32 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+func connectDialFunc(log logr.Logger, httpProxy *goproxy.ProxyHttpServer, proxyURL string, connectDirectlyToCloudAPIs bool, isCloudAPI func(string) bool, userProxyFunc func(*url.URL) (*url.URL, error)) func(req *http.Request, network, addr string) (net.Conn, error) {
+	defaultDial := httpProxy.NewConnectDialToProxy(proxyURL)
+	return func(req *http.Request, network, addr string) (net.Conn, error) {
+		log.V(4).Info("Connect dial called", "network", network, "address", addr, "URL", req.URL)
+		requestURL := *req.URL
+		// Ensure the request URL scheme is set. This function is only called
+		// for requests to https endpoints.
+		requestURL.Scheme = "https"
+		proxyURL, err := userProxyFunc(&requestURL)
+		if err != nil {
+			return nil, err
+		}
+		log.V(4).Info("Determined proxy URL", "url", proxyURL)
+		host, _, err := net.SplitHostPort(requestURL.Host)
+		if err != nil {
+			return nil, err
+		}
+		// If the URL is a cloud API or it should not be proxied, then
+		// send it through the dialer directly.
+		if (connectDirectlyToCloudAPIs && isCloudAPI(host)) || proxyURL == nil {
+			log.V(4).Info("Host is cloud API or should not use a proxy with it, dialing directly through konnectivity")
+			return httpProxy.Tr.Dial(network, addr)
+		}
+		log.V(4).Info("Using proxy to dial", "proxy", proxyURL)
+		return defaultDial(network, addr)
+	}
 }
