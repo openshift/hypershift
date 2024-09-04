@@ -264,66 +264,13 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	}
 
 	// Extract binaries from the MCO image into the bin directory
+	err = p.extractMCOBinaries(ctx, "/usr/lib/os-release", mcoImage, pullSecret, binDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download MCO binaries: %w", err)
+	}
+
 	err = func() error {
 		start := time.Now()
-		binaries := []string{"machine-config-operator", "machine-config-controller", "machine-config-server"}
-		suffix := ""
-
-		mcoOSReleaseBuf := &bytes.Buffer{}
-		if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, "usr/lib/os-release", mcoOSReleaseBuf); err != nil {
-			return fmt.Errorf("failed to extract image os-release file: %w", err)
-		}
-		mcoOSRelease := mcoOSReleaseBuf.String()
-
-		// read /etc/os-release file from disk to cpoOSRelease
-		cpoOSRelease, err := os.ReadFile("/usr/lib/os-release")
-		if err != nil {
-			return fmt.Errorf("failed to read os-release file: %w", err)
-		}
-
-		// extract RHEL major version from both os-release files
-		extractMajorVersion := func(osRelease string) (string, error) {
-			for _, line := range strings.Split(osRelease, "\n") {
-				if strings.HasPrefix(line, "VERSION_ID=") {
-					return strings.Split(strings.TrimSuffix(strings.TrimPrefix(line, "VERSION_ID=\""), "\""), ".")[0], nil
-				}
-			}
-			return "", fmt.Errorf("failed to find VERSION_ID in os-release file")
-		}
-		mcoRHELMajorVersion, err := extractMajorVersion(mcoOSRelease)
-		if err != nil {
-			return fmt.Errorf("failed to extract major version from MCO os-release: %w", err)
-		}
-		cpoRHELMajorVersion, err := extractMajorVersion(string(cpoOSRelease))
-		if err != nil {
-			return fmt.Errorf("failed to extract major version from CPO os-release: %w", err)
-		}
-		log.Info("read os-release", "mcoRHELMajorVersion", mcoRHELMajorVersion, "cpoRHELMajorVersion", cpoRHELMajorVersion)
-
-		if mcoRHELMajorVersion == "8" && cpoRHELMajorVersion == "9" {
-			// NodePool MCO RHEL major version is older than the CPO, need to add suffix to the binaries
-			suffix = ".rhel9"
-		}
-
-		for _, name := range binaries {
-			srcPath := filepath.Join("usr/bin/", name+suffix)
-			destPath := filepath.Join(binDir, name)
-			file, err := os.Create(destPath)
-			if err != nil {
-				return fmt.Errorf("failed to create file: %w", err)
-			}
-			if err := file.Chmod(0777); err != nil {
-				return fmt.Errorf("failed to chmod file: %w", err)
-			}
-			log.Info("copying file", "src", srcPath, "dest", destPath)
-			if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, srcPath, file); err != nil {
-				return fmt.Errorf("failed to extract image file: %w", err)
-			}
-			if err := file.Close(); err != nil {
-				return fmt.Errorf("failed to close file: %w", err)
-			}
-		}
-
 		clusterConfigImage, ok := imageProvider.ImageExist(clusterConfigComponent)
 		if !ok {
 			return fmt.Errorf("release image does not contain $%s (images: %v)", clusterConfigComponent, imageProvider.ComponentImages())
@@ -775,4 +722,76 @@ cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 	}
 
 	return fmt.Sprintf(script, binary, workDir, outputDir, payloadVersion, featureGateYAML)
+}
+
+func (p *LocalIgnitionProvider) extractMCOBinaries(ctx context.Context, cpoOSReleaseFile string, mcoImage string, pullSecret []byte, binDir string) error {
+	start := time.Now()
+	binaries := []string{"machine-config-operator", "machine-config-controller", "machine-config-server"}
+	suffix := ""
+
+	mcoOSReleaseBuf := &bytes.Buffer{}
+	if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, "usr/lib/os-release", mcoOSReleaseBuf); err != nil {
+		return fmt.Errorf("failed to extract image os-release file: %w", err)
+	}
+	mcoOSRelease := mcoOSReleaseBuf.String()
+
+	// read /etc/os-release file from disk to cpoOSRelease
+	cpoOSRelease, err := os.ReadFile(cpoOSReleaseFile)
+	if err != nil {
+		return fmt.Errorf("failed to read cpo os-release file: %w", err)
+	}
+
+	// extract RHEL major version from both os-release files
+	extractMajorVersion := func(osRelease string) (string, error) {
+		for _, line := range strings.Split(osRelease, "\n") {
+			if strings.HasPrefix(line, "VERSION_ID=") {
+				return strings.Split(strings.TrimSuffix(strings.TrimPrefix(line, "VERSION_ID=\""), "\""), ".")[0], nil
+			}
+		}
+		return "", fmt.Errorf("failed to find VERSION_ID in os-release file")
+	}
+	mcoRHELMajorVersion, err := extractMajorVersion(mcoOSRelease)
+	if err != nil {
+		return fmt.Errorf("failed to extract major version from MCO os-release: %w", err)
+	}
+	cpoRHELMajorVersion, err := extractMajorVersion(string(cpoOSRelease))
+	if err != nil {
+		return fmt.Errorf("failed to extract major version from CPO os-release: %w", err)
+	}
+	log.Info("read os-release", "mcoRHELMajorVersion", mcoRHELMajorVersion, "cpoRHELMajorVersion", cpoRHELMajorVersion)
+
+	if mcoRHELMajorVersion == "8" && cpoRHELMajorVersion == "9" {
+		// NodePool MCO RHEL major version is older than the CPO, need to add suffix to the binaries
+		suffix = ".rhel9"
+	}
+
+	for _, name := range binaries {
+		srcPath := filepath.Join("usr/bin/", name+suffix)
+		destPath := filepath.Join(binDir, name)
+		file, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("failed to create file: %w", err)
+		}
+		if err := file.Chmod(0777); err != nil {
+			return fmt.Errorf("failed to chmod file: %w", err)
+		}
+		log.Info("copying file", "src", srcPath, "dest", destPath)
+		if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, srcPath, file); err != nil {
+			if suffix == "" {
+				return fmt.Errorf("failed to extract image file: %w", err)
+			}
+			// The MCO image in the NodePool release image does not contain the suffixed binary, try to extract the unsuffixed binary
+			srcPath = filepath.Join("usr/bin/", name)
+			log.Info("suffixed binary not found, copying file", "src", srcPath, "dest", destPath)
+			if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, filepath.Join("usr/bin/", name), file); err != nil {
+				return fmt.Errorf("failed to extract image file: %w", err)
+			}
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close file: %w", err)
+		}
+	}
+
+	log.Info("downloaded binaries", "time", time.Since(start).Round(time.Second).String())
+	return nil
 }
