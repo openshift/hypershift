@@ -207,7 +207,11 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	cluster.Spec.IssuerURL = o.iamInfo.IssuerURL
 
 	if o.infra.MachineCIDR != "" {
-		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.infra.MachineCIDR)}}
+		cidr, err := ipnet.ParseCIDR(o.infra.MachineCIDR)
+		if err != nil {
+			return fmt.Errorf("parsing MachineCIDR (%s): %w", o.infra.MachineCIDR, err)
+		}
+		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *cidr}}
 	}
 
 	var baseDomainPrefix *string

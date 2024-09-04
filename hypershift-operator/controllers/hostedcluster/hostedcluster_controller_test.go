@@ -2962,7 +2962,7 @@ func TestFindAdvertiseAddress(t *testing.T) {
 			avdAddress, err := findAdvertiseAddress(hc)
 			if tt.wantErr {
 				g.Expect(err).To(Not(BeNil()))
-				g.Expect(avdAddress).To(BeEmpty())
+				g.Expect(avdAddress).To(BeZero())
 			} else {
 				g.Expect(avdAddress.String()).To(Equal(tt.resultAdvAddress))
 			}
