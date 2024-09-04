@@ -41,6 +41,11 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 		"kubernetes.default",
 		"kubernetes.default.svc",
 		"kubernetes.default.svc.cluster.local",
+		// This is needed to configure Openshift Auth Provider that talks to openshift.default.svc
+		"openshift",
+		"openshift.default",
+		"openshift.default.svc",
+		"openshift.default.svc.cluster.local",
 	}
 	apiServerIPs := []string{
 		"127.0.0.1",
