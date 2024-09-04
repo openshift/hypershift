@@ -1929,12 +1929,6 @@ type OpenStackPlatformSpec struct {
 	// +listType=set
 	// +optional
 	Tags []string `json:"tags,omitempty"`
-
-	// IngressFloatingIP is an available floating IP in your OpenStack cluster that will
-	// be associated with the OpenShift ingress port.
-	//
-	// +optional
-	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
 }
 
 // OpenStackIdentityReference is a reference to an infrastructure

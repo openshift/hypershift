@@ -7932,19 +7932,6 @@ to an external network is not possible or desirable, e.g. if using a provider ne
 <p>Tags to set on all resources in cluster which support tags</p>
 </td>
 </tr>
-<tr>
-<td>
-<code>ingressFloatingIP</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>IngressFloatingIP is an available floating IP in your OpenStack cluster that will
-be associated with the OpenShift ingress port.</p>
-</td>
-</tr>
 </tbody>
 </table>
 ###PersistentVolumeAccessMode { #hypershift.openshift.io/v1beta1.PersistentVolumeAccessMode }

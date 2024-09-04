@@ -942,7 +942,6 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 
 func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
-	log := ctrl.LoggerFrom(ctx)
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
@@ -960,27 +959,6 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 			return ingress.ReconcileDefaultIngressControllerCertSecret(ingressControllerCert, sourceCert)
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller cert: %w", err))
-		}
-	}
-
-	if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-		ingressFloatingIP := hcp.Spec.Platform.OpenStack.IngressFloatingIP
-		if ingressFloatingIP != "" {
-			ingressDefaultRouterIngressService := manifests.IngressRouterDefaultIngressService()
-			err := r.client.Get(ctx, client.ObjectKeyFromObject(ingressDefaultRouterIngressService), ingressDefaultRouterIngressService)
-			if apierrors.IsNotFound(err) {
-				errs = append(errs, fmt.Errorf("ingress router-default service not found: %w", err))
-			} else if err != nil {
-				errs = append(errs, fmt.Errorf("failed to retrieve ingress router-default service: %w", err))
-			} else if ingressDefaultRouterIngressService.Spec.LoadBalancerIP != ingressFloatingIP {
-				if _, err := r.CreateOrUpdate(ctx, r.client, ingressDefaultRouterIngressService, func() error {
-					log.Info("updating ingress router-default service with floating IP", "ingressFloatingIP", ingressFloatingIP)
-					ingressDefaultRouterIngressService.Spec.LoadBalancerIP = ingressFloatingIP
-					return nil
-				}); err != nil {
-					errs = append(errs, fmt.Errorf("failed to reconcile ingress router-default service: %w", err))
-				}
-			}
 		}
 	}
 
