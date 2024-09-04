@@ -102,6 +102,7 @@ type Options struct {
 	PullSecretFile                            string
 	ManagedService                            string
 	EnableSizeTagging                         bool
+	EnableEtcdRecovery                        bool
 }
 
 func (o *Options) Validate() error {
@@ -189,6 +190,7 @@ func NewCommand() *cobra.Command {
 	opts.ExternalDNSImage = ExternalDNSImage
 	opts.CertRotationScale = 24 * time.Hour
 	opts.EnableSizeTagging = false
+	opts.EnableEtcdRecovery = true
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -231,6 +233,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO-HCP, ROSA-HCP")
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
+	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -676,6 +679,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableDedicatedRequestServingIsolation:  opts.EnableDedicatedRequestServingIsolation,
 		ManagedService:                          opts.ManagedService,
 		EnableSizeTagging:                       opts.EnableSizeTagging,
+		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,

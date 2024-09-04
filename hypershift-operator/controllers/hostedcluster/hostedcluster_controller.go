@@ -43,6 +43,7 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -90,6 +91,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
+	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -133,6 +135,11 @@ const (
 
 	etcdEncKeyPostfix    = "-etcd-encryption-key"
 	managedServiceEnvVar = "MANAGED_SERVICE"
+
+	jobHostedClusterNameLabel      = "hypershift.openshift.io/cluster-name"
+	jobHostedClusterNamespaceLabel = "hypershift.openshift.io/cluster-namespace"
+
+	etcdCheckRequeueInterval = 10 * time.Second
 )
 
 var (
@@ -187,6 +194,8 @@ type HostedClusterReconciler struct {
 	CertRotationScale time.Duration
 
 	EnableCVOManagementClusterMetricsAccess bool
+
+	EnableEtcdRecovery bool
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -247,6 +256,13 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
+	}
+
+	if r.EnableEtcdRecovery {
+		managedResources = append(managedResources, []client.Object{
+			&appsv1.StatefulSet{},
+			&batchv1.Job{},
+		}...)
 	}
 	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -1458,6 +1474,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile the ETCD member recovery
+	var requeueAfter *time.Duration
+	if r.EnableEtcdRecovery &&
+		hcluster.Spec.Etcd.ManagementType == hyperv1.Managed &&
+		hcluster.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		var err error
+		if requeueAfter, err = r.reconcileETCDMemberRecovery(ctx, hcluster, createOrUpdate); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to perform etcd member recovery: %w", err)
+		}
+	}
+
 	// Reconcile global config related configmaps and secrets
 	{
 		if hcluster.Spec.Configuration != nil {
@@ -1774,7 +1801,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	log.Info("successfully reconciled")
-	return ctrl.Result{}, nil
+	result := ctrl.Result{}
+	if requeueAfter != nil {
+		result.RequeueAfter = *requeueAfter
+	}
+	return result, nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
@@ -3903,6 +3934,35 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 				}
 			}
 		}
+		if _, isStatefulset := obj.(*appsv1.StatefulSet); isStatefulset {
+			if obj.GetName() != "etcd" {
+				return []reconcile.Request{}
+			}
+			hcpList := &hyperv1.HostedControlPlaneList{}
+			if err := c.List(ctx, hcpList, client.InNamespace(obj.GetNamespace())); err != nil {
+				log.Error(err, "failed to list hcp")
+				return []reconcile.Request{}
+			}
+			if len(hcpList.Items) == 1 {
+				hcAnnotation := hcpList.Items[0].Annotations[HostedClusterAnnotation]
+				if hcAnnotation != "" {
+					return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
+				}
+			}
+			return []reconcile.Request{}
+		}
+		if _, isJob := obj.(*batchv1.Job); isJob {
+			if obj.GetName() != etcdrecoverymanifests.EtcdRecoveryJob("").Name {
+				return []reconcile.Request{}
+			}
+			name := obj.GetLabels()[jobHostedClusterNameLabel]
+			namespace := obj.GetLabels()[jobHostedClusterNamespaceLabel]
+			if name != "" && namespace != "" {
+				return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: name, Namespace: namespace}}}
+			}
+			return []reconcile.Request{}
+		}
+
 		var hostedClusterName string
 		if obj.GetAnnotations() != nil {
 			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]

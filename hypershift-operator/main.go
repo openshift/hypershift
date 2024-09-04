@@ -29,6 +29,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
+	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
@@ -85,6 +86,7 @@ func main() {
 
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(NewInitCommand())
+	cmd.AddCommand(etcdrecovery.NewRecoveryCommand())
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -310,6 +312,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 
+	enableEtcdRecovery := os.Getenv(config.EnableEtcdRecoveryEnvVar) == "1"
+
 	certRotationScale, err := pkiconfig.GetCertRotationScale()
 	if err != nil {
 		return fmt.Errorf("could not load cert rotation scale: %w", err)
@@ -329,6 +333,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		MonitoringDashboards:                    monitoringDashboards,
 		CertRotationScale:                       certRotationScale,
 		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
+		EnableEtcdRecovery:                      enableEtcdRecovery,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

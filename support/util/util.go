@@ -58,7 +58,7 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 	}
 }
 
-func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
+func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
@@ -68,7 +68,7 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	if o.GetDeletionTimestamp() != nil {
 		return true, nil
 	}
-	if err := c.Delete(ctx, o); err != nil {
+	if err := c.Delete(ctx, o, opts...); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
@@ -76,6 +76,10 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	}
 
 	return true, nil
+}
+
+func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
+	return DeleteIfNeededWithOptions(ctx, c, o)
 }
 
 func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {

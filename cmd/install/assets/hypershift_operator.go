@@ -377,6 +377,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableDedicatedRequestServingIsolation  bool
 	ManagedService                          string
 	EnableSizeTagging                       bool
+	EnableEtcdRecovery                      bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -482,6 +483,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	if o.EnableSizeTagging {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  "ENABLE_SIZE_TAGGING",
+			Value: "1",
+		})
+	}
+
+	if o.EnableEtcdRecovery {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  config.EnableEtcdRecoveryEnvVar,
 			Value: "1",
 		})
 	}
