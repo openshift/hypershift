@@ -2,13 +2,13 @@ package util
 
 import (
 	"context"
-	"github.com/openshift/hypershift/support/api"
 	"testing"
 	"unicode/utf8"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiversion "k8s.io/apimachinery/pkg/version"
@@ -501,6 +501,103 @@ func TestGetMgmtClusterCPUArch(t *testing.T) {
 				g.Expect(mgmtClusterArch).To(Equal(tc.expectedArch))
 			}
 
+		})
+	}
+}
+
+func TestGetPullSecretBytes(t *testing.T) {
+	testCases := []struct {
+		name      string
+		hc        *hyperv1.HostedCluster
+		secret    *corev1.Secret
+		expectErr bool
+	}{
+		{
+			name: "HC has right pull secret info; no err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte("mysecret"),
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name: "HC has wrong pull secret name; err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secrett"},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte("mysecret"),
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "HC has right pull secret name; pull secret missing key; err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					"wrong-key": []byte("mysecret"),
+				},
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			objs := []crclient.Object{tc.hc, tc.secret}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+
+			pullSecretBytes, err := GetPullSecretBytes(context.TODO(), client, tc.hc)
+			if !tc.expectErr {
+				g.Expect(err).To(BeNil())
+				g.Expect(pullSecretBytes).To(Equal(tc.secret.Data[corev1.DockerConfigJsonKey]))
+			} else {
+				g.Expect(err).To(HaveOccurred())
+			}
 		})
 	}
 }

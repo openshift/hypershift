@@ -1136,13 +1136,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return ctrl.Result{}, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	controlPlaneOperatorImage, err := GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
@@ -4038,13 +4034,9 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
 		return nil
 	}
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hc)
+	if err != nil {
+		return err
 	}
 
 	releaseInfo, err := r.lookupReleaseImage(ctx, hc, releaseProvider)
@@ -4715,13 +4707,9 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 }
 
 func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) (*releaseinfo.ReleaseImage, error) {
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return nil, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	if err != nil {
+		return nil, err
 	}
 	return releaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
 }
