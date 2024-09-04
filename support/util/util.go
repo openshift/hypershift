@@ -514,3 +514,17 @@ func SanitizeIgnitionPayload(payload []byte) error {
 
 	return nil
 }
+
+func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) ([]byte, error) {
+	pullSecret := corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return nil, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+
+	return pullSecretBytes, nil
+}
