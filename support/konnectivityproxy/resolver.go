@@ -87,11 +87,12 @@ type proxyResolver struct {
 	dnsFallback                  *syncBool
 	guestClusterResolver         *guestClusterResolver
 	log                          logr.Logger
+	isCloudAPI                   func(string) bool
 }
 
 func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
 	// Preserve the host so we can recognize it
-	if isCloudAPI(name) || d.disableResolver {
+	if d.isCloudAPI(name) || d.disableResolver {
 		return d.defaultResolve(ctx, name)
 	}
 	l := d.log.WithValues("name", name)
