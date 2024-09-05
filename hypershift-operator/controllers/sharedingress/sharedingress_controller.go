@@ -36,8 +36,9 @@ const (
 
 type SharedIngressReconciler struct {
 	client.Client
-	Namespace      string
-	createOrUpdate upsert.CreateOrUpdateFN
+	Namespace       string
+	PrivatePlatform string
+	createOrUpdate  upsert.CreateOrUpdateFN
 }
 
 func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdateProvider upsert.CreateOrUpdateProvider) error {
@@ -106,19 +107,20 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	hcluster := &hyperv1.HostedCluster{}
-	err := r.Get(ctx, req.NamespacedName, hcluster)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("hostedcluster not found, aborting reconcile", "name", req.NamespacedName)
-			return ctrl.Result{}, nil
+	if hyperv1.PlatformType(r.PrivatePlatform) == hyperv1.AzurePlatform {
+		hcluster := &hyperv1.HostedCluster{}
+		if err := r.Get(ctx, req.NamespacedName, hcluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("hostedcluster not found, aborting reconcile", "name", req.NamespacedName)
+				return ctrl.Result{}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster %q: %w", req.NamespacedName, err)
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster %q: %w", req.NamespacedName, err)
-	}
 
-	if hcluster.DeletionTimestamp.IsZero() {
-		if err := r.reconcileAzurePrivateEndpoint(ctx, hcluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile HostedCluster %q azure private endpoint: %w", req.NamespacedName, err)
+		if hcluster.DeletionTimestamp.IsZero() {
+			if err := r.reconcileAzurePrivateEndpoint(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile HostedCluster %q azure private endpoint: %w", req.NamespacedName, err)
+			}
 		}
 	}
 
@@ -185,17 +187,21 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		return fmt.Errorf("failed to list HCs: %w", err)
 	}
 
+	var svcsNamespaceToLinkID map[string]string
 	// reconcile the private service first, so that the private Link Service is created before generating config which requires the service to exist.
-	privateSvc := RouterPrivateService()
-	if _, err := r.createOrUpdate(ctx, r.Client, privateSvc, func() error {
-		return ReconcileRouterPrivateService(privateSvc, hcList)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile private router service: %w", err)
-	}
+	if hyperv1.PlatformType(r.PrivatePlatform) == hyperv1.AzurePlatform {
+		privateSvc := RouterPrivateService()
+		if _, err := r.createOrUpdate(ctx, r.Client, privateSvc, func() error {
+			return ReconcileRouterPrivateService(privateSvc, hcList)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile private router service: %w", err)
+		}
 
-	svcsNamespaceToLinkID, err := r.getLinkIDMapping(ctx, hcList)
-	if err != nil {
-		return err
+		var err error
+		svcsNamespaceToLinkID, err = r.getLinkIDMapping(ctx, hcList)
+		if err != nil {
+			return err
+		}
 	}
 
 	config, routes, err := r.generateConfig(ctx, hcList, svcsNamespaceToLinkID)

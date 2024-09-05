@@ -378,6 +378,10 @@ type HyperShiftOperatorDeployment struct {
 	ManagedService                          string
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
+
+	UseWorkloadIdentity bool
+	ResourceGroup       string
+	SubscriptionID      string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -510,7 +514,42 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	}
 
 	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
-	if privatePlatformType != hyperv1.NonePlatform {
+
+	// Add platform specific settings
+	switch privatePlatformType {
+	case hyperv1.AWSPlatform:
+		envVars = append(envVars,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: "/etc/provider/" + o.AWSPrivateSecretKey,
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: o.AWSPrivateRegion,
+			},
+			corev1.EnvVar{
+				Name:  "AWS_SDK_LOAD_CONFIG",
+				Value: "1",
+			})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "token",
+			MountPath: "/var/run/secrets/openshift/serviceaccount",
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: "token",
+			VolumeSource: corev1.VolumeSource{
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources: []corev1.VolumeProjection{
+						{
+							ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+								Audience: "openshift",
+								Path:     "token",
+							},
+						},
+					},
+				},
+			},
+		})
 		// Add generic provider credentials secret volume
 		volumes = append(volumes, corev1.Volume{
 			Name: "credentials",
@@ -524,43 +563,16 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name:      "credentials",
 			MountPath: "/etc/provider",
 		})
-
-		// Add platform specific settings
-		switch privatePlatformType {
-		case hyperv1.AWSPlatform:
-			envVars = append(envVars,
-				corev1.EnvVar{
-					Name:  "AWS_SHARED_CREDENTIALS_FILE",
-					Value: "/etc/provider/" + o.AWSPrivateSecretKey,
-				},
-				corev1.EnvVar{
-					Name:  "AWS_REGION",
-					Value: o.AWSPrivateRegion,
-				},
-				corev1.EnvVar{
-					Name:  "AWS_SDK_LOAD_CONFIG",
-					Value: "1",
-				})
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      "token",
-				MountPath: "/var/run/secrets/openshift/serviceaccount",
+	case hyperv1.AzurePlatform:
+		envVars = append(envVars,
+			corev1.EnvVar{
+				Name:  "RESOURCE_GROUP",
+				Value: o.ResourceGroup,
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_SUBSCRIPTION_ID",
+				Value: o.SubscriptionID,
 			})
-			volumes = append(volumes, corev1.Volume{
-				Name: "token",
-				VolumeSource: corev1.VolumeSource{
-					Projected: &corev1.ProjectedVolumeSource{
-						Sources: []corev1.VolumeProjection{
-							{
-								ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-									Audience: "openshift",
-									Path:     "token",
-								},
-							},
-						},
-					},
-				},
-			})
-		}
 	}
 
 	if o.RHOBSMonitoring {
@@ -722,6 +734,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		deployment.Annotations = map[string]string{
 			HyperShiftInstallCLIVersionAnnotation: version.String(),
 		}
+	}
+
+	if o.UseWorkloadIdentity {
+		deployment.Spec.Template.Labels["azure.workload.identity/use"] = "true"
 	}
 
 	if o.AdditionalTrustBundle != nil {
@@ -920,7 +936,8 @@ func (o ExternalDNSPodMonitor) Build() *prometheusoperatorv1.PodMonitor {
 }
 
 type HyperShiftOperatorServiceAccount struct {
-	Namespace *corev1.Namespace
+	Namespace   *corev1.Namespace
+	Annotations map[string]string
 }
 
 func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
@@ -930,8 +947,9 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 			APIVersion: corev1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Namespace.Name,
-			Name:      HypershiftOperatorName,
+			Namespace:   o.Namespace.Name,
+			Name:        HypershiftOperatorName,
+			Annotations: o.Annotations,
 		},
 	}
 	return sa

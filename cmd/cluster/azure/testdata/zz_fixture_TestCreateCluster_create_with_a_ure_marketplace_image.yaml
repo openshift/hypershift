@@ -40,6 +40,7 @@ spec:
     azure:
       credentials:
         name: bryans-cluster-cloud-credentials
+      endpointAccess: Public
       location: fakeLocation
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID

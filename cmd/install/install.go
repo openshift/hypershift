@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,20 +35,24 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
+	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -103,6 +108,18 @@ type Options struct {
 	ManagedService                            string
 	EnableSizeTagging                         bool
 	EnableEtcdRecovery                        bool
+
+	AzurePrivatePlatformOpts AzurePrivatePlatformOptions
+}
+
+type AzurePrivatePlatformOptions struct {
+	EnableWorkloadIdentity bool
+	IssuerUrl              string
+	ResourceGroup          string
+	SubscriptionID         string
+	Location               string
+
+	ClientID string
 }
 
 func (o *Options) Validate() error {
@@ -113,9 +130,12 @@ func (o *Options) Validate() error {
 		if (len(o.AWSPrivateCreds) == 0 && len(o.AWSPrivateCredentialsSecret) == 0) || len(o.AWSPrivateRegion) == 0 {
 			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
 		}
+	case hyperv1.AzurePlatform:
+		errs = append(errs, util.ValidateRequiredOption("resource-group", o.AzurePrivatePlatformOpts.ResourceGroup))
+		errs = append(errs, util.ValidateRequiredOption("subscription", o.AzurePrivatePlatformOpts.SubscriptionID))
 	case hyperv1.NonePlatform:
 	default:
-		errs = append(errs, fmt.Errorf("--private-platform must be either %s or %s", hyperv1.AWSPlatform, hyperv1.NonePlatform))
+		errs = append(errs, fmt.Errorf("--private-platform must be one of %s, %s or %s", hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.NonePlatform))
 	}
 
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
@@ -158,6 +178,9 @@ func (o *Options) Validate() error {
 	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
 	}
+
+	errs = append(errs, o.AzurePrivatePlatformOpts.validate())
+
 	return errors.NewAggregate(errs)
 }
 
@@ -235,10 +258,16 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 
+	opts.AzurePrivatePlatformOpts.bindFlags(cmd.PersistentFlags())
+
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
 
 		if err := opts.Validate(); err != nil {
+			return err
+		}
+
+		if err := opts.AzurePrivatePlatformOpts.setupWorkloadIdentity(cmd.Context(), opts.Namespace); err != nil {
 			return err
 		}
 
@@ -275,6 +304,82 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(NewRenderCommand(&opts))
 
 	return cmd
+}
+
+func (opts *AzurePrivatePlatformOptions) bindFlags(flags *pflag.FlagSet) {
+	flags.BoolVar(&opts.EnableWorkloadIdentity, "enable-workload-identity", opts.EnableWorkloadIdentity, "If true, a workload identity for Hypershift will be created and used.")
+	flags.StringVar(&opts.IssuerUrl, "issuer-url", opts.IssuerUrl, "Issuer url for the managmnet AKS cluster.")
+	flags.StringVar(&opts.ResourceGroup, "resource-group", opts.ResourceGroup, "The resource group name where the managed identity will be created. The hypershift operator pod will have Reader role on this resource group")
+	flags.StringVar(&opts.SubscriptionID, "subscription", opts.SubscriptionID, "SubscriptionID of the account where the AKS managment cluster is running.")
+	flags.StringVar(&opts.Location, "location", opts.SubscriptionID, "Location of the AKS managment cluster.")
+}
+
+func (opts *AzurePrivatePlatformOptions) validate() error {
+	if !opts.EnableWorkloadIdentity {
+		return nil
+	}
+
+	var errs []error
+	errs = append(errs, util.ValidateRequiredOption("issuer-url", opts.IssuerUrl))
+	errs = append(errs, util.ValidateRequiredOption("resource-group", opts.ResourceGroup))
+	errs = append(errs, util.ValidateRequiredOption("subscription", opts.SubscriptionID))
+	errs = append(errs, util.ValidateRequiredOption("location", opts.Location))
+
+	return errors.NewAggregate(errs)
+}
+
+func (opts *AzurePrivatePlatformOptions) setupWorkloadIdentity(ctx context.Context, serviceAccountNamespace string) error {
+	if !opts.EnableWorkloadIdentity {
+		return nil
+	}
+
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return err
+	}
+
+	// create managed identity
+	identityResponse, err := azureinfra.CreateManagedIdentity(ctx, opts.SubscriptionID, opts.ResourceGroup, "hypershift-operator", opts.Location, cred)
+	if err != nil {
+		return err
+	}
+
+	// create federated identitiy credential
+	federatedClient, err := armmsi.NewFederatedIdentityCredentialsClient(opts.SubscriptionID, cred, nil)
+	if err != nil {
+		return err
+	}
+
+	subjectServiceAccount := fmt.Sprintf("system:serviceaccount:%s:%s", serviceAccountNamespace, assets.HypershiftOperatorName)
+	_, err = federatedClient.CreateOrUpdate(ctx, opts.ResourceGroup, *identityResponse.Name, "hypershift-operator-fedIdentitiy", armmsi.FederatedIdentityCredential{
+		Properties: &armmsi.FederatedIdentityCredentialProperties{
+			Audiences: []*string{
+				ptr.To("api://AzureADTokenExchange"),
+			},
+			Issuer:  ptr.To(opts.IssuerUrl),
+			Subject: ptr.To(subjectServiceAccount),
+		},
+	}, nil)
+	if err != nil {
+		return err
+	}
+
+	resource_group_id := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", opts.SubscriptionID, opts.ResourceGroup)
+	// grant permissions to the managed idenitiy (reader permissions on the resource group is enough)
+	roleCreator := azureinfra.RoleAssignmentCreator{
+		SubscriptionID:   opts.SubscriptionID,
+		RoleDefinitionID: "acdd72a7-3385-48ef-bd42-f606fba81ae7", // Reader built-in role ID, see https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles
+		PrincipalID:      *identityResponse.Properties.PrincipalID,
+		Scope:            resource_group_id,
+		PrincipalType:    ptr.To(armauthorization.PrincipalTypeServicePrincipal),
+	}
+
+	if err := roleCreator.CreateRoleAssignment(ctx, cred); err != nil {
+		return err
+	}
+
+	opts.ClientID = *identityResponse.Properties.ClientID
+	return nil
 }
 
 func apply(ctx context.Context, objects []crclient.Object) error {
@@ -581,8 +686,8 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 								Service: &apiextensionsv1.ServiceReference{
 									Namespace: operatorNamespace.Name,
 									Name:      operatorService.Name,
-									Port:      pointer.Int32(443),
-									Path:      pointer.String("/convert"),
+									Port:      ptr.To[int32](443),
+									Path:      ptr.To("/convert"),
 								},
 							},
 							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
@@ -680,6 +785,9 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ManagedService:                          opts.ManagedService,
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
+		UseWorkloadIdentity:                     opts.AzurePrivatePlatformOpts.EnableWorkloadIdentity,
+		ResourceGroup:                           opts.AzurePrivatePlatformOpts.ResourceGroup,
+		SubscriptionID:                          opts.AzurePrivatePlatformOpts.SubscriptionID,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -821,8 +929,15 @@ func setupCA(opts Options, operatorNamespace *corev1.Namespace) (*corev1.ConfigM
 // Returns the HO ServiceAccount and a list of resources to apply
 func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.ServiceAccount, []crclient.Object) {
 	objects := []crclient.Object{}
+	var serviceAccountAnnotations map[string]string
+	if opts.AzurePrivatePlatformOpts.EnableWorkloadIdentity {
+		serviceAccountAnnotations = map[string]string{
+			"azure.workload.identity/client-id": opts.AzurePrivatePlatformOpts.ClientID,
+		}
+	}
 	operatorServiceAccount := assets.HyperShiftOperatorServiceAccount{
-		Namespace: operatorNamespace,
+		Namespace:   operatorNamespace,
+		Annotations: serviceAccountAnnotations,
 	}.Build()
 	objects = append(objects, operatorServiceAccount)
 
