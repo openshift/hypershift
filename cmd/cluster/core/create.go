@@ -78,6 +78,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.DurationVar(&opts.NodeDrainTimeout, "node-drain-timeout", opts.NodeDrainTimeout, "The NodeDrainTimeout on any created NodePools")
 	flags.DurationVar(&opts.NodeVolumeDetachTimeout, "node-volume-detach-timeout", opts.NodeVolumeDetachTimeout, "The NodeVolumeDetachTimeout on any created NodePools")
 	flags.StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
+	flags.StringArrayVar(&opts.Labels, "labels", opts.Labels, "Labels to apply to the hostedcluster (key=value). Can be specified multiple times.")
 	flags.BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
 	flags.BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine autorepair with machine health checks")
 	flags.StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
@@ -112,6 +113,7 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 type RawCreateOptions struct {
 	AdditionalTrustBundle            string
 	Annotations                      []string
+	Labels                           []string
 	AutoRepair                       bool
 	ControlPlaneAvailabilityPolicy   string
 	ControlPlaneOperatorImage        string
@@ -225,6 +227,16 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		annotations[k] = v
 	}
 
+	labels := map[string]string{}
+	for _, s := range opts.Labels {
+		pair := strings.SplitN(s, "=", 2)
+		if len(pair) != 2 {
+			return nil, fmt.Errorf("invalid label: %s", s)
+		}
+		k, v := pair[0], pair[1]
+		labels[k] = v
+	}
+
 	if len(opts.ControlPlaneOperatorImage) > 0 {
 		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = opts.ControlPlaneOperatorImage
 	}
@@ -273,6 +285,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 			Namespace:   prototype.Namespace.Name,
 			Name:        opts.Name,
 			Annotations: annotations,
+			Labels:      labels,
 		},
 		Spec: hyperv1.HostedClusterSpec{
 			Release: hyperv1.Release{
