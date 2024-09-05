@@ -137,6 +137,14 @@ type Effects struct {
 	// MachineHealthCheckTimeout specifies an optional timeout for machinehealthchecks created
 	// for HostedClusters with this specific size.
 	MachineHealthCheckTimeout *metav1.Duration `json:"machineHealthCheckTimeout,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// MaximumRequestsInFlight specifies the maximum requests in flight for Kube APIServer
+	MaximumRequestsInflight *int `json:"maximumRequestsInflight,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// MaximumMutatingRequestsInflight specifies the maximum mutating requests in flight for Kube APIServer
+	MaximumMutatingRequestsInflight *int `json:"maximumMutatingRequestsInflight,omitempty"`
 }
 
 // Management configures behaviors of the management plane for a size class.

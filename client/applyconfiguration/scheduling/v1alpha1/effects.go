@@ -25,12 +25,14 @@ import (
 // EffectsApplyConfiguration represents an declarative configuration of the Effects type for use
 // with apply.
 type EffectsApplyConfiguration struct {
-	KASGoMemLimit                 *resource.Quantity                  `json:"kasGoMemLimit,omitempty"`
-	ControlPlanePriorityClassName *string                             `json:"controlPlanePriorityClassName,omitempty"`
-	EtcdPriorityClassName         *string                             `json:"etcdPriorityClassName,omitempty"`
-	APICriticalPriorityClassName  *string                             `json:"APICriticalPriorityClassName,omitempty"`
-	ResourceRequests              []ResourceRequestApplyConfiguration `json:"resourceRequests,omitempty"`
-	MachineHealthCheckTimeout     *v1.Duration                        `json:"machineHealthCheckTimeout,omitempty"`
+	KASGoMemLimit                   *resource.Quantity                  `json:"kasGoMemLimit,omitempty"`
+	ControlPlanePriorityClassName   *string                             `json:"controlPlanePriorityClassName,omitempty"`
+	EtcdPriorityClassName           *string                             `json:"etcdPriorityClassName,omitempty"`
+	APICriticalPriorityClassName    *string                             `json:"APICriticalPriorityClassName,omitempty"`
+	ResourceRequests                []ResourceRequestApplyConfiguration `json:"resourceRequests,omitempty"`
+	MachineHealthCheckTimeout       *v1.Duration                        `json:"machineHealthCheckTimeout,omitempty"`
+	MaximumRequestsInflight         *int                                `json:"maximumRequestsInflight,omitempty"`
+	MaximumMutatingRequestsInflight *int                                `json:"maximumMutatingRequestsInflight,omitempty"`
 }
 
 // EffectsApplyConfiguration constructs an declarative configuration of the Effects type for use with
@@ -89,5 +91,21 @@ func (b *EffectsApplyConfiguration) WithResourceRequests(values ...*ResourceRequ
 // If called multiple times, the MachineHealthCheckTimeout field is set to the value of the last call.
 func (b *EffectsApplyConfiguration) WithMachineHealthCheckTimeout(value v1.Duration) *EffectsApplyConfiguration {
 	b.MachineHealthCheckTimeout = &value
+	return b
+}
+
+// WithMaximumRequestsInflight sets the MaximumRequestsInflight field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MaximumRequestsInflight field is set to the value of the last call.
+func (b *EffectsApplyConfiguration) WithMaximumRequestsInflight(value int) *EffectsApplyConfiguration {
+	b.MaximumRequestsInflight = &value
+	return b
+}
+
+// WithMaximumMutatingRequestsInflight sets the MaximumMutatingRequestsInflight field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MaximumMutatingRequestsInflight field is set to the value of the last call.
+func (b *EffectsApplyConfiguration) WithMaximumMutatingRequestsInflight(value int) *EffectsApplyConfiguration {
+	b.MaximumMutatingRequestsInflight = &value
 	return b
 }
