@@ -106,7 +106,6 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackExternalNetworkID, "e2e.openstack-external-network-id", "", "ID of the OpenStack external network")
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeFlavor, "e2e.openstack-node-flavor", "", "The flavor to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeImageName, "e2e.openstack-node-image-name", "", "The image name to use for OpenStack nodes")
-	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackIngressFloatingIP, "e2e.openstack-ingress-floating-ip", "", "The floating IP to use for the ingress controller (optional)")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
@@ -423,7 +422,6 @@ type configurableClusterOptions struct {
 	AzureCredentialsFile          string
 	OpenStackCredentialsFile      string
 	OpenStackCACertFile           string
-	OpenStackIngressFloatingIP    string
 	AzureLocation                 string
 	Region                        string
 	Zone                          stringSliceVar
@@ -532,7 +530,6 @@ func (p *options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 		OpenStackCredentialsFile:   p.configurableClusterOptions.OpenStackCredentialsFile,
 		OpenStackCACertFile:        p.configurableClusterOptions.OpenStackCACertFile,
 		OpenStackExternalNetworkID: p.configurableClusterOptions.OpenStackExternalNetworkID,
-		OpenStackIngressFloatingIP: p.configurableClusterOptions.OpenStackIngressFloatingIP,
 		NodePoolOpts: &openstacknodepool.RawOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
 				Flavor:    p.configurableClusterOptions.OpenStackNodeFlavor,
