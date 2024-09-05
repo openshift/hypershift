@@ -141,7 +141,7 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringVar(&cpo.TargetKubeconfig, "target-kubeconfig", cpo.TargetKubeconfig, "Kubeconfig for target cluster")
 	flags.StringVar(&cpo.KubevirtInfraKubeconfig, "kubevirt-infra-kubeconfig", cpo.KubevirtInfraKubeconfig, "Kubeconfig for infra cluster (kubevirt provider)")
 	flags.StringVar(&cpo.InitialCAFile, "initial-ca-file", cpo.InitialCAFile, "Path to controller manager initial CA file")
-	flags.StringVar(&cpo.ClusterSignerCAFile, "cluster-signer-ca-file", cpo.ClusterSignerCAFile, "Path to the cluster signer CA cert")
+	flags.StringVar(&cpo.ClusterSignerCAFile, "cluster-signer-ca-file", cpo.ClusterSignerCAFile, "Path to the cluster signer CA cert bundle")
 	flags.StringSliceVar(&cpo.Controllers, "controllers", cpo.Controllers, "Controllers to run with this operator")
 	flags.StringVar(&cpo.platformType, "platform-type", "", "The platform of the cluster")
 	flags.BoolVar(&cpo.enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
