@@ -14,6 +14,10 @@ Upstream References:
 - [Proposal](https://github.com/kubernetes/enhancements/tree/37ab8448371a38a1d7f0fd2a12ad327215e7d138/keps/sig-api-machinery/1281-network-proxy#proposal)
 - [Reference Implementation](https://github.com/kubernetes-sigs/apiserver-network-proxy)
 
+```mermaid
+flowchart LR
+a --> b
+```
 
 ## Why is it needed?
 
