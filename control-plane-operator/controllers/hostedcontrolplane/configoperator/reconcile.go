@@ -231,6 +231,45 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 				},
 			},
 		}...)
+	case hyperv1.OpenStackPlatform:
+		role.Rules = append(role.Rules, []rbacv1.PolicyRule{
+			// These are needed by the OpenStack platform in order to
+			// use a subdomain route for the guest cluster's default
+			// ingress
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"routes"},
+				Verbs: []string{
+					"create",
+					"get",
+					"patch",
+					"update",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"routes/custom-host"},
+				Verbs: []string{
+					"create",
+				},
+			},
+			{
+				APIGroups: []string{corev1.SchemeGroupVersion.Group},
+				Resources: []string{
+					"services",
+				},
+				Verbs: []string{
+					"create",
+					"get",
+					"patch",
+					"update",
+					"list",
+					"watch",
+				},
+			},
+		}...)
 	}
 	// TODO (jparrill): Add RBAC specific needs for Agent platform
 	return nil

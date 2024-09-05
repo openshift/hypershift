@@ -47,6 +47,7 @@ spec:
   olmCatalogPlacement: management
   platform:
     openstack:
+      baseDomainPassthrough: true
       identityRef:
         cloudName: openstack
         name: example-cloud-credentials

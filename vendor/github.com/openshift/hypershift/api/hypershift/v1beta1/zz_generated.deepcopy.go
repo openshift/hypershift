@@ -2418,6 +2418,11 @@ func (in *OpenStackNodePoolPlatform) DeepCopy() *OpenStackNodePoolPlatform {
 func (in *OpenStackPlatformSpec) DeepCopyInto(out *OpenStackPlatformSpec) {
 	*out = *in
 	out.IdentityRef = in.IdentityRef
+	if in.BaseDomainPassthrough != nil {
+		in, out := &in.BaseDomainPassthrough, &out.BaseDomainPassthrough
+		*out = new(bool)
+		**out = **in
+	}
 	if in.ManagedSubnets != nil {
 		in, out := &in.ManagedSubnets, &out.ManagedSubnets
 		*out = make([]SubnetSpec, len(*in))

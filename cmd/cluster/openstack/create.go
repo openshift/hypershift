@@ -62,8 +62,9 @@ type completedCreateOptions struct {
 
 	CompletedNodePoolOpts *openstacknodepool.OpenStackPlatformCreateOptions
 
-	externalDNSDomain string
-	name, namespace   string
+	externalDNSDomain     string
+	name, namespace       string
+	baseDomainPassthrough bool
 }
 
 type CreateOptions struct {
@@ -78,6 +79,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			externalDNSDomain:      opts.ExternalDNSDomain,
 			name:                   opts.Name,
 			namespace:              opts.Namespace,
+			baseDomainPassthrough:  opts.BaseDomain == "",
 		},
 	}
 
@@ -93,6 +95,12 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	}
 
 	if err := util.ValidateRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
+		return nil, err
+	}
+
+	if o.OpenStackIngressFloatingIP != "" && opts.BaseDomain == "" {
+		err := fmt.Errorf("--openstack-ingress-floating-ip is not supported without --base-domain")
+		opts.Log.Error(err, "Failed to create cluster")
 		return nil, err
 	}
 
@@ -114,7 +122,7 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	return validOpts, err
 }
 
-func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
+func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type:      hyperv1.OpenStackPlatform,
 		OpenStack: &hyperv1.OpenStackPlatformSpec{},
@@ -133,6 +141,10 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 
 	if o.OpenStackIngressFloatingIP != "" {
 		cluster.Spec.Platform.OpenStack.IngressFloatingIP = o.OpenStackIngressFloatingIP
+	}
+
+	if o.baseDomainPassthrough {
+		cluster.Spec.Platform.OpenStack.BaseDomainPassthrough = &o.baseDomainPassthrough
 	}
 
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)

@@ -21,6 +21,7 @@ package v1beta1
 // with apply.
 type OpenStackPlatformSpecApplyConfiguration struct {
 	IdentityRef            *OpenStackIdentityReferenceApplyConfiguration `json:"identityRef,omitempty"`
+	BaseDomainPassthrough  *bool                                         `json:"baseDomainPassthrough,omitempty"`
 	ManagedSubnets         []SubnetSpecApplyConfiguration                `json:"managedSubnets,omitempty"`
 	Router                 *RouterParamApplyConfiguration                `json:"router,omitempty"`
 	Network                *NetworkParamApplyConfiguration               `json:"network,omitempty"`
@@ -43,6 +44,14 @@ func OpenStackPlatformSpec() *OpenStackPlatformSpecApplyConfiguration {
 // If called multiple times, the IdentityRef field is set to the value of the last call.
 func (b *OpenStackPlatformSpecApplyConfiguration) WithIdentityRef(value *OpenStackIdentityReferenceApplyConfiguration) *OpenStackPlatformSpecApplyConfiguration {
 	b.IdentityRef = value
+	return b
+}
+
+// WithBaseDomainPassthrough sets the BaseDomainPassthrough field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the BaseDomainPassthrough field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithBaseDomainPassthrough(value bool) *OpenStackPlatformSpecApplyConfiguration {
+	b.BaseDomainPassthrough = &value
 	return b
 }
 
