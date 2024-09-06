@@ -169,6 +169,10 @@ const (
 	// A failure here often means a software bug or a non-stable cluster.
 	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
 
+	// EtcdRecoveryActive indicates that the Etcd cluster is failing and the
+	// recovery job was triggered.
+	EtcdRecoveryActive ConditionType = "EtcdRecoveryActive"
+
 	// ClusterSizeComputed indicates that a t-shirt size was computed for this HostedCluster.
 	// The last transition time for this condition is used to manage how quickly transitions occur.
 	ClusterSizeComputed = "ClusterSizeComputed"
@@ -196,6 +200,7 @@ const (
 	EtcdQuorumAvailableReason     = "QuorumAvailable"
 	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
 	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
+	EtcdRecoveryJobFailedReason   = "EtcdRecoveryJobFailed"
 
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
 	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"

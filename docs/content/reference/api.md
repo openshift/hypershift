@@ -3380,6 +3380,10 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
 A failure here often means a software bug or a non-stable cluster.</p>
 </td>
+</tr><tr><td><p>&#34;EtcdRecoveryActive&#34;</p></td>
+<td><p>EtcdRecoveryActive indicates that the Etcd cluster is failing and the
+recovery job was triggered.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;ExternalDNSReachable&#34;</p></td>
