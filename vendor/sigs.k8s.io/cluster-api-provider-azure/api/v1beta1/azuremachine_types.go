@@ -132,6 +132,12 @@ type AzureMachineSpec struct {
 	// +optional
 	DNSServers []string `json:"dnsServers,omitempty"`
 
+	// DisableExtensionOperations specifies whether extension operations should be disabled on the virtual machine.
+	// Use this setting only if VMExtensions are not supported by your image, as it disables CAPZ bootstrapping extension used for detecting Kubernetes bootstrap failure.
+	// This may only be set to True when no extensions are configured on the virtual machine.
+	// +optional
+	DisableExtensionOperations *bool `json:"disableExtensionOperations,omitempty"`
+
 	// VMExtensions specifies a list of extensions to be added to the virtual machine.
 	// +optional
 	VMExtensions []VMExtension `json:"vmExtensions,omitempty"`
@@ -145,6 +151,10 @@ type AzureMachineSpec struct {
 
 	// CapacityReservationGroupID specifies the capacity reservation group resource id that should be
 	// used for allocating the virtual machine.
+	// The field size should be greater than 0 and the field input must start with '/'.
+	// The input for capacityReservationGroupID must be similar to '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/capacityReservationGroups/{capacityReservationGroupName}'.
+	// The keys which are used should be among 'subscriptions', 'providers' and 'resourcegroups' followed by valid ID or names respectively.
+	// It is optional but may not be changed once set.
 	// +optional
 	CapacityReservationGroupID *string `json:"capacityReservationGroupID,omitempty"`
 }
