@@ -14,6 +14,64 @@ Upstream References:
 - [Proposal](https://github.com/kubernetes/enhancements/tree/37ab8448371a38a1d7f0fd2a12ad327215e7d138/keps/sig-api-machinery/1281-network-proxy#proposal)
 - [Reference Implementation](https://github.com/kubernetes-sigs/apiserver-network-proxy)
 
+## Reference Network Diagram
+
+```mermaid
+flowchart LR
+    subgraph hosted control plane
+        subgraph kube-apiserver pod
+            kube-apiserver --> konnectivity-server
+        end
+        subgraph openshift-apiserver pod
+            openshift-apiserver --> konnectivity-https-proxy-oapi[konnectivity-https-proxy]
+        end
+        subgraph oauth-apiserver pod
+            oauth-apiserver --> konnectivity-socks5-proxy-oauth[konnectivity-socks5-proxy]
+            oauth-apiserver --> konnectivity-https-proxy-oauth[konnectivity-https-proxy]
+        end
+        subgraph cluster-network-operator pod
+            cluster-network-operator --> konnectivity-socks5-proxy-cno[konnectivity-socks5-proxy]
+        end
+        subgraph ovnkube-control-plane pod
+            ovnkube-control-plane --> konnectivity-socks5-proxy-ovn[konnectivity-socks5-proxy]
+        end
+        subgraph ingress-operator pod
+            ingress-operator --> konnectivity-https-proxy-ingress[konnectivity-https-proxy]
+        end
+        subgraph packageserver pod
+            package-server --> konnectivity-socks5-proxy-pkgsrv[konnectivity-socks5-proxy]
+        end
+        subgraph olm-operator pod
+            olm-operator --> konnectivity-socks5-proxy-olm[konnectivity-socks5-proxy]
+        end
+        subgraph catalog-operator pod
+            catalog-operator --> konnectivity-socks5-proxy-cat[konnectivity-socks5-proxy]
+        end
+        konnectivity-server -- HCP APIServices --> konnectivity-agent-cp[konnectivity-agent]
+        konnectivity-agent-cp --> openshift-apiserver
+        konnectivity-agent-cp --> oauth-apiserver
+        konnectivity-agent-cp --> package-server
+        konnectivity-agent-cp -.->|registration| konnectivity-server-service
+        konnectivity-https-proxy-oapi --> konnectivity-server-local-service
+        konnectivity-socks5-proxy-oauth --> konnectivity-server-local-service
+        konnectivity-https-proxy-oauth --> konnectivity-server-local-service
+        konnectivity-socks5-proxy-cno --> konnectivity-server-local-service
+        konnectivity-socks5-proxy-ovn --> konnectivity-server-local-service
+        konnectivity-https-proxy-ingress --> konnectivity-server-local-service
+        konnectivity-socks5-proxy-pkgsrv --> konnectivity-server-local-service
+        konnectivity-socks5-proxy-olm --> konnectivity-server-local-service
+        konnectivity-socks5-proxy-cat --> konnectivity-server-local-service
+        konnectivity-server-local-service --> konnectivity-server
+        konnectivity-server-service -..-> konnectivity-server
+    end
+    subgraph guest node
+        konnectivity-server -- Default Route --> konnectivity-agent-node[konnectivity-agent]
+        konnectivity-agent-node --> kubelet
+        konnectivity-agent-node --> guest-service-network[Guest Service Network]
+    end
+    konnectivity-agent-node --> guest-machine-network[Guest Machine Network/Proxy]
+    konnectivity-agent-node -.->|registration| konnectivity-server-service
+```
 
 ## Why is it needed?
 
