@@ -8,7 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,8 +29,6 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
-	flags.Var(&opts.OpenStackIngressProvider, "openstack-ingress-provider", "The provider for the ingress controller (can be 'none' which is the default or 'octavia') (optional)")
 	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (required)")
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
@@ -41,10 +38,6 @@ type RawCreateOptions struct {
 	OpenStackCredentialsFile   string
 	OpenStackCACertFile        string
 	OpenStackExternalNetworkID string
-	OpenStackIngressFloatingIP string
-	OpenStackIngressProvider   hyperv1.OpenStackIngressProvider
-
-	externalDNSDomain string
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
@@ -101,7 +94,9 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
-	if err := openstackutil.ValidateIngressOptions(o.OpenStackIngressProvider, o.OpenStackIngressFloatingIP); err != nil {
+	if opts.ExternalDNSDomain != "" {
+		err := fmt.Errorf("--external-dns-domain is not supported on OpenStack")
+		opts.Log.Error(err, "Failed to create cluster")
 		return nil, err
 	}
 
@@ -134,39 +129,7 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 		}
 	}
 
-	if o.OpenStackIngressFloatingIP != "" {
-		cluster.Spec.Platform.OpenStack.IngressFloatingIP = o.OpenStackIngressFloatingIP
-	}
-
-	if o.OpenStackIngressProvider != "" {
-		cluster.Spec.Platform.OpenStack.IngressProvider = hyperv1.OpenStackIngressProvider(o.OpenStackIngressProvider)
-	}
-
-	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
-	if o.externalDNSDomain != "" {
-		for i, svc := range cluster.Spec.Services {
-			switch svc.Service {
-			case hyperv1.APIServer:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("api-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-
-			case hyperv1.OAuthServer:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("oauth-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-
-			case hyperv1.Konnectivity:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("konnectivity-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-			case hyperv1.Ignition:
-				cluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("ignition-%s.%s", cluster.Name, o.externalDNSDomain),
-				}
-			}
-		}
-	}
+	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
 
 	return nil
 }

@@ -35,15 +35,6 @@ func IngressDefaultIngressNodePortService() *corev1.Service {
 	}
 }
 
-func IngressDefaultIngressOctaviaService() *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "octavia-ingress",
-			Namespace: "openshift-ingress",
-		},
-	}
-}
-
 const IngressDefaultIngressPassthroughServiceName = "default-ingress-passthrough-service"
 
 func IngressDefaultIngressPassthroughService(namespace string) *corev1.Service {
