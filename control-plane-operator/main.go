@@ -9,6 +9,7 @@ import (
 
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/azureprivateendpoint"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
@@ -464,6 +465,13 @@ func NewStartCommand() *cobra.Command {
 				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
 				os.Exit(1)
 			}
+		}
+
+		if err := (&azureprivateendpoint.AzurePrivateEndpointReconciler{
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "azure-private-endpoint")
+			os.Exit(1)
 		}
 
 		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

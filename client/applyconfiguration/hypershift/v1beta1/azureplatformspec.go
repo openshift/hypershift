@@ -18,20 +18,22 @@ limitations under the License.
 package v1beta1
 
 import (
+	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	v1 "k8s.io/api/core/v1"
 )
 
 // AzurePlatformSpecApplyConfiguration represents an declarative configuration of the AzurePlatformSpec type for use
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
-	Credentials       *v1.LocalObjectReference `json:"credentials,omitempty"`
-	Cloud             *string                  `json:"cloud,omitempty"`
-	Location          *string                  `json:"location,omitempty"`
-	ResourceGroupName *string                  `json:"resourceGroup,omitempty"`
-	VnetID            *string                  `json:"vnetID,omitempty"`
-	SubnetID          *string                  `json:"subnetID,omitempty"`
-	SubscriptionID    *string                  `json:"subscriptionID,omitempty"`
-	SecurityGroupID   *string                  `json:"securityGroupID,omitempty"`
+	Credentials       *v1.LocalObjectReference         `json:"credentials,omitempty"`
+	Cloud             *string                          `json:"cloud,omitempty"`
+	Location          *string                          `json:"location,omitempty"`
+	ResourceGroupName *string                          `json:"resourceGroup,omitempty"`
+	VnetID            *string                          `json:"vnetID,omitempty"`
+	SubnetID          *string                          `json:"subnetID,omitempty"`
+	SubscriptionID    *string                          `json:"subscriptionID,omitempty"`
+	SecurityGroupID   *string                          `json:"securityGroupID,omitempty"`
+	EndpointAccess    *v1beta1.AzureEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs an declarative configuration of the AzurePlatformSpec type for use with
@@ -101,5 +103,13 @@ func (b *AzurePlatformSpecApplyConfiguration) WithSubscriptionID(value string) *
 // If called multiple times, the SecurityGroupID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithSecurityGroupID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.SecurityGroupID = &value
+	return b
+}
+
+// WithEndpointAccess sets the EndpointAccess field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EndpointAccess field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithEndpointAccess(value v1beta1.AzureEndpointAccessType) *AzurePlatformSpecApplyConfiguration {
+	b.EndpointAccess = &value
 	return b
 }

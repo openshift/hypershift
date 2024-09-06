@@ -151,15 +151,22 @@ func TestGenerateConfig(t *testing.T) {
 		return []string{svc.Name}
 	}
 
+	svcsNamespaceToLinkID := map[string]string{
+		testNamespace2: "dummy-linkID",
+	}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			hcList := &hyperv1.HostedClusterList{}
 			objects := []client.Object{}
 			for i := range tc.hostedClusterResources {
 				objects = append(objects, tc.hostedClusterResources[i].hostedCluster)
 				objects = append(objects, tc.hostedClusterResources[i].routes...)
 				objects = append(objects, tc.hostedClusterResources[i].svcs...)
+
+				hcList.Items = append(hcList.Items, *tc.hostedClusterResources[i].hostedCluster)
 			}
 			fakeClient := builder.WithObjects(objects...).
 				WithIndex(&corev1.Service{}, "metadata.name", indexFunc).
@@ -169,7 +176,7 @@ func TestGenerateConfig(t *testing.T) {
 				Client:         fakeClient,
 				createOrUpdate: upsert.New(false).CreateOrUpdate,
 			}
-			config, _, err := r.generateConfig(ctx.Background())
+			config, _, err := r.generateConfig(ctx.Background(), hcList, svcsNamespaceToLinkID)
 			g.Expect(err).ToNot(HaveOccurred())
 			testutil.CompareWithFixture(t, config, testutil.WithExtension(".cfg"))
 		})

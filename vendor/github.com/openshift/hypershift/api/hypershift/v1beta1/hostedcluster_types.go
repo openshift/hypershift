@@ -1761,6 +1761,19 @@ type AWSServiceEndpoint struct {
 	URL string `json:"url"`
 }
 
+// AzureEndpointAccessType specifies the publishing scope of cluster endpoints.
+type AzureEndpointAccessType string
+
+const (
+	// Public endpoint access allows public API server access and public node
+	// communication with the control plane.
+	AzureEndpointAccessTypePublic AzureEndpointAccessType = "Public"
+
+	// Private endpoint access allows only private API server access and private
+	// node communication with the control plane.
+	AzureEndpointAccessTypePrivate AzureEndpointAccessType = "Private"
+)
+
 // AzurePlatformSpec specifies configuration for clusters running on Azure. Generally, the HyperShift API assumes bring
 // your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
 // would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
@@ -1850,6 +1863,14 @@ type AzurePlatformSpec struct {
 	// +immutable
 	// +required
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// EndpointAccess specifies the publishing scope of cluster endpoints. The
+	// default is Public.
+	//
+	// +kubebuilder:validation:Enum=Public;Private
+	// +kubebuilder:default=Public
+	// +optional
+	EndpointAccess AzureEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.

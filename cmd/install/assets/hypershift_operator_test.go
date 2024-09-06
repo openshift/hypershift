@@ -309,9 +309,9 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			deployment := test.inputBuildParameters.Build()
-			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(BeEquivalentTo(test.expectedArgs))
-			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
-			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(ConsistOf(test.expectedArgs))
+			g.Expect(deployment.Spec.Template.Spec.Volumes).To(ConsistOf(test.expectedVolumes))
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(ConsistOf(test.expectedVolumeMounts))
 		})
 	}
 }

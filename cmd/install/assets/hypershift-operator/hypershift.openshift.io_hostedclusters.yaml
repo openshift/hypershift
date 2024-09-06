@@ -3470,6 +3470,15 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      endpointAccess:
+                        default: Public
+                        description: |-
+                          EndpointAccess specifies the publishing scope of cluster endpoints. The
+                          default is Public.
+                        enum:
+                        - Public
+                        - Private
+                        type: string
                       location:
                         type: string
                       resourceGroup:
@@ -8241,6 +8250,15 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      endpointAccess:
+                        default: Public
+                        description: |-
+                          EndpointAccess specifies the publishing scope of cluster endpoints. The
+                          default is Public.
+                        enum:
+                        - Public
+                        - Private
+                        type: string
                       location:
                         description: |-
                           Location is the Azure region in where all the cloud infrastructure resources will be created.

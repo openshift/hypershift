@@ -2334,6 +2334,31 @@ toleration of full disruption of the component.</p>
 <td></td>
 </tr></tbody>
 </table>
+###AzureEndpointAccessType { #hypershift.openshift.io/v1beta1.AzureEndpointAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureEndpointAccessType specifies the publishing scope of cluster endpoints.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>Private endpoint access allows only private API server access and private
+node communication with the control plane.</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>Public endpoint access allows public API server access and public node
+communication with the control plane.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -2718,6 +2743,234 @@ string
 <p>SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
 expected to exist under the same subscription as SubscriptionID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpointAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessType">
+AzureEndpointAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>EndpointAccess specifies the publishing scope of cluster endpoints. The
+default is Public.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateEndpoint { #hypershift.openshift.io/v1beta1.AzurePrivateEndpoint }
+<p>
+<p>AzurePrivateEndpoint specifies a request for a private Endpoint in Azure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateEndpointSpec">
+AzurePrivateEndpointSpec
+</a>
+</em>
+</td>
+<td>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>privateLinkServiceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>PrivateLinkServiceID is the ID of the private link service where the connection request should be sent.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>subnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateEndpointStatus">
+AzurePrivateEndpointStatus
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateEndpointSpec { #hypershift.openshift.io/v1beta1.AzurePrivateEndpointSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateEndpoint">AzurePrivateEndpoint</a>)
+</p>
+<p>
+<p>AzurePrivateEndpointSpec defines the desired state of AzurePrivateEndpoint</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>privateLinkServiceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>PrivateLinkServiceID is the ID of the private link service where the connection request should be sent.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>subnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateEndpointStatus { #hypershift.openshift.io/v1beta1.AzurePrivateEndpointStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateEndpoint">AzurePrivateEndpoint</a>)
+</p>
+<p>
+<p>AzurePrivateEndpointStatus defines the observed state of AzurePrivateEndpoint</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>endpointID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>EndpointID is the ID of the Endpoint created in the guest VPC</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsNames</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DNSNames are the names for the records created in the hypershift private zone</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Conditions contains details for the current state of the private Endpoint.</p>
+<p>Current condition types are: &ldquo;Available&rdquo;</p>
 </td>
 </tr>
 </tbody>
@@ -3346,6 +3599,9 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateEndpointAvailable&#34;</p></td>
+<td><p>AzurePrivateEndpointAvailable indicates whether the Azure Private Endpoint has been created.</p>
 </td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
