@@ -266,6 +266,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSServiceEndpoint"):
 		return &hypershiftv1beta1.AWSServiceEndpointApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSSharedVPC"):
+		return &hypershiftv1beta1.AWSSharedVPCApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSSharedVPCRolesRef"):
+		return &hypershiftv1beta1.AWSSharedVPCRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
