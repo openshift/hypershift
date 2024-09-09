@@ -52,7 +52,7 @@ import (
 // measurements.
 type LocalIgnitionProvider struct {
 	Client          client.Client
-	ReleaseProvider releaseinfo.Provider
+	ReleaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	CloudProvider   hyperv1.PlatformType
 	Namespace       string
 
@@ -204,11 +204,14 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	err = func() error {
 		start := time.Now()
 
-		// Replace the release image with the mirrored release image in disconnected environment cases
-		mirroredReleaseImage, ok := os.LookupEnv("MIRRORED_RELEASE_IMAGE")
-		if ok {
-			log.Info("replaced release image with mirrored release image to extract image-references", "releaseImage", releaseImage, "mirroredReleaseImage", mirroredReleaseImage)
-			releaseImage = mirroredReleaseImage
+		// Replace the release image with the mirrored release image in disconnected environment cases.
+		// ProviderWithOpenShiftImageRegistryOverrides Lookup will store the mirrored release image if it exists.
+		_, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
+		if err != nil {
+			return fmt.Errorf("failed to look up release image metadata: %w", err)
+		}
+		if p.ReleaseProvider.GetMirroredReleaseImage() != "" {
+			releaseImage = p.ReleaseProvider.GetMirroredReleaseImage()
 		}
 
 		if err := registryclient.ExtractImageFilesToDir(ctx, releaseImage, pullSecret, "release-manifests/image-references", configDir); err != nil {
