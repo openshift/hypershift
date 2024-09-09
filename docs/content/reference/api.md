@@ -1520,6 +1520,22 @@ bool
 CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>sharedVPC</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSharedVPC">
+AWSSharedVPC
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>SharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
+created in a different AWS account and is shared with the AWS account where the HostedCluster
+will be created.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
@@ -2159,6 +2175,182 @@ string
 <p>URL is fully qualified URI with scheme https, that overrides the default generated
 endpoint for a client.
 This must be provided and cannot be empty.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSSharedVPC { #hypershift.openshift.io/v1beta1.AWSSharedVPC }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSSharedVPC contains fields needed to create a HostedCluster using a VPC that has been
+created and shared from a different AWS account than the AWS account where the cluster
+is getting created.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>rolesRef</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSharedVPCRolesRef">
+AWSSharedVPCRolesRef
+</a>
+</em>
+</td>
+<td>
+<p>RolesRef contains references to roles in the VPC owner account that enable a
+HostedCluster on a shared VPC.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>localZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>LocalZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
+associated with the HostedCluster&rsquo;s VPC and exists in the VPC owner account.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSSharedVPCRolesRef { #hypershift.openshift.io/v1beta1.AWSSharedVPCRolesRef }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSharedVPC">AWSSharedVPC</a>)
+</p>
+<p>
+<p>AWSSharedVPCRolesRef contains references to AWS IAM roles required for a shared VPC hosted cluster.
+These roles must exist in the VPC owner&rsquo;s account.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ingressARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IngressARN is an ARN value referencing the role in the VPC owner account that allows the
+ingress operator in the cluster account to create and manage records in the private DNS
+hosted zone.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed by the
+ingress operator role in the VPC creator account.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;Statement1&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;AWS&rdquo;: &ldquo;arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-openshift-ingress&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRole&rdquo;
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.
+(Based on <a href="https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html#rosa-sharing-vpc-dns-and-roles_rosa-shared-vpc-config">https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html#rosa-sharing-vpc-dns-and-roles_rosa-shared-vpc-config</a>)</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;route53:ListHostedZonesByName&rdquo;,
+&ldquo;route53:ChangeTagsForResource&rdquo;,
+&ldquo;route53:GetAccountLimit&rdquo;,
+&ldquo;route53:GetChange&rdquo;,
+&ldquo;route53:GetHostedZone&rdquo;,
+&ldquo;route53:ListTagsForResource&rdquo;,
+&ldquo;route53:UpdateHostedZoneComment&rdquo;,
+&ldquo;tag:GetResources&rdquo;,
+&ldquo;tag:UntagResources&rdquo;
+&ldquo;route53:ChangeResourceRecordSets&rdquo;,
+&ldquo;route53:ListResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+},
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ControlPlaneARN is an ARN value referencing the role in the VPC owner account that allows
+the control plane operator in the cluster account to create and manage a VPC endpoint, its
+corresponding Security Group, and DNS records in the hypershift local hosted zone.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed by the
+control plane operator role in the VPC creator account.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;Statement1&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;AWS&rdquo;: &ldquo;arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-control-plane-operator&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRole&rdquo;
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:CreateVpcEndpoint&rdquo;,
+&ldquo;ec2:DescribeVpcEndpoints&rdquo;,
+&ldquo;ec2:ModifyVpcEndpoint&rdquo;,
+&ldquo;ec2:DeleteVpcEndpoints&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
+&ldquo;route53:ChangeResourceRecordSets&rdquo;,
+&ldquo;route53:ListResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>
