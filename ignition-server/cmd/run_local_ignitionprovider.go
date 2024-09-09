@@ -94,7 +94,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 
 	p := &controllers.LocalIgnitionProvider{
 		Client:              cl,
-		ReleaseProvider:     &releaseinfo.RegistryClientProvider{},
+		ReleaseProvider:     &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{},
 		CloudProvider:       "",
 		Namespace:           o.Namespace,
 		WorkDir:             o.WorkDir,
