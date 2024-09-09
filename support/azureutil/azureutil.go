@@ -9,12 +9,21 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+)
+
+// We received this images directly from Microsoft; we should expect them to change as Microsoft continues development on both containers.
+// We are scheduled to receive new updates to these containers in October 2024 to support Managed Identities. They currently only support Service Principal.
+// TODO past October, will we receive new versions?
+const (
+	AdapterInitImage   = "aromiwi.azurecr.io/artifact/b8e9ef87-cd63-4085-ab14-1c637806568c/buddy/adapter-init:20240905.9"
+	AdapterServerImage = "aromiwi.azurecr.io/artifact/b8e9ef87-cd63-4085-ab14-1c637806568c/buddy/adapter-server:20240905.5"
 )
 
 // GetSubnetNameFromSubnetID extracts the subnet name from a subnet ID
@@ -216,4 +225,65 @@ func VerifyResourceGroupLocationsMatch(ctx context.Context, hc *hyperv1.HostedCl
 	}
 
 	return nil
+}
+
+// GetAzureCredentialsFromSecret gets the Service Principal client ID, client secret, and tenant ID from the credentials
+// secret. This function will be modified a bit once the Microsoft sidecar containers support Managed Identity are
+// delivered (expected Oct 2024).
+func GetAzureCredentialsFromSecret(ctx context.Context, c client.Client, namespace, credsName string) (*corev1.Secret, error) {
+	var azureCredentials corev1.Secret
+
+	// Retrieve the Azure credentials secret to extract the needed fields for the managed identity containers
+	credentialsSecretName := client.ObjectKey{Namespace: namespace, Name: credsName}
+	if err := c.Get(ctx, credentialsSecretName, &azureCredentials); err != nil {
+		return nil, fmt.Errorf("failed to get secret %s: %w", credentialsSecretName, err)
+	}
+
+	for _, expectedKey := range []string{"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"} {
+		if _, found := azureCredentials.Data[expectedKey]; !found {
+			return nil, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey)
+		}
+	}
+
+	return &azureCredentials, nil
+}
+
+// AdapterInitContainer returns the Microsoft adapter-init init container. This container needs the NET_ADMIN permission
+// so the adapter-server sidecar container can intercept the Managed Identity Azure API authentication calls.
+func AdapterInitContainer() corev1.Container {
+	return corev1.Container{
+		Name:            "adapter-init",
+		Image:           AdapterInitImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{
+					"NET_ADMIN",
+				},
+			},
+		}}
+}
+
+// AdapterServerContainer returns the Microsoft adapter-server sidecar container. Currently, this container mimics Azure
+// Managed Identity approval and returns an authentication token. The container currently needs a Service Principal to
+// do this. Future versions of this container will be able to take a Managed Identity instead.
+func AdapterServerContainer(clientID, clientSecret, tenantID string) corev1.Container {
+	return corev1.Container{Name: "adapter-server",
+		Image:           AdapterServerImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Args:            []string{"sp"},
+		Env: []corev1.EnvVar{
+			{
+				Name:  "AZURE_CLIENT_ID",
+				Value: clientID,
+			},
+			{
+				Name:  "AZURE_CLIENT_SECRET",
+				Value: clientSecret,
+			},
+			{
+				Name:  "AZURE_TENANT_ID",
+				Value: tenantID,
+			},
+		}}
 }
