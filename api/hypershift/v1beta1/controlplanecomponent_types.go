@@ -21,9 +21,9 @@ const (
 	// ControlPlaneComponentProgressing indicates whether the ControlPlaneComponent is progressing.
 	ControlPlaneComponentProgressing ConditionType = "Progressing"
 
-	// WaitingForDependenciesReason indicates that there are unavailable dependencies blocking the ControlPlaneComponent reconcilation.
+	// WaitingForDependenciesReason indicates that there are unavailable dependencies blocking the ControlPlaneComponent reconciliation.
 	WaitingForDependenciesReason string = "WaitingForDependencies"
-	// ReconciliationErrorReason indicates that there was an error during the reconcilation of the ControlPlaneComponent.
+	// ReconciliationErrorReason indicates that there was an error during the reconciliation of the ControlPlaneComponent.
 	ReconciliationErrorReason string = "ReconciliationError"
 )
 

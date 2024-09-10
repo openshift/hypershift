@@ -569,7 +569,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 
 	gvk, err := apiutil.GVKForObject(template1, api.Scheme)
 	g.Expect(err).ToNot(HaveOccurred())
-	// machine set refrencing template1
+	// machine set referencing template1
 	ms := &capiv1.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "machineSet",
@@ -642,7 +642,7 @@ func TestListMachineTemplatesAWS(t *testing.T) {
 	}
 	g.Expect(r.Client.Create(context.Background(), template1)).To(BeNil())
 
-	// MachineTemplate without the expected annoation
+	// MachineTemplate without the expected annotation
 	template2 := &capiaws.AWSMachineTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "template2",

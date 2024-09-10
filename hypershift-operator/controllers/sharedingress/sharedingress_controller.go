@@ -136,7 +136,7 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 		svcsNameToIP[route.Namespace+route.Spec.To.Name] = svc.Spec.ClusterIP
 	}
 
-	// This enables traffic from the data plane via kuberntes.svc.
+	// This enables traffic from the data plane via kubernetes.svc.
 	svcList := &corev1.ServiceList{}
 	fieldSelector := fields.SelectorFromSet(fields.Set{"metadata.name": "kube-apiserver"})
 	listOptions := &client.ListOptions{

@@ -120,7 +120,7 @@ type NodePoolSpec struct {
 	Management NodePoolManagement `json:"management"`
 
 	// autoscaling specifies auto-scaling behavior for the NodePool.
-	// autoscaling is mutually exclusive with replicas. If replicas is set, this field must be ommited.
+	// autoscaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.
 	//
 	// +optional
 	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`

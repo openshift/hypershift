@@ -114,7 +114,7 @@ var (
 		// TODO: Remove when cluster-csi-snapshot-controller-operator stops shipping
 		// its ibm-cloud-managed deployment.
 		"0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml",
-		// Omited this file in order to allow the HCCO to create the resource. This allow us to reconcile and sync
+		// Omitted this file in order to allow the HCCO to create the resource. This allows us to reconcile and sync
 		// the HCP.Configuration.operatorhub with OperatorHub object in the HostedCluster. This will only occur once.
 		// From that point the HCCO will use the OperatorHub object in the HostedCluster as a source of truth.
 		"0000_03_marketplace-operator_02_operatorhub.cr.yaml",

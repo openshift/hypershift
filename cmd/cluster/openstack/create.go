@@ -171,9 +171,9 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
 
-	// MachineNetwork has no default in Hypershift but it's convenient to have one for OpenStack:
-	// * To specifiy the subnet that CAPO will manage.
-	// * To inform CCM the prefered subnet for kubelet's NodeIPs.
+	// MachineNetwork has no default in Hypershift, but it's convenient to have one for OpenStack:
+	// * To specify the subnet that CAPO will manage.
+	// * To inform CCM the preferred subnet for kubelet's NodeIPs.
 	if len(cluster.Spec.Networking.MachineNetwork) == 0 {
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(config.DefaultMachineNetwork)}}
 	}

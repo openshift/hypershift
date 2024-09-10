@@ -62,7 +62,7 @@ type Platform interface {
 
 	// CAPIProviderPolicyRules responsible to return list of policy rules are required to be used
 	// by the CAPI provider in order to manage the resources by this platform
-	// Return nil if no aditional policy rule is required
+	// Return nil if no additional policy rule is required
 	CAPIProviderPolicyRules() []rbacv1.PolicyRule
 
 	// DeleteCredentials is responsible for deleting resources related to platform credentials

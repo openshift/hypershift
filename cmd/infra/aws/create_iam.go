@@ -162,7 +162,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 
 	var errs []error
 	if o.OIDCStorageProviderS3BucketName == "" {
-		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from the cluster's ConfigMap in 'kube-public' and wasn't excplicitly passed either"))
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from the cluster's ConfigMap in 'kube-public' and wasn't explicitly passed either"))
 	}
 	if o.OIDCStorageProviderS3Region == "" {
 		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-region could not be discovered from cluster's  ConfigMap in 'kube-public' and wasn't explicitly passed either"))

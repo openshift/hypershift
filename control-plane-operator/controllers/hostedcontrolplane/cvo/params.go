@@ -34,7 +34,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imagepro
 		PlatformType:            hcp.Spec.Platform.Type,
 	}
 	// fallback to hcp.Spec.ReleaseImage if "cluster-version-operator" image is not available.
-	// This could happen for example in local dev enviroments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
+	// This could happen for example in local dev environments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
 	if p.ReleaseImage == "" {
 		p.ReleaseImage = hcp.Spec.ReleaseImage
 	}

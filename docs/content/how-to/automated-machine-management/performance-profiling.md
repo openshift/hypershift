@@ -78,6 +78,6 @@ In HyperShift, node profiling can be configured by creating ConfigMaps which con
 
 4. Now that the ConfigMap containing a `PerformanceProfile` manifest has been created and referenced in a NodePool, the Performance Profile Controller will handle the `PerformanceProfile` object and will create the following elements:
     - `MachineConfig`: This will be embedded into a ConfigMap that will be handled by NTO as any other ConfigMap with MachineConfig embedded (see [this PR](https://github.com/openshift/hypershift/pull/1729) for further info)
-    - `KubeletConfig`: This will be embedded into a ConfigMap that will be handled by NTO in a simillar way as a ConfigMap with a MachineConfig embedded
+    - `KubeletConfig`: This will be embedded into a ConfigMap that will be handled by NTO in a similar way as a ConfigMap with a MachineConfig embedded
     - `Tuned`: This will be embedded into a ConfigMap and so handled directly by the NTO.
     - `RuntimeClass`: This will be created directly inside the guest cluster.

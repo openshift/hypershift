@@ -165,8 +165,8 @@ func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, 
 
 // CreateOrUpdateV2 is a copy of CreateOrUpdate with
 // an important difference: It doesn't take a mutate function, and it doesn't override the passed in object
-// if it alreay exist on the API server.
-// This is needed for objects loaded from a yaml manifest, so the loaded manifest is not overriden.
+// if it already exist on the API server.
+// This is needed for objects loaded from a yaml manifest, so the loaded manifest is not overridden.
 func (p *createOrUpdateProvider) CreateOrUpdateV2(ctx context.Context, c crclient.Client, obj crclient.Object) (controllerutil.OperationResult, error) {
 	key := crclient.ObjectKeyFromObject(obj)
 	existing := obj.DeepCopyObject().(crclient.Object) //nolint
@@ -238,7 +238,7 @@ func preserveOriginalMetadata(original, mutated crclient.Object) {
 	mutated.SetResourceVersion(original.GetResourceVersion())
 }
 
-// Below defaulting funcs. Their code is based on upstream code that is unfortunatelly
+// Below defaulting funcs. Their code is based on upstream code that is unfortunately
 // not in staging so we can't import it:
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/core/v1/zz_generated.defaults.go
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/apps/v1/zz_generated.defaults.go
@@ -288,7 +288,7 @@ func defaultServiceSpec(original, mutated *corev1.ServiceSpec) {
 
 func defaultServiceAccount(original, mutated *corev1.ServiceAccount) {
 	// keep original pull secrets, as those will be injected after the serviceAccount is created.
-	// this is neccessary to avoid infinite update loop.
+	// this is necessary to avoid infinite update loop.
 	mutated.ImagePullSecrets = original.ImagePullSecrets
 	mutated.Secrets = original.Secrets
 

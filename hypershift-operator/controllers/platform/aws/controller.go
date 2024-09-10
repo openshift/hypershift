@@ -227,7 +227,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 		// Most likely cause of error here is the NLB is not yet active.  This can take ~2m so
 		// a longer requeue time is warranted.  This ratelimits AWS calls and updates to the CR.
-		log.Info("reconcilation failed, retrying in 20s", "err", err)
+		log.Info("reconciliation failed, retrying in 20s", "err", err)
 		return ctrl.Result{RequeueAfter: lbNotActiveRequeueDuration}, nil
 	}
 
@@ -244,7 +244,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	log.Info("reconcilation complete")
+	log.Info("reconciliation complete")
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil

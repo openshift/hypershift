@@ -31,7 +31,7 @@ func (c *controlPlaneWorkload) checkDependencies(cpContext ControlPlaneContext) 
 	if c.Name() != etcdComponentName {
 		unavailableDependencies.Insert(kubeAPIServerComponentName)
 	}
-	// we don't deploy etcd for unmanaged, therfore components can't have a dependecny on it.
+	// we don't deploy etcd for unmanaged, therefore components can't have a dependency on it.
 	if cpContext.HCP.Spec.Etcd.ManagementType != hyperv1.Managed && unavailableDependencies.Has(etcdComponentName) {
 		unavailableDependencies.Delete(etcdComponentName)
 	}
@@ -90,7 +90,7 @@ func (c *controlPlaneWorkload) reconcileComponentStatus(cpContext ControlPlaneCo
 	}
 
 	if len(unavailableDependencies) == 0 && reconcilationError == nil {
-		// set version status only if reconcilation is not blocked on dependencies and if there was no reconcilation error.
+		// set version status only if reconciliation is not blocked on dependencies and if there was no reconciliation error.
 		component.Status.Version = cpContext.ReleaseImageProvider.Version()
 	}
 

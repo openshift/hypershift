@@ -246,7 +246,7 @@ func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 		errors = append(errors, fmt.Errorf("there cannot be more than one PerformanceProfile per NodePool. found: %d", len(performanceProfileAllConfigPlainText)))
 	}
 
-	// Keep output deterministic to avoid unnecesary no-op changes to Tuned ConfigMap
+	// Keep output deterministic to avoid unnecessary no-op changes to Tuned ConfigMap
 	sort.Strings(tunedAllConfigPlainText)
 	sort.Strings(performanceProfileAllConfigPlainText)
 

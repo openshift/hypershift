@@ -391,7 +391,7 @@ func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 	log := p.log.WithName("konnectivityProxy.IsCloudAPI")
 	log.V(4).Info("Determining whether host is cloud API", "host", host)
 	if p.excludeCloudHosts.Has(host) {
-		log.V(4).Info("Host is in the list of exclude hosts, returnin false")
+		log.V(4).Info("Host is in the list of exclude hosts, returning false")
 		return false
 	}
 	if strings.HasSuffix(host, ".amazonaws.com") ||

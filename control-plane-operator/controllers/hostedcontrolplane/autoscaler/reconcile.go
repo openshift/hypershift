@@ -331,7 +331,7 @@ const (
 
 // IBM cloud provider ignore labels for the autoscaler.
 const (
-	// IbmcloudIgnoredLabelWorkerId is a label used by the IBM Cloud Cloud Controler Manager.
+	// IbmcloudIgnoredLabelWorkerId is a label used by the IBM Cloud Cloud Controller Manager.
 	IbmcloudIgnoredLabelWorkerId = "ibm-cloud.kubernetes.io/worker-id"
 
 	// IbmcloudIgnoredLabelVpcBlockCsi is a label used by the IBM Cloud CSI driver as a target for Persistent Volume Node Affinity.

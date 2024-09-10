@@ -338,7 +338,7 @@ func ParseNodeSelector(str string) map[string]string {
 }
 
 func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
-	// TODO: cewong - reenable when we fix loadbalancer subnet annotation
+	// TODO: cewong - re-enable when we fix loadbalancer subnet annotation
 	/*
 		if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
 			return

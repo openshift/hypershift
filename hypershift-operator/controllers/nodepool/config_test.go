@@ -580,7 +580,7 @@ func TestHashWithoutVersion(t *testing.T) {
 			expected:                  "935c3492",
 		},
 		{
-			// TODO(alberto): This was left unconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
+			// TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 			// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 			name:                      "A different globalConfig should NOT change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,

@@ -91,7 +91,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 }
 
 // This test will make sure the order of the objects is correct
-// being the HC and NP the last ones and the firts one the namespace.
+// being the HC and NP the last ones and the first one is the namespace.
 func TestAsObjects(t *testing.T) {
 	tests := []struct {
 		name         string

@@ -128,7 +128,7 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 		}
 
 		if hcp.Spec.SecretEncryption != nil {
-			// Adjust KAS liveness probe to not have a hard depdendency on kms so problems isolated to kms don't
+			// Adjust KAS liveness probe to not have a hard dependency on kms so problems isolated to kms don't
 			// cause the entire kube-apiserver to restart and potentially enter CrashloopBackoff
 			totalProviderInstances := 0
 			switch hcp.Spec.SecretEncryption.Type {

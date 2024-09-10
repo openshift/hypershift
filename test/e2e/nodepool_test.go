@@ -316,7 +316,7 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	}
 
 	// Extra setup at some test after nodepool creation
-	g.Expect(nodePoolTest.SetupInfra(t)).To(Succeed(), "should succeed seting up the infra after creating the nodepool")
+	g.Expect(nodePoolTest.SetupInfra(t)).To(Succeed(), "should succeed setting up the infra after creating the nodepool")
 	defer func() {
 		g.Expect(nodePoolTest.TeardownInfra(t)).To(Succeed(), "should succeed cleaning up infra customizations")
 	}()

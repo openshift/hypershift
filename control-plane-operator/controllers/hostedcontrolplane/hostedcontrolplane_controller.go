@@ -909,7 +909,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
-	// releaseImage might be overriden by spec.controlPlaneReleaseImage
+	// releaseImage might be overridden by spec.controlPlaneReleaseImage
 	// User facing components should reflect the version from spec.releaseImage
 	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {

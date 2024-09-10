@@ -980,35 +980,35 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "PausedUntil must be a date in RFC3339 format or 'True', 'true', 'False' or 'false'",
 					},
 					{
-						name: "when pausedUntil is an allowed bool False it shoud pass",
+						name: "when pausedUntil is an allowed bool False it should pass",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.PausedUntil = ptr.To("False")
 						},
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when pausedUntil is an allowed bool false it shoud pass",
+						name: "when pausedUntil is an allowed bool false it should pass",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.PausedUntil = ptr.To("false")
 						},
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when pausedUntil is an allowed bool true it shoud pass",
+						name: "when pausedUntil is an allowed bool true it should pass",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.PausedUntil = ptr.To("true")
 						},
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when pausedUntil is an allowed bool True it shoud pass",
+						name: "when pausedUntil is an allowed bool True it should pass",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.PausedUntil = ptr.To("True")
 						},
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when pausedUntil date is RFC3339 it shoud pass",
+						name: "when pausedUntil date is RFC3339 it should pass",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.PausedUntil = ptr.To("2022-01-01T00:00:00Z")
 						},
@@ -1025,14 +1025,14 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when image is bad format it shoud fail",
+						name: "when image is bad format it should fail",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Release.Image = "@"
 						},
 						expectedErrorSubstring: "Image must start with a word character (letters, digits, or underscores) and contain no white spaces",
 					},
 					{
-						name: "when image is empty it shoud fail",
+						name: "when image is empty it should fail",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Release.Image = "@"
 						},
@@ -1056,7 +1056,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when replace upgrade type is set with inPlace configuration it shoud fail",
+						name: "when replace upgrade type is set with inPlace configuration it should fail",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Management = hyperv1.NodePoolManagement{
 								UpgradeType: hyperv1.UpgradeTypeReplace,

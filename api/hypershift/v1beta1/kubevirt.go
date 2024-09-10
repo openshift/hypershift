@@ -329,7 +329,7 @@ type KubevirtStorageDriverSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver.Type is immutable"
 	Type KubevirtStorageDriverConfigType `json:"type,omitempty"`
 
-	// Manual is used to explicilty define how the infra storageclasses are
+	// Manual is used to explicitly define how the infra storageclasses are
 	// mapped to guest storageclasses
 	//
 	// +immutable
@@ -343,7 +343,7 @@ type KubevirtManualStorageDriverConfig struct {
 	// the KubeVirt VMs to StorageClasses that are made available within the
 	// Guest Cluster.
 	//
-	// NOTE: It is possible that not all capablities of an infra cluster's
+	// NOTE: It is possible that not all capabilities of an infra cluster's
 	// storageclass will be present for the corresponding guest clusters storageclass.
 	//
 	// +optional

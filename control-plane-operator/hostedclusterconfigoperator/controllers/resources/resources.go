@@ -537,15 +537,15 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 	// this allows users to disable data collection in sensitive environments
 	// solves https://issues.redhat.com/browse/OCPBUGS-12208
-	ensureExistsReconcilationStrategy := false
+	ensureExistsReconciliationStrategy := false
 	if _, exists := hcp.Annotations[hyperv1.EnsureExistsPullSecretReconciliation]; exists {
-		ensureExistsReconcilationStrategy = true
+		ensureExistsReconciliationStrategy = true
 	}
 	log.Info("reconciling pull secret")
 	for _, ns := range manifests.PullSecretTargetNamespaces() {
 		secret := manifests.PullSecret(ns)
 		if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-			if !ensureExistsReconcilationStrategy || len(secret.Data) == 0 {
+			if !ensureExistsReconciliationStrategy || len(secret.Data) == 0 {
 				secret.Data = pullSecret.Data
 				secret.Type = pullSecret.Type
 			}
@@ -2087,7 +2087,7 @@ func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) e
 		return fmt.Errorf("failed to list control plane services: %w", err)
 	}
 
-	// disallow all urls tageting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
+	// disallow all urls targeting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
 	disallowedUrls := make([]string, 0)
 	for _, svc := range cpServices.Items {
 		if _, exist := svc.Labels[hyperv1.AllowGuestWebhooksServiceLabel]; exist {

@@ -2421,8 +2421,8 @@ spec:
                   baseDomain:
                     description: |-
                       baseDomain is the base domain of the hosted cluster.
-                      It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
-                      If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+                      It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+                      If baseDomainPrefix is omitted, the hostedCluster.name will be used as the subdomain.
                       Once set, this field is immutable.
                       When the value is the empty string "", the controller might default to a value depending on the platform.
                     maxLength: 253
@@ -2436,8 +2436,8 @@ spec:
                   baseDomainPrefix:
                     description: |-
                       baseDomainPrefix is the base domain prefix for the hosted cluster ingress.
-                      It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
-                      If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+                      It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+                      If baseDomainPrefix is omitted, the hostedCluster.name will be used as the subdomain.
                       Set baseDomainPrefix to an empty string "", if you don't want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
                       This field is immutable.
                     maxLength: 253
@@ -2718,7 +2718,7 @@ spec:
                         description: |-
                           port is the port at which the APIServer is exposed inside a node. Other
                           pods using host networking cannot listen on this port.
-                          If ommited 6443 is used.
+                          If omitted 6443 is used.
                           This is useful to choose a port other than the default one which might interfere with customer environments e.g. https://github.com/openshift/hypershift/pull/356.
                           Setting this to 443 is possible only for backward compatibility reasons and it's discouraged.
                           Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.
@@ -2754,7 +2754,7 @@ spec:
                         hostPrefix:
                           description: |-
                             hostPrefix is the prefix size to allocate to each node from the CIDR.
-                            For example, 24 would allocate 2^(32-24)=2^8=256 adresses to each node. If this
+                            For example, 24 would allocate 2^(32-24)=2^8=256 addresses to each node. If this
                             field is not used by the plugin, it can be left unset.
                           format: int32
                           type: integer
@@ -3620,7 +3620,7 @@ spec:
                           subnetID is immutable once set.
                           The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
                           The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
-                          The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis and must not end with a period (.) character.
+                          The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                           The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
                           The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
                         maxLength: 355
@@ -3631,7 +3631,7 @@ spec:
                           rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
-                            hyphens, underscores, periods and paranthesis
+                            hyphens, underscores, periods and parenthesis
                           rule: self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')
                         - message: the resourceGroupName in the subnetID must not
                             end with a period (.) character
@@ -3774,7 +3774,7 @@ spec:
                         properties:
                           manual:
                             description: |-
-                              Manual is used to explicilty define how the infra storageclasses are
+                              Manual is used to explicitly define how the infra storageclasses are
                               mapped to guest storageclasses
                             properties:
                               storageClassMapping:
@@ -3783,7 +3783,7 @@ spec:
                                   the KubeVirt VMs to StorageClasses that are made available within the
                                   Guest Cluster.
 
-                                  NOTE: It is possible that not all capablities of an infra cluster's
+                                  NOTE: It is possible that not all capabilities of an infra cluster's
                                   storageclass will be present for the corresponding guest clusters storageclass.
                                 items:
                                   properties:
@@ -4911,7 +4911,7 @@ spec:
                             hostname:
                               description: |-
                                 hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
-                                If ommited, the value will be infered from the corev1.Service Load balancer type .status.
+                                If omitted, the value will be inferred from the corev1.Service Load balancer type .status.
                               maxLength: 253
                               minLength: 1
                               type: string
@@ -4953,7 +4953,7 @@ spec:
                             hostname:
                               description: |-
                                 Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
-                                If ommited, the value will be infered from management ingress.Spec.Domain.
+                                If omitted, the value will be inferred from management ingress.Spec.Domain.
                               maxLength: 253
                               minLength: 1
                               type: string
@@ -5020,7 +5020,7 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               tolerations:
-                description: Tolerations when specified, define what custome tolerations
+                description: Tolerations when specified, define what custom tolerations
                   are added to the hcp pods.
                 items:
                   description: |-

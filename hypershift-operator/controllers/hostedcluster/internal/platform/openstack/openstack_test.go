@@ -221,7 +221,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				t.Fatalf("reconcileOpenStackClusterSpec() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if diff := cmp.Diff(initialOpenStackClusterSpec, tc.expectedOpenStackClusterSpec); diff != "" {
-				t.Errorf("reconciled OpenStack cluster spec differs from expcted OpenStack cluster spec: %s", diff)
+				t.Errorf("reconciled OpenStack cluster spec differs from expected OpenStack cluster spec: %s", diff)
 			}
 		})
 	}

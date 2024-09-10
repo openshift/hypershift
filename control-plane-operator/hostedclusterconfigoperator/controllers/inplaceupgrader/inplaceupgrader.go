@@ -441,7 +441,7 @@ func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable
 	capacity := getCapacity(nodes, targetConfig, maxUnavailable)
 	availableCandidates := getAvailableCandidates(nodes, targetConfig, capacity)
 
-	// Next, we get the currently updating candidates, that aren't targetting the latest config
+	// Next, we get the currently updating candidates, that aren't targeting the latest config
 	alreadyUnavailableNodes := getAlreadyUnavailableCandidates(nodes, targetConfig)
 
 	return append(availableCandidates, alreadyUnavailableNodes...)

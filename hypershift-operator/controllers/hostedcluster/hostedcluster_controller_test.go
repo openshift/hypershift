@@ -727,7 +727,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 				t.Fatalf("reconcileCAPICluster failed: %v", err)
 			}
 			if diff := cmp.Diff(tc.capiCluster, tc.expectedCAPICluster); diff != "" {
-				t.Errorf("reconciled CAPI cluster differs from expcted CAPI cluster: %s", diff)
+				t.Errorf("reconciled CAPI cluster differs from expected CAPI cluster: %s", diff)
 			}
 		})
 	}
@@ -2304,7 +2304,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 			}},
 		},
 		{
-			name: "Succcess, existing success condition transition timestamp stays",
+			name: "Success, existing success condition transition timestamp stays",
 			existingConditions: []metav1.Condition{{
 				Type:               string(hyperv1.ReconciliationSucceeded),
 				Status:             metav1.ConditionTrue,
@@ -2437,7 +2437,7 @@ func TestIsProgressing(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "stable at relase",
+			name: "stable at release",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Release: hyperv1.Release{
@@ -2935,7 +2935,7 @@ func TestFindAdvertiseAddress(t *testing.T) {
 			resultAdvAddress: "fd03::1",
 		},
 		{
-			name:             "given an IPv6 hc wihtout AdvertiseAddress, it return IPv6 default address",
+			name:             "given an IPv6 hc without AdvertiseAddress, it return IPv6 default address",
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			resultAdvAddress: config.DefaultAdvertiseIPv6Address,
 		},

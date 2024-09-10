@@ -108,11 +108,11 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
 	}
 	var agentIDs bytes.Buffer
-	seperator := ""
+	separator := ""
 	for i, ip := range ips {
-		agentIDs.WriteString(fmt.Sprintf("%sipv4=%s", seperator, ip))
+		agentIDs.WriteString(fmt.Sprintf("%sipv4=%s", separator, ip))
 		if i == 0 {
-			seperator = "&"
+			separator = "&"
 		}
 	}
 	return func(c *corev1.Container) {

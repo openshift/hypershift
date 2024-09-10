@@ -963,7 +963,7 @@ func TestReconcileClusterVersion(t *testing.T) {
 			Channel: "fast",
 			DesiredUpdate: &configv1.Update{
 				Version: "4.12.5",
-				Image:   "exmple.com/imagens/image:latest",
+				Image:   "example.com/imagens/image:latest",
 				Force:   true,
 			},
 			Upstream:  configv1.URL("https://upstream.example.com"),

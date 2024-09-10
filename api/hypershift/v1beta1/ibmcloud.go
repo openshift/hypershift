@@ -48,7 +48,7 @@ type IBMCloudKMSAuthType string
 
 const (
 	// IBMCloudKMSManagedAuth defines the KMS authentication strategy where the IKS/ROKS platform uses
-	// service to service auth to call IBM Cloud KMS APIs (no customer credentials requried)
+	// service to service auth to call IBM Cloud KMS APIs (no customer credentials required)
 	IBMCloudKMSManagedAuth IBMCloudKMSAuthType = "Managed"
 	// IBMCloudKMSUnmanagedAuth defines the KMS authentication strategy where a customer supplies IBM Cloud
 	// authentication to interact with IBM Cloud KMS APIs

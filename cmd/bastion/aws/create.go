@@ -526,7 +526,7 @@ func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *
 					return false, nil
 				}
 			}
-			return false, fmt.Errorf("error waiting for intance running: %w", err)
+			return false, fmt.Errorf("error waiting for instance running: %w", err)
 		}
 		return true, nil
 	}, waitCtx.Done())
