@@ -22,6 +22,14 @@ func FindContainer(name string, containers []corev1.Container) *corev1.Container
 	return nil
 }
 
+func UpdateContainer(name string, containers []corev1.Container, update func(c *corev1.Container)) {
+	for i, c := range containers {
+		if c.Name == name {
+			update(&containers[i])
+		}
+	}
+}
+
 const (
 
 	// CPOImageName is the name under which components can find the CPO image in the release image..

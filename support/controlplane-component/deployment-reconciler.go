@@ -21,7 +21,11 @@ func (c *controlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 
-	deployment := deploymentManifest(c.Name(), hcp.Namespace)
+	deployment, err := LoadDeploymentManifest(c.Name())
+	if err != nil {
+		return fmt.Errorf("faild loading deployment manifest: %v", err)
+	}
+	deployment.SetNamespace(cpContext.HCP.Namespace)
 	if _, err := cpContext.CreateOrUpdate(cpContext, cpContext.Client, deployment, func() error {
 		ownerRef.ApplyTo(deployment)
 
@@ -48,7 +52,7 @@ func (c *controlPlaneWorkload) reconcileDeployment(cpContext ControlPlaneContext
 
 func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment, existingResources map[string]corev1.ResourceRequirements, existingLabelSelector *metav1.LabelSelector) error {
 	// apply volumes first, as deploymentConfig checks for local volumes to set PodSafeToEvictLocalVolumesKey annotation
-	c.deploymentReconciler.Volumes(cpContext).ApplyTo(&deployment.Spec.Template.Spec)
+	// c.deploymentReconciler.Volumes(cpContext).ApplyTo(&deployment.Spec.Template.Spec)
 
 	deploymentConfig := c.defaultDeploymentConfig(cpContext, deployment.Spec.Replicas)
 	deploymentConfig.Resources = existingResources
