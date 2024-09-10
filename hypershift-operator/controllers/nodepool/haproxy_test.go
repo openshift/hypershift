@@ -59,6 +59,11 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			noProxy: "localhost,kubernetes.svc,127.0.0.1,",
 		},
 		{
+			name:    "when noproxy matches the external kas adress it should create an haproxy",
+			proxy:   "proxy",
+			noProxy: "localhost,127.0.0.1," + externalAddress,
+		},
+		{
 			name:             "when use shared router it should use proxy protocol",
 			proxy:            "",
 			noProxy:          "",
