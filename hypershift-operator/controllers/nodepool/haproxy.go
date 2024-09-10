@@ -260,7 +260,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 	}
 
 	// Check if no proxy contains any address that should result in skipping the system proxy
-	skipProxyForKAS := slices.ContainsFunc([]string{internalAPIAddress, "kubernetes", serviceNetwork, clusterNetwork}, func(s string) bool {
+	skipProxyForKAS := slices.ContainsFunc([]string{externalAPIAddress, internalAPIAddress, "kubernetes", serviceNetwork, clusterNetwork}, func(s string) bool {
 		return strings.Contains(noProxy, s)
 	})
 
