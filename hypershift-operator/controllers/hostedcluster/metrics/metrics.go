@@ -82,6 +82,9 @@ const (
 	GuestCloudResourcesDeletingDurationMetricName = "hypershift_cluster_guest_cloud_resources_deleting_duration_seconds"
 	guestCloudResourcesDeletingDurationMetricHelp = "Time in seconds it is taking to get the CloudResourcesDestroyed condition become true since the beginning of the delete of the HostedCluster. " +
 		"Undefined if the cluster is not deleting/no longer exists or if the condition has already become true."
+
+	EtcdManualInterventionRequiredMetricName = "hypershift_etcd_manual_intervention_required"
+	etcdManualInterventionRequiredMetricHelp = "Indicates that manual intervention is required to recover the ETCD cluster"
 )
 
 // semantically constant - not suposed to be changed at runtime
@@ -167,6 +170,10 @@ var (
 	guestCloudResourcesDeletingDurationMetricDesc = prometheus.NewDesc(
 		GuestCloudResourcesDeletingDurationMetricName, guestCloudResourcesDeletingDurationMetricHelp,
 		hclusterLabels, nil)
+
+	etcdManualInterventionRequiredMetricDesc = prometheus.NewDesc(
+		EtcdManualInterventionRequiredMetricName, etcdManualInterventionRequiredMetricHelp,
+		append(hclusterLabels, "rosa_environment", "rosa_id"), nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -446,6 +453,37 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 					proxyValue,
 					append(hclusterLabelValues, proxyHTTP, proxyHTTPS, proxyTrustedCA)...,
 				)
+			}
+
+			// etcdManualInterventionRequiredMetric
+			{
+				metricLabels := make(map[string]string, 0)
+				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS.ResourceTags != nil {
+					for _, resourceTag := range hcluster.Spec.Platform.AWS.ResourceTags {
+						switch resourceTag.Key {
+						case "api.openshift.com/environment":
+							metricLabels["environment"] = resourceTag.Value
+						case "api.openshift.com/id":
+							metricLabels["id"] = resourceTag.Value
+						case "red-hat-clustertype":
+							metricLabels["cluster_type"] = resourceTag.Value
+						}
+					}
+				}
+
+				if metricLabels["cluster_type"] == "rosa" {
+					etcdRecoveryActiveCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+					if etcdRecoveryActiveCondition.Status == metav1.ConditionFalse && etcdRecoveryActiveCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
+						etcdManualInterventionRequiredValue := 1.0
+						ch <- prometheus.MustNewConstMetric(
+							etcdManualInterventionRequiredMetricDesc,
+							prometheus.GaugeValue,
+							etcdManualInterventionRequiredValue,
+							append(hclusterLabelValues, metricLabels["rosa_environment"], metricLabels["rosa_id"])...,
+						)
+
+					}
+				}
 			}
 
 			// invalidAwsCredsMetric

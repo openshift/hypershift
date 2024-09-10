@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -42,6 +43,11 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 		return nil, err
 	}
 
+	etcdRecoveryActiveCondition := metav1.Condition{
+		Type:               string(hyperv1.EtcdRecoveryActive),
+		ObservedGeneration: hcluster.Generation,
+	}
+
 	if jobStatus.exists {
 		if !jobStatus.finished {
 			log.Info("waiting for etcd recovery job to complete")
@@ -49,8 +55,19 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 		}
 
 		if !jobStatus.successful {
-			// TODO: create alert to trigger manual intervention in this case
-			// Tracked in https://issues.redhat.com/browse/HOSTEDCP-1940
+			etcdRecoveryActiveCondition.Status = metav1.ConditionFalse
+			etcdRecoveryActiveCondition.Reason = hyperv1.EtcdRecoveryJobFailedReason
+			etcdRecoveryActiveCondition.Message = "Error in Etcd Recovery job: the Etcd cluster requires manual intervention."
+			etcdRecoveryActiveCondition.LastTransitionTime = r.now()
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+
+			if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
+				meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
+				}
+			}
 
 			// There is no benefit in requeuing, since the cluster needs manual intervention
 			log.Error(errors.New("etcd recovery failed"), "failed recovery job exists", "job", crclient.ObjectKeyFromObject(recoveryJob).String())
@@ -60,6 +77,20 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 		// Cleanup ETCD Recovery objects
 		if err := r.cleanupEtcdRecoveryObjects(ctx, hcluster); err != nil {
 			return nil, fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
+		}
+
+		etcdRecoveryActiveCondition.Status = metav1.ConditionFalse
+		etcdRecoveryActiveCondition.Reason = hyperv1.AsExpectedReason
+		etcdRecoveryActiveCondition.Message = "ETCD Recovery job succeeded."
+		etcdRecoveryActiveCondition.LastTransitionTime = r.now()
+
+		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+
+		if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
+			}
 		}
 	}
 
@@ -138,6 +169,22 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 		return r.reconcileEtcdRecoveryJob(recoveryJob, hcluster)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile etcd recovery job: %w", err)
+	}
+
+	// Creating the condition for the first time or in the case of the ETCD fails intermitently
+	etcdRecoveryActiveCondition.Status = metav1.ConditionTrue
+	etcdRecoveryActiveCondition.Reason = hyperv1.AsExpectedReason
+	etcdRecoveryActiveCondition.Message = "ETCD Recovery job in progress."
+	etcdRecoveryActiveCondition.LastTransitionTime = r.now()
+
+	// If the ETCD keeps failing and recovering, we can see the hcluster.Generation increasing indefinitely.
+	oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+
+	if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
+		meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
+		}
 	}
 
 	return nil, nil

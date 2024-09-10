@@ -80,6 +80,10 @@ const (
 	// ReconciliationSucceeded indicates if the HostedCluster reconciliation
 	// succeeded.
 	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
+
+	// EtcdRecoveryActive indicates that the Etcd cluster is failing and the
+	// recovery job was triggered.
+	EtcdRecoveryActive ConditionType = "EtcdRecoveryActive"
 )
 
 // Reasons.
@@ -96,6 +100,7 @@ const (
 	EtcdQuorumAvailableReason     = "QuorumAvailable"
 	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
 	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
+	EtcdRecoveryJobFailedReason   = "EtcdRecoveryJobFailed"
 
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
 	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"
