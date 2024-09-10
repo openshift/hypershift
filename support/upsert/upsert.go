@@ -143,7 +143,7 @@ func mutate(f controllerutil.MutateFn, key crclient.ObjectKey, obj crclient.Obje
 	return nil
 }
 
-// Below defaulting funcs. Their code is based on upstream code that is unfortunatelly
+// Below defaulting funcs. Their code is based on upstream code that is unfortunately
 // not in staging so we can't import it:
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/core/v1/zz_generated.defaults.go
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/apps/v1/zz_generated.defaults.go

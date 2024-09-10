@@ -212,7 +212,7 @@ func (o *CreateCLIRoleOptions) Run(ctx context.Context, logger logr.Logger) erro
 		return err
 	}
 
-	fmt.Printf("Sucessfully created/updated role %s, arn: %s\n", o.RoleName, roleArn)
+	fmt.Printf("Successfully created/updated role %s, arn: %s\n", o.RoleName, roleArn)
 	return nil
 }
 

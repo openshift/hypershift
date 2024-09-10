@@ -347,7 +347,7 @@ type HostedClusterSpec struct {
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// Tolerations when specified, define what custome tolerations are added to the hcp pods.
+	// Tolerations when specified, define what custom tolerations are added to the hcp pods.
 	//
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
@@ -398,7 +398,7 @@ type ServicePublishingStrategyMapping struct {
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
 
-// ServicePublishingStrategy specfies how to publish a ServiceType.
+// ServicePublishingStrategy specifies how to publish a ServiceType.
 type ServicePublishingStrategy struct {
 	// Type is the publishing strategy used for the service.
 	//
@@ -586,7 +586,7 @@ type ClusterNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 
 	// HostPrefix is the prefix size to allocate to each node from the CIDR.
-	// For example, 24 would allocate 2^8=256 adresses to each node. If this
+	// For example, 24 would allocate 2^8=256 addresses to each node. If this
 	// field is not used by the plugin, it can be left unset.
 	// +optional
 	HostPrefix int32 `json:"hostPrefix,omitempty"`
@@ -813,7 +813,7 @@ type KubevirtStorageDriverSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver.Type is immutable"
 	Type KubevirtStorageDriverConfigType `json:"type,omitempty"`
 
-	// Manual is used to explicilty define how the infra storageclasses are
+	// Manual is used to explicitly define how the infra storageclasses are
 	// mapped to guest storageclasses
 	//
 	// +immutable
@@ -827,7 +827,7 @@ type KubevirtManualStorageDriverConfig struct {
 	// the KubeVirt VMs to StorageClasses that are made available within the
 	// Guest Cluster.
 	//
-	// NOTE: It is possible that not all capablities of an infra cluster's
+	// NOTE: It is possible that not all capabilities of an infra cluster's
 	// storageclass will be present for the corresponding guest clusters storageclass.
 	//
 	// +optional
@@ -1872,7 +1872,7 @@ type IBMCloudKMSAuthType string
 
 const (
 	// IBMCloudKMSManagedAuth defines the KMS authentication strategy where the IKS/ROKS platform uses
-	// service to service auth to call IBM Cloud KMS APIs (no customer credentials requried)
+	// service to service auth to call IBM Cloud KMS APIs (no customer credentials required)
 	IBMCloudKMSManagedAuth IBMCloudKMSAuthType = "Managed"
 	// IBMCloudKMSUnmanagedAuth defines the KMS authentication strategy where a customer supplies IBM Cloud
 	// authentication to interact with IBM Cloud KMS APIs

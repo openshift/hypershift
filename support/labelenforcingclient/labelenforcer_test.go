@@ -27,7 +27,7 @@ func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
 			in:   &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "foo"}},
 		},
 		{
-			name: "Label set with wrong value gets overriden",
+			name: "Label set with wrong value gets overridden",
 			in: &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 				Name:   "foo",
 				Labels: map[string]string{CacheLabelSelectorKey: "invalid"},

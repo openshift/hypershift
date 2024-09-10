@@ -207,7 +207,7 @@ redhat-operators-catalog-d66b5c965-qwhn7         1/1     Running   0          2m
 
 ## Create an InfraEnv
 
-An InfraEnv is a enviroment to which hosts booting the live ISO can join as Agents.  In this case, the Agents will be created in the
+An InfraEnv is a environment to which hosts booting the live ISO can join as Agents.  In this case, the Agents will be created in the
 same namespace as our HostedControlPlane.
 
 ~~~sh
