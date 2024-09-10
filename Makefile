@@ -16,6 +16,11 @@ CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 
+CODESPELL_VER := 2.2.6
+CODESPELL_BIN := codespell
+CODESPELL_DIST_DIR := codespell_dist
+CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
+
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
@@ -289,3 +294,23 @@ hypershift-install-aws-dev:
 .PHONY: run-operator-locally-aws-dev
 run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
+
+.PHONY: check-spelling
+check-spelling: codespell ## Verify codespell.
+	@$(CODESPELL) . --count --ignore-words=./.codespellignore --skip="$(ROOT_DIR)/hack/tools/bin/codespell_dist,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum"
+
+
+## --------------------------------------
+## Tooling Binaries
+## --------------------------------------
+
+##@ Tooling Binaries:
+codespell : $(CODESPELL) ## Build a local copy of codespell.
+
+$(CODESPELL): ## Build codespell from tools folder.
+		mkdir -p $(TOOLS_BIN_DIR); \
+		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
+		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin; \
+	 	pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER); \
+		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
+		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
