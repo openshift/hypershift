@@ -1,14 +1,11 @@
 package nodepool
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	coreerrors "errors"
 	"fmt"
-	"io"
 	"net/netip"
 	"regexp"
 	"sort"
@@ -21,13 +18,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
-	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
-	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
-	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
-	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
-
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -42,25 +33,19 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
-
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
-	"k8s.io/utils/set"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
@@ -142,12 +127,6 @@ type NotReadyError struct {
 type CPOCapabilities struct {
 	DecompressAndDecodeConfig     bool
 	CreateDefaultAWSSecurityGroup bool
-}
-
-// MirrorConfig holds the information needed to mirror a config object to HCP namespace
-type MirrorConfig struct {
-	*corev1.ConfigMap
-	Labels map[string]string
 }
 
 var (
@@ -299,7 +278,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
-	globalConfig, err := globalConfigString(hcluster)
+	_, err := globalConfigString(hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -589,12 +568,26 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 
-	// Validate config input.
-	// 3 generic core config resources: fips, ssh and haproxy.
-	// TODO (alberto): consider moving the expectedCoreConfigResources check
-	// into the token Secret controller so we don't block Machine infra creation on this.
-	expectedCoreConfigResources := expectedCoreConfigResourcesForHostedCluster(hcluster)
-	config, mirroredConfigs, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
+	// TODO(alberto): move this into a validation section.
+	// Retrieve pull secret name to check for changes when config is checked for updates
+	_, err = r.getPullSecretName(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	additionalTrustBundleCM := &corev1.ConfigMap{}
+	if hcluster.Spec.AdditionalTrustBundle != nil {
+		additionalTrustBundleCM, err = r.getAdditionalTrustBundle(ctx, hcluster)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, hcluster, releaseImage)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
+	}
+
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -603,22 +596,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
 		})
-		return ctrl.Result{}, fmt.Errorf("failed to get config: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
-	if missingConfigs {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            "Core ignition config has not been created yet",
-			ObservedGeneration: nodePool.Generation,
-		})
-		// We watch configmaps so we will get an event when these get created
-		return ctrl.Result{}, nil
+
+	mirroredConfigs, err := BuildMirrorConfigs(ctx, configGenerator)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to build mirror configs: %w", err)
 	}
 	if err := r.reconcileMirroredConfigs(ctx, log, mirroredConfigs, controlPlaneNamespace, nodePool); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to mirror configs: %w", err)
 	}
+
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 		Status:             corev1.ConditionTrue,
@@ -626,24 +614,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
-	// Retrieve pull secret name to check for changes when config is checked for updates
-	pullSecretName, err := r.getPullSecretName(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	additionalTrustBundleName := ""
-	additionalTrustBundleCM := &corev1.ConfigMap{}
-	if hcluster.Spec.AdditionalTrustBundle != nil {
-		additionalTrustBundleCM, err = r.getAdditionalTrustBundle(ctx, hcluster)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		additionalTrustBundleName = additionalTrustBundleCM.Name
-	}
-
 	// Check if config needs to be updated.
-	targetConfigHash := supportutil.HashSimple(config + pullSecretName + additionalTrustBundleName)
+	targetConfigHash := configGenerator.HashWithoutVersion()
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -688,7 +660,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, additionalTrustBundleName, globalConfig)
+	targetPayloadConfigHash := configGenerator.Hash()
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
@@ -796,7 +768,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 2. - Reconcile towards expected state of the world.
-	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
+	compressedConfig, err := configGenerator.CompressedAndEncoded()
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to compress and decode config: %w", err)
 	}
@@ -809,7 +781,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// TODO (alberto): Drop this after dropping < 4.12 support.
 	// So all CPOs ign server will know to decompress and decode.
 	if !cpoCapabilities.DecompressAndDecodeConfig {
-		compressedConfig, err = supportutil.Compress([]byte(config))
+		compressedConfig, err = configGenerator.Compressed()
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
 		}
@@ -1066,15 +1038,6 @@ func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
 	}
 
 	return supported
-}
-
-func expectedCoreConfigResourcesForHostedCluster(hcluster *hyperv1.HostedCluster) int {
-	expectedCoreConfigResources := 3
-	if len(hcluster.Spec.ImageContentSources) > 0 {
-		// additional core config resource created when image content source specified.
-		expectedCoreConfigResources += 1
-	}
-	return expectedCoreConfigResources
 }
 
 // setMachineAndNodeConditions sets the nodePool's AllMachinesReady and AllNodesHealthy conditions.
@@ -1713,64 +1676,6 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	return nil
 }
 
-func reconcileNodeTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, rawConfig string) error {
-	tuningConfigMap.Immutable = k8sutilspointer.Bool(false)
-	if tuningConfigMap.Annotations == nil {
-		tuningConfigMap.Annotations = make(map[string]string)
-	}
-	if tuningConfigMap.Labels == nil {
-		tuningConfigMap.Labels = make(map[string]string)
-	}
-
-	tuningConfigMap.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-	tuningConfigMap.Labels[nodePoolAnnotation] = nodePool.GetName()
-
-	if tuningConfigMap.Data == nil {
-		tuningConfigMap.Data = map[string]string{}
-	}
-	tuningConfigMap.Data[tuningConfigKey] = rawConfig
-
-	return nil
-}
-
-// reconcileTunedConfigMap inserts the Tuned object manifest in tunedConfig into ConfigMap tunedConfigMap.
-// This is used to mirror the Tuned object manifest into the control plane namespace, for the Node
-// Tuning Operator to mirror and reconcile in the hosted cluster.
-func reconcileTunedConfigMap(tunedConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tunedConfig string) error {
-	if err := reconcileNodeTuningConfigMap(tunedConfigMap, nodePool, tunedConfig); err != nil {
-		return err
-	}
-	tunedConfigMap.Labels[tunedConfigMapLabel] = "true"
-	return nil
-}
-
-// reconcilePerformanceProfileConfigMap inserts the PerformanceProfile object manifest in performanceProfileConfig into ConfigMap performanceProfileConfigMap.
-// This is used to mirror the PerformanceProfile object manifest into the control plane namespace, for the Node
-// Tuning Operator to mirror and reconcile in the hosted cluster.
-func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, performanceProfileConfig string) error {
-	if err := reconcileNodeTuningConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig); err != nil {
-		return err
-	}
-	performanceProfileConfigMap.Labels[PerformanceProfileConfigMapLabel] = "true"
-	return nil
-}
-
-func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, nodePool *hyperv1.NodePool) error {
-	cm.Immutable = k8sutilspointer.Bool(true)
-	if cm.Annotations == nil {
-		cm.Annotations = make(map[string]string)
-	}
-	if cm.Labels == nil {
-		cm.Labels = make(map[string]string)
-	}
-	cm.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-	cm.Labels[nodePoolAnnotation] = nodePool.GetName()
-	cm.Labels[mirroredConfigLabel] = ""
-	cm.Labels = labels.Merge(cm.Labels, mirroredConfig.Labels)
-	cm.Data = mirroredConfig.Data
-	return nil
-}
-
 func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte, additionalTrustBundle, hcConfigurationHash string) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
@@ -2199,217 +2104,6 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 	return cfg
 }
 
-func (r *NodePoolReconciler) getConfig(ctx context.Context,
-	nodePool *hyperv1.NodePool,
-	expectedCoreConfigResources int,
-	controlPlaneResource string,
-	releaseImage *releaseinfo.ReleaseImage,
-	hcluster *hyperv1.HostedCluster,
-) (configsRaw string, mirroredConfigs []*MirrorConfig, missingConfigs bool, err error) {
-	var configs []corev1.ConfigMap
-	var allConfigPlainText []string
-	var errors []error
-
-	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)
-	if err != nil {
-		return "", nil, false, fmt.Errorf("failed to check if we manage haproxy ignition config: %w", err)
-	}
-	if isHAProxyIgnitionConfigManaged {
-		oldHAProxyIgnitionConfig := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneResource, Name: "ignition-config-apiserver-haproxy"},
-		}
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(oldHAProxyIgnitionConfig), oldHAProxyIgnitionConfig)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return "", nil, false, fmt.Errorf("failed to get CPO-managed haproxy ignition config: %w", err)
-		}
-		if err == nil {
-			if err := r.Client.Delete(ctx, oldHAProxyIgnitionConfig); err != nil && !apierrors.IsNotFound(err) {
-				return "", nil, false, fmt.Errorf("failed to delete the CPO-managed haproxy ignition config: %w", err)
-			}
-		}
-		expectedCoreConfigResources--
-
-		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage.ComponentImages(), hcluster, cpoImage)
-		if err != nil {
-			return "", nil, false, fmt.Errorf("failed to generate haproxy ignition config: %w", err)
-		}
-		if missing {
-			missingConfigs = true
-		} else {
-			allConfigPlainText = append(allConfigPlainText, haproxyIgnitionConfig)
-		}
-	}
-
-	coreConfigMapList := &corev1.ConfigMapList{}
-	if err := r.List(ctx, coreConfigMapList, client.MatchingLabels{
-		nodePoolCoreIgnitionConfigLabel: "true",
-	}, client.InNamespace(controlPlaneResource)); err != nil {
-		errors = append(errors, err)
-	}
-
-	if len(coreConfigMapList.Items) != expectedCoreConfigResources {
-		missingConfigs = true
-	}
-
-	configs = coreConfigMapList.Items
-	for _, config := range nodePool.Spec.Config {
-		configConfigMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      config.Name,
-				Namespace: nodePool.Namespace,
-			},
-		}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
-			errors = append(errors, err)
-			continue
-		}
-		configs = append(configs, *configConfigMap)
-	}
-
-	// Look for NTO generated MachineConfigs from the hosted control plane namespace
-	nodeTuningGeneratedConfigs := &corev1.ConfigMapList{}
-	if err := r.List(ctx, nodeTuningGeneratedConfigs, client.MatchingLabels{
-		nodeTuningGeneratedConfigLabel: "true",
-		hyperv1.NodePoolLabel:          nodePool.GetName(),
-	}, client.InNamespace(controlPlaneResource)); err != nil {
-		errors = append(errors, err)
-	}
-
-	configs = append(configs, nodeTuningGeneratedConfigs.Items...)
-
-	for i, config := range configs {
-		cmPayload := config.Data[TokenSecretConfigKey]
-		// ignition config-map payload may contain multiple manifests
-		yamlReader := yaml.NewYAMLReader(bufio.NewReader(strings.NewReader(cmPayload)))
-		for {
-			manifestRaw, err := yamlReader.Read()
-			if err != nil && err != io.EOF {
-				errors = append(errors, fmt.Errorf("configmap %q contains invalid yaml: %w", config.Name, err))
-				continue
-			}
-			if len(manifestRaw) != 0 && strings.TrimSpace(string(manifestRaw)) != "" {
-				manifest, mirrorConfig, err := defaultAndValidateConfigManifest(manifestRaw)
-				if err != nil {
-					errors = append(errors, fmt.Errorf("configmap %q yaml document failed validation: %w", config.Name, err))
-					continue
-				}
-				allConfigPlainText = append(allConfigPlainText, string(manifest))
-				if mirrorConfig != nil && config.Namespace == nodePool.Namespace {
-					mirrorConfig.ConfigMap = &configs[i]
-					mirroredConfigs = append(mirroredConfigs, mirrorConfig)
-				}
-			}
-			if err == io.EOF {
-				break
-			}
-		}
-	}
-
-	// These configs are the input to a hash func whose output is used as part of the name of the user-data secret,
-	// so our output must be deterministic.
-	sort.Strings(allConfigPlainText)
-
-	return strings.Join(allConfigPlainText, "\n---\n"), mirroredConfigs, missingConfigs, utilerrors.NewAggregate(errors)
-}
-
-func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
-	nodePool *hyperv1.NodePool,
-) (string, string, string, error) {
-	var (
-		configs                              []corev1.ConfigMap
-		tunedAllConfigPlainText              []string
-		performanceProfileConfigMapName      string
-		performanceProfileAllConfigPlainText []string
-		errors                               []error
-	)
-
-	for _, config := range nodePool.Spec.TuningConfig {
-		configConfigMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      config.Name,
-				Namespace: nodePool.Namespace,
-			},
-		}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
-			errors = append(errors, err)
-			continue
-		}
-		configs = append(configs, *configConfigMap)
-	}
-
-	for _, config := range configs {
-		manifestRaw, ok := config.Data[tuningConfigKey]
-		if !ok {
-			errors = append(errors, fmt.Errorf("no manifest found in configmap %q with key %q", config.Name, tuningConfigKey))
-			continue
-		}
-		manifestTuned, manifestPerformanceProfile, err := validateTuningConfigManifest([]byte(manifestRaw))
-		if err != nil {
-			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
-			continue
-		}
-		if manifestTuned != nil {
-			tunedAllConfigPlainText = append(tunedAllConfigPlainText, string(manifestTuned))
-		}
-		if manifestPerformanceProfile != nil {
-			performanceProfileConfigMapName = config.Name
-			performanceProfileAllConfigPlainText = append(performanceProfileAllConfigPlainText, string(manifestPerformanceProfile))
-		}
-	}
-
-	if len(performanceProfileAllConfigPlainText) > 1 {
-		errors = append(errors, fmt.Errorf("there cannot be more than one PerformanceProfile per NodePool. found: %d", len(performanceProfileAllConfigPlainText)))
-	}
-
-	// Keep output deterministic to avoid unnecesary no-op changes to Tuned ConfigMap
-	sort.Strings(tunedAllConfigPlainText)
-	sort.Strings(performanceProfileAllConfigPlainText)
-
-	return strings.Join(tunedAllConfigPlainText, "\n---\n"), strings.Join(performanceProfileAllConfigPlainText, "\n---\n"), performanceProfileConfigMapName, utilerrors.NewAggregate(errors)
-
-}
-
-func validateTuningConfigManifest(manifest []byte) ([]byte, []byte, error) {
-	scheme := runtime.NewScheme()
-	tunedv1.AddToScheme(scheme)
-	performanceprofilev2.AddToScheme(scheme)
-
-	yamlSerializer := serializer.NewSerializerWithOptions(
-		serializer.DefaultMetaFactory, scheme, scheme,
-		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
-	)
-	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error decoding config: %w", err)
-	}
-
-	switch obj := cr.(type) {
-	case *tunedv1.Tuned:
-		buff := bytes.Buffer{}
-		if err := yamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, nil, fmt.Errorf("failed to encode Tuned object: %w", err)
-		}
-		manifest = buff.Bytes()
-		return manifest, nil, nil
-
-	case *performanceprofilev2.PerformanceProfile:
-		validationErrors := obj.ValidateBasicFields()
-		if len(validationErrors) > 0 {
-			return nil, nil, fmt.Errorf("PerformanceProfile validation failed pp:%s : %w", obj.Name, coreerrors.Join(validationErrors.ToAggregate().Errors()...))
-		}
-
-		buff := bytes.Buffer{}
-		if err := yamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, nil, fmt.Errorf("failed to encode performance profile after defaulting it: %w", err)
-		}
-		manifest = buff.Bytes()
-		return nil, manifest, nil
-
-	default:
-		return nil, nil, fmt.Errorf("unsupported tuningConfig object type: %T", obj)
-	}
-}
-
 // validateManagement does additional backend validation. API validation/default should
 // prevent this from ever fail.
 func validateManagement(nodePool *hyperv1.NodePool) error {
@@ -2439,77 +2133,6 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 	}
 
 	return nil
-}
-
-func defaultAndValidateConfigManifest(manifest []byte) ([]byte, *MirrorConfig, error) {
-	scheme := runtime.NewScheme()
-	_ = mcfgv1.Install(scheme)
-	_ = v1alpha1.Install(scheme)
-	_ = configv1.Install(scheme)
-	_ = configv1alpha1.Install(scheme)
-
-	yamlSerializer := serializer.NewSerializerWithOptions(
-		serializer.DefaultMetaFactory, scheme, scheme,
-		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
-	)
-	// for manifests that should be mirrored into hosted control plane namespace
-	var mirrorConfig *MirrorConfig
-
-	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error decoding config: %w", err)
-	}
-
-	switch obj := cr.(type) {
-	case *mcfgv1.MachineConfig:
-		addWorkerLabel(&obj.ObjectMeta)
-		manifest, err = encode(cr, yamlSerializer)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to encode machine config after defaulting it: %w", err)
-		}
-	case *v1alpha1.ImageContentSourcePolicy:
-	case *configv1.ImageDigestMirrorSet:
-	case *configv1alpha1.ClusterImagePolicy:
-	case *mcfgv1.KubeletConfig:
-		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"machineconfiguration.openshift.io/mco-built-in": "",
-			},
-		}
-		manifest, err = encode(cr, yamlSerializer)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to encode kubelet config after setting built-in MCP selector: %w", err)
-		}
-	case *mcfgv1.ContainerRuntimeConfig:
-		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"machineconfiguration.openshift.io/mco-built-in": "",
-			},
-		}
-		manifest, err = encode(cr, yamlSerializer)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to encode container runtime config after setting built-in MCP selector: %w", err)
-		}
-		mirrorConfig = &MirrorConfig{Labels: map[string]string{ContainerRuntimeConfigConfigMapLabel: ""}}
-	default:
-		return nil, nil, fmt.Errorf("unsupported config type: %T", obj)
-	}
-	return manifest, mirrorConfig, err
-}
-
-func addWorkerLabel(obj *metav1.ObjectMeta) {
-	if obj.Labels == nil {
-		obj.Labels = map[string]string{}
-	}
-	obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
-}
-
-func encode(obj runtime.Object, ser *serializer.Serializer) ([]byte, error) {
-	buff := bytes.Buffer{}
-	if err := ser.Encode(obj, &buff); err != nil {
-		return nil, err
-	}
-	return buff.Bytes(), nil
 }
 
 func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {
@@ -3255,190 +2878,6 @@ func aggregateMachineMessages(msgs []string) string {
 	return builder.String()
 }
 
-// secretJanitor reconciles secrets and determines which secrets should remain in the cluster and which should be cleaned up.
-// Any secret annotated with a nodePool name should only be on the cluster if the nodePool continues to exist
-// and if our current calculation for the inputs to the name matches what the secret is named.
-type secretJanitor struct {
-	*NodePoolReconciler
-
-	now func() time.Time
-}
-
-func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	log := ctrl.LoggerFrom(ctx).WithValues("secret", req.String())
-
-	secret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, req.NamespacedName, secret); err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("not found", "request", req.String())
-			return ctrl.Result{}, nil
-		}
-		log.Error(err, "error getting secret")
-		return ctrl.Result{}, err
-	}
-
-	// only handle secrets that are associated with a NodePool
-	nodePoolName, annotated := secret.Annotations[nodePoolAnnotation]
-	if !annotated {
-		return ctrl.Result{}, nil
-	}
-	log = log.WithValues("nodePool", nodePoolName)
-
-	// only handle secret types that we know about explicitly
-	shouldHandle := false
-	for _, prefix := range []string{tokenSecretPrefix, ignitionUserDataPrefix} {
-		if strings.HasPrefix(secret.Name, prefix) {
-			shouldHandle = true
-			break
-		}
-	}
-	if !shouldHandle {
-		return ctrl.Result{}, nil
-	}
-
-	nodePool := &hyperv1.NodePool{}
-	if err := r.Client.Get(ctx, supportutil.ParseNamespacedName(nodePoolName), nodePool); err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "error getting nodepool")
-		return ctrl.Result{}, err
-	} else if apierrors.IsNotFound(err) {
-		log.Info("removing secret as nodePool is missing")
-		return ctrl.Result{}, r.Client.Delete(ctx, secret)
-	}
-
-	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	shouldKeepOldUserData, err := r.shouldKeepOldUserData(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if shouldKeepOldUserData {
-		log.V(3).Info("Skipping secretJanitor reconciliation and keeping old user data secret")
-		return ctrl.Result{}, nil
-	}
-
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	expectedCoreConfigResources := expectedCoreConfigResourcesForHostedCluster(hcluster)
-	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	config, _, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if missingConfigs {
-		return ctrl.Result{}, nil
-	}
-	targetVersion := releaseImage.Version()
-
-	pullSecretName, err := r.getPullSecretName(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	additionalTrustBundleName := ""
-	additionalTrustBundleCM := &corev1.ConfigMap{}
-	if hcluster.Spec.AdditionalTrustBundle != nil {
-		additionalTrustBundleCM, err = r.getAdditionalTrustBundle(ctx, hcluster)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		additionalTrustBundleName = additionalTrustBundleCM.Name
-	}
-
-	globalConfig, err := globalConfigString(hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	targetPayloadConfigHash := payloadConfigHash(config, targetVersion, pullSecretName, additionalTrustBundleName, globalConfig)
-
-	// synchronously deleting the ignition token is unsafe; we need to clean up tokens by annotating them to expire
-	synchronousCleanup := func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
-		return c.Delete(ctx, secret)
-	}
-	type nodePoolSecret struct {
-		expectedName   string
-		matchingPrefix string
-		cleanup        func(context.Context, client.Client, *corev1.Secret) error
-	}
-	valid := false
-	options := []nodePoolSecret{
-		{
-			expectedName:   TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash).Name,
-			matchingPrefix: tokenSecretPrefix,
-			cleanup: func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
-				return setExpirationTimestampOnToken(ctx, c, secret, r.now)
-			},
-		},
-		{
-			expectedName:   IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetPayloadConfigHash).Name,
-			matchingPrefix: ignitionUserDataPrefix,
-			cleanup:        synchronousCleanup,
-		},
-	}
-	cleanup := synchronousCleanup
-	var names []string
-	for _, option := range options {
-		names = append(names, option.expectedName)
-		if secret.Name == option.expectedName {
-			valid = true
-		}
-		if strings.HasPrefix(secret.Name, option.matchingPrefix) {
-			cleanup = option.cleanup
-		}
-	}
-
-	if valid {
-		return ctrl.Result{}, nil
-	}
-
-	log.WithValues("options", names, "valid", valid).Info("removing secret as it does not match the expected set of names")
-	return ctrl.Result{}, cleanup(ctx, r.Client, secret)
-}
-
-// shouldKeepOldUserData determines if the old user data should be kept.
-// For AWS < 4.16, we keep the old userdata Secret so old Machines during rolled out can be deleted.
-// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
-// TODO (alberto): Drop this check when support for old versions without the fix is not needed anymore.
-func (r *NodePoolReconciler) shouldKeepOldUserData(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
-	if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
-		return false, nil
-	}
-
-	// If there's a current version in status, be conservative and assume that one is the one running CAPA.
-	releaseImage := hc.Spec.Release.Image
-	if hc.Status.Version != nil {
-		if len(hc.Status.Version.History) > 0 {
-			releaseImage = hc.Status.Version.History[0].Image
-		}
-	}
-
-	pullSecretBytes, err := r.getPullSecretBytes(ctx, hc)
-	if err != nil {
-		return true, fmt.Errorf("failed to get pull secret bytes: %w", err)
-	}
-
-	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, releaseImage, pullSecretBytes)
-	if err != nil {
-		return true, fmt.Errorf("failed to lookup release image: %w", err)
-	}
-	hostedClusterVersion, err := semver.Parse(releaseInfo.Version())
-	if err != nil {
-		return true, err
-	}
-
-	if hostedClusterVersion.LT(semver.MustParse("4.16.0")) {
-		return true, nil
-	}
-
-	return false, nil
-}
-
 func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	// 1. - Reconcile conditions according to current state of the world.
 	proxy := globalconfig.ProxyConfig()
@@ -3462,10 +2901,6 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	return globalConfigBytes.String(), nil
 }
 
-func payloadConfigHash(config, targetVersion, pullSecretName, additionalTrustBundleName, globalConfig string) string {
-	return supportutil.HashSimple(config + targetVersion + pullSecretName + additionalTrustBundleName + globalConfig)
-}
-
 func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string) error {
 	cmList := &corev1.ConfigMapList{}
 	if err := c.List(ctx, cmList, &client.ListOptions{
@@ -3477,127 +2912,6 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 		cm := &cmList.Items[i]
 		if _, err := supportutil.DeleteIfNeeded(ctx, c, cm); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-// reconcileMirroredConfigs mirrors configs into
-// the HCP namespace, that are needed as an input for certain operators (such as NTO)
-func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr logr.Logger, mirroredConfigs []*MirrorConfig, controlPlaneNamespace string, nodePool *hyperv1.NodePool) error {
-	// get configs which already mirrored to the HCP namespace
-	existingConfigsList := &corev1.ConfigMapList{}
-	if err := r.List(ctx, existingConfigsList, &client.ListOptions{
-		Namespace:     controlPlaneNamespace,
-		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{mirroredConfigLabel: ""}),
-	}); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-
-	want := set.Set[string]{}
-	for _, mirrorConfig := range mirroredConfigs {
-		want.Insert(supportutil.ShortenName(mirrorConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
-	}
-	have := set.Set[string]{}
-	for _, configMap := range existingConfigsList.Items {
-		have.Insert(configMap.Name)
-	}
-	toCreate, toDelete := want.Difference(have), have.Difference(want)
-	if len(toCreate) > 0 {
-		logr = logr.WithValues("toCreate", toCreate.UnsortedList())
-	}
-	if len(toDelete) > 0 {
-		logr = logr.WithValues("toDelete", toDelete.UnsortedList())
-	}
-	if len(toCreate) > 0 || len(toDelete) > 0 {
-		logr.Info("updating mirrored configs")
-	}
-	// delete the redundant configs that are no longer part of the nodepool spec
-	for i := 0; i < len(existingConfigsList.Items); i++ {
-		existingConfig := &existingConfigsList.Items[i]
-		if toDelete.Has(existingConfig.Name) {
-			_, err := supportutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
-			if err != nil {
-				return fmt.Errorf("failed to delete ConfigMap %s/%s: %w", existingConfig.Namespace, existingConfig.Name, err)
-			}
-		}
-	}
-	// update or create the configs that need to be mirrored into the HCP NS
-	for _, mirroredConfig := range mirroredConfigs {
-		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      supportutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength),
-				Namespace: controlPlaneNamespace},
-		}
-		if result, err := r.CreateOrUpdate(ctx, r.Client, cm, func() error {
-			return mutateMirroredConfig(cm, mirroredConfig, nodePool)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile mirrored %s/%s ConfigMap: %w", cm.Namespace, cm.Name, err)
-		} else {
-			logr.Info("Reconciled ConfigMap", "result", result)
-		}
-	}
-	return nil
-}
-
-// SetPerformanceProfileConditions checks for performance profile status updates, and reflects them in the nodepool status conditions
-func (r *NodePoolReconciler) SetPerformanceProfileConditions(ctx context.Context, logger logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string, toDelete bool) error {
-	if toDelete {
-		performanceProfileConditions := []string{
-			hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
-			hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType,
-			hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType,
-			hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType,
-		}
-		for _, condition := range performanceProfileConditions {
-			removeStatusCondition(&nodePool.Status.Conditions, condition)
-		}
-		return nil
-	}
-	// Get performance profile status configmap
-	cmList := &corev1.ConfigMapList{}
-	if err := r.Client.List(ctx, cmList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
-			hyperv1.NodePoolLabel:                            nodePool.Name}),
-		Namespace: controlPlaneNamespace,
-	}); err != nil {
-		return err
-	}
-	if len(cmList.Items) > 1 {
-		return fmt.Errorf("there cannot be more than one PerformanceProfile ConfigMap status per NodePool. found: %d NodePool: %s", len(cmList.Items), nodePool.Name)
-	}
-	if len(cmList.Items) == 0 {
-		// Only log here and do not return an error because it might take sometime for NTO to
-		// generate the ConfigMap with the PerformanceProfile status.
-		// The creation of the ConfigMap itself triggers the reconciliation loop which eventually calls
-		// this flow again.
-		logger.Error(nil, "no PerformanceProfile ConfigMap status found", "Namespace", controlPlaneNamespace, "NodePool", nodePool.Name)
-		return nil
-	}
-	performanceProfileStatusConfigMap := cmList.Items[0]
-	statusRaw, ok := performanceProfileStatusConfigMap.Data["status"]
-	if !ok {
-		return fmt.Errorf("status not found in performance profile status configmap")
-	}
-	status := &performanceprofilev2.PerformanceProfileStatus{}
-	if err := yaml.Unmarshal([]byte(statusRaw), status); err != nil {
-		return fmt.Errorf("failed to decode the performance profile status: %w", err)
-	}
-
-	for _, performanceProfileCondition := range status.Conditions {
-		condition := hyperv1.NodePoolCondition{
-			Type:               fmt.Sprintf("%s/%s", hyperv1.NodePoolPerformanceProfileTuningConditionTypePrefix, performanceProfileCondition.Type),
-			Status:             performanceProfileCondition.Status,
-			Reason:             performanceProfileCondition.Reason,
-			Message:            performanceProfileCondition.Message,
-			ObservedGeneration: nodePool.Generation,
-		}
-		oldCondition := FindStatusCondition(nodePool.Status.Conditions, condition.Type)
-
-		// Will set the condition only if it was not set previously, or has changed
-		if oldCondition == nil || oldCondition.ObservedGeneration != condition.ObservedGeneration {
-			SetStatusCondition(&nodePool.Status.Conditions, condition)
 		}
 	}
 	return nil

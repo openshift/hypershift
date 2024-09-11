@@ -22,9 +22,11 @@ import (
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -492,4 +494,37 @@ func joinDefaultPortIfMissing(addr string) (string, error) {
 	}
 
 	return parsedUrl.String(), nil
+}
+
+func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	var haproxyRawConfig string
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)
+	if err != nil {
+		return "", fmt.Errorf("failed to check if we manage haproxy ignition config: %w", err)
+	}
+	if isHAProxyIgnitionConfigManaged {
+		oldHAProxyIgnitionConfig := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "ignition-config-apiserver-haproxy"},
+		}
+		err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(oldHAProxyIgnitionConfig), oldHAProxyIgnitionConfig)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return "", fmt.Errorf("failed to get CPO-managed haproxy ignition config: %w", err)
+		}
+		if err == nil {
+			if err := r.Client.Delete(ctx, oldHAProxyIgnitionConfig); err != nil && !apierrors.IsNotFound(err) {
+				return "", fmt.Errorf("failed to delete the CPO-managed haproxy ignition config: %w", err)
+			}
+		}
+
+		var missing bool
+		haproxyRawConfig, missing, err = r.reconcileHAProxyIgnitionConfig(ctx, releaseImage.ComponentImages(), hcluster, cpoImage)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate haproxy ignition config: %w", err)
+		}
+		if missing {
+			return "", fmt.Errorf("failed to generate haproxy ignition config: waiting for missing componenent")
+		}
+	}
+	return haproxyRawConfig, nil
 }
