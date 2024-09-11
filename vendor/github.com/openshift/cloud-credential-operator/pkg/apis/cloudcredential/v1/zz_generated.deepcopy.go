@@ -179,6 +179,16 @@ func (in *AzureProviderSpec) DeepCopyInto(out *AzureProviderSpec) {
 		*out = make([]RoleBinding, len(*in))
 		copy(*out, *in)
 	}
+	if in.Permissions != nil {
+		in, out := &in.Permissions, &out.Permissions
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.DataPermissions != nil {
+		in, out := &in.DataPermissions, &out.DataPermissions
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
@@ -369,6 +379,11 @@ func (in *GCPProviderSpec) DeepCopyInto(out *GCPProviderSpec) {
 	out.TypeMeta = in.TypeMeta
 	if in.PredefinedRoles != nil {
 		in, out := &in.PredefinedRoles, &out.PredefinedRoles
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Permissions != nil {
+		in, out := &in.Permissions, &out.Permissions
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
