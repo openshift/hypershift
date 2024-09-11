@@ -634,6 +634,17 @@ spec:
                         description: EnableEphemeralOSDisk is a flag when set to true,
                           will enable ephemeral OS disk.
                         type: boolean
+                      encryptionAtHost:
+                        default: Enabled
+                        description: |-
+                          encryptionAtHost enables encryption at host on virtual machines. According to Microsoft documentation, this
+                          means data stored on the VM host is encrypted at rest and flows encrypted to the Storage service. See
+                          https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-host-based-encryption-portal?tabs=azure-powershell
+                          for more information.
+                        enum:
+                        - Enabled
+                        - Disabled
+                        type: string
                       image:
                         description: Image is the image to boot the VMs with
                         properties:
@@ -1868,6 +1879,17 @@ spec:
                         description: EnableEphemeralOSDisk is a flag when set to true,
                           will enable ephemeral OS disk.
                         type: boolean
+                      encryptionAtHost:
+                        default: Enabled
+                        description: |-
+                          encryptionAtHost enables encryption at host on virtual machines. According to Microsoft documentation, this
+                          means data stored on the VM host is encrypted at rest and flows encrypted to the Storage service. See
+                          https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-host-based-encryption-portal?tabs=azure-powershell
+                          for more information.
+                        enum:
+                        - Enabled
+                        - Disabled
+                        type: string
                       image:
                         description: |-
                           ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and

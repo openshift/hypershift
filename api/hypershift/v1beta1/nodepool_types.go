@@ -985,6 +985,16 @@ type AzureNodePoolPlatform struct {
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
 
+	// encryptionAtHost enables encryption at host on virtual machines. According to Microsoft documentation, this
+	// means data stored on the VM host is encrypted at rest and flows encrypted to the Storage service. See
+	// https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-host-based-encryption-portal?tabs=azure-powershell
+	// for more information.
+	//
+	// +kubebuilder:default:=Enabled
+	// +kubebuilder:validation:Enum=Enabled;Disabled
+	// +optional
+	EncryptionAtHost string `json:"encryptionAtHost,omitempty"`
+
 	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
 	// needs to exist in the same subscription id listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.SubscriptionID.
 	// DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
