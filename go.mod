@@ -36,7 +36,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
 	github.com/openshift/api v0.0.0-20240215031714-be926bb0d751
 	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
-	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
+	github.com/openshift/cloud-credential-operator v0.0.0-20240504012628-26d4761a9f4e
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
 	github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
@@ -63,8 +63,8 @@ require (
 	golang.org/x/sync v0.5.0
 	golang.org/x/time v0.5.0
 	google.golang.org/grpc v1.58.3
+	gopkg.in/go-jose/go-jose.v2 v2.6.3
 	gopkg.in/ini.v1 v1.67.0
-	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.28.4
 	k8s.io/apiextensions-apiserver v0.28.3
