@@ -1218,6 +1218,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 	}
 	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
 	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
+		AtLeast(t, Version418)
 		t.Log("Waiting for ValidatingAdmissionPolicies to exist")
 		var expectedVAPCount int = 3
 		g := NewWithT(t)
@@ -1261,6 +1262,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		t.Logf("Successfully waited for ValidatingAdmissionPolicies to exist in %s", duration)
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesCheckDeniedRequests", func(t *testing.T) {
+		AtLeast(t, Version418)
 		g := NewWithT(t)
 		t.Log("Checking Denied KAS Requests for ValidatingAdmissionPolicies")
 		apiServer := &configv1.APIServer{
