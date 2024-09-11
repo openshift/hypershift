@@ -68,6 +68,7 @@ type Options struct {
 	EnableConversionWebhook                   bool
 	Template                                  bool
 	Format                                    string
+	OutputFile                                string
 	OutputTypes                               string
 	ExcludeEtcdManifests                      bool
 	PlatformMonitoring                        metrics.PlatformMonitoring

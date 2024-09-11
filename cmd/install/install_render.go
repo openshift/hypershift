@@ -3,6 +3,7 @@ package install
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -51,6 +52,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Template, "template", false, "Render resources and crds as an OpenShift template instead of plain manifests")
 	cmd.Flags().StringVar(&opts.Format, "format", RenderFormatYaml, fmt.Sprintf("Output format for the manifests, supports %s and %s", RenderFormatYaml, RenderFormatJson))
 	cmd.Flags().StringVar(&opts.OutputTypes, "outputs", string(OutputAll), fmt.Sprintf("Which manifests to output, one of %s, %s, or %s. Output CRDs separately to allow applying them first and waiting for them to be established.", OutputAll, OutputCRDs, OutputResources))
+	cmd.Flags().StringVar(&opts.OutputFile, "output-file", "", "File to write the rendered manifests to. Writes to STDOUT if not specified.")
 	cmd.MarkFlagsMutuallyExclusive("template", "outputs")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -86,7 +88,19 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 		case OutputResources:
 			objectsToRender = objects
 		}
-		err = render(objectsToRender, opts.Format, cmd.OutOrStdout())
+		var out io.Writer
+		if opts.OutputFile != "" {
+			file, err := os.Create(opts.OutputFile)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			out = file
+		} else {
+			out = cmd.OutOrStdout()
+		}
+
+		err = render(objectsToRender, opts.Format, out)
 		if err != nil {
 			return err
 		}
