@@ -189,6 +189,13 @@ func main(m *testing.M) int {
 		defer cleanupSharedOIDCProvider()
 	}
 
+	// set the semantic version of the latest release image for version gating tests
+	err := util.SetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.configurableClusterOptions.PullSecretFile)
+	if err != nil {
+		log.Error(err, "failed to set release image version")
+		return -1
+	}
+
 	// Everything's okay to run tests
 	log.Info("executing e2e tests", "options", globalOpts)
 	return m.Run()
