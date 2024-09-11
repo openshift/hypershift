@@ -17,12 +17,14 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,9 +45,24 @@ func TestHAEtcdChaos(t *testing.T) {
 	clusterOpts.NodePoolReplicas = 0
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		t.Run("SingleMemberRecovery", testSingleMemberRecovery(ctx, mgtClient, hostedCluster))
-		t.Run("KillRandomMembers", testKillRandomMembers(ctx, mgtClient, hostedCluster))
-		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))
+		t.Run("SingleMemberRecovery", func(t *testing.T) {
+			t.Parallel()
+			testSingleMemberRecovery(ctx, mgtClient, hostedCluster)
+		})
+		t.Run("KillRandomMembers", func(t *testing.T) {
+			t.Parallel()
+			testKillRandomMembers(ctx, mgtClient, hostedCluster)
+		})
+		t.Run("KillAllMembers", func(t *testing.T) {
+			t.Parallel()
+			testKillAllMembers(ctx, mgtClient, hostedCluster)
+		})
+		t.Run("SingleMemberRecoveryWithCorruption", func(t *testing.T) {
+			testEtcdMemberCorruption(ctx, mgtClient, hostedCluster)
+		})
+		t.Run("SingleMissingMemberRecovery", func(t *testing.T) {
+			testEtcdMemberMissing(ctx, mgtClient, hostedCluster)
+		})
 
 	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
@@ -236,6 +253,138 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 		}, []e2eutil.Predicate[*corev1.ConfigMap]{func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
 			diff := cmp.Diff(cm.Data, configMap.Data)
 			return diff == "", fmt.Sprintf("incorrect data: %v", diff), nil
+		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(30*time.Minute))
+	}
+}
+
+// testEtcdMemberMissing ensures that the etcd cluster can be recovered having 1 member with data corruption
+func testEtcdMemberCorruption(parentCtx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster) func(t *testing.T) {
+	return func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(parentCtx)
+		defer cancel()
+
+		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name)
+		t.Logf("Hosted control plane namespace is %s", guestNamespace)
+
+		// Find etcd pods in the control plane namespace
+		etcdSts := cpomanifests.EtcdStatefulSet(guestNamespace)
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(etcdSts), etcdSts)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get etcd statefulset")
+
+		etcdPods := &corev1.PodList{}
+		err = client.List(ctx, etcdPods, &crclient.ListOptions{
+			Namespace:     manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name),
+			LabelSelector: labels.Set(etcdSts.Spec.Selector.MatchLabels).AsSelector(),
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get etcd pods")
+
+		pod := randomPods(etcdPods.Items, 1)[0]
+		command := fmt.Sprintf("find /var/lib/data/member/wal -type f -name \"*.wal\" -print0 | shuf -z -n1 | xargs -0 rm")
+
+		t.Logf("Deleting wal file from etcd pod: %s", pod.Name)
+		cmdStdout, err := e2eutil.RunCommandInPod(ctx, client, "etcd", pod.Namespace, []string{"/bin/sh", "-c", command}, "etcd", 5*time.Minute)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to delete wal file from etcd pod: %s", pod.Name)
+		g.Expect(cmdStdout).NotTo(ContainSubstring("No such file or directory"), "failed to delete wal file from etcd pod: %s", pod.Name)
+
+		t.Logf("Deleting pod: %s", pod.Name)
+		err = client.Delete(ctx, &pod)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to delete pod: %s", pod.Name)
+
+		// Etcd recovery Job should be created
+		// We don't check if the job is completed because it will be deleted after completion
+		e2eutil.EventuallyObject(t, ctx, "etcd recovery job to be active", func(ctx context.Context) (*batchv1.Job, error) {
+			recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(guestNamespace)
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(recoveryJob), recoveryJob)
+			return recoveryJob, err
+		}, []e2eutil.Predicate[*batchv1.Job]{func(job *batchv1.Job) (done bool, reasons string, err error) {
+			want := int32(1)
+			got := job.Status.Active
+			return want != 0 && want == got, fmt.Sprintf("wanted status active to be %d , got %d", want, got), nil
+		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(10*time.Minute))
+
+		// The etcd cluster should eventually roll out completely
+		e2eutil.EventuallyObject(t, ctx, "etcd StatefulSet replicas to converge", func(ctx context.Context) (*appsv1.StatefulSet, error) {
+			sts := cpomanifests.EtcdStatefulSet(guestNamespace)
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(sts), sts)
+			return sts, err
+		}, []e2eutil.Predicate[*appsv1.StatefulSet]{func(sts *appsv1.StatefulSet) (done bool, reasons string, err error) {
+			want := ptr.Deref(etcdSts.Spec.Replicas, 3)
+			got := sts.Status.ReadyReplicas
+			return want != 3 && want == got, fmt.Sprintf("wanted %d replicas in spec, got %d in status", want, got), nil
+		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(30*time.Minute))
+	}
+}
+
+// testEtcdMemberMissing ensures that the etcd cluster can recover from a missing member
+func testEtcdMemberMissing(parentCtx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster) func(t *testing.T) {
+	return func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(parentCtx)
+		defer cancel()
+
+		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name)
+		t.Logf("Hosted control plane namespace is %s", guestNamespace)
+
+		// Find etcd pods in the control plane namespace
+		etcdSts := cpomanifests.EtcdStatefulSet(guestNamespace)
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(etcdSts), etcdSts)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get etcd statefulset")
+
+		etcdPods := &corev1.PodList{}
+		err = client.List(ctx, etcdPods, &crclient.ListOptions{
+			Namespace:     manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name),
+			LabelSelector: labels.Set(etcdSts.Spec.Selector.MatchLabels).AsSelector(),
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get etcd pods")
+
+		pod := randomPods(etcdPods.Items, 1)[0]
+		ep := fmt.Sprintf("https://etcd-client.%s.svc:2379", guestNamespace)
+		baseCommand := []string{
+			"/usr/bin/etcdctl",
+			"--cacert=/etc/etcd/tls/etcd-ca/ca.crt",
+			"--cert=/etc/etcd/tls/server/server.crt",
+			"--key /etc/etcd/tls/server/server.key",
+			fmt.Sprintf("--endpoints=%s", ep),
+		}
+
+		// Get Etcd member ID
+		innerCommand := fmt.Sprintf("member list | grep %s | awk '{print $1}' | tr -d ,", pod.Name)
+		memberDiscoveryCommand := append(baseCommand, innerCommand)
+
+		// Final etcd commands
+		command := append(baseCommand, "member", "remove", fmt.Sprintf("$(%s)", memberDiscoveryCommand))
+
+		t.Logf("Removing Etcd Member: %s", pod.Name)
+		cmdStdout, err := e2eutil.RunCommandInPod(ctx, client, "etcd", pod.Namespace, command, "etcd", 5*time.Minute)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to remove etcd member: %s", pod.Name)
+		g.Expect(cmdStdout).NotTo(ContainSubstring("Error:"), "failed to remove etcd member: %s", pod.Name)
+
+		t.Logf("Deleting pod: %s", pod.Name)
+		err = client.Delete(ctx, &pod)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to delete pod: %s", pod.Name)
+
+		// Etcd recovery Job should be created
+		// We don't check if the job is completed because it will be deleted after completion
+		e2eutil.EventuallyObject(t, ctx, "etcd recovery job to be active", func(ctx context.Context) (*batchv1.Job, error) {
+			recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(guestNamespace)
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(recoveryJob), recoveryJob)
+			return recoveryJob, err
+		}, []e2eutil.Predicate[*batchv1.Job]{func(job *batchv1.Job) (done bool, reasons string, err error) {
+			want := int32(1)
+			got := job.Status.Active
+			return want != 0 && want == got, fmt.Sprintf("wanted status active to be %d , got %d", want, got), nil
+		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(10*time.Minute))
+
+		// The etcd cluster should eventually roll out completely
+		e2eutil.EventuallyObject(t, ctx, "etcd StatefulSet replicas to converge", func(ctx context.Context) (*appsv1.StatefulSet, error) {
+			sts := cpomanifests.EtcdStatefulSet(guestNamespace)
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(sts), sts)
+			return sts, err
+		}, []e2eutil.Predicate[*appsv1.StatefulSet]{func(sts *appsv1.StatefulSet) (done bool, reasons string, err error) {
+			want := ptr.Deref(etcdSts.Spec.Replicas, 3)
+			got := sts.Status.ReadyReplicas
+			return want != 3 && want == got, fmt.Sprintf("wanted %d replicas in spec, got %d in status", want, got), nil
 		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(30*time.Minute))
 	}
 }
