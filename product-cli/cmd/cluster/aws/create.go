@@ -20,7 +20,6 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	opts.ReleaseStream = version.DefaultReleaseStream
 
 	awsOpts := hypershiftaws.DefaultOptions()
-	awsOpts.MultiArch = true
 
 	hypershiftaws.BindOptions(awsOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

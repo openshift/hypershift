@@ -1517,7 +1517,11 @@ bool
 <td>
 <em>(Optional)</em>
 <p>MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
-CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.</p>
+CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
+Deprecated: This field is no longer used. The HyperShift Operator now performs multi-arch validations
+automatically despite the platform type. The HyperShift Operator will set HostedCluster.Status.PayloadArch based
+on the HostedCluster release image. This field is used by the NodePool controller to validate the
+NodePool.Spec.Arch is supported.</p>
 </td>
 </tr>
 <tr>
