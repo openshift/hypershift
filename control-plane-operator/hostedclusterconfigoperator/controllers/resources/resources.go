@@ -1597,7 +1597,11 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	p := olm.NewOperatorLifecycleManagerParams(hcp)
+	p, err := olm.NewOperatorLifecycleManagerParams(hcp)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to create OLM params: %w", err))
+		return errs
+	}
 
 	// Check if the defaultSources are disabled
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {

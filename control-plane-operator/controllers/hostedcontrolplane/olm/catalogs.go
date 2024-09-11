@@ -110,27 +110,32 @@ func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.O
 }
 
 func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagReference {
-	for _, tag := range tags {
+	for i, tag := range tags {
 		if tag.Name == name {
-			return &tag
+			return &tags[i]
 		}
 	}
 	return nil
 }
 
 var CatalogToImage = map[string]string{
-	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.16",
-	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.16",
-	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.16",
-	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.16",
+	"certified-operators": "registry.redhat.io/redhat/certified-operator-index",
+	"community-operators": "registry.redhat.io/redhat/community-operator-index",
+	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index",
+	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index",
 }
 
-func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, isImageRegistryOverrides map[string][]string) error {
+func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, isImageRegistryOverrides map[string][]string, releaseVersion string) error {
 	imageStream.Spec.LookupPolicy.Local = true
 	if imageStream.Spec.Tags == nil {
 		imageStream.Spec.Tags = []imagev1.TagReference{}
 	}
-	for name, image := range getCatalogToImageWithISImageRegistryOverrides(CatalogToImage, isImageRegistryOverrides) {
+
+	catalogToImageWithVersion, err := GetCatalogToImagesWithVersion(releaseVersion)
+	if err != nil {
+		return fmt.Errorf("failed to get catalog images with version: %w", err)
+	}
+	for name, image := range getCatalogToImageWithISImageRegistryOverrides(catalogToImageWithVersion, isImageRegistryOverrides) {
 		tagRef := findTagReference(imageStream.Spec.Tags, name)
 		if tagRef == nil {
 			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
@@ -187,6 +192,20 @@ func generateModularDailyCronSchedule(input []byte) string {
 	m := mi.Mod(a, big.NewInt(60))
 	h := hi.Mod(a, big.NewInt(24))
 	return fmt.Sprintf("%d %d * * *", m.Int64(), h.Int64())
+}
+
+// GetCatalogToImagesWithVersion adds the catalog version to the CatalogToImage map.
+func GetCatalogToImagesWithVersion(releaseVersion string) (map[string]string, error) {
+	if releaseVersion == "" || len(strings.Split(releaseVersion, ".")) < 3 {
+		return nil, fmt.Errorf("invalid release version: %s", releaseVersion)
+	}
+	catalogWithVersion := make(map[string]string)
+	catalogVersion := fmt.Sprintf("v%s", strings.Join(strings.Split(releaseVersion, ".")[0:2], "."))
+	for name, image := range CatalogToImage {
+		catalogWithVersion[name] = fmt.Sprintf("%s:%s", image, catalogVersion)
+	}
+
+	return catalogWithVersion, nil
 }
 
 func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {

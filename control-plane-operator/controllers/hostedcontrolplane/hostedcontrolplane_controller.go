@@ -3756,7 +3756,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
 				if !overrideImages {
 					if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
+						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides, releaseImageProvider.Version())
 					}); err != nil {
 						return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 					}
@@ -3772,7 +3772,12 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 						return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 					}
 
-					for name, catalog := range olm.CatalogToImage {
+					olmCatalogs, err := olm.GetCatalogToImagesWithVersion(releaseImageProvider.Version())
+					if err != nil {
+						return fmt.Errorf("failed to get olm catalogs: %w", err)
+					}
+
+					for name, catalog := range olmCatalogs {
 						imageRef, err := reference.Parse(catalog)
 						if err != nil {
 							return fmt.Errorf("failed to parse catalog image %s: %w", catalog, err)
