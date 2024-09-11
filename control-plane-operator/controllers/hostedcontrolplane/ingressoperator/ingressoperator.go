@@ -1,30 +1,34 @@
 package ingressoperator
 
 import (
+	"context"
 	"fmt"
-
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
+	"os"
+
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	operatorName                   = "ingress-operator"
 	ingressOperatorContainerName   = "ingress-operator"
-	metricsHostname                = "ingress-operator"
 	konnectivityProxyContainerName = "konnectivity-proxy"
 	ingressOperatorMetricsPort     = 60000
 	konnectivityProxyPort          = 8090
@@ -70,19 +74,30 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	return p
 }
 
-func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
+func ReconcileDeployment(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) error {
+	// Determine if the deployment will be placed on ARO HCP
+	aroHCPDeployment := os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
+
+	// Initialize resource requests
 	ingressOpResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
 			corev1.ResourceCPU:    resource.MustParse("10m"),
 		},
 	}
-	// preserve existing resource requirements
+
+	// Preserve existing resource requirements
 	mainContainer := util.FindContainer(ingressOperatorContainerName, dep.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
 		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
 			ingressOpResources = mainContainer.Resources
 		}
+	}
+
+	// Initialize NO_PROXY environment variable and add the Azure Managed Identity API endpoint if ingress operator is being deployed on ARO HCP
+	noProxyValue := manifests.KubeAPIServerService("").Name
+	if aroHCPDeployment {
+		noProxyValue = noProxyValue + ",169.254.169.254"
 	}
 
 	dep.Spec.Replicas = ptr.To[int32](1)
@@ -132,7 +147,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: manifests.KubeAPIServerService("").Name,
+				Value: noProxyValue,
 			},
 		},
 		Name:                     ingressOperatorContainerName,
@@ -199,7 +214,29 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		},
 	)
 
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "ARO_HCP_MI_CLIENT_ID",
+				Value: string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlaneManagedIdentities.IngressManagedIdentityClientID),
+			})
+
+		if dep.Spec.Template.Spec.InitContainers == nil {
+			dep.Spec.Template.Spec.InitContainers = []corev1.Container{}
+		}
+		dep.Spec.Template.Spec.InitContainers = append(dep.Spec.Template.Spec.InitContainers, azureutil.AdapterInitContainer())
+
+		azureCredentials, err := azureutil.GetAzureCredentialsFromSecret(ctx, c, hcp.Namespace, hcp.Spec.Platform.Azure.Credentials.Name)
+		if err != nil {
+			return err
+		}
+
+		dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, azureutil.AdapterServerContainer(string(azureCredentials.Data["AZURE_CLIENT_ID"]), string(azureCredentials.Data["AZURE_CLIENT_SECRET"]), string(azureCredentials.Data["AZURE_TENANT_ID"])))
+		params.DeploymentConfig.SetDefaultSecurityContext = false
+	}
+
 	params.DeploymentConfig.ApplyTo(dep)
+	return nil
 }
 
 func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *configv1.ProxySpec, noProxy string) corev1.Container {

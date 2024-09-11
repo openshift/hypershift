@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/go-logr/logr"
+
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -81,7 +82,9 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -3532,7 +3535,10 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, hasRouteCap bool, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
+	p, err := cno.NewParams(ctx, r.Client, hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
+	if err != nil {
+		return err
+	}
 
 	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
@@ -3699,7 +3705,9 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 
 	deployment := manifests.IngressOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		ingressoperator.ReconcileDeployment(deployment, p, hcp.Spec.Platform.Type)
+		if err := ingressoperator.ReconcileDeployment(ctx, r.Client, hcp, deployment, p, hcp.Spec.Platform.Type); err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator deployment: %w", err)
@@ -4017,7 +4025,7 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx contex
 
 	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return registryoperator.ReconcileDeployment(deployment, params)
+		return registryoperator.ReconcileDeployment(ctx, r.Client, hcp, deployment, params)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile image registry operator deployment: %w", err)
 	}
@@ -4800,7 +4808,10 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+	params, err := storage.NewParams(ctx, r.Client, hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+	if err != nil {
+		return err
+	}
 
 	deployment := manifests.ClusterStorageOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
@@ -4828,6 +4839,34 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		return storage.ReconcileOperatorRoleBinding(roleBinding, params)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster storage operator roleBinding: %w", err)
+	}
+
+	// Reconcile azure-disk-csi-controller and azure-file-csi-controller configuration secrets for ARO HCP. This is
+	// needed so we can specify a unique managed identity for each controller to authenticate with the Managed Identity
+	// Azure API.
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		// Get the credentials secret so we can retrieve the tenant ID for the configuration
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+		tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		// Reconcile the secret needed for azure-disk-csi-controller
+		azureDiskCSISecret := manifests.AzureDiskCSIConfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskCSISecret, func() error {
+			return storage.ReconcileAzureDiskCSISecret(azureDiskCSISecret, hcp, tenantID)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure Disk CSI config: %w", err)
+		}
+
+		// Reconcile the secret needed for azure-disk-csi-controller
+		azureFileCSISecret := manifests.AzureFileCSIConfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskCSISecret, func() error {
+			return storage.ReconcileAzureFileCSISecret(azureFileCSISecret, hcp, tenantID)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure File CSI config: %w", err)
+		}
 	}
 
 	// TODO: create custom kubeconfig to the guest cluster + RBAC

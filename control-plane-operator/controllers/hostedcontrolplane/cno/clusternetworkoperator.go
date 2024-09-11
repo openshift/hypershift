@@ -6,19 +6,20 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/rhobsmonitoring"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
+
+	"github.com/blang/semver"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -27,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilpointer "k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -74,9 +76,12 @@ type Params struct {
 	DeploymentConfig        config.DeploymentConfig
 	IsPrivate               bool
 	DefaultIngressDomain    string
+	NetworkManagedIdentity  string
+	ClientIDSecret          string
+	TenantID                string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
+func NewParams(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) (Params, error) {
 	p := Params{
 		Images: Images{
 			NetworkOperator:              releaseImageProvider.GetImage("cluster-network-operator"),
@@ -131,7 +136,18 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		p.APIServerPort = hcp.Status.ControlPlaneEndpoint.Port
 	}
 
-	return p
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		azureCredentials, err := azureutil.GetAzureCredentialsFromSecret(ctx, c, hcp.Namespace, hcp.Spec.Platform.Azure.Credentials.Name)
+		if err != nil {
+			return p, fmt.Errorf("failed to get Azure credentials: %w", err)
+		}
+
+		p.NetworkManagedIdentity = string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlaneManagedIdentities.NetworkManagedIdentityClientID)
+		p.ClientIDSecret = string(azureCredentials.Data["AZURE_CLIENT_SECRET"])
+		p.TenantID = string(azureCredentials.Data["AZURE_TENANT_ID"])
+	}
+
+	return p, nil
 }
 
 func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hyperv1.NetworkType) error {
@@ -473,8 +489,11 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "CA_CONFIG_MAP", Value: params.CAConfigMap},
 			{Name: "CA_CONFIG_MAP_KEY", Value: params.CAConfigMapKey},
 			{Name: "TOKEN_AUDIENCE", Value: params.TokenAudience},
-
-			{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
+			{Name: "ARO_HCP_MI_CLIENT_ID", Value: params.NetworkManagedIdentity},
+			{Name: "AZURE_ADAPTER_INIT_IMAGE", Value: azureutil.AdapterInitImage},
+			{Name: "AZURE_ADAPTER_SERVER_IMAGE", Value: azureutil.AdapterServerImage},
+			{Name: "CLIENT_ID_SECRET", Value: params.ClientIDSecret},
+			{Name: "TENANT_ID", Value: params.TenantID},
 			{Name: "APISERVER_OVERRIDE_HOST", Value: params.APIServerAddress}, // We need to pass this down to networking components on the nodes
 			{Name: "APISERVER_OVERRIDE_PORT", Value: fmt.Sprint(params.APIServerPort)},
 			{Name: "OVN_NB_RAFT_ELECTION_TIMER", Value: "10"},
@@ -514,6 +533,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "CLI_IMAGE", Value: params.Images.CLI},
 			{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
 			{Name: "OPENSHIFT_RELEASE_IMAGE", Value: params.DeploymentConfig.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]},
+			{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
 		}...),
 		Name:                     operatorName,
 		Image:                    params.Images.NetworkOperator,
