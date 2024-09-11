@@ -70,6 +70,9 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		azureMachineTemplate.Template.Spec.OSDisk.ManagedDisk.DiskEncryptionSet = &capiazure.DiskEncryptionSetParameters{
 			ID: nodePool.Spec.Platform.Azure.DiskEncryptionSetID,
 		}
+	}
+
+	if nodePool.Spec.Platform.Azure.EncryptionAtHost == "Enabled" {
 		azureMachineTemplate.Template.Spec.SecurityProfile = &capiazure.SecurityProfile{
 			EncryptionAtHost: to.Ptr(true),
 		}

@@ -28,6 +28,7 @@ type AzurePlatformCreateOptions struct {
 	SubnetID                      string
 	ImageID                       string
 	Arch                          string
+	EncryptionAtHost              string
 }
 
 type AzureMarketPlaceImageInfo struct {
@@ -70,6 +71,7 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, "The Azure Marketplace image offer.")
 	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, "The Azure Marketplace image SKU.")
 	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, "The Azure Marketplace image version.")
+	flags.StringVar(&opts.EncryptionAtHost, "enable-encryption-at-host", opts.EncryptionAtHost, "Enables encryption at host on Azure VMs.")
 }
 
 func BindDeveloperOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
@@ -111,6 +113,10 @@ func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreat
 
 	if o.DiagnosticsStorageAccountType != hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged && len(o.DiagnosticsStorageAccountURI) > 0 {
 		return nil, fmt.Errorf("--diagnostics-storage-account-uri is applicable only if --diagnostics-storage-account-type is set to %s", hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged)
+	}
+
+	if o.EncryptionAtHost != "" && o.EncryptionAtHost != "Enabled" && o.EncryptionAtHost != "Disabled" {
+		return nil, fmt.Errorf("flag --enable-encryption-at-host has an invalid value; accepted values are 'Enabled' and 'Disabled'")
 	}
 
 	return &ValidatedAzurePlatformCreateOptions{
@@ -197,6 +203,7 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 		DiskStorageAccountType: o.DiskStorageAccountType,
 		SubnetID:               o.SubnetID,
 		Image:                  vmImage,
+		EncryptionAtHost:       o.EncryptionAtHost,
 	}
 
 	if len(o.DiagnosticsStorageAccountType) > 0 {

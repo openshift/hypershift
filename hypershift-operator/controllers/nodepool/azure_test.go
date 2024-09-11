@@ -347,14 +347,9 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							},
 						},
 						SpotVMOptions: nil,
-						SecurityProfile: &capiazure.SecurityProfile{
-							EncryptionAtHost: ptr.To(true),
-							SecurityType:     "",
-							UefiSettings:     nil,
-						},
-						SubnetName:   "",
-						DNSServers:   nil,
-						VMExtensions: nil,
+						SubnetName:    "",
+						DNSServers:    nil,
+						VMExtensions:  nil,
 						NetworkInterfaces: []capiazure.NetworkInterface{
 							{
 								SubnetName:            "testSubnetName",
@@ -452,14 +447,9 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							},
 						},
 						SpotVMOptions: nil,
-						SecurityProfile: &capiazure.SecurityProfile{
-							EncryptionAtHost: ptr.To(true),
-							SecurityType:     "",
-							UefiSettings:     nil,
-						},
-						SubnetName:   "",
-						DNSServers:   nil,
-						VMExtensions: nil,
+						SubnetName:    "",
+						DNSServers:    nil,
+						VMExtensions:  nil,
 						NetworkInterfaces: []capiazure.NetworkInterface{
 							{
 								SubnetName:            "testSubnetName",

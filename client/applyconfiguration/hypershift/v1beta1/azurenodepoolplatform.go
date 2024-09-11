@@ -25,6 +25,7 @@ type AzureNodePoolPlatformApplyConfiguration struct {
 	DiskSizeGB             *int32                          `json:"diskSizeGB,omitempty"`
 	DiskStorageAccountType *string                         `json:"diskStorageAccountType,omitempty"`
 	AvailabilityZone       *string                         `json:"availabilityZone,omitempty"`
+	EncryptionAtHost       *string                         `json:"encryptionAtHost,omitempty"`
 	DiskEncryptionSetID    *string                         `json:"diskEncryptionSetID,omitempty"`
 	EnableEphemeralOSDisk  *bool                           `json:"enableEphemeralOSDisk,omitempty"`
 	SubnetID               *string                         `json:"subnetID,omitempty"`
@@ -75,6 +76,14 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithDiskStorageAccountType(val
 // If called multiple times, the AvailabilityZone field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithAvailabilityZone(value string) *AzureNodePoolPlatformApplyConfiguration {
 	b.AvailabilityZone = &value
+	return b
+}
+
+// WithEncryptionAtHost sets the EncryptionAtHost field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EncryptionAtHost field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithEncryptionAtHost(value string) *AzureNodePoolPlatformApplyConfiguration {
+	b.EncryptionAtHost = &value
 	return b
 }
 

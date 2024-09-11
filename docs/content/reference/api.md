@@ -2521,6 +2521,21 @@ for clusters in a location that does not support AvailabilityZone.</p>
 </tr>
 <tr>
 <td>
+<code>encryptionAtHost</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>encryptionAtHost enables encryption at host on virtual machines. According to Microsoft documentation, this
+means data stored on the VM host is encrypted at rest and flows encrypted to the Storage service. See
+<a href="https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-host-based-encryption-portal?tabs=azure-powershell">https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-host-based-encryption-portal?tabs=azure-powershell</a>
+for more information.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>diskEncryptionSetID</code></br>
 <em>
 string
