@@ -3549,21 +3549,23 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
-	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return err
-	}
+	if _, exists := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
+		rootCA := manifests.RootCAConfigMap(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+			return err
+		}
 
-	csrSigner := manifests.CSRSignerCASecret(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
-		return err
-	}
+		csrSigner := manifests.CSRSignerCASecret(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+			return err
+		}
 
-	kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
-		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, "openshift-ingress-operator", "ingress-operator")
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingressoperator kubeconfig: %w", err)
+		kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
+			return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, "openshift-ingress-operator", "ingress-operator")
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingressoperator kubeconfig: %w", err)
+		}
 	}
 
 	deployment := manifests.IngressOperatorDeployment(hcp.Namespace)
