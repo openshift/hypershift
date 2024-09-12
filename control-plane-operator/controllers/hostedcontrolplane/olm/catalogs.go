@@ -110,9 +110,9 @@ func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.O
 }
 
 func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagReference {
-	for _, tag := range tags {
+	for i, tag := range tags {
 		if tag.Name == name {
-			return &tag
+			return &tags[i]
 		}
 	}
 	return nil
