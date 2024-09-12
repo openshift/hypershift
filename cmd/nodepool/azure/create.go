@@ -97,6 +97,7 @@ type CompletedAzurePlatformCreateOptions struct {
 	*completetedAzurePlatformCreateOptions
 }
 
+// TODO: HOSTEDCP-1974: Unify Validate/Complete Function Signatures Across Providers
 func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreateOptions, error) {
 	// Validate publisher, offer, sku, and version flags are provided if one of them is not empty
 	marketplaceImageInfo := map[string]*string{

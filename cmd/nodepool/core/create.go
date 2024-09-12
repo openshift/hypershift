@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -44,9 +46,22 @@ func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func
 	}
 }
 
+func (o *CreateNodePoolOptions) Validate(ctx context.Context, c crclient.Client) error {
+	// Validate HostedCluster payload can support the NodePool CPU type
+	if err := validateHostedClusterPayloadSupportsNodePoolCPUArch(ctx, c, o.ClusterName, o.Namespace, o.Arch); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts PlatformOptions) error {
 	client, err := util.GetClient()
 	if err != nil {
+		return err
+	}
+
+	if err = o.Validate(ctx, client); err != nil {
 		return err
 	}
 
@@ -140,5 +155,26 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 	}
 
 	fmt.Printf("NodePool %s created\n", o.Name)
+	return nil
+}
+
+// validateHostedClusterPayloadSupportsNodePoolCPUArch validates the HostedCluster payload type can support the CPU architecture
+// of the NodePool.
+func validateHostedClusterPayloadSupportsNodePoolCPUArch(ctx context.Context, client crclient.Client, name, namespace, arch string) error {
+	logger := ctrl.LoggerFrom(ctx)
+
+	hc := &hyperv1.HostedCluster{}
+	err := client.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, hc)
+	if err != nil {
+		// This is expected to happen when we create a cluster since there is no created HostedCluster CR to check the
+		// payload from.
+		logger.Info("WARNING: failed to get HostedCluster to check payload type")
+		return nil
+	}
+
+	if hc.Status.PayloadArch != "" && !strings.EqualFold(hc.Status.PayloadArch, "multi") && !strings.EqualFold(hc.Status.PayloadArch, arch) {
+		return fmt.Errorf("NodePool CPU arch, %s, is not supported by the HostedCluster payload type, %s", arch, hc.Status.PayloadArch)
+	}
+
 	return nil
 }
