@@ -373,7 +373,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling oauth client secrets")
 	if err := r.reconcileAuthOIDC(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
+		errs = append(errs, fmt.Errorf("failed to reconcile oauth client secrets: %w", err))
 	}
 
 	log.Info("reconciling kube control plane signer secret")
