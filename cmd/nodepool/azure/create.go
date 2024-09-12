@@ -71,7 +71,7 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, "The Azure Marketplace image offer.")
 	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, "The Azure Marketplace image SKU.")
 	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, "The Azure Marketplace image version.")
-	flags.StringVar(&opts.EncryptionAtHost, "enable-encryption-at-host", opts.EncryptionAtHost, "Enables encryption at host on Azure VMs.")
+	flags.StringVar(&opts.EncryptionAtHost, "encryption-at-host", opts.EncryptionAtHost, "Enables or disables encryption at host on Azure VMs. Supported values: Enabled, Disabled.")
 }
 
 func BindDeveloperOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
