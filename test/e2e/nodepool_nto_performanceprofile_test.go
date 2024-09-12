@@ -6,8 +6,9 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/hypershift/support/util"
 	"testing"
+
+	"github.com/openshift/hypershift/support/util"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
@@ -147,6 +148,11 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			},
 		},
 	)
+	// The remainder of the assertions only work in 4.17+
+	// https://github.com/openshift/hypershift/pull/4020
+	if e2eutil.IsLessThan(e2eutil.Version417) {
+		return
+	}
 	e2eutil.EventuallyObjects(t, ctx, "performance profile status ConfigMap to exist",
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
