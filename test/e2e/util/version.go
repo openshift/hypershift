@@ -58,3 +58,7 @@ func AtLeast(t *testing.T, version semver.Version) {
 		t.Skipf("Only tested in %s and later", version)
 	}
 }
+
+func IsLessThan(version semver.Version) bool {
+	return releaseVersion.LT(version)
+}

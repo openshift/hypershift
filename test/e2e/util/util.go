@@ -934,6 +934,7 @@ func EnsureSecretEncryptedUsingKMSV1(t *testing.T, ctx context.Context, hostedCl
 
 func EnsureSecretEncryptedUsingKMSV2(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
 	t.Run("EnsureSecretEncryptedUsingKMSV2", func(t *testing.T) {
+		AtLeast(t, Version417)
 		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:v2")
 	})
 }
