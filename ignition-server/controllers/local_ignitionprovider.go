@@ -252,6 +252,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		}
 		if p.ReleaseProvider.GetMirroredReleaseImage() != "" {
 			releaseImage = p.ReleaseProvider.GetMirroredReleaseImage()
+			log.Info("using mirrored release image", "releaseImage", releaseImage)
 		}
 
 		if err := registryclient.ExtractImageFilesToDir(ctx, releaseImage, pullSecret, "release-manifests/image-references", configDir); err != nil {
