@@ -1572,3 +1572,88 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileCoreIgnitionConfig(t *testing.T) {
+	sshKey := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "ssh-key", Namespace: "clusters"},
+		Data:       map[string][]byte{"id_rsa.pub": []byte("dummy ssh pub key")},
+	}
+
+	awsHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "aws-hcp",
+			Namespace: "clusters",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+			},
+			SSHKey: corev1.LocalObjectReference{Name: "ssh-key"},
+		},
+	}
+
+	powervsHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "powervs-hcp",
+			Namespace: "clusters",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type:    hyperv1.PowerVSPlatform,
+				PowerVS: &hyperv1.PowerVSPlatformSpec{},
+			},
+			SSHKey: corev1.LocalObjectReference{Name: "ssh-key"},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		hcp                *hyperv1.HostedControlPlane
+		expectedConfigMaps []*corev1.ConfigMap
+	}{
+		{
+			name: "Validate AWS platform",
+			hcp:  awsHCP,
+			expectedConfigMaps: []*corev1.ConfigMap{
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "ignition-config-fips"}},
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "ignition-config-worker-ssh"}},
+			},
+		},
+		{
+			name: "Validate PowerVS platform",
+			hcp:  powervsHCP,
+			expectedConfigMaps: []*corev1.ConfigMap{
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "ignition-config-fips"}},
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "ignition-config-worker-ssh"}},
+				{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "ignition-config-multi-path"}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			existing := []client.Object{&sshKey}
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(existing...).Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			if err := r.reconcileCoreIgnitionConfig(ctx, tc.hcp, controllerutil.CreateOrUpdate); err != nil {
+				t.Fatalf("reconcileCoreIgnitionConfig failed: %v", err)
+			}
+
+			for _, cm := range tc.expectedConfigMaps {
+				if err := c.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
+					t.Fatalf("failed to get config map: %v", err)
+				}
+
+				t.Run(cm.Name, func(t *testing.T) {
+					testutil.CompareWithFixture(t, cm.Data["config"])
+				})
+			}
+		})
+	}
+}

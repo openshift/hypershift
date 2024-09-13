@@ -33,6 +33,11 @@ var (
 	defaultIgnitionConfigMapLabels = map[string]string{
 		"hypershift.openshift.io/core-ignition-config": "true",
 	}
+
+	kernelArgsMultipathForPowerVS = []string{
+		"rd.multipath=default",
+		"root=/dev/disk/by-label/dm-mpath-root",
+	}
 )
 
 func ReconcileFIPSIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, fipsEnabled bool) error {
@@ -53,8 +58,30 @@ func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.Owne
 	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
+func ReconcileMultiPathIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
+	machineConfig := manifests.MachineConfigMultiPath()
+	SetMachineConfigLabels(machineConfig)
+
+	serializedConfig, err := multiPathConfig()
+	if err != nil {
+		return fmt.Errorf("failed to serialize ignition config: %w", err)
+	}
+
+	machineConfig.Spec.Config.Raw = serializedConfig
+	machineConfig.Spec.KernelArguments = kernelArgsMultipathForPowerVS
+
+	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
+}
+
 func ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet) error {
 	return reconcileImageContentTypeIgnitionConfigMap(cm, imageDigestMirrorSet, ownerRef)
+}
+
+func multiPathConfig() ([]byte, error) {
+	ignConfig := &igntypes.Config{}
+	ignConfig.Ignition.Version = ignitionVersion
+
+	return serializeIgnitionConfig(ignConfig)
 }
 
 func workerSSHConfig(sshKey string) ([]byte, error) {
