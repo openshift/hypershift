@@ -309,6 +309,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				DiskStorageAccountType: o.DiskStorageAccountType,
 				SubnetID:               o.infra.SubnetID,
 				MachineIdentityID:      o.infra.MachineIdentityID,
+				EncryptionAtHost:       o.EncryptionAtHost,
 			}
 			if len(o.DiagnosticsStorageAccountType) > 0 {
 				nodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
@@ -333,6 +334,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		DiskStorageAccountType: o.DiskStorageAccountType,
 		SubnetID:               o.infra.SubnetID,
 		MachineIdentityID:      o.infra.MachineIdentityID,
+		EncryptionAtHost:       o.EncryptionAtHost,
 	}
 	if len(o.DiagnosticsStorageAccountType) > 0 {
 		azureNodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
