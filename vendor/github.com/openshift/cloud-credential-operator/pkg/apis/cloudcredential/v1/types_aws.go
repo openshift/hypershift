@@ -28,6 +28,12 @@ type AWSProviderSpec struct {
 	metav1.TypeMeta `json:",inline"`
 	// StatementEntries contains a list of policy statements that should be associated with this credentials access key.
 	StatementEntries []StatementEntry `json:"statementEntries"`
+	// stsIAMRoleARN is the Amazon Resource Name (ARN) of an IAM Role which was created manually for the associated
+	// CredentialsRequest.
+	// The presence of an stsIAMRoleARN within the AWSProviderSpec initiates creation of a secret containing IAM
+	// Role details necessary for assuming the IAM Role via Amazon's Secure Token Service.
+	// +optional
+	STSIAMRoleARN string `json:"stsIAMRoleARN,omitempty"`
 }
 
 // StatementEntry models an AWS policy statement entry.
