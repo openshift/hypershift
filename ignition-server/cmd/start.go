@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -246,6 +247,14 @@ func run(ctx context.Context, opts Options) error {
 			return
 		}
 
+		var jsonPayload map[string]interface{}
+		if err := json.Unmarshal(value.Payload, &jsonPayload); err != nil {
+			log.Printf("Invalid JSON payload")
+			http.Error(w, "Invalid payload", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write(value.Payload)
 
