@@ -80,13 +80,12 @@ func (s *ServiceID) List() ([]iamidentityv1.ServiceID, error) {
 }
 
 func (s *ServiceID) Validate() error {
-	codec, err := credreqv1.NewCodec()
-	if err != nil {
-		return errors.Wrap(err, "Failed to create credReq codec")
+	if s.cr.Spec.ProviderSpec == nil {
+		return fmt.Errorf("Spec.ProviderSpec is empty in %s credentials request", s.cr.Name)
 	}
 
 	var unknown runtime.Unknown
-	err = codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, &unknown)
+	err := credreqv1.Codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, &unknown)
 	if err != nil {
 		return errors.Wrapf(err, "failed to DecodeProviderSpec")
 	}
@@ -271,12 +270,8 @@ func (s *ServiceID) createPolicy(policy *credreqv1.AccessPolicy) error {
 }
 
 func (s *ServiceID) extractPolicies() (policies []credreqv1.AccessPolicy, returnErr error) {
-	codec, returnErr := credreqv1.NewCodec()
-	if returnErr != nil {
-		return nil, errors.Wrap(returnErr, "Failed to create credReq codec")
-	}
 	var unknown runtime.Unknown
-	returnErr = codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, &unknown)
+	returnErr = credreqv1.Codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, &unknown)
 	if returnErr != nil {
 		return nil, returnErr
 	}
@@ -284,13 +279,13 @@ func (s *ServiceID) extractPolicies() (policies []credreqv1.AccessPolicy, return
 	switch unknown.Kind {
 	case reflect.TypeOf(credreqv1.IBMCloudProviderSpec{}).Name():
 		ibmcloudProviderSpec := &credreqv1.IBMCloudProviderSpec{}
-		if err := codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, ibmcloudProviderSpec); err != nil {
+		if err := credreqv1.Codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, ibmcloudProviderSpec); err != nil {
 			return nil, errors.Wrap(err, "Failed to decode the provider spec")
 		}
 		policies = ibmcloudProviderSpec.Policies
 	case reflect.TypeOf(credreqv1.IBMCloudPowerVSProviderSpec{}).Name():
 		ibmCloudPowerVSProviderSpec := &credreqv1.IBMCloudPowerVSProviderSpec{}
-		if err := codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, ibmCloudPowerVSProviderSpec); err != nil {
+		if err := credreqv1.Codec.DecodeProviderSpec(s.cr.Spec.ProviderSpec, ibmCloudPowerVSProviderSpec); err != nil {
 			return nil, errors.Wrap(err, "Failed to decode the provider spec")
 		}
 		policies = ibmCloudPowerVSProviderSpec.Policies
