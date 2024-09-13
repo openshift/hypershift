@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/utils/ptr"
 	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 )
 
@@ -68,6 +69,10 @@ func ValidateAzureMachineSpec(spec AzureMachineSpec) field.ErrorList {
 	}
 
 	if errs := ValidateCapacityReservationGroupID(spec.CapacityReservationGroupID, field.NewPath("capacityReservationGroupID")); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := ValidateVMExtensions(spec.DisableExtensionOperations, spec.VMExtensions, field.NewPath("vmExtensions")); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
 	}
 
@@ -157,14 +162,14 @@ func ValidateSystemAssignedIdentityRole(identityType VMIdentity, roleAssignmentN
 	}
 	if identityType == VMIdentitySystemAssigned {
 		if role.DefinitionID == "" {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SystemAssignedIdentityRole", "DefinitionID"), role.DefinitionID, "the definitionID field cannot be empty"))
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "systemAssignedIdentityRole", "definitionID"), role.DefinitionID, "the definitionID field cannot be empty"))
 		}
 		if role.Scope == "" {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SystemAssignedIdentityRole", "Scope"), role.Scope, "the scope field cannot be empty"))
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "systemAssignedIdentityRole", "scope"), role.Scope, "the scope field cannot be empty"))
 		}
 	}
 	if identityType != VMIdentitySystemAssigned && role != nil {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("Spec", "Role"), "systemAssignedIdentityRole can only be set when identity is set to SystemAssigned"))
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "role"), "systemAssignedIdentityRole can only be set when identity is set to SystemAssigned"))
 	}
 	return allErrs
 }
@@ -242,6 +247,15 @@ func ValidateOSDisk(osDisk OSDisk, fieldPath *field.Path) field.ErrorList {
 			osDisk.ManagedDisk.DiskEncryptionSet.ID,
 			"diskEncryptionSet is not supported when diffDiskSettings.option is 'Local'",
 		))
+	}
+	if osDisk.DiffDiskSettings != nil && osDisk.DiffDiskSettings.Placement != nil {
+		if osDisk.DiffDiskSettings.Option != string(armcompute.DiffDiskOptionsLocal) {
+			allErrs = append(allErrs, field.Invalid(
+				fieldPath.Child("diffDiskSettings"),
+				osDisk.DiffDiskSettings,
+				"placement is only supported when diffDiskSettings.option is 'Local'",
+			))
+		}
 	}
 
 	return allErrs
@@ -467,6 +481,17 @@ func ValidateCapacityReservationGroupID(capacityReservationGroupID *string, fldP
 		if _, err := azureutil.ParseResourceID(*capacityReservationGroupID); err != nil {
 			allErrs = append(allErrs, field.Invalid(fldPath, capacityReservationGroupID, "must be a valid Azure resource ID"))
 		}
+	}
+
+	return allErrs
+}
+
+// ValidateVMExtensions validates the VMExtensions spec.
+func ValidateVMExtensions(disableExtensionOperations *bool, vmExtensions []VMExtension, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if ptr.Deref(disableExtensionOperations, false) && len(vmExtensions) > 0 {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "vmExtensions"), "VMExtensions must be empty when DisableExtensionOperations is true"))
 	}
 
 	return allErrs
