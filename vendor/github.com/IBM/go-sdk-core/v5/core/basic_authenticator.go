@@ -22,8 +22,7 @@ import (
 // BasicAuthenticator takes a user-supplied username and password, and adds
 // them to requests via an Authorization header of the form:
 //
-// 		Authorization: Basic <encoded username and password>
-//
+//	Authorization: Basic <encoded username and password>
 type BasicAuthenticator struct {
 	// Username is the user-supplied basic auth username [required].
 	Username string
@@ -38,6 +37,7 @@ func NewBasicAuthenticator(username string, password string) (*BasicAuthenticato
 		Password: password,
 	}
 	if err := obj.Validate(); err != nil {
+		err = RepurposeSDKProblem(err, "validation-failed")
 		return nil, err
 	}
 	return obj, nil
@@ -47,7 +47,8 @@ func NewBasicAuthenticator(username string, password string) (*BasicAuthenticato
 // from a map.
 func newBasicAuthenticatorFromMap(properties map[string]string) (*BasicAuthenticator, error) {
 	if properties == nil {
-		return nil, fmt.Errorf(ERRORMSG_PROPS_MAP_NIL)
+		err := fmt.Errorf(ERRORMSG_PROPS_MAP_NIL)
+		return nil, SDKErrorf(err, "", "missing-props", getComponentInfo())
 	}
 
 	return NewBasicAuthenticator(properties[PROPNAME_USERNAME], properties[PROPNAME_PASSWORD])
@@ -62,8 +63,7 @@ func (BasicAuthenticator) AuthenticationType() string {
 //
 // Basic Authorization will be added to the request's headers in the form:
 //
-// 		Authorization: Basic <encoded username and password>
-//
+//	Authorization: Basic <encoded username and password>
 func (this *BasicAuthenticator) Authenticate(request *http.Request) error {
 	request.SetBasicAuth(this.Username, this.Password)
 	return nil
@@ -75,19 +75,23 @@ func (this *BasicAuthenticator) Authenticate(request *http.Request) error {
 // they do not contain invalid characters.
 func (this BasicAuthenticator) Validate() error {
 	if this.Username == "" {
-		return fmt.Errorf(ERRORMSG_PROP_MISSING, "Username")
+		err := fmt.Errorf(ERRORMSG_PROP_MISSING, "Username")
+		return SDKErrorf(err, "", "no-user", getComponentInfo())
 	}
 
 	if this.Password == "" {
-		return fmt.Errorf(ERRORMSG_PROP_MISSING, "Password")
+		err := fmt.Errorf(ERRORMSG_PROP_MISSING, "Password")
+		return SDKErrorf(err, "", "no-pass", getComponentInfo())
 	}
 
 	if HasBadFirstOrLastChar(this.Username) {
-		return fmt.Errorf(ERRORMSG_PROP_INVALID, "Username")
+		err := fmt.Errorf(ERRORMSG_PROP_INVALID, "Username")
+		return SDKErrorf(err, "", "bad-user", getComponentInfo())
 	}
 
 	if HasBadFirstOrLastChar(this.Password) {
-		return fmt.Errorf(ERRORMSG_PROP_INVALID, "Password")
+		err := fmt.Errorf(ERRORMSG_PROP_INVALID, "Password")
+		return SDKErrorf(err, "", "bad-pass", getComponentInfo())
 	}
 
 	return nil
