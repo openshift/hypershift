@@ -46,28 +46,6 @@ func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string
 		},
 	}
 }
-
-const ignitionUserDataPrefix = "user-data"
-
-func IgnitionUserDataSecret(namespace, name, payloadInputHash string) *corev1.Secret {
-	return namedSecret(namespace, fmt.Sprintf("%s-%s-%s", ignitionUserDataPrefix, name, payloadInputHash))
-}
-
-const tokenSecretPrefix = "token"
-
-func TokenSecret(namespace, name, payloadInputHash string) *corev1.Secret {
-	return namedSecret(namespace, fmt.Sprintf("%s-%s-%s", tokenSecretPrefix, name, payloadInputHash))
-}
-
-func namedSecret(namespace, name string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
-		},
-	}
-}
-
 func TunedConfigMap(namespace, name string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -82,6 +60,21 @@ func PerformanceProfileConfigMap(namespace, name, nodePoolName string) *corev1.C
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      util.ShortenName(name, nodePoolName, QualifiedNameMaxLength),
+		},
+	}
+}
+
+const tokenSecretPrefix = "token"
+
+func TokenSecret(namespace, name, payloadInputHash string) *corev1.Secret {
+	return namedSecret(namespace, fmt.Sprintf("%s-%s-%s", tokenSecretPrefix, name, payloadInputHash))
+}
+
+func namedSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
 		},
 	}
 }

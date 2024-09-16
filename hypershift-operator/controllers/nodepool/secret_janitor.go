@@ -8,7 +8,6 @@ import (
 
 	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	supportutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -48,7 +47,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 
 	// only handle secret types that we know about explicitly
 	shouldHandle := false
-	for _, prefix := range []string{tokenSecretPrefix, ignitionUserDataPrefix} {
+	for _, prefix := range []string{TokenSecretPrefix, UserDataSecrePrefix} {
 		if strings.HasPrefix(secret.Name, prefix) {
 			shouldHandle = true
 			break
@@ -90,13 +89,18 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-
 	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	targetPayloadConfigHash := configGenerator.Hash()
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+	token, err := NewToken(ctx, configGenerator, cpoCapabilities)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
+	}
 
 	// synchronously deleting the ignition token is unsafe; we need to clean up tokens by annotating them to expire
 	synchronousCleanup := func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
@@ -110,15 +114,15 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	valid := false
 	options := []nodePoolSecret{
 		{
-			expectedName:   TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash).Name,
-			matchingPrefix: tokenSecretPrefix,
+			expectedName:   token.TokenSecret().GetName(),
+			matchingPrefix: TokenSecretPrefix,
 			cleanup: func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
 				return setExpirationTimestampOnToken(ctx, c, secret, r.now)
 			},
 		},
 		{
-			expectedName:   IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetPayloadConfigHash).Name,
-			matchingPrefix: ignitionUserDataPrefix,
+			expectedName:   token.UserDataSecret().GetName(),
+			matchingPrefix: UserDataSecrePrefix,
 			cleanup:        synchronousCleanup,
 		},
 	}
