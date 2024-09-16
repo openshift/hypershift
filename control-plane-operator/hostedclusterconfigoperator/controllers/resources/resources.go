@@ -1249,6 +1249,7 @@ func (r *reconciler) reconcileOpenshiftAPIServerEndpoints(ctx context.Context, h
 	return err
 }
 
+// this is a non-HO change
 func (r *reconciler) reconcileOpenshiftOAuthAPIServerEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	cpService := manifests.OpenShiftOAuthAPIServerService(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
