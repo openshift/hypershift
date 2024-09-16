@@ -1785,6 +1785,7 @@ func EnsureNoHCPPodsLandOnDefaultNode(t *testing.T, ctx context.Context, client 
 
 func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureSATokenNotMountedUnlessNecessary", func(t *testing.T) {
+		AtLeast(t, Version416)
 		g := NewWithT(t)
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
