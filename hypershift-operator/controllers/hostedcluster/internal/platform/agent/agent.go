@@ -160,7 +160,32 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to reconcile Agent RoleBinding: %w", err)
+		return fmt.Errorf("failed to reconcile Agent namespace RoleBinding: %w", err)
+	}
+
+	agentClusterRoleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcluster.Namespace,
+			Name:      fmt.Sprintf("%s-agent-cluster-%s", CredentialsRBACPrefix, hcluster.Namespace),
+		},
+	}
+	_, err = createOrUpdate(ctx, c, agentClusterRoleBinding, func() error {
+		roleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "capi-provider",
+				Namespace: controlPlaneNamespace,
+			},
+		}
+		roleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "capi-provider-role",
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile Agent's cluster resources namespace RoleBinding: %w", err)
 	}
 	return nil
 }

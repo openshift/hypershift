@@ -20,9 +20,10 @@ func DefaultOptions() *RawCreateOptions {
 }
 
 type RawCreateOptions struct {
-	APIServerAddress   string
-	AgentNamespace     string
-	AgentLabelSelector string
+	APIServerAddress       string
+	AgentNamespace         string
+	AgentLabelSelector     string
+	HostedClusterNamespace string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -67,6 +68,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		opts.ClusterCIDR = []string{globalconfig.DefaultIPv4ClusterCIDR, globalconfig.DefaultIPv6ClusterCIDR}
 		opts.ServiceCIDR = []string{globalconfig.DefaultIPv4ServiceCIDR, globalconfig.DefaultIPv6ServiceCIDR}
 	}
+	o.HostedClusterNamespace = opts.Namespace
 	return &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{
 			ValidatedCreateOptions: o,
@@ -119,6 +121,34 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 				{
 					APIGroups: []string{"agent-install.openshift.io"},
 					Resources: []string{"agents"},
+					Verbs:     []string{"*"},
+				},
+			},
+		},
+		&rbacv1.Role{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Role",
+				APIVersion: rbacv1.SchemeGroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: o.HostedClusterNamespace,
+				Name:      "capi-provider-role",
+			},
+			Rules: []rbacv1.PolicyRule{
+
+				{
+					APIGroups: []string{"extensions.hive.openshift.io"},
+					Resources: []string{"agentclusterinstalls"},
+					Verbs:     []string{"*"},
+				},
+				{
+					APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+					Resources: []string{"*"},
+					Verbs:     []string{"*"},
+				},
+				{
+					APIGroups: []string{"hive.openshift.io"},
+					Resources: []string{"clusterdeployments"},
 					Verbs:     []string{"*"},
 				},
 			},
