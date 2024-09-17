@@ -33,11 +33,14 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration/framework"
 )
 
 func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients) {
 	t.Run("break-glass-credentials", func(t *testing.T) {
+		// control-plane-pki-operator is only available in 4.15 and later
+		e2eutil.AtLeast(t, e2eutil.Version415)
 		hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		for _, testCase := range []struct {

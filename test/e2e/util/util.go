@@ -190,11 +190,25 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	if err != nil {
 		t.Fatalf("failed to create kube client for guest cluster: %v", err)
 	}
-	EventuallyObject(t, ctx, "a successful connection to the guest API server",
-		func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
-			return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-		}, nil, WithTimeout(30*time.Minute),
-	)
+	if IsLessThan(Version415) {
+		// SelfSubjectReview API is only available in 4.15+
+		// Use the old method to check if the API server is up
+		err = wait.PollImmediateWithContext(ctx, 35*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+			_, err = crclient.New(guestConfig, crclient.Options{Scheme: scheme})
+			if err != nil {
+				t.Logf("attempt to connect failed: %s", err)
+				return false, nil
+			}
+			return true, nil
+		})
+	} else {
+		EventuallyObject(t, ctx, "a successful connection to the guest API server",
+			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
+				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+			}, nil, WithTimeout(30*time.Minute),
+		)
+
+	}
 	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 	if err != nil {
 		t.Fatalf("could not create client for guest cluster: %v", err)
