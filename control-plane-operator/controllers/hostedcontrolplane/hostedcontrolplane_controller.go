@@ -3906,10 +3906,16 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				}
 			}
 
+			olmManagerImage := ""
+			exists := false
+			if olmManagerImage, exists = releaseImageProvider.ComponentImages()["operator-lifecycle-manager"]; !exists {
+				return fmt.Errorf("failed to get olm image from release image provider")
+			}
+
 			olmDeployments := olm.OLMDeployments(p, hcp.Namespace)
 			for _, dep := range olmDeployments {
 				if _, err := createOrUpdate(ctx, r, dep.Manifest, func() error {
-					return dep.Reconciler(dep.Manifest, p.OwnerRef, p.DeploymentConfig, dep.Image)
+					return dep.Reconciler(dep.Manifest, p.OwnerRef, p.DeploymentConfig, dep.Image, olmManagerImage)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile %s deployment with image %s: %w", dep.Name, dep.Image, err)
 				}

@@ -1131,6 +1131,10 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"virt-launcher":                    "kubevirt.io",
 			"azure-disk-csi-driver-controller": "app",
 			"azure-file-csi-driver-controller": "app",
+			"certified-operators-catalog":      "app",
+			"community-operators-catalog":      "app",
+			"redhat-operators-catalog":         "app",
+			"redhat-marketplace-catalog":       "app",
 		}
 
 		hcpPods := &corev1.PodList{}

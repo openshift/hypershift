@@ -78,23 +78,23 @@ var (
 	redHatOperatorsCatalogDeployment   = assets.MustDeployment(content.ReadFile, "assets/catalog-redhat-operators.deployment.yaml")
 )
 
-func ReconcileCertifiedOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, certifiedCatalogDeployment, imageOverride)
+func ReconcileCertifiedOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride, olmManagerImage string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, certifiedCatalogDeployment, imageOverride, olmManagerImage)
 }
 
-func ReconcileCommunityOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, communityCatalogDeployment, imageOverride)
+func ReconcileCommunityOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride, olmManagerImage string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, communityCatalogDeployment, imageOverride, olmManagerImage)
 }
 
-func ReconcileRedHatMarketplaceOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatMarketplaceCatalogDeployment, imageOverride)
+func ReconcileRedHatMarketplaceOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride, olmManagerImage string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatMarketplaceCatalogDeployment, imageOverride, olmManagerImage)
 }
 
-func ReconcileRedHatOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatOperatorsCatalogDeployment, imageOverride)
+func ReconcileRedHatOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride, olmManagerImage string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatOperatorsCatalogDeployment, imageOverride, olmManagerImage)
 }
 
-func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, sourceDeployment *appsv1.Deployment, imageOverride string) error {
+func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, sourceDeployment *appsv1.Deployment, imageOverride, olmManagerImage string) error {
 	ownerRef.ApplyTo(deployment)
 	if deployment.Annotations == nil {
 		deployment.Annotations = map[string]string{}
@@ -114,6 +114,7 @@ func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.O
 	}
 	deployment.Spec = sourceDeployment.DeepCopy().Spec
 	deployment.Spec.Template.Spec.Containers[0].Image = image
+	addVolumesAndInitContainers(deployment, image, olmManagerImage)
 	dc.ApplyTo(deployment)
 	return nil
 }
@@ -273,4 +274,93 @@ func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, own
 	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], clusterID)
 
 	return nil
+}
+
+func addVolumesAndInitContainers(deployment *appsv1.Deployment, image, olmManagerImage string) {
+	volumes := []corev1.Volume{
+		{
+			Name: "utilities",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+		{
+			Name: "catalog-content",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+	}
+
+	initContainers := []corev1.Container{
+		{
+			Name:            "extract-utilities",
+			Image:           olmManagerImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"cp"},
+			Args:            []string{"/bin/copy-content", "/utilities/copy-content"},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "utilities",
+					MountPath: "/utilities",
+				},
+			},
+			TerminationMessagePath:   "/dev/termination-log",
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+		},
+		{
+			Name:            "extract-content",
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/utilities/copy-content"},
+			Args: []string{
+				"--catalog.from=/configs",
+				"--catalog.to=/extracted-catalog/catalog",
+				"--cache.from=/tmp/cache",
+				"--cache.to=/extracted-catalog/cache",
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "utilities",
+					MountPath: "/utilities",
+				},
+				{
+					Name:      "catalog-content",
+					MountPath: "/extracted-catalog",
+				},
+			},
+			TerminationMessagePath:   "/dev/termination-log",
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+		},
+	}
+
+	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumes...)
+	deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers, initContainers...)
+
+	olmCatalogSource := ""
+	if deployment.Spec.Template.Labels != nil {
+		olmCatalogSource = deployment.Spec.Template.Labels["olm.catalogSource"]
+	}
+
+	if deployment.Annotations == nil {
+		deployment.Annotations = map[string]string{}
+	}
+	deployment.Annotations["image.openshift.io/triggers"] = fmt.Sprintf(`[
+		{"from":{"kind":"ImageStreamTag","name":"catalogs:%s"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
+		{"from":{"kind":"ImageStreamTag","name":"catalogs:%s"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}
+	]`, olmCatalogSource, olmCatalogSource)
+
+	// Add command, args, and volume mounts to the first container
+	if len(deployment.Spec.Template.Spec.Containers) > 0 {
+		deployment.Spec.Template.Spec.Containers[0].Command = []string{"/bin/opm"}
+		deployment.Spec.Template.Spec.Containers[0].Args = []string{
+			"serve",
+			"/extracted-catalog/catalog",
+			"--cache-dir=/extracted-catalog/cache",
+		}
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "catalog-content",
+			MountPath: "/extracted-catalog",
+		})
+	}
 }
