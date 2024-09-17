@@ -63,6 +63,9 @@ nav:
   - how-to/per-hostedcluster-dashboard.md
   - how-to/metrics-sets.md
   - how-to/troubleshooting-general.md
+  - 'Common':
+    - how-to/common/exposing-services-from-hcp.md
+    - how-to/common/multi-arch-on-hcp.md
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
     - how-to/disaster-recovery/backup-and-restore-oadp.md
@@ -76,7 +79,6 @@ nav:
     - how-to/automated-machine-management/performance-profiling.md
   - 'AWS':
     - how-to/aws/create-aws-hosted-cluster-arm-workers.md
-    - how-to/aws/multi-arch-on-aws.md
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
