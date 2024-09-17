@@ -216,7 +216,6 @@ spec:
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(cg.controlplaneNamespace).To(Equal("test-test"))
 			if tc.expectedMCORawConfig != "" {
-				// g.Expect(cg.mcoRawConfig).To(Equal(tc.expectedMCORawConfig))
 				if diff := cmp.Diff(cg.mcoRawConfig, tc.expectedMCORawConfig); diff != "" {
 					t.Errorf("actual config differs from expected: %s", diff)
 				}

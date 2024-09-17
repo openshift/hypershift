@@ -3,7 +3,6 @@ package nodepool
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -14,9 +13,7 @@ import (
 	"time"
 
 	"github.com/blang/semver"
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -83,16 +80,6 @@ const (
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
 	nodePoolAnnotationTaints                  = "hypershift.openshift.io/nodePoolTaints"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
-	TokenSecretTokenGenerationTime            = "hypershift.openshift.io/last-token-generation-time"
-	TokenSecretReleaseKey                     = "release"
-	TokenSecretTokenKey                       = "token"
-	TokenSecretPullSecretHashKey              = "pull-secret-hash"
-	TokenSecretHCConfigurationHashKey         = "hc-configuration-hash"
-	TokenSecretAdditionalTrustBundleKey       = "additional-trust-bundle-hash"
-	TokenSecretConfigKey                      = "config"
-	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
-	TokenSecretIgnitionReachedAnnotation      = "hypershift.openshift.io/ignition-reached"
-	TokenSecretNodePoolUpgradeType            = "hypershift.openshift.io/node-pool-upgrade-type"
 
 	tuningConfigKey                                  = "tuning"
 	tunedConfigMapLabel                              = "hypershift.openshift.io/tuned-config"
@@ -449,7 +436,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
-	caCertBytes, hasCACert := caSecret.Data[corev1.TLSCertKey]
+	_, hasCACert := caSecret.Data[corev1.TLSCertKey]
 	if !hasCACert {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               string(hyperv1.IgnitionEndpointAvailable),
@@ -574,9 +561,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	additionalTrustBundleCM := &corev1.ConfigMap{}
 	if hcluster.Spec.AdditionalTrustBundle != nil {
-		additionalTrustBundleCM, err = r.getAdditionalTrustBundle(ctx, hcluster)
+		_, err = r.getAdditionalTrustBundle(ctx, hcluster)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -586,7 +572,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-
 	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -597,6 +582,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ObservedGeneration: nodePool.Generation,
 		})
 		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+	}
+
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+	token, err := NewToken(ctx, configGenerator, cpoCapabilities)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
 	}
 
 	mirroredConfigs, err := BuildMirrorConfigs(ctx, configGenerator)
@@ -616,6 +610,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Check if config needs to be updated.
 	targetConfigHash := configGenerator.HashWithoutVersion()
+	targetPayloadConfigHash := configGenerator.Hash()
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -660,8 +655,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := configGenerator.Hash()
-	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
+	tokenSecret := token.TokenSecret()
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error setting ValidGeneratedPayload condition: %w", err)
@@ -768,92 +762,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 2. - Reconcile towards expected state of the world.
-	compressedConfig, err := configGenerator.CompressedAndEncoded()
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to compress and decode config: %w", err)
-	}
-
-	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to detect CPO capabilities: %w", err)
-	}
-
-	// TODO (alberto): Drop this after dropping < 4.12 support.
-	// So all CPOs ign server will know to decompress and decode.
-	if !cpoCapabilities.DecompressAndDecodeConfig {
-		compressedConfig, err = configGenerator.Compressed()
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
-		}
-	}
-
-	// Token Secrets exist for each NodePool config/version and follow "prefixName-configVersionHash" naming convention.
-	// Ensure old configVersionHash resources are deleted, i.e. token Secret and userdata Secret.
-	if isUpdatingVersion || isUpdatingConfig {
-		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
-		err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
-		}
-		if err == nil {
-			if err := setExpirationTimestampOnToken(ctx, r.Client, tokenSecret, nil); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
-			}
-		}
-
-		// For AWS, we keep the old userdata Secret so old Machines during rolled out can be deleted.
-		// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
-		// TODO (Alberto): enable back deletion when the PR above gets merged.
-		if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
-			userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
-			err = r.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
-			if err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
-			}
-			if err == nil {
-				if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
-				}
-			}
-		}
-	}
-
-	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
-	pullSecretBytes, err := r.getPullSecretBytes(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret bytes: %w", err)
-	}
-	hcConfigurationHash, err := supportutil.HashStruct(hcluster.Spec.Configuration)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
-	}
-	additionalTrustBundle := ""
-	if hcluster.Spec.AdditionalTrustBundle != nil {
-		additionalTrustBundle = additionalTrustBundleCM.Data["ca-bundle.crt"]
-	}
-	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes, additionalTrustBundle, hcConfigurationHash)
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
-	} else {
-		log.Info("Reconciled token Secret", "result", result)
-	}
-
-	tokenBytes, hasToken := tokenSecret.Data[TokenSecretTokenKey]
-	if !hasToken {
-		// This should never happen by design.
-		return ctrl.Result{}, fmt.Errorf("token secret is missing token key")
-	}
-
-	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetPayloadConfigHash)
-	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
-	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, targetPayloadConfigHash, proxy)
-	}); err != nil {
+	if err := token.Reconcile(ctx); err != nil {
 		return ctrl.Result{}, err
-	} else {
-		log.Info("Reconciled userData Secret", "result", result)
 	}
 
 	// Store new template hash.
@@ -936,7 +846,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return r.reconcileMachineSet(
 				ctx,
 				ms, nodePool,
-				userDataSecret,
+				token.UserDataSecret(),
 				template,
 				infraID,
 				targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
@@ -954,7 +864,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return r.reconcileMachineDeployment(
 				log,
 				md, nodePool,
-				userDataSecret,
+				token.UserDataSecret(),
 				template,
 				infraID,
 				targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
@@ -1650,65 +1560,6 @@ func (r *NodePoolReconciler) deleteNodePoolSecrets(ctx context.Context, nodePool
 	return nil
 }
 
-func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint, targetConfigVersionHash string, proxy *configv1.Proxy) error {
-	// The token secret controller deletes expired token Secrets.
-	// When that happens the NodePool controller reconciles and create a new one.
-	// Then it reconciles the userData Secret with the new generated token.
-	// Therefore, this secret is mutable.
-	userDataSecret.Immutable = k8sutilspointer.Bool(false)
-
-	if userDataSecret.Annotations == nil {
-		userDataSecret.Annotations = make(map[string]string)
-	}
-	userDataSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-
-	encodedCACert := base64.StdEncoding.EncodeToString(CA)
-	encodedToken := base64.StdEncoding.EncodeToString(token)
-	ignConfig := ignConfig(encodedCACert, encodedToken, ignEndpoint, targetConfigVersionHash, proxy, nodePool)
-	userDataValue, err := json.Marshal(ignConfig)
-	if err != nil {
-		return fmt.Errorf("failed to marshal ignition config: %w", err)
-	}
-	userDataSecret.Data = map[string][]byte{
-		"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
-		"value":             userDataValue,
-	}
-	return nil
-}
-
-func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte, additionalTrustBundle, hcConfigurationHash string) error {
-	// The token secret controller updates expired token IDs for token Secrets.
-	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
-	// Therefore, this secret is mutable.
-	tokenSecret.Immutable = k8sutilspointer.Bool(false)
-	if tokenSecret.Annotations == nil {
-		tokenSecret.Annotations = make(map[string]string)
-	}
-
-	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
-	tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] = string(nodePool.Spec.Management.UpgradeType)
-	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-	// active token should never be marked as expired.
-	delete(tokenSecret.Annotations, hyperv1.IgnitionServerTokenExpirationTimestampAnnotation)
-
-	if tokenSecret.Data == nil {
-		tokenSecret.Data = map[string][]byte{}
-		tokenSecret.Annotations[TokenSecretTokenGenerationTime] = time.Now().Format(time.RFC3339Nano)
-		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
-		tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
-		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
-		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashSimple(pullSecret))
-		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = []byte(supportutil.HashSimple(additionalTrustBundle))
-		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
-	}
-	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
-	// We let this change to happen inplace now as the tokenSecret and the mcs config use the whole spec.Config for the comparing hash.
-	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would missmatch forever.
-	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = []byte(hcConfigurationHash)
-
-	return nil
-}
-
 func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	machineDeployment *capiv1.MachineDeployment,
 	nodePool *hyperv1.NodePool,
@@ -2052,56 +1903,6 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
 		machineDeployment.Spec.Replicas = k8sutilspointer.Int32(k8sutilspointer.Int32Deref(nodePool.Spec.Replicas, 0))
 	}
-}
-
-func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash string, proxy *configv1.Proxy, nodePool *hyperv1.NodePool) ignitionapi.Config {
-	cfg := ignitionapi.Config{
-		Ignition: ignitionapi.Ignition{
-			Version: "3.2.0",
-			Security: ignitionapi.Security{
-				TLS: ignitionapi.TLS{
-					CertificateAuthorities: []ignitionapi.Resource{
-						{
-							Source: k8sutilspointer.String(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
-						},
-					},
-				},
-			},
-			Config: ignitionapi.IgnitionConfig{
-				Merge: []ignitionapi.Resource{
-					{
-						Source: k8sutilspointer.String(fmt.Sprintf("https://%s/ignition", endpoint)),
-						HTTPHeaders: []ignitionapi.HTTPHeader{
-							{
-								Name:  "Authorization",
-								Value: k8sutilspointer.String(fmt.Sprintf("Bearer %s", encodedToken)),
-							},
-							{
-								Name:  "NodePool",
-								Value: k8sutilspointer.String(client.ObjectKeyFromObject(nodePool).String()),
-							},
-							{
-								Name:  "TargetConfigVersionHash",
-								Value: k8sutilspointer.String(targetConfigVersionHash),
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	if proxy.Status.HTTPProxy != "" {
-		cfg.Ignition.Proxy.HTTPProxy = k8sutilspointer.String(proxy.Status.HTTPProxy)
-	}
-	if proxy.Status.HTTPSProxy != "" {
-		cfg.Ignition.Proxy.HTTPSProxy = k8sutilspointer.String(proxy.Status.HTTPSProxy)
-	}
-	if proxy.Status.NoProxy != "" {
-		for _, item := range strings.Split(proxy.Status.NoProxy, ",") {
-			cfg.Ignition.Proxy.NoProxy = append(cfg.Ignition.Proxy.NoProxy, ignitionapi.NoProxyItem(item))
-		}
-	}
-	return cfg
 }
 
 // validateManagement does additional backend validation. API validation/default should
@@ -2699,20 +2500,6 @@ func validateInfraID(infraID string) error {
 		return fmt.Errorf("infraID can't be empty")
 	}
 	return nil
-}
-
-func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSecret *corev1.Secret, now func() time.Time) error {
-	if now == nil {
-		now = time.Now
-	}
-
-	// this should be a reasonable value to allow all in flight provisions to complete.
-	timeUntilExpiry := 2 * time.Hour
-	if tokenSecret.Annotations == nil {
-		tokenSecret.Annotations = map[string]string{}
-	}
-	tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = now().Add(timeUntilExpiry).Format(time.RFC3339)
-	return c.Update(ctx, tokenSecret)
 }
 
 func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*CPOCapabilities, error) {
