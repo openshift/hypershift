@@ -361,6 +361,9 @@ spec:
                   EndpointServiceName is the name of the Endpoint Service created in the
                   management VPC
                 type: string
+              securityGroupID:
+                description: SecurityGroupID is the ID for the VPC endpoint SecurityGroup
+                type: string
             type: object
         type: object
     served: true
