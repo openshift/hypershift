@@ -1055,10 +1055,13 @@ func TestReconcileRouter(t *testing.T) {
 
 	const namespace = "test"
 	routerCfg := manifests.RouterConfigurationConfigMap(namespace)
-	ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+	err := ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 		Name:      "hcp",
 		Namespace: namespace,
 	}}), routerCfg, &routev1.RouteList{}, map[string]string{})
+	if err != nil {
+		t.Errorf("reconciliation failed: %v", err)
+	}
 
 	testCases := []struct {
 		name                         string
@@ -1078,7 +1081,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					err := ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1087,6 +1090,9 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						routerCfg,
 					)
+					if err != nil {
+						return appsv1.Deployment{}
+					}
 
 					return *dep
 				}(),
@@ -1103,7 +1109,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					err := ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1112,6 +1118,9 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						routerCfg,
 					)
+					if err != nil {
+						return appsv1.Deployment{}
+					}
 
 					return *dep
 				}(),
@@ -1129,7 +1138,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					err := ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1138,6 +1147,9 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						routerCfg,
 					)
+					if err != nil {
+						return appsv1.Deployment{}
+					}
 
 					return *dep
 				}(),
@@ -1158,7 +1170,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					err := ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1167,6 +1179,9 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						routerCfg,
 					)
+					if err != nil {
+						return appsv1.Deployment{}
+					}
 
 					return *dep
 				}(),
@@ -1182,7 +1197,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					err := ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1191,6 +1206,9 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						routerCfg,
 					)
+					if err != nil {
+						return appsv1.Deployment{}
+					}
 
 					return *dep
 				}(),
@@ -1212,7 +1230,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					err := ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1221,6 +1239,9 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						routerCfg,
 					)
+					if err != nil {
+						return appsv1.Deployment{}
+					}
 
 					return *dep
 				}(),
@@ -1242,7 +1263,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					err := ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1251,6 +1272,9 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						routerCfg,
 					)
+					if err != nil {
+						return appsv1.Deployment{}
+					}
 
 					return *dep
 				}(),

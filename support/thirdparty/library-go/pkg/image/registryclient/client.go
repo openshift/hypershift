@@ -264,7 +264,9 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 		}
 	}
 
-	c.Challenges.AddResponse(resp)
+	if err = c.Challenges.AddResponse(resp); err != nil {
+		return nil, err
+	}
 
 	return nil, nil
 }
@@ -347,8 +349,6 @@ func (c *Context) scopes(repoName string) []auth.Scope {
 func (c *Context) repositoryTransport(t http.RoundTripper, registry *url.URL, repoName string) http.RoundTripper {
 	return c.cachedTransport(t, c.scopes(repoName))
 }
-
-var nowFn = time.Now
 
 type retryRepository struct {
 	distribution.Repository

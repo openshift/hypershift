@@ -53,11 +53,17 @@ func TestSetResources(t *testing.T) {
 	}
 
 	b := &bytes.Buffer{}
-	api.YamlSerializer.Encode(deployment, b)
+	err := api.YamlSerializer.Encode(deployment, b)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Logf("Before applying: \n%s\n", b.String())
 	spec.ApplyTo(&deployment.Spec.Template.Spec)
 	b = &bytes.Buffer{}
-	api.YamlSerializer.Encode(deployment, b)
+	err = api.YamlSerializer.Encode(deployment, b)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Logf("After applying: \n%s\n", b.String())
 
 	if len(deployment.Spec.Template.Spec.Containers[0].Resources.Requests) == 0 {

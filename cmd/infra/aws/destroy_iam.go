@@ -46,7 +46,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("infra-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()

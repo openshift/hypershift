@@ -2038,7 +2038,10 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			if err != nil {
+				t.Fatalf("failed to get hosted control plane object: %v", err)
+			}
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
 			if len(previousClusterID) > 0 {

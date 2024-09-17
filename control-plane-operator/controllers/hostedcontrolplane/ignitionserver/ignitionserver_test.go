@@ -36,11 +36,14 @@ func TestReconcileIgnitionServerServiceNodePortFreshInitialization(t *testing.T)
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			if err != nil {
+				t.Fatalf("reconcileIgnitionServerService failed: %v", err)
+			}
 			g := NewGomegaWithT(t)
 			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
 			g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort))
-			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt(9090)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt32(9090)))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Port).To(Equal(int32(443)))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Name).To(Equal("https"))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
@@ -66,7 +69,7 @@ func TestReconcileIgnitionServerServiceNodePortExistingService(t *testing.T) {
 						{
 							Name:       "https",
 							Port:       443,
-							TargetPort: intstr.FromInt(9090),
+							TargetPort: intstr.FromInt32(9090),
 							Protocol:   corev1.ProtocolTCP,
 							NodePort:   int32(30000),
 						},
@@ -81,11 +84,14 @@ func TestReconcileIgnitionServerServiceNodePortExistingService(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			initialNodePort := test.inputIgnitionServerService.Spec.Ports[0].NodePort
-			reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			if err != nil {
+				t.Fatalf("reconcileIgnitionServerService failed: %v", err)
+			}
 			g := NewGomegaWithT(t)
 			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
 			g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort))
-			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt(9090)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt32(9090)))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Port).To(Equal(int32(443)))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Name).To(Equal("https"))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
@@ -116,7 +122,7 @@ func TestReconcileIgnitionServerServiceRoute(t *testing.T) {
 						{
 							Name:       "https",
 							Port:       443,
-							TargetPort: intstr.FromInt(9090),
+							TargetPort: intstr.FromInt32(9090),
 							Protocol:   corev1.ProtocolTCP,
 						},
 					},
@@ -129,11 +135,14 @@ func TestReconcileIgnitionServerServiceRoute(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			if err != nil {
+				t.Fatalf("reconcileIgnitionServerService failed: %v", err)
+			}
 			g := NewGomegaWithT(t)
 			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
 			g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
-			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt(9090)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt32(9090)))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Port).To(Equal(int32(443)))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Name).To(Equal("https"))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))

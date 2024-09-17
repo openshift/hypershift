@@ -98,7 +98,10 @@ func main() {
 				continue
 			}
 			log.Printf("deleting hosted zone %s with id %s", *zone.Name, *zone.Id)
-			deleteZone(ctx, strings.TrimSuffix(*zone.Name, "."), strings.TrimPrefix(*zone.Id, "/hostedzone/"), route53client)
+			err = deleteZone(ctx, strings.TrimSuffix(*zone.Name, "."), strings.TrimPrefix(*zone.Id, "/hostedzone/"), route53client)
+			if err != nil {
+				return false
+			}
 		}
 		return !lastPage
 	})

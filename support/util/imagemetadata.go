@@ -47,7 +47,6 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	log := ctrl.LoggerFrom(ctx)
 
 	var (
-		repo           distribution.Repository
 		ref            *reference.DockerImageReference
 		parsedImageRef reference.DockerImageReference
 		err            error
@@ -75,7 +74,7 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 		}
 
 		ref = &parsedImageRef
-		repo, err = getRepository(ctx, *ref, pullSecret)
+		_, err = getRepository(ctx, *ref, pullSecret)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +103,7 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 		}
 	}
 
-	repo, err = getRepository(ctx, *ref, pullSecret)
+	repo, err := getRepository(ctx, *ref, pullSecret)
 	if err != nil || repo == nil {
 		return nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
 	}
