@@ -140,6 +140,8 @@ const (
 	jobHostedClusterNamespaceLabel = "hypershift.openshift.io/cluster-namespace"
 
 	etcdCheckRequeueInterval = 10 * time.Second
+
+	awsEndpointDeletionGracePeriod = 10 * time.Minute
 )
 
 var (
@@ -391,9 +393,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
 
-		// Preserve previous false status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
-		if oldCondition != nil && oldCondition.Status == metav1.ConditionFalse && freshCondition.Status == metav1.ConditionUnknown {
-			freshCondition.Status = metav1.ConditionFalse
+		// Preserve previous status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
+		if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
+			freshCondition.Status = oldCondition.Status
 		}
 		if oldCondition == nil || oldCondition.Status != freshCondition.Status {
 			freshCondition.ObservedGeneration = hcluster.Generation
@@ -3737,7 +3739,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	}
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
-			if platformaws.ValidCredentials(hc) {
+			if platformaws.ValidCredentials(hc) && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
 				continue
 			}
 
