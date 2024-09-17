@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -320,4 +321,16 @@ func ParseNodeSelector(str string) map[string]string {
 		result[kv[0]] = kv[1]
 	}
 	return result
+}
+
+// SanitizeIgnitionPayload make sure the IgnitionPayload is valid
+// and does not contain inconsistencies.
+func SanitizeIgnitionPayload(payload []byte) error {
+	var jsonPayload ignitionapi.Config
+
+	if err := json.Unmarshal(payload, &jsonPayload); err != nil {
+		return fmt.Errorf("error unmarshalling Ignition payload: %v", err)
+	}
+
+	return nil
 }
