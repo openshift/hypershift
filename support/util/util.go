@@ -18,6 +18,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -401,4 +403,16 @@ func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string 
 		return hcluster.GetAnnotations()[HostedClustersScopeAnnotation]
 	}
 	return ""
+}
+
+// SanitizeIgnitionPayload make sure the IgnitionPayload is valid
+// and does not contain inconsistencies.
+func SanitizeIgnitionPayload(payload []byte) error {
+	var jsonPayload ignitionapi.Config
+
+	if err := json.Unmarshal(payload, &jsonPayload); err != nil {
+		return fmt.Errorf("error unmarshalling Ignition payload: %v", err)
+	}
+
+	return nil
 }
