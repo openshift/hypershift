@@ -407,6 +407,14 @@ func fixNodePoolAfterFuzz(in runtime.Object) {
 	}
 }
 
+func fixAWSEndpointServiceAfterFuzz(in runtime.Object) {
+	epsvc, ok := in.(*hyperv1beta1.AWSEndpointService)
+	if !ok {
+		panic(fmt.Sprintf("unexpected convertible type: %T", in))
+	}
+	epsvc.Status.SecurityGroupID = ""
+}
+
 func TestFuzzyConversion(t *testing.T) {
 	t.Run("for HostedCluster", FuzzTestFunc(FuzzTestFuncInput{
 		Hub:                &hyperv1beta1.HostedCluster{},
@@ -439,6 +447,7 @@ func TestFuzzyConversion(t *testing.T) {
 		Spoke:              &hyperv1alpha1.AWSEndpointService{},
 		SpokeAfterMutation: removeTypeMeta,
 		FuzzerFuncs:        []fuzzer.FuzzerFuncs{awsEndpointServiceFuzzerFuncs},
+		HubAfterFuzz:       fixAWSEndpointServiceAfterFuzz,
 	}))
 }
 
