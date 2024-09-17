@@ -34,14 +34,14 @@ func main() {
 		Use:   "setup",
 		Short: "Provides test setup commands",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
 	cmd.AddCommand(monitoringCommand())
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }

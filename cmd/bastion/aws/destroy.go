@@ -44,14 +44,14 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "The region to use for creating the bastion")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "File with AWS credentials")
 
-	cmd.MarkFlagRequired("aws-creds")
-	cmd.MarkFlagFilename("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagFilename("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			logger.Error(err, "Invalid arguments")
-			cmd.Usage()
+			_ = cmd.Usage()
 			return nil
 		}
 		if err := opts.Run(cmd.Context(), logger); err != nil {
@@ -113,7 +113,7 @@ func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error 
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
-	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := destroyBastion(ctx, logger, ec2Client, infraID)
 		if err != nil {
 			if !awsutil.IsErrorRetryable(err) {
@@ -123,7 +123,12 @@ func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error 
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	})
+	if err != nil {
+		return fmt.Errorf("failed to destroy bastion: %w", err)
+	}
+
+	return nil
 }
 
 func destroyBastion(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, infraID string) error {

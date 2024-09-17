@@ -458,20 +458,14 @@ func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Pred
 func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
 	hostedClusterName := ""
 	nodePoolName := ""
-	switch obj.(type) {
+	switch objType := obj.(type) {
 	case *hyperv1.HostedCluster:
-		hc, ok := obj.(*hyperv1.HostedCluster)
-		if !ok {
-			return ""
-		}
+		hc := objType
 		if hc.GetAnnotations() != nil {
 			return hc.GetAnnotations()[HostedClustersScopeAnnotation]
 		}
 	case *hyperv1.NodePool:
-		np, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return ""
-		}
+		np := objType
 		hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
 	default:
 		if obj.GetAnnotations() != nil {

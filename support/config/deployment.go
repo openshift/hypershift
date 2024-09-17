@@ -42,7 +42,7 @@ type DeploymentConfig struct {
 	LivenessProbes            LivenessProbes
 	ReadinessProbes           ReadinessProbes
 	Resources                 ResourcesSpec
-	DebugDeployments          sets.String
+	DebugDeployments          sets.Set[string]
 	ResourceRequestOverrides  ResourceOverrides
 	IsolateAsRequestServing   bool
 	RevisionHistoryLimit      int
@@ -509,11 +509,15 @@ func parseResourceRequestOverrideAnnotation(key, value string, overrides Resourc
 // debugDeployments returns a set of deployments to debug based on the
 // debugDeploymentsAnnotation value, indicating the deployment should be considered to
 // be in development mode.
-func debugDeployments(hc *hyperv1.HostedControlPlane) sets.String {
+func debugDeployments(hc *hyperv1.HostedControlPlane) sets.Set[string] {
 	val, exists := hc.Annotations[util.DebugDeploymentsAnnotation]
 	if !exists {
 		return nil
 	}
 	names := strings.Split(val, ",")
-	return sets.NewString(names...)
+	setOfNames := sets.New[string]()
+	for _, name := range names {
+		setOfNames.Insert(strings.TrimSpace(name))
+	}
+	return setOfNames
 }

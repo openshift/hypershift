@@ -157,7 +157,7 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 }
 
 func TestValidateManagement(t *testing.T) {
-	intstrPointer1 := intstr.FromInt(1)
+	intstrPointer1 := intstr.FromInt32(1)
 	testCases := []struct {
 		name     string
 		nodePool *hyperv1.NodePool

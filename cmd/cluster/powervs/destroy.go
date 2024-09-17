@@ -46,10 +46,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("cloud-connection")
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("cloud-connection")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
 	logger := log.Log
 	cmd.Run = func(cmd *cobra.Command, args []string) {

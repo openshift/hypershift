@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,7 +71,7 @@ func main() {
 	cmd.Version = version.GetRevision()
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
@@ -126,7 +127,7 @@ func defaultCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "control-plane-operator",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -321,7 +322,7 @@ func NewStartCommand() *cobra.Command {
 			return "", fmt.Errorf("couldn't locate operator container on deployment")
 		}
 
-		if err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+		if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Second, true, func(ctx2 context.Context) (bool, error) {
 			hostedClusterConfigOperatorImage, err = lookupOperatorImage(hostedClusterConfigOperatorImage)
 			if err != nil {
 				return false, err

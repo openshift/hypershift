@@ -1071,9 +1071,12 @@ func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) 
 
 	// pem encode
 	caPEM := new(bytes.Buffer)
-	pem.Encode(caPEM, &pem.Block{
+	err = pem.Encode(caPEM, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: caBytes,
 	})
+	if err != nil {
+		return nil, "", err
+	}
 	return ca, caPEM.String(), nil
 }

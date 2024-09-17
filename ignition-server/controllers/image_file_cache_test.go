@@ -21,7 +21,10 @@ func TestImageFileCache(t *testing.T) {
 	var fail bool      // registryClientMock responds with failure
 
 	regClientFuncMock := func(ctx context.Context, imageRef string, pullSecret []byte, imageFile string, out io.Writer) error {
-		out.Write([]byte(content))
+		_, err := out.Write([]byte(content))
+		if err != nil {
+			return err
+		}
 		called++
 		if fail {
 			return errors.New("mocked failure")

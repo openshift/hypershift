@@ -25,7 +25,7 @@ func NewOperatorCommand(ctx context.Context) *cobra.Command {
 		Use:   "control-plane-pki-operator",
 		Short: "HyperShift control plane PKI Operator.",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}

@@ -1983,14 +1983,14 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		status = metav1.ConditionFalse
 		message = fmt.Sprintf("Error: %v", err)
 	} else {
-		if remaining.Len() == 0 {
+		if len(remaining) == 0 {
 			reason = "CloudResourcesDestroyed"
 			status = metav1.ConditionTrue
 			message = "All guest resources destroyed"
 		} else {
 			reason = "RemainingCloudResources"
 			status = metav1.ConditionFalse
-			message = fmt.Sprintf("Remaining resources: %s", strings.Join(remaining.List(), ","))
+			message = fmt.Sprintf("Remaining resources: %s", strings.Join(remaining, ","))
 		}
 	}
 	resourcesDestroyedCond := &metav1.Condition{
@@ -2009,19 +2009,19 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		}
 	}
 
-	if remaining.Len() > 0 {
+	if len(remaining) > 0 {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	} else {
 		return ctrl.Result{}, nil
 	}
 }
 
-func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.String, error) {
+func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) ([]string, error) {
 	log := ctrl.LoggerFrom(ctx)
 	remaining := sets.NewString()
 	log.Info("Ensuring resource creation is blocked in cluster")
 	if err := r.ensureResourceCreationIsBlocked(ctx); err != nil {
-		return remaining, err
+		return remaining.List(), err
 	}
 	var errs []error
 	log.Info("Ensuring image registry storage is removed")
@@ -2076,7 +2076,7 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		log.Info("Volume snapshots are removed")
 	}
 
-	return remaining, errors.NewAggregate(errs)
+	return remaining.List(), errors.NewAggregate(errs)
 }
 
 func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {

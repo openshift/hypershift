@@ -36,10 +36,8 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	}
 
 	infra.Status.APIServerURL = fmt.Sprintf("https://%s:%d", apiServerAddress, apiServerPort)
-	infra.Status.EtcdDiscoveryDomain = BaseDomain(hcp)
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
-	infra.Status.Platform = configv1.PlatformType(platformType)
 	infra.Status.PlatformStatus = &configv1.PlatformStatus{
 		Type: configv1.PlatformType(platformType),
 	}

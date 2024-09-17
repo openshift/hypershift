@@ -190,8 +190,7 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 			if _, err := r.etcdClient.Defragment(ctx, member); err != nil {
 				// Defrag can timeout if defragmentation takes longer than etcdcli.DefragDialTimeout.
 				r.log.Error(err, "DefragController Defragment Failed", "member", member.Name, "ID", member.ID)
-				errMsg := fmt.Sprintf("failed defrag on member: %s, memberID: %x: %v", member.Name, member.ID, err)
-				errs = append(errs, fmt.Errorf(errMsg))
+				errs = append(errs, fmt.Errorf("failed defrag on member: %s, memberID: %x: %v", member.Name, member.ID, err))
 				continue
 			}
 
@@ -199,10 +198,12 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 			successfulDefrags++
 
 			// Give cluster time to recover before we move to the next member.
-			if err := wait.Poll(
+			if err := wait.PollUntilContextTimeout(
+				ctx,
 				pollWaitDuration,
 				pollTimeoutDuration,
-				func() (bool, error) {
+				true,
+				func(ctx context.Context) (bool, error) {
 					// Ensure defragmentation attempts have clear observable signal.
 					r.log.Info("Sleeping to allow cluster to recover before defragging next member", "waiting", r.defragWaitDuration)
 					time.Sleep(r.defragWaitDuration)

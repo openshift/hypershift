@@ -108,7 +108,10 @@ func main() {
 
 			// The zone is not in use, delete it
 			log.Printf("deleting hosted zone %s with id %s", zoneName, zoneId)
-			deleteZone(ctx, zoneId, route53client)
+			err = deleteZone(ctx, zoneId, route53client)
+			if err != nil {
+				return false
+			}
 		}
 		return !lastPage
 	})

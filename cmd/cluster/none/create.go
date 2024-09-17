@@ -103,7 +103,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	noneOpts := DefaultOptions()
 	BindOptions(noneOpts, cmd.Flags())
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

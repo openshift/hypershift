@@ -235,14 +235,14 @@ func NewCreateCommand() *cobra.Command {
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("cloud-connection")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("cloud-connection")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
-	cmd.MarkFlagRequired("base-domain")
-	cmd.MarkFlagRequired("resource-group")
-	cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("resource-group")
+	_ = cmd.MarkFlagRequired("infra-id")
 
 	logger := hypershiftLog.Log.WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -442,7 +442,10 @@ func (infra *Infra) setupSecrets(logger logr.Logger, options *CreateInfraOptions
 	}
 
 	if options.RecreateSecrets {
-		deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
+		err = deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
+		if err != nil {
+			return err
+		}
 	}
 
 	logger.Info("Creating Secrets ...")
@@ -788,7 +791,7 @@ func (infra *Infra) createCloudInstance(ctx context.Context, logger logr.Logger,
 		return resourceInstance, nil
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx context.Context) (bool, error) {
 		resourceInstance, _, err = rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: resourceInstance.ID})
 		logger.Info("Waiting for cloud instance to up", "id", resourceInstance.ID, "state", *resourceInstance.State)
 
@@ -806,7 +809,7 @@ func (infra *Infra) createCloudInstance(ctx context.Context, logger logr.Logger,
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, cloudInstanceCreationTimeout, true, f); err != nil {
 		return nil, err
 	}
 
@@ -965,7 +968,7 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 		return nil, err
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx context.Context) (bool, error) {
 
 		vpc, _, err = v1.GetVPCWithContext(ctx, &vpcv1.GetVPCOptions{ID: vpc.ID})
 		if err != nil {
@@ -978,7 +981,7 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, vpcCreationTimeout, true, f); err != nil {
 		return nil, err
 	}
 
@@ -1120,7 +1123,7 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, logger logr.Logger, opt
 		return nil, fmt.Errorf("CreateSubnet returned nil")
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx context.Context) (bool, error) {
 
 		subnet, _, err = v1.GetSubnetWithContext(ctx, &vpcv1.GetSubnetOptions{ID: subnet.ID})
 		if err != nil {
@@ -1133,7 +1136,7 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, logger logr.Logger, opt
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, vpcCreationTimeout, true, f); err != nil {
 		return nil, err
 	}
 
@@ -1176,7 +1179,7 @@ func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, logger logr
 	}
 
 	gwIntf, resp, err := directLinkV1.GetGateway(&directlinkv1.GetGatewayOptions{ID: &infra.CloudConnectionID})
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil && resp != nil && resp.StatusCode != 200 {
 		return fmt.Errorf("error getting gateway: %w, status code: %d", err, resp.StatusCode)
 	}
 
@@ -1263,18 +1266,18 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, logger logr.Logger, op
 		dhcpServer, err = client.Get(dhcpServerID)
 		if *dhcpServer.Status != dhcpServiceActiveState {
 			var isActive bool
-			f := func() (bool, error) {
+			f := func(ctx2 context.Context) (bool, error) {
 				dhcpServer, isActive, err = isDHCPServerActive(logger, client, dhcpServerID)
 				return isActive, err
 			}
 
-			if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
+			if err = wait.PollUntilContextTimeout(ctx, dhcpPollingInterval, dhcpServerCreationTimeout, true, f); err != nil {
 				return err
 			}
 		}
 	} else {
 		logger.Info("Creating PowerVS DHCPServer...")
-		dhcpServer, err = infra.createPowerVSDhcp(logger, options, client)
+		dhcpServer, err = infra.createPowerVSDhcp(ctx, logger, options, client)
 	}
 
 	if err != nil {
@@ -1335,7 +1338,7 @@ func isDHCPServerActive(logger logr.Logger, client *instance.IBMPIDhcpClient, dh
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
-func (infra *Infra) createPowerVSDhcp(logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
+func (infra *Infra) createPowerVSDhcp(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
 	startTime := time.Now()
 	var dhcpServer *models.DHCPServerDetail
 
@@ -1355,12 +1358,12 @@ func (infra *Infra) createPowerVSDhcp(logger logr.Logger, options *CreateInfraOp
 	}
 
 	var isActive bool
-	f := func() (bool, error) {
+	f := func(ctx2 context.Context) (bool, error) {
 		dhcpServer, isActive, err = isDHCPServerActive(logger, client, *dhcp.ID)
 		return isActive, err
 	}
 
-	if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, dhcpPollingInterval, dhcpServerCreationTimeout, true, f); err != nil {
 		return nil, err
 	}
 
@@ -1419,7 +1422,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, logger logr.Logg
 			logger.Error(err, "error updating cloud connection with vpc")
 			return fmt.Errorf("error updating cloud connection with vpc %w", err)
 		}
-		err = monitorPowerVsJob(logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout)
+		err = monitorPowerVsJob(ctx, logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout)
 		if err != nil {
 			logger.Error(err, "error attaching cloud connection with vpc")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
@@ -1433,7 +1436,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, logger logr.Logg
 			logger.Error(err, "error attaching cloud connection with dhcp subnet")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
 		}
-		if err = monitorPowerVsJob(logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout); err != nil {
+		if err = monitorPowerVsJob(ctx, logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout); err != nil {
 			logger.Error(err, "error attaching cloud connection with dhcp subnet")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
 		}
@@ -1446,7 +1449,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, logger logr.Logg
 		return err
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx2 context.Context) (bool, error) {
 		cloudConn, err = client.Get(infra.CloudConnectionID)
 		if err != nil {
 			if err = isNotRetryableError(err, timeoutErrorKeywords); err != nil {
@@ -1472,7 +1475,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, logger logr.Logg
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, cloudConnEstablishedStateTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, cloudConnEstablishedStateTimeout, true, f); err != nil {
 		return err
 	}
 

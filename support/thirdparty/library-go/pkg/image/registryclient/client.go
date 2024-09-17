@@ -15,9 +15,9 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 
+	"github.com/distribution/reference"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema1"
-	"github.com/docker/distribution/reference"
 	"github.com/docker/distribution/registry/api/errcode"
 	registryclient "github.com/docker/distribution/registry/client"
 	"github.com/docker/distribution/registry/client/auth"
@@ -264,7 +264,9 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 		}
 	}
 
-	c.Challenges.AddResponse(resp)
+	if err = c.Challenges.AddResponse(resp); err != nil {
+		return nil, err
+	}
 
 	return nil, nil
 }
@@ -348,8 +350,6 @@ func (c *Context) repositoryTransport(t http.RoundTripper, registry *url.URL, re
 	return c.cachedTransport(t, c.scopes(repoName))
 }
 
-var nowFn = time.Now
-
 type retryRepository struct {
 	distribution.Repository
 
@@ -377,7 +377,7 @@ func isTemporaryHTTPError(err error) (time.Duration, bool) {
 	}
 	switch t := err.(type) {
 	case net.Error:
-		return time.Second, t.Temporary() || t.Timeout()
+		return time.Second, t.Timeout()
 	case errcode.ErrorCoder:
 		// note: we explicitly do not check errcode.ErrorCodeUnknown because that is used in
 		// a wide range of scenarios to convey "generic error", not "retryable error"

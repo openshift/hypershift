@@ -66,9 +66,9 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.s3KeyPrefix, "s3-key-prefix", "", "S3 snapshot key prefix.")
 	cmd.Flags().StringToStringVar(&opts.s3ObjectTags, "s3-object-tags", opts.s3ObjectTags, "S3 snapshot object tags.")
 
-	cmd.MarkFlagRequired("etcd-endpoint")
-	cmd.MarkFlagRequired("s3-bucket-name")
-	cmd.MarkFlagRequired("s3-key-prefix")
+	_ = cmd.MarkFlagRequired("etcd-endpoint")
+	_ = cmd.MarkFlagRequired("s3-bucket-name")
+	_ = cmd.MarkFlagRequired("s3-key-prefix")
 
 	return cmd
 }

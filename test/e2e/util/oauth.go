@@ -116,7 +116,7 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 	}
 
 	var access_token string
-	err = wait.PollImmediateWithContext(ctx, time.Second, time.Minute*2, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*2, true, func(ctx context.Context) (done bool, err error) {
 		resp, err := httpClient.Do(request)
 		if err != nil {
 			t.Logf("Waiting for OAuth token request to succeed")
@@ -150,7 +150,7 @@ func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.C
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	route := hcpmanifests.OauthServerExternalPublicRoute(hcpNamespace)
 
-	err := wait.PollImmediateWithContext(ctx, time.Second, time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(route), route)
 		if err != nil {
 			return false, nil
@@ -166,7 +166,7 @@ func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.C
 	transport, err := restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))
 	g.Expect(err).ToNot(HaveOccurred(), "Error getting transport")
 
-	err = wait.PollImmediateWithContext(ctx, time.Second, time.Minute, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		resp, err := transport.RoundTrip(request)
 		if resp != nil && resp.StatusCode == http.StatusOK {
 			return true, nil
@@ -230,7 +230,7 @@ func WaitForOauthConfig(t *testing.T, ctx context.Context, client crclient.Clien
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	oauthConfigCM := hcpmanifests.OAuthServerConfig(hcpNamespace)
 
-	err := wait.PollImmediateWithContext(ctx, time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(oauthConfigCM), oauthConfigCM)
 		if err != nil {
 			return false, nil

@@ -75,7 +75,7 @@ var (
 )
 
 func init() {
-	mcfgv1.AddToScheme(machineConfigPoolScheme)
+	_ = mcfgv1.AddToScheme(machineConfigPoolScheme)
 }
 
 func serializeConfigPool(obj client.Object) (string, error) {

@@ -149,7 +149,7 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 						matches = matches || matcher.Matches(condition)
 					}
 					if matches {
-						t.Logf(condition.String())
+						t.Logf("Condition: %s", condition)
 					}
 				}
 			}
@@ -173,7 +173,7 @@ func evaluatePredicates[T any](object T, predicates []Predicate[T]) ([]predicate
 			return nil, err
 		}
 		if !done && len(reason) == 0 {
-			panic(fmt.Sprintf("programmer error: predicate returned false with no message"))
+			panic("programmer error: predicate returned false with no message")
 		}
 		results[i] = predicateResult{done: done, reason: reason}
 	}
@@ -329,7 +329,7 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 							matches = matches || matcher.Matches(condition)
 						}
 						if matches {
-							t.Logf(condition.String())
+							t.Logf("Condition: %s", condition)
 						}
 					}
 				}

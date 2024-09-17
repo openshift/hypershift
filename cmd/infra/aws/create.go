@@ -116,8 +116,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 	cmd.Flags().BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, no private subnets or NAT gateway are created")
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialOpts.BindVPCOwnerFlags(cmd.Flags())
@@ -156,7 +156,9 @@ func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
 		if err != nil {
 			return fmt.Errorf("cannot create output file: %w", err)
 		}
-		defer out.Close()
+		defer func(out *os.File) {
+			_ = out.Close()
+		}(out)
 	}
 	outputBytes, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

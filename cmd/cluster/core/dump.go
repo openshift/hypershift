@@ -132,7 +132,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
 
-	cmd.MarkFlagRequired("artifact-dir")
+	_ = cmd.MarkFlagRequired("artifact-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -532,7 +532,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	// oc adm inspect command always returns an error so ignore
-	cmd.CombinedOutput()
+	_, _ = cmd.CombinedOutput()
 }
 
 type OCAdmNodeLogs struct {

@@ -64,8 +64,8 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
 
-	maxUnavailable := intstr.FromInt(1)
-	maxSurge := intstr.FromInt(3)
+	maxUnavailable := intstr.FromInt32(1)
+	maxSurge := intstr.FromInt32(3)
 
 	auditConfigBytes, ok := auditConfig.Data[auditPolicyConfigMapKey]
 	if !ok {

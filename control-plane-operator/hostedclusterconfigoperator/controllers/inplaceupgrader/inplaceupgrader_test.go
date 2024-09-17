@@ -15,7 +15,7 @@ import (
 )
 
 func TestGetNodesForMachineSet(t *testing.T) {
-	capiv1.AddToScheme(scheme.Scheme)
+	_ = capiv1.AddToScheme(scheme.Scheme)
 
 	selector := map[string]string{
 		"foo": "bar",

@@ -109,20 +109,20 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
 	cmd.Flags().StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 
-	cmd.MarkFlagRequired("name")
-	cmd.MarkFlagRequired("resource-group")
-	cmd.MarkFlagRequired("base-domain")
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("region")
-	cmd.MarkFlagRequired("zone")
-	cmd.MarkFlagRequired("vpc-region")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("resource-group")
+	_ = cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("region")
+	_ = cmd.MarkFlagRequired("zone")
+	_ = cmd.MarkFlagRequired("vpc-region")
 
 	// these options are only for development and testing purpose, user can pass these flags
 	// to destroy the resource created inside these resources for hypershift infra purpose
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("cloud-connection")
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("cloud-connection")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
 	logger := log.Log.WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -388,7 +388,7 @@ func destroyPowerVsCloudInstance(ctx context.Context, logger logr.Logger, option
 				continue
 			}
 
-			f := func() (bool, error) {
+			err = wait.PollUntilContextTimeout(ctx, pollingInterval, cloudInstanceDeletionTimeout, true, func(ctx context.Context) (done bool, err error) {
 				resourceInst, resp, err := rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
 				if err != nil {
 					logger.Error(err, "error in querying deleted cloud instance", "resp", resp.String())
@@ -406,21 +406,22 @@ func destroyPowerVsCloudInstance(ctx context.Context, logger logr.Logger, option
 					logger.Info("Waiting for PowerVS cloud instance deletion", "status", *resourceInst.State, "lastOp", resourceInst.LastOperation)
 				}
 
-				return false, nil
+				return true, nil
+			})
+			if err != nil {
+				logger.Info("Retrying cloud instance deletion ...")
+				return err
 			}
 
-			if err = wait.PollImmediate(pollingInterval, cloudInstanceDeletionTimeout, f); err == nil {
-				break
-			}
-			logger.Info("Retrying cloud instance deletion ...")
+			break
 		}
 	}
 	return err
 }
 
 // monitorPowerVsJob monitoring the submitted deletion job
-func monitorPowerVsJob(logger logr.Logger, id string, client *instance.IBMPIJobClient, infraID string, timeout time.Duration) error {
-	f := func() (bool, error) {
+func monitorPowerVsJob(ctx context.Context, logger logr.Logger, id string, client *instance.IBMPIJobClient, infraID string, timeout time.Duration) error {
+	err := wait.PollUntilContextTimeout(ctx, pollingInterval, timeout, true, func(ctx context.Context) (done bool, err error) {
 		job, err := client.Get(id)
 		if err != nil {
 			if err = isNotRetryableError(err, timeoutErrorKeywords); err != nil {
@@ -439,10 +440,14 @@ func monitorPowerVsJob(logger logr.Logger, id string, client *instance.IBMPIJobC
 		if *job.Status.State == powerVSJobFailedState {
 			return false, fmt.Errorf("powerVS job failed. id: %s, message: %s", id, job.Status.Message)
 		}
-		return false, nil
+
+		return true, nil
+	})
+	if err != nil {
+		return err
 	}
 
-	return wait.PollImmediate(pollingInterval, timeout, f)
+	return nil
 }
 
 // destroyPowerVsCloudConnection destroying powervs cloud connection
@@ -504,7 +509,7 @@ func destroyPowerVsCloudConnection(ctx context.Context, logger logr.Logger, opti
 
 		deleteCloudConnection := func(id string) error {
 			for retry := 0; retry < 5; retry++ {
-				if err = deletePowerVsCloudConnection(logger, options, id, client, jobClient); err == nil {
+				if err = deletePowerVsCloudConnection(ctx, logger, options, id, client, jobClient); err == nil {
 					return nil
 				}
 				logger.Info("retrying cloud connection deletion")
@@ -538,7 +543,7 @@ func destroyPowerVsCloudConnection(ctx context.Context, logger logr.Logger, opti
 }
 
 // deletePowerVsCloudConnection deletes cloud connection id passed
-func deletePowerVsCloudConnection(logger logr.Logger, options *DestroyInfraOptions, id string, client *instance.IBMPICloudConnectionClient, jobClient *instance.IBMPIJobClient) error {
+func deletePowerVsCloudConnection(ctx context.Context, logger logr.Logger, options *DestroyInfraOptions, id string, client *instance.IBMPICloudConnectionClient, jobClient *instance.IBMPIJobClient) error {
 	logger.Info("Deleting cloud connection", "id", id)
 	deleteJob, err := client.Delete(id)
 	if err != nil {
@@ -547,7 +552,7 @@ func deletePowerVsCloudConnection(logger logr.Logger, options *DestroyInfraOptio
 	if deleteJob == nil {
 		return fmt.Errorf("error while deleting cloud connection, delete job returned is nil")
 	}
-	return monitorPowerVsJob(logger, *deleteJob.ID, jobClient, options.InfraID, powerVSResourceDeletionTimeout)
+	return monitorPowerVsJob(ctx, logger, *deleteJob.ID, jobClient, options.InfraID, powerVSResourceDeletionTimeout)
 }
 
 // destroyVpc destroying vpc
@@ -676,7 +681,7 @@ func deleteVpcSubnet(ctx context.Context, logger logr.Logger, id string, v1 *vpc
 		return err
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx2 context.Context) (bool, error) {
 		if _, _, err := v1.GetSubnetWithContext(ctx, &vpcv1.GetSubnetOptions{ID: &id}); err != nil {
 			if strings.Contains(err.Error(), "Subnet not found") {
 				return true, nil
@@ -687,7 +692,7 @@ func deleteVpcSubnet(ctx context.Context, logger logr.Logger, id string, v1 *vpc
 		return false, nil
 	}
 
-	return wait.PollImmediate(pollingInterval, vpcResourceDeletionTimeout, f)
+	return wait.PollUntilContextTimeout(ctx, pollingInterval, vpcResourceDeletionTimeout, true, f)
 }
 
 // destroyVpcLB destroys VPC Load Balancer
@@ -699,7 +704,7 @@ func destroyVpcLB(ctx context.Context, logger logr.Logger, options *DestroyInfra
 			return err
 		}
 
-		f := func() (bool, error) {
+		f := func(ctx2 context.Context) (bool, error) {
 			_, _, err := v1.GetLoadBalancerWithContext(ctx, &vpcv1.GetLoadBalancerOptions{ID: &id})
 			if err != nil && strings.Contains(err.Error(), "cannot be found") {
 				return true, nil
@@ -707,7 +712,7 @@ func destroyVpcLB(ctx context.Context, logger logr.Logger, options *DestroyInfra
 			return false, err
 		}
 
-		return wait.PollImmediate(pollingInterval, vpcResourceDeletionTimeout, f)
+		return wait.PollUntilContextTimeout(ctx, pollingInterval, vpcResourceDeletionTimeout, true, f)
 	}
 
 	f := func(start string) (bool, string, error) {

@@ -70,7 +70,7 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 
 		}
-		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.List())
+		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.UnsortedList())
 		if err != nil {
 			log.Error(err, "failed to parse --required-api arguments")
 			os.Exit(1)
@@ -205,19 +205,19 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 }
 
 type stringSetFlag struct {
-	val sets.String
+	val sets.Set[string]
 }
 
 func (s *stringSetFlag) Set(v string) error {
 	if s.val == nil {
-		s.val = sets.String{}
+		s.val = sets.Set[string]{}
 	}
 	s.val.Insert(v)
 	return nil
 }
 
 func (s *stringSetFlag) String() string {
-	return fmt.Sprintf("%v", s.val.List())
+	return fmt.Sprintf("%v", s.val.UnsortedList())
 }
 func (s *stringSetFlag) Type() string {
 	return "stringSetFlag"

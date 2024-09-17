@@ -54,16 +54,15 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "File with AWS credentials")
 	cmd.Flags().BoolVar(&opts.Wait, "wait", opts.Wait, "Wait for instance to be running")
 
-	cmd.MarkFlagRequired("aws-creds")
-
-	cmd.MarkFlagFilename("ssh-key-file")
-	cmd.MarkFlagFilename("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagFilename("ssh-key-file")
+	_ = cmd.MarkFlagFilename("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			logger.Error(err, "Invalid arguments")
-			cmd.Usage()
+			_ = cmd.Usage()
 			return nil
 		}
 
@@ -516,7 +515,8 @@ func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *
 
 	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+
+	err := wait.PollUntilContextCancel(waitCtx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := ec2Client.WaitUntilInstanceRunningWithContext(ctx, &ec2.DescribeInstancesInput{
 			InstanceIds: []*string{aws.String(instanceID)},
 		})
@@ -529,7 +529,7 @@ func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *
 			return false, fmt.Errorf("error waiting for instance running: %w", err)
 		}
 		return true, nil
-	}, waitCtx.Done())
+	})
 	if err != nil {
 		return "", err
 	}

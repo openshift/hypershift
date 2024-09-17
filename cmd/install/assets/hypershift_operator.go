@@ -247,7 +247,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path:   "/healthz",
-										Port:   intstr.FromInt(7979),
+										Port:   intstr.FromInt32(7979),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
@@ -719,7 +719,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path:   "/metrics",
-										Port:   intstr.FromInt(9000),
+										Port:   intstr.FromInt32(9000),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
@@ -733,7 +733,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path:   "/metrics",
-										Port:   intstr.FromInt(9000),
+										Port:   intstr.FromInt32(9000),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},

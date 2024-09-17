@@ -1151,7 +1151,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
 		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
 			if validReleaseImage.Reason == hyperv1.SecretNotFoundReason {
-				return ctrl.Result{}, fmt.Errorf(validReleaseImage.Message)
+				return ctrl.Result{}, fmt.Errorf("failed image validation: %v", validReleaseImage.Message)
 			}
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil

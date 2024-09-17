@@ -161,7 +161,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
+									Port:   intstr.FromInt32(8085),
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
@@ -175,7 +175,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
+									Port:   intstr.FromInt32(8085),
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},

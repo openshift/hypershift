@@ -49,7 +49,7 @@ func main() {
 		TraverseChildren: true,
 
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -71,12 +71,12 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT)
 	go func() {
 		<-sigs
-		fmt.Fprintln(os.Stderr, "\nAborted...")
+		_, _ = fmt.Fprintln(os.Stderr, "\nAborted...")
 		cancel()
 	}()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }

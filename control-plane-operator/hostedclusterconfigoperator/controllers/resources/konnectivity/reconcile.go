@@ -30,7 +30,7 @@ var (
 		},
 	}
 	maxUnavailable = intstr.FromString("10%")
-	maxSurge       = intstr.FromInt(0)
+	maxSurge       = intstr.FromInt32(0)
 )
 
 func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformSpec, proxy configv1.ProxyStatus) {

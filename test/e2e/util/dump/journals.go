@@ -182,7 +182,10 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	if err != nil {
 		t.Logf("Error copying machine journals to artifacts directory: %v", err)
 		for _, instance := range machineInstances {
-			os.WriteFile(filepath.Join(outputDir, fmt.Sprintf("instance-%s.txt", aws.StringValue(instance.InstanceId))), []byte(instance.String()), 0644)
+			err = os.WriteFile(filepath.Join(outputDir, fmt.Sprintf("instance-%s.txt", aws.StringValue(instance.InstanceId))), []byte(instance.String()), 0644)
+			if err != nil {
+				t.Logf("Error creating machine journal file: %v", err)
+			}
 		}
 	} else {
 		t.Logf("Successfully copied machine journals to %s", outputDir)

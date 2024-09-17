@@ -18,7 +18,7 @@ import (
 
 func newUpdateLoopDetector() *updateLoopDetector {
 	return &updateLoopDetector{
-		hasNoOpUpdate:    sets.String{},
+		hasNoOpUpdate:    sets.Set[string]{},
 		updateEventCount: map[string]int{},
 		log: zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 			o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -41,7 +41,7 @@ func updateLoopThreshold(o runtime.Object) int {
 }
 
 type updateLoopDetector struct {
-	hasNoOpUpdate    sets.String
+	hasNoOpUpdate    sets.Set[string]
 	lock             sync.RWMutex
 	updateEventCount map[string]int
 	log              logr.Logger

@@ -116,15 +116,12 @@ func (f *fakeEtcdClient) MemberHealth(ctx context.Context) (memberHealth, error)
 		// if WithClusterHealth is not passed we default to all healthy
 		case f.opts.healthyMember == 0 && f.opts.unhealthyMember == 0:
 			healthCheck.Healthy = true
-			break
 		case f.opts.healthyMember > 0 && healthy < f.opts.healthyMember:
 			healthCheck.Healthy = true
 			healthy++
-			break
 		case f.opts.unhealthyMember > 0 && unhealthy < f.opts.unhealthyMember:
 			healthCheck.Healthy = false
 			unhealthy++
-			break
 		}
 		memberHealth = append(memberHealth, healthCheck)
 	}
@@ -203,7 +200,6 @@ func NewFakeEtcdClient(members []*etcdserverpb.Member, opts ...FakeClientOption)
 }
 
 type FakeClientOptions struct {
-	client          *clientv3.Client
 	unhealthyMember int
 	healthyMember   int
 	status          []*clientv3.StatusResponse
