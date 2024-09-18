@@ -48,7 +48,8 @@ type OAuthServerParams struct {
 	ProxyImage string
 	// OAuthNoProxy is a list of hosts or IPs that should not be routed through
 	// konnectivity. Currently only used for IBM Cloud specific addresses.
-	OAuthNoProxy []string
+	OAuthNoProxy    []string
+	AuditWebhookRef *corev1.LocalObjectReference
 }
 
 type OAuthConfigParams struct {
@@ -100,6 +101,11 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		p.OAuth = hcp.Spec.Configuration.OAuth
 		p.ProxyConfig = hcp.Spec.Configuration.Proxy
 	}
+
+	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
+		p.AuditWebhookRef = hcp.Spec.AuditWebhook
+	}
+
 	p.Scheduling = config.Scheduling{
 		PriorityClass: config.APICriticalPriorityClass,
 	}
@@ -245,6 +251,16 @@ func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfi
 		OauthConfigOverrides:         p.OauthConfigOverrides,
 		LoginURLOverride:             p.LoginURLOverride,
 		NamedCertificates:            p.NamedCertificates(),
+	}
+}
+
+func (p *OAuthServerParams) AuditPolicyConfig() configv1.Audit {
+	if p.APIServer != nil && p.APIServer.Audit.Profile != "" {
+		return p.APIServer.Audit
+	} else {
+		return configv1.Audit{
+			Profile: configv1.DefaultAuditProfileType,
+		}
 	}
 }
 

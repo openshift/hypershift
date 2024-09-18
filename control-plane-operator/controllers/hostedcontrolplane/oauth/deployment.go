@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,6 +44,7 @@ var (
 			oauthVolumeProvidersTemplate().Name: "/etc/kubernetes/secrets/templates/providers",
 			oauthVolumeWorkLogs().Name:          "/var/run/kubernetes",
 			oauthVolumeMasterCABundle().Name:    "/etc/kubernetes/certs/master-ca",
+			oauthVolumeAuditConfig().Name:       "/etc/kubernetes/audit-config",
 		},
 		oauthContainerSocks5Proxy().Name: {
 			oauthVolumeKubeconfig().Name:                   "/etc/kubernetes",
@@ -55,6 +57,11 @@ var (
 			oauthVolumeKonnectivityProxyTrustBundle().Name: "/etc/konnectivity/proxy-ca",
 		},
 	}
+	oauthAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
+		oauthContainerMain().Name: {
+			oauthAuditWebhookConfigFileVolume().Name: "/etc/kubernetes/auditwebhook",
+		},
+	}
 )
 
 func oauthLabels() map[string]string {
@@ -64,7 +71,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -101,7 +108,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: ptr.To(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, oauthNoProxy)),
+			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, auditWebhookRef, oauthNoProxy)),
 			util.BuildContainer(oauthContainerSocks5Proxy(), buildOAuthContainerSocks5Proxy(proxyImage)),
 			util.BuildContainer(oauthContainerHTTPProxy(), buildOAuthContainerHTTPProxy(proxyImage, proxyConfig, clusterNoProxy)),
 		},
@@ -115,10 +122,39 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate),
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			util.BuildVolume(oauthVolumeMasterCABundle(), buildOAuthVolumeMasterCABundle),
+			util.BuildVolume(oauthVolumeAuditConfig(), buildOAuthVolumeAuditConfig),
 			util.BuildVolume(oauthVolumeKonnectivityProxyClientCert(), buildOAuthVolumeKonnectivityProxyClientCert),
 			util.BuildVolume(oauthVolumeKonnectivityProxyTrustBundle(), buildOAuthVolumeKonnectivityProxyTrustBundle),
 		},
 	}
+
+	if auditConfig.Data[auditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "audit-logs",
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/bash"},
+			Args: []string{
+				"-c",
+				kas.RenderAuditLogScript(fmt.Sprintf("%s/%s", volumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name), "audit.log")),
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("5m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{{
+				Name:      oauthVolumeWorkLogs().Name,
+				MountPath: volumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name),
+			}},
+		})
+	}
+
+	if auditWebhookRef != nil {
+		applyOauthAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
+	}
+
 	deploymentConfig.ApplyTo(deployment)
 	if len(identityProviders) > 0 {
 		_, volumeMountInfo, err := convertIdentityProviders(ctx, identityProviders, providerOverrides, client, deployment.Namespace)
@@ -139,13 +175,24 @@ func oauthContainerMain() *corev1.Container {
 	}
 }
 
-func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Container) {
+func buildOAuthContainerMain(image string, auditWebhookRef *corev1.LocalObjectReference, noProxy []string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Args = []string{
 			"osinserver",
 			fmt.Sprintf("--config=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeConfig().Name), OAuthServerConfigKey)),
+			"--audit-log-format=json",
+			"--audit-log-maxbackup=1",
+			"--audit-log-maxsize=10",
+			fmt.Sprintf("--audit-log-path=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeWorkLogs().Name), "audit.log")),
+			fmt.Sprintf("--audit-policy-file=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeAuditConfig().Name), auditPolicyConfigMapKey)),
 		}
+
+		if auditWebhookRef != nil {
+			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", oauthAuditWebhookConfigFile()))
+			c.Args = append(c.Args, "--audit-webhook-mode=batch")
+		}
+
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = volumeMounts.Path(c.Name, oauthVolumeWorkLogs().Name)
 		c.Env = []corev1.EnvVar{
@@ -225,12 +272,36 @@ func oauthVolumeConfig() *corev1.Volume {
 	}
 }
 
+func oauthVolumeAuditConfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "audit-config",
+	}
+}
+
+func oauthAuditWebhookConfigFileVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oauth-audit-webhook",
+	}
+}
+
+func buildOauthAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.Secret = &corev1.SecretVolumeSource{}
+		v.Secret.SecretName = auditWebhookRef.Name
+	}
+}
+
 func buildOAuthVolumeConfig(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{
 		LocalObjectReference: corev1.LocalObjectReference{
 			Name: manifests.OAuthServerConfig("").Name,
 		},
 	}
+}
+
+func buildOAuthVolumeAuditConfig(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.OAuthAuditConfig("").Name
 }
 
 func oauthVolumeWorkLogs() *corev1.Volume {
@@ -350,4 +421,25 @@ func oauthVolumeKonnectivityProxyTrustBundle() *corev1.Volume {
 func buildOAuthVolumeKonnectivityProxyTrustBundle(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{DefaultMode: ptr.To[int32](0640)}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
+}
+
+func applyOauthAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(oauthAuditWebhookConfigFileVolume(), buildOauthAuditWebhookConfigFileVolume(auditWebhookRef)))
+	var container *corev1.Container
+	for i, c := range podSpec.Containers {
+		if c.Name == oauthContainerMain().Name {
+			container = &podSpec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		panic("main oauth openshift container oauth-server not found in spec")
+	}
+	container.VolumeMounts = append(container.VolumeMounts,
+		oauthAuditWebhookConfigFileVolumeMount.ContainerMounts(oauthContainerMain().Name)...)
+}
+
+func oauthAuditWebhookConfigFile() string {
+	cfgDir := oauthAuditWebhookConfigFileVolumeMount.Path(oauthContainerMain().Name, oauthAuditWebhookConfigFileVolume().Name)
+	return path.Join(cfgDir, hyperv1.AuditWebhookKubeconfigKey)
 }

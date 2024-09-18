@@ -2832,10 +2832,17 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		r.Log.V(2).Info("Reconciled oauth pdb", "result", result)
 	}
 
+	auditCfg := manifests.OAuthAuditConfig(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
+		return oauth.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth openshift audit config: %w", err)
+	}
+
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	clusterNoProxy := proxy.DefaultNoProxy(hcp)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, p.NamedCertificates(), p.ProxyImage, p.ProxyConfig, clusterNoProxy, p.OAuthNoProxy, p.ConfigParams(oauthServingCert), hcp.Spec.Platform.Type)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.AuditWebhookRef, p.OwnerRef, oauthConfig, auditCfg, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, p.NamedCertificates(), p.ProxyImage, p.ProxyConfig, clusterNoProxy, p.OAuthNoProxy, p.ConfigParams(oauthServingCert), hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
