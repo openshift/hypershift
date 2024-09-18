@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
+
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -172,7 +172,11 @@ func validateHostedClusterPayloadSupportsNodePoolCPUArch(ctx context.Context, cl
 		return nil
 	}
 
-	if hc.Status.PayloadArch != "" && !strings.EqualFold(hc.Status.PayloadArch, "multi") && !strings.EqualFold(hc.Status.PayloadArch, arch) {
+	if hc.Status.PayloadArch == "" {
+		logger.Info("WARNING: Unable to validate NodePool CPU arch: HostedCluster.Status.PayloadArch unspecified - skipping validation for this NodePool")
+	}
+
+	if hc.Status.PayloadArch != "" && hc.Status.PayloadArch != hyperv1.Multi && hc.Status.PayloadArch != hyperv1.ToPayloadArch(arch) {
 		return fmt.Errorf("NodePool CPU arch, %s, is not supported by the HostedCluster payload type, %s", arch, hc.Status.PayloadArch)
 	}
 
