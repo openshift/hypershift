@@ -833,6 +833,14 @@ type AWSNodePoolPlatform struct {
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
+	// placement specifies the placement options for the EC2 instances.
+	//
+	// +optional
+	Placement *PlacementOptions `json:"placement,omitempty"`
+}
+
+// PlacementOptions specifies the placement options for the EC2 instances.
+type PlacementOptions struct {
 	// Tenancy indicates if instance should run on shared or single-tenant hardware.
 	//
 	// Possible values:
