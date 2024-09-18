@@ -2715,11 +2715,11 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 
 // validateHCPayloadSupportsNodePoolCPUArch validates the HostedCluster payload can support the NodePool's CPU arch
 func validateHCPayloadSupportsNodePoolCPUArch(hc *hyperv1.HostedCluster, np *hyperv1.NodePool) error {
-	if strings.EqualFold(hc.Status.PayloadArch, "multi") {
+	if hc.Status.PayloadArch == hyperv1.Multi {
 		return nil
 	}
 
-	if strings.EqualFold(hc.Status.PayloadArch, np.Spec.Arch) {
+	if hc.Status.PayloadArch == hyperv1.ToPayloadArch(np.Spec.Arch) {
 		return nil
 	}
 

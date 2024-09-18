@@ -977,7 +977,7 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 	}
 
 	// If not release image was provided, check if a release stream was provided instead and its multi-arch
-	if opts.ReleaseImage == "" && len(opts.ReleaseStream) > 0 && strings.Contains(opts.ReleaseStream, "multi") {
+	if opts.ReleaseImage == "" && len(opts.ReleaseStream) > 0 && strings.Contains(opts.ReleaseStream, hyperv1.ArchitectureMulti) {
 		validMultiArchImage = true
 	}
 

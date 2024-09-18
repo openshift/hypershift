@@ -14,10 +14,13 @@ import (
 )
 
 const (
+	// TODO - for the next API bump; the case on these needs to be changed.
+	// See https://github.com/openshift/hypershift/pull/4538#discussion_r1765165827 for more details.
 	ArchitectureAMD64   = "amd64"
 	ArchitectureS390X   = "s390x"
 	ArchitecturePPC64LE = "ppc64le"
 	ArchitectureARM64   = "arm64"
+	ArchitectureMulti   = "multi"
 
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
