@@ -683,6 +683,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 
+		if hcCVOCondition.Type == string(hyperv1.ClusterVersionRetrievedUpdates) && hcCVOCondition.Reason == hyperv1.StatusUnknownReason {
+			// until all HostedControlPlane controllers understand how to propagate this condition, avoid bothering folks with unknown status in HostedCluster conditions.
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.ClusterVersionRetrievedUpdates))
+			continue
+		}
+
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *hcCVOCondition)
 	}
 
