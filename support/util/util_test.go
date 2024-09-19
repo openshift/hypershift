@@ -405,3 +405,51 @@ func TestParseNodeSelector(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeIgnitionPayload(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+		wantErr bool
+	}{
+		{
+			name:    "Simple valid Ignition payload",
+			payload: []byte(`{"ignition": {"version": "3.0.0"}}`),
+			wantErr: false,
+		},
+		{
+			name:    "More complex valid Ignition payload",
+			payload: []byte(`{"ignition":{"version":"3.0.0"},"storage":{"files":[{"path":"/etc/someconfig","mode":420,"contents":{"source":"data:,example%20file%0A"}}]}}`),
+			wantErr: false,
+		},
+		{
+			name:    "Simple invalid Ignition payload (missing closing brace)",
+			payload: []byte(`{"ignition": {"version": "3.0.0"`),
+			wantErr: true,
+		},
+		{
+			name:    "Empty payload",
+			payload: []byte(``),
+			wantErr: true,
+		},
+		{
+			name:    "Nil payload",
+			payload: nil,
+			wantErr: true,
+		},
+	}
+
+	t.Parallel()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := SanitizeIgnitionPayload(tt.payload)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
