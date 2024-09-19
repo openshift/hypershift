@@ -238,19 +238,6 @@ staticcheck: $(STATICCHECK)
 docker-build:
 	${RUNTIME} build . -t ${IMG}
 
-.PHONY: fast.Dockerfile.dockerignore
-fast.Dockerfile.dockerignore:
-	sed -e '/^bin\//d' .dockerignore > fast.Dockerfile.dockerignore
-
-# Build the docker image copying binaries from workspace
-.PHONY: docker-build-fast
-docker-build-fast: build fast.Dockerfile.dockerignore
-ifeq ($(RUNTIME),podman)
-		${RUNTIME} build . -t ${IMG} -f fast.Dockerfile --ignorefile fast.Dockerfile.dockerignore
-else
-		DOCKER_BUILDKIT=1 ${RUNTIME} build . -t ${IMG} -f fast.Dockerfile
-endif
-
 # Push the docker image
 .PHONY: docker-push
 docker-push:
