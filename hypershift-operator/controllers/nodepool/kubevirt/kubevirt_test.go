@@ -24,6 +24,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	suppconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
 const (
@@ -584,7 +585,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
 			bootImage.dvName = bootImageNamePrefix + "12345"
-			result, err := MachineTemplateSpec(tc.nodePool, bootImage, tc.hcluster)
+			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
@@ -1118,7 +1119,7 @@ func TestJsonPatch(t *testing.T) {
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
 			bootImage.dvName = bootImageNamePrefix + "12345"
-			result, err := MachineTemplateSpec(tc.nodePool, bootImage, tc.hcluster)
+			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})

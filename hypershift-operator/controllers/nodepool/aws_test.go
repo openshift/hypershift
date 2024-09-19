@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -48,6 +49,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					Type: hyperv1.AWSPlatform,
 					AWS: &hyperv1.AWSNodePoolPlatform{
 						RootVolume: &volume,
+						AMI:        amiName,
 					},
 				},
 				Release: hyperv1.Release{},
@@ -61,6 +63,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 				ResourceTags: []hyperv1.AWSResourceTag{
 					{Key: "key", Value: "value"},
 				},
+				AMI: amiName,
 			}}},
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
@@ -74,7 +77,9 @@ func TestAWSMachineTemplate(t *testing.T) {
 					{Key: "key", Value: "value"},
 				},
 			}}},
-			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}}},
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				AMI: amiName,
+			}}},
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
 				tmpl.Spec.Template.Spec.AdditionalTags["key"] = "value"
@@ -93,6 +98,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					{Key: "nodepool-only", Value: "value"},
 					{Key: "cluster-and-nodepool", Value: "nodepool"},
 				},
+				AMI: amiName,
 			}}},
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
@@ -104,6 +110,9 @@ func TestAWSMachineTemplate(t *testing.T) {
 		{
 			name:          "Cluster default sg is used when none specified",
 			clusterStatus: &hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "cluster-default"}}},
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				AMI: amiName,
+			}}},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
 				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("cluster-default")}}
 			}),
@@ -112,6 +121,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			name: "NodePool sg is used in addition to cluster default",
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 				SecurityGroups: []hyperv1.AWSResourceReference{{ID: k8sutilspointer.String("nodepool-specific")}},
+				AMI:            amiName,
 			}}},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
 				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("nodepool-specific")}, {ID: defaultSG[0].ID}}
@@ -126,10 +136,15 @@ func TestAWSMachineTemplate(t *testing.T) {
 					t.Errorf("did not get expected NotReady error")
 				}
 			},
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				AMI: amiName,
+			}}},
 		},
 		{
-			name:     "NodePool has ec2-http-tokens annotation with 'required' as a value",
-			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}}},
+			name: "NodePool has ec2-http-tokens annotation with 'required' as a value",
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				AMI: amiName,
+			}}},
 			nodePoolAnnotations: map[string]string{
 				ec2InstanceMetadataHTTPTokensAnnotation: "required",
 			},
@@ -150,7 +165,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			if tc.clusterStatus != nil {
 				clusterStatus = *tc.clusterStatus
 			}
-			result, err := awsMachineTemplateSpec(infraName, amiName,
+			result, err := awsMachineTemplateSpec(infraName,
 				&hyperv1.HostedCluster{Spec: tc.cluster, Status: clusterStatus},
 				&hyperv1.NodePool{
 					ObjectMeta: metav1.ObjectMeta{
@@ -158,7 +173,9 @@ func TestAWSMachineTemplate(t *testing.T) {
 					},
 					Spec: tc.nodePool,
 				},
-				true)
+				true,
+				&releaseinfo.ReleaseImage{},
+			)
 			if tc.checkError != nil {
 				tc.checkError(t, err)
 			} else {

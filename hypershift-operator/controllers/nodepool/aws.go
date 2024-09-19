@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 )
@@ -20,7 +21,21 @@ func awsClusterCloudProviderTagKey(id string) string {
 	return fmt.Sprintf("kubernetes.io/cluster/%s", id)
 }
 
-func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool) (*capiaws.AWSMachineTemplateSpec, error) {
+func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool, releaseImage *releaseinfo.ReleaseImage) (*capiaws.AWSMachineTemplateSpec, error) {
+
+	var ami string
+	region := hostedCluster.Spec.Platform.AWS.Region
+	arch := nodePool.Spec.Arch
+	if nodePool.Spec.Platform.AWS.AMI != "" {
+		ami = nodePool.Spec.Platform.AWS.AMI
+	} else {
+		// TODO: Should the region be included in the NodePool platform information?
+		var err error
+		ami, err = defaultNodePoolAMI(region, arch, releaseImage)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
+		}
+	}
 
 	subnet := &capiaws.AWSResourceReference{}
 	subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
