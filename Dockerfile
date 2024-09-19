@@ -4,21 +4,13 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make build
+RUN make hypershift hypershift-operator product-cli
 
 FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
-                    /hypershift/bin/control-plane-operator \
-                    /hypershift/bin/control-plane-pki-operator \
      /usr/bin/
-
-RUN cd /usr/bin && \
-    ln -s control-plane-operator ignition-server && \
-    ln -s control-plane-operator konnectivity-socks5-proxy && \
-    ln -s control-plane-operator availability-prober && \
-    ln -s control-plane-operator token-minter
 
 ENTRYPOINT ["/usr/bin/hypershift"]
 
