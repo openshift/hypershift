@@ -13,6 +13,11 @@ func ServicePublishingStrategyByTypeForHCP(hcp *hyperv1.HostedControlPlane, svcT
 	return nil
 }
 
+func IsLBKAS(hcp *hyperv1.HostedControlPlane) bool {
+	apiServerService := ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
+	return apiServerService != nil && apiServerService.Type == hyperv1.LoadBalancer
+}
+
 func IsRouteKAS(hcp *hyperv1.HostedControlPlane) bool {
 	apiServerService := ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	return apiServerService != nil && apiServerService.Type == hyperv1.Route
@@ -33,6 +38,11 @@ func ServicePublishingStrategyByTypeByHC(hc *hyperv1.HostedCluster, svcType hype
 		}
 	}
 	return nil
+}
+
+func IsLBKASByHC(hc *hyperv1.HostedCluster) bool {
+	apiServerService := ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
+	return apiServerService != nil && apiServerService.Type == hyperv1.LoadBalancer
 }
 
 func UseDedicatedDNSForKASByHC(hc *hyperv1.HostedCluster) bool {

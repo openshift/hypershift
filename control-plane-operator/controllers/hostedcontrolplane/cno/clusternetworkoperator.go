@@ -128,7 +128,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	if util.IsPrivateHCP(hcp) {
 		p.APIServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
-		p.APIServerPort = 443
+		p.APIServerPort = util.APIPortForLocalZone(util.IsLBKAS(hcp))
 	} else {
 		p.APIServerAddress = hcp.Status.ControlPlaneEndpoint.Host
 		p.APIServerPort = hcp.Status.ControlPlaneEndpoint.Port

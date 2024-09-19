@@ -66,7 +66,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 
 	if util.IsPrivateHC(hcluster) {
 		apiServerExternalAddress = fmt.Sprintf("api.%s.hypershift.local", hcluster.Name)
-		apiServerExternalPort = 443
+		apiServerExternalPort = util.APIPortForLocalZone(util.IsLBKASByHC(hcluster))
 	} else {
 		if hcluster.Status.KubeConfig == nil {
 			return "", true, nil

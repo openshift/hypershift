@@ -342,7 +342,7 @@ func (p *KubeAPIServerParams) ExternalURL() string {
 
 // InternalURL is used by ReconcileBootstrapKubeconfigSecret.
 func (p *KubeAPIServerParams) InternalURL() string {
-	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(p.InternalAddress), 443)
+	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(p.InternalAddress), p.ExternalPort)
 }
 
 func (p *KubeAPIServerParams) ExternalKubeconfigKey() string {
