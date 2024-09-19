@@ -246,6 +246,13 @@ func run(ctx context.Context, opts Options) error {
 			return
 		}
 
+		if err := util.SanitizeIgnitionPayload(value.Payload); err != nil {
+			log.Printf("Invalid ignition payload: %s", err)
+			http.Error(w, "Invalid ignition payload", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write(value.Payload)
 
