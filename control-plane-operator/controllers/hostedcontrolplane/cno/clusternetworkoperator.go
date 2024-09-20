@@ -346,22 +346,9 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		"--listen=0.0.0.0:9104",
 		"--kubeconfig=/etc/hosted-kubernetes/kubeconfig",
 		"--namespace=openshift-network-operator",
+		"--extra-clusters=management=/configs/management",
 	}
 	var cnoEnv []corev1.EnvVar
-	ver, err := semver.Parse(params.ReleaseVersion)
-	if err != nil {
-		return fmt.Errorf("failed to parse release version %w", err)
-	}
-
-	// This is a hack for hypershift CI
-	if ver.Minor < 11 {
-		// CNO <4.11 doesn't support APISERVER_OVERRIDE_[HOST/PORT] or extra-clusters
-		cnoEnv = append(cnoEnv,
-			corev1.EnvVar{Name: "KUBERNETES_SERVICE_HOST", Value: params.APIServerAddress},
-			corev1.EnvVar{Name: "KUBERNETES_SERVICE_PORT", Value: fmt.Sprint(params.APIServerPort)})
-	} else {
-		cnoArgs = append(cnoArgs, "--extra-clusters=management=/configs/management")
-	}
 
 	if !params.IsPrivate {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
