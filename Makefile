@@ -238,44 +238,10 @@ staticcheck: $(STATICCHECK)
 docker-build:
 	${RUNTIME} build . -t ${IMG}
 
-.PHONY: fast.Dockerfile.dockerignore
-fast.Dockerfile.dockerignore:
-	sed -e '/^bin\//d' .dockerignore > fast.Dockerfile.dockerignore
-
-# Build the docker image copying binaries from workspace
-.PHONY: docker-build-fast
-docker-build-fast: build fast.Dockerfile.dockerignore
-ifeq ($(RUNTIME),podman)
-		${RUNTIME} build . -t ${IMG} -f fast.Dockerfile --ignorefile fast.Dockerfile.dockerignore
-else
-		DOCKER_BUILDKIT=1 ${RUNTIME} build . -t ${IMG} -f fast.Dockerfile
-endif
-
 # Push the docker image
 .PHONY: docker-push
 docker-push:
 	${RUNTIME} push ${IMG}
-
-.PHONY: run-local
-run-local:
-	bin/hypershift-operator run
-
-.PHONY: ci-install-hypershift
-ci-install-hypershift: ci-install-hypershift-private
-
-.PHONY: ci-install-hypershift-private
-ci-install-hypershift-private:
-	bin/hypershift install --hypershift-image $(HYPERSHIFT_RELEASE_LATEST) \
-		--oidc-storage-provider-s3-credentials=/etc/hypershift-pool-aws-credentials/credentials \
-		--oidc-storage-provider-s3-bucket-name=hypershift-ci-oidc \
-		--oidc-storage-provider-s3-region=us-east-1 \
-		--private-platform=AWS \
-		--aws-private-creds=/etc/hypershift-pool-aws-credentials/credentials \
-		--aws-private-region=us-east-1 \
-		--external-dns-provider=aws \
-		--external-dns-credentials=/etc/hypershift-pool-aws-credentials/credentials \
-		--external-dns-domain-filter=service.ci.hypershift.devcluster.openshift.com \
-		--wait-until-available
 
 .PHONY: regenerate-pki
 regenerate-pki:
