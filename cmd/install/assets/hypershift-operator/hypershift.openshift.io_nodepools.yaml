@@ -397,6 +397,25 @@ spec:
                         description: InstanceType is an ec2 instance type for node
                           instances (e.g. m5.large).
                         type: string
+                      placement:
+                        description: placement specifies the placement options for
+                          the EC2 instances.
+                        properties:
+                          tenancy:
+                            description: |-
+                              Tenancy indicates if instance should run on shared or single-tenant hardware.
+
+
+                              Possible values:
+                              default: NodePool instances run on shared hardware.
+                              dedicated: Each NodePool instance runs on single-tenant hardware.
+                              host: NodePool instances run on user's pre-allocated dedicated hosts.
+                            enum:
+                            - default
+                            - dedicated
+                            - host
+                            type: string
+                        type: object
                       resourceTags:
                         description: |-
                           ResourceTags is an optional list of additional tags to apply to AWS node
@@ -556,20 +575,6 @@ spec:
                             must be set, but not both
                           rule: 'has(self.id) && self.id.startsWith(''subnet-'') ?
                             !has(self.filters) : size(self.filters) > 0'
-                      tenancy:
-                        description: |-
-                          Tenancy indicates if instance should run on shared or single-tenant hardware.
-
-
-                          Possible values:
-                          default: NodePool instances run on shared hardware.
-                          dedicated: Each NodePool instance runs on single-tenant hardware.
-                          host: NodePool instances run on user's pre-allocated dedicated hosts.
-                        enum:
-                        - default
-                        - dedicated
-                        - host
-                        type: string
                     required:
                     - instanceType
                     type: object
@@ -1657,6 +1662,25 @@ spec:
                         description: InstanceType is an ec2 instance type for node
                           instances (e.g. m5.large).
                         type: string
+                      placement:
+                        description: placement specifies the placement options for
+                          the EC2 instances.
+                        properties:
+                          tenancy:
+                            description: |-
+                              Tenancy indicates if instance should run on shared or single-tenant hardware.
+
+
+                              Possible values:
+                              default: NodePool instances run on shared hardware.
+                              dedicated: Each NodePool instance runs on single-tenant hardware.
+                              host: NodePool instances run on user's pre-allocated dedicated hosts.
+                            enum:
+                            - default
+                            - dedicated
+                            - host
+                            type: string
+                        type: object
                       resourceTags:
                         description: |-
                           ResourceTags is an optional list of additional tags to apply to AWS node
@@ -1813,20 +1837,6 @@ spec:
                             must be set, but not both
                           rule: 'has(self.id) && self.id.startsWith(''subnet-'') ?
                             !has(self.filters) : size(self.filters) > 0'
-                      tenancy:
-                        description: |-
-                          Tenancy indicates if instance should run on shared or single-tenant hardware.
-
-
-                          Possible values:
-                          default: NodePool instances run on shared hardware.
-                          dedicated: Each NodePool instance runs on single-tenant hardware.
-                          host: NodePool instances run on user's pre-allocated dedicated hosts.
-                        enum:
-                        - default
-                        - dedicated
-                        - host
-                        type: string
                     required:
                     - instanceType
                     - subnet

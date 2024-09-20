@@ -105,6 +105,11 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 		instanceMetadataOptions.HTTPTokens = capiaws.HTTPTokensStateRequired
 	}
 
+	tenancy := ""
+	if nodePool.Spec.Platform.AWS.Placement != nil {
+		tenancy = nodePool.Spec.Platform.AWS.Placement.Tenancy
+	}
+
 	awsMachineTemplateSpec := &capiaws.AWSMachineTemplateSpec{
 		Template: capiaws.AWSMachineTemplateResource{
 			Spec: capiaws.AWSMachineSpec{
@@ -123,7 +128,7 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 				RootVolume:               rootVolume,
 				AdditionalTags:           tags,
 				InstanceMetadataOptions:  instanceMetadataOptions,
-				Tenancy:                  nodePool.Spec.Platform.AWS.Tenancy,
+				Tenancy:                  tenancy,
 			},
 		},
 	}

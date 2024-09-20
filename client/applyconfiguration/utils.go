@@ -194,6 +194,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.NodePortPublishingStrategyApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
 		return &applyconfigurationhypershiftv1alpha1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PlacementOptions"):
+		return &applyconfigurationhypershiftv1alpha1.PlacementOptionsApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PlatformSpec"):
 		return &applyconfigurationhypershiftv1alpha1.PlatformSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PlatformStatus"):
@@ -400,6 +402,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
 		return &hypershiftv1beta1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("PlacementOptions"):
+		return &hypershiftv1beta1.PlacementOptionsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlatformSpec"):
 		return &hypershiftv1beta1.PlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlatformStatus"):

@@ -1380,18 +1380,16 @@ for the user.</p>
 </tr>
 <tr>
 <td>
-<code>tenancy</code></br>
+<code>placement</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">
+PlacementOptions
+</a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tenancy indicates if instance should run on shared or single-tenant hardware.</p>
-<p>Possible values:
-default: NodePool instances run on shared hardware.
-dedicated: Each NodePool instance runs on single-tenant hardware.
-host: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts.</p>
+<p>placement specifies the placement options for the EC2 instances.</p>
 </td>
 </tr>
 </tbody>
@@ -8002,6 +8000,40 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 <td>
 <em>(Optional)</em>
 <p>Size is the minimum size of the data volume for each etcd member.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###PlacementOptions { #hypershift.openshift.io/v1beta1.PlacementOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>PlacementOptions specifies the placement options for the EC2 instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>tenancy</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Tenancy indicates if instance should run on shared or single-tenant hardware.</p>
+<p>Possible values:
+default: NodePool instances run on shared hardware.
+dedicated: Each NodePool instance runs on single-tenant hardware.
+host: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts.</p>
 </td>
 </tr>
 </tbody>
