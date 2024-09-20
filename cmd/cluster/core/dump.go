@@ -41,6 +41,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -348,6 +349,9 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiazure.AzureCluster{},
 		&capiazure.AzureMachine{},
 		&capiazure.AzureMachineTemplate{},
+		&capiopenstack.OpenStackCluster{},
+		&capiopenstack.OpenStackMachine{},
+		&capiopenstack.OpenStackMachineTemplate{},
 		&agentv1.AgentMachine{},
 		&agentv1.AgentMachineTemplate{},
 		&agentv1.AgentCluster{},
