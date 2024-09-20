@@ -56,10 +56,7 @@ type ValidatedCreateOptions struct {
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
-	// Perform multi-arch validations except for render
-	var err error
-
-	if err = validateAWSOptions(ctx, opts, o); err != nil {
+	if err := validateAWSOptions(ctx, opts, o); err != nil {
 		return nil, err
 	}
 
