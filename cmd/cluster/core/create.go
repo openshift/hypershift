@@ -584,9 +584,9 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		// Validate multi-arch aspects
 		kc, err := hyperutil.GetKubeClientSet()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not retrieve kube clientset: %w", err)
 		}
-		if err = validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc); err != nil {
+		if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc); err != nil {
 			return nil, err
 		}
 	}
