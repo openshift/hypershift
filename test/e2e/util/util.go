@@ -171,6 +171,48 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
+func GetGuestKubeconfigHost(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
+	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	if err != nil {
+		return "", fmt.Errorf("couldn't get guest kubeconfig: %v", err)
+	}
+
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	if err != nil {
+		return "", fmt.Errorf("couldn't load guest kubeconfig: %v", err)
+	}
+
+	host := guestConfig.Host
+	if len(host) == 0 {
+		return "", fmt.Errorf("guest kubeconfig host is empty")
+	}
+	return host, nil
+}
+
+func WaitForGuestKubeconfigHostUpdate(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, oldHost string) {
+	g := NewWithT(t)
+	waitTimeout := 30 * time.Minute
+	pollingInterval := 15 * time.Second
+
+	t.Logf("Waiting for guest kubeconfig host update")
+	var newHost string
+	var getHostError error
+	err := wait.PollImmediateWithContext(ctx, pollingInterval, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		newHost, getHostError = GetGuestKubeconfigHost(t, ctx, client, hostedCluster)
+		if getHostError != nil {
+			t.Logf("failed to get guest kubeconfig host: %v", getHostError)
+			return false, nil
+		}
+		if newHost == oldHost {
+			t.Logf("guest kubeconfig host is not yet updated, keep polling")
+			return false, nil
+		}
+		return true, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for guest kubeconfig host update")
+	t.Logf("Guest kubeconfig host switched from %s to %s", oldHost, newHost)
+}
+
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
 	g := NewWithT(t)
 	start := time.Now()
@@ -1274,7 +1316,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
 
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
-	// rollout will not complete if there are no wroker nodes.
+	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
 		// Wait for the rollout to be complete
 		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
@@ -1286,8 +1328,6 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
 	g.Expect(serviceStrategy).ToNot(BeNil())
-	// Private clusters should always use Route
-	g.Expect(serviceStrategy.Type).To(Equal(hyperv1.Route))
 	if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
 	} else {

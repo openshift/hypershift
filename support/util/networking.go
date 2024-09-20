@@ -78,6 +78,15 @@ func KASPodPortFromHostedCluster(hc *hyperv1.HostedCluster) int32 {
 	return 6443
 }
 
+// APIPortForLocalZone returns the port used by processes within a private hosted cluster
+// to communicate with the KAS via the api.<hc-name>.hypershift.local host.
+func APIPortForLocalZone(isLBKAS bool) int32 {
+	if isLBKAS {
+		return 6443
+	}
+	return 443
+}
+
 func AdvertiseAddress(hcp *hyperv1.HostedControlPlane) *string {
 	if hcp != nil && hcp.Spec.Networking.APIServer != nil {
 		return hcp.Spec.Networking.APIServer.AdvertiseAddress
