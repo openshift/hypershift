@@ -132,6 +132,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ManagementClusterName, "e2e.management-cluster-name", "", "Name of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.BoolVar(&globalOpts.DisablePKIReconciliation, "e2e.disable-pki-reconciliation", false, "If set, TestUpgradeControlPlane will upgrade the control plane without reconciling the pki components")
 	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
+	flag.Var(&globalOpts.configurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
+	flag.Var(&globalOpts.configurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
 
 	flag.Parse()
 
@@ -468,6 +470,8 @@ type configurableClusterOptions struct {
 	PowerVSTransitGateway         string
 	EtcdStorageClass              string
 	Annotations                   stringMapVar
+	ServiceCIDR                   stringSliceVar
+	ClusterCIDR                   stringSliceVar
 }
 
 var nextAWSZoneIndex = 0
@@ -520,6 +524,14 @@ func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOp
 		for k, v := range o.configurableClusterOptions.Annotations {
 			createOption.Annotations = append(createOption.Annotations, fmt.Sprintf("%s=%s", k, v))
 		}
+	}
+
+	if len(o.configurableClusterOptions.ServiceCIDR) != 0 {
+		createOption.ServiceCIDR = o.configurableClusterOptions.ServiceCIDR
+	}
+
+	if len(o.configurableClusterOptions.ClusterCIDR) != 0 {
+		createOption.ClusterCIDR = o.configurableClusterOptions.ClusterCIDR
 	}
 
 	return createOption
