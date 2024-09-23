@@ -1421,6 +1421,8 @@ func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclien
 		}
 		return getErr == nil, err
 	}); err != nil {
+		// sleep for 3h
+		time.Sleep(3 * time.Hour)
 		return "", fmt.Errorf("router-default service did't become available: %v", err)
 	}
 
