@@ -1,10 +1,10 @@
-FROM registry.ci.openshift.org/openshift/release:golang-1.16 as builder
+FROM registry.ci.openshift.org/openshift/release:golang-1.16 AS builder
 
 WORKDIR /hypershift
 
 COPY . .
 
-RUN go build -o registryclient-test ./releaseinfo/registryclient/test/main.go 
+RUN go build -o registryclient-test ./releaseinfo/registryclient/test/main.go
 
 FROM quay.io/openshift/origin-base:4.7
 COPY --from=builder /hypershift/registryclient-test /usr/bin/registryclient-test
