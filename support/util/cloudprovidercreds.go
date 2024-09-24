@@ -61,7 +61,7 @@ func ApplyCloudProviderCreds(
 			},
 			corev1.EnvVar{
 				Name:  "AWS_EC2_METADATA_DISABLED",
-				Value: "true",
+				Value: "false",
 			})
 		podSpec.Volumes = append(podSpec.Volumes, BuildVolume(cloudProviderTokenVolume(), buildCloudProviderTokenVolume()))
 		container.VolumeMounts = append(container.VolumeMounts,

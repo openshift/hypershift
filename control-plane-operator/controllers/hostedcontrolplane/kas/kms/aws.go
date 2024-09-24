@@ -212,7 +212,7 @@ func buildKASContainerAWSKMS(image string, arn string, region string, unixSocket
 			},
 			corev1.EnvVar{
 				Name:  "AWS_EC2_METADATA_DISABLED",
-				Value: "true",
+				Value: "false",
 			})
 		c.Args = []string{
 			fmt.Sprintf("--key=%s", arn),
