@@ -182,7 +182,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			}
 			reconcileOpenStackClusterSpec(tc.hostedCluster, &initialOpenStackClusterSpec, apiEndpoint)
 			if diff := cmp.Diff(initialOpenStackClusterSpec, tc.expectedOpenStackClusterSpec); diff != "" {
-				t.Errorf("reconciled OpenStack cluster spec differs from expcted OpenStack cluster spec: %s", diff)
+				t.Errorf("reconciled OpenStack cluster spec differs from expected OpenStack cluster spec: %s", diff)
 			}
 		})
 	}

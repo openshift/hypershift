@@ -86,7 +86,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 				t.Fatalf("reconcileAWSCluster failed: %v", err)
 			}
 			if diff := cmp.Diff(tc.initialAWSCluster, tc.expectedAWSCluster); diff != "" {
-				t.Errorf("reconciled AWS cluster differs from expcted AWS cluster: %s", diff)
+				t.Errorf("reconciled AWS cluster differs from expected AWS cluster: %s", diff)
 			}
 		})
 	}

@@ -1157,7 +1157,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			}
 
 			if labelKey == "" || labelValue == "" {
-				// if the Key/Value are empty we asume that the pod is not in the auditedList,
+				// if the Key/Value are empty we assume that the pod is not in the auditedList,
 				// if that's the case the annotation should not exists in that pod.
 				// Then continue to the next pod
 				g.Expect(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)

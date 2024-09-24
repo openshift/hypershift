@@ -134,7 +134,7 @@ func TestHostedSizingController(t *testing.T) {
 			}, nil,
 		)
 
-		t.Log("configuring the cluster sizing configuration to have miniscule delays")
+		t.Log("configuring the cluster sizing configuration to have minuscule delays")
 		if _, err := testCtx.MgmtCluster.HyperShiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Apply(testContext,
 			schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration("cluster").WithSpec(
 				schedulingv1alpha1applyconfigurations.ClusterSizingConfigurationSpec().

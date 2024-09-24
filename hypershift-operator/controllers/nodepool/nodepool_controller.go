@@ -1625,7 +1625,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 				Kind:       gvk.Kind,
 				APIVersion: gvk.GroupVersion().String(),
 				Namespace:  machineTemplateCR.GetNamespace(),
-				// keep current tempalte name for later check.
+				// keep current template name for later check.
 				Name: machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
 			},
 			// Keep current version for later check.

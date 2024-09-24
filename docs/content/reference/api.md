@@ -582,7 +582,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
+<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
 </td>
 </tr>
 </table>
@@ -3128,7 +3128,7 @@ int32
 <td>
 <em>(Optional)</em>
 <p>HostPrefix is the prefix size to allocate to each node from the CIDR.
-For example, 24 would allocate 2^8=256 adresses to each node. If this
+For example, 24 would allocate 2^8=256 addresses to each node. If this
 field is not used by the plugin, it can be left unset.</p>
 </td>
 </tr>
@@ -4337,7 +4337,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
+<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
 </td>
 </tr>
 </tbody>
@@ -4891,7 +4891,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
+<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
 </td>
 </tr>
 </tbody>
@@ -5182,7 +5182,7 @@ KMS system (all provider managed).</p>
 </thead>
 <tbody><tr><td><p>&#34;Managed&#34;</p></td>
 <td><p>IBMCloudKMSManagedAuth defines the KMS authentication strategy where the IKS/ROKS platform uses
-service to service auth to call IBM Cloud KMS APIs (no customer credentials requried)</p>
+service to service auth to call IBM Cloud KMS APIs (no customer credentials required)</p>
 </td>
 </tr><tr><td><p>&#34;Unmanaged&#34;</p></td>
 <td><p>IBMCloudKMSUnmanagedAuth defines the KMS authentication strategy where a customer supplies IBM Cloud
@@ -5842,7 +5842,7 @@ NodePool&rsquo;s nodes. Default is 1.</p>
 <p>StorageClassMapping maps StorageClasses on the infra cluster hosting
 the KubeVirt VMs to StorageClasses that are made available within the
 Guest Cluster.</p>
-<p>NOTE: It is possible that not all capablities of an infra cluster&rsquo;s
+<p>NOTE: It is possible that not all capabilities of an infra cluster&rsquo;s
 storageclass will be present for the corresponding guest clusters storageclass.</p>
 </td>
 </tr>
@@ -6404,7 +6404,7 @@ KubevirtManualStorageDriverConfig
 </td>
 <td>
 <em>(Optional)</em>
-<p>Manual is used to explicilty define how the infra storageclasses are
+<p>Manual is used to explicitly define how the infra storageclasses are
 mapped to guest storageclasses</p>
 </td>
 </tr>
@@ -9192,7 +9192,7 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 <a href="#hypershift.openshift.io/v1beta1.ServicePublishingStrategyMapping">ServicePublishingStrategyMapping</a>)
 </p>
 <p>
-<p>ServicePublishingStrategy specfies how to publish a ServiceType.</p>
+<p>ServicePublishingStrategy specifies how to publish a ServiceType.</p>
 </p>
 <table>
 <thead>

@@ -14,7 +14,7 @@ When this flag is set, it will ensure:
 
 !!! note 
 
-    An individual NodePool only supports one CPU architecture and cannot support multiple CPU archiectures within the 
+    An individual NodePool only supports one CPU architecture and cannot support multiple CPU architectures within the 
     same NodePool.
 
 

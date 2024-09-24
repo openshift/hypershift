@@ -125,7 +125,7 @@ func TestReconcileKMSEncryptionConfigAWS(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(config, *tc.expectedConfig); diff != "" {
-				t.Errorf("reconciled encrytion config differs from expected: %s", diff)
+				t.Errorf("reconciled encryption config differs from expected: %s", diff)
 			}
 		})
 	}

@@ -101,7 +101,7 @@ After several minutes, the process will complete, generating output files in the
 
 ### Debugging IDMS/ICSP Propagation
 
-You can check if the entries created in the ICSP/IDMS are being propagated properly checking the deployments in the HostedControlPlane. For instance, if you check the ignition-server deployment you can see the command the pod will execute, you need to check if the `--registry-overrides` flag is followed by a serie of tuples separated by comma:
+You can check if the entries created in the ICSP/IDMS are being propagated properly checking the deployments in the HostedControlPlane. For instance, if you check the ignition-server deployment you can see the command the pod will execute, you need to check if the `--registry-overrides` flag is followed by a series of tuples separated by comma:
 
 ```
 ...

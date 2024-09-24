@@ -46,7 +46,7 @@ wget-1.21.1-7.el9.aarch64
 ## Docker
 
 ### HO + CPO example
-To run this locally you will need to have Docker installed and running. You will also need to have the `PULL_SECRET` env var set to the contents of your pull secret file. Example of a serach for the `krb5` package is shown below:
+To run this locally you will need to have Docker installed and running. You will also need to have the `PULL_SECRET` env var set to the contents of your pull secret file. Example of a search for the `krb5` package is shown below:
 ```
 PULL_SECRET=$PULL_SECRET /bin/bash /Users/pstefans/GitHub/openshift/hypershift/contrib/snyk/check-for-cve.sh krb5
 

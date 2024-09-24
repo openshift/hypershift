@@ -35,7 +35,7 @@ hypershift create cluster aws \
 
     The `--zones` flag must specify Availability Zones (AZs) within the region specified by the `--region` flag
 
-The `--zones` flag is also available on the  `hypershift create infra aws` command used to [create infrastructure seperately](../create-infra-iam-separately/#creating-the-aws-infra).
+The `--zones` flag is also available on the  `hypershift create infra aws` command used to [create infrastructure separately](../create-infra-iam-separately/#creating-the-aws-infra).
 
 The following per-zone infrastructure is created for all specified zones:
 

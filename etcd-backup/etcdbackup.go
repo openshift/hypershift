@@ -130,7 +130,7 @@ func uploadToS3(ctx context.Context, opts options) error {
 		return fmt.Errorf("failed to upload snapshot file: %w", err)
 	}
 
-	fmt.Printf("snapshot succesfully uploaded to %s\n", output.Location)
+	fmt.Printf("snapshot successfully uploaded to %s\n", output.Location)
 	return nil
 }
 

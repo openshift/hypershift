@@ -190,7 +190,7 @@ func buildEtcdInitContainer(p *EtcdParams) func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "RESTORE_URL_ETCD",
-				Value: p.StorageSpec.RestoreSnapshotURL[0], // RestoreSnapshotURL can only hve 1 entry
+				Value: p.StorageSpec.RestoreSnapshotURL[0], // RestoreSnapshotURL can only have 1 entry
 			},
 		}
 		c.Image = p.EtcdImage

@@ -590,7 +590,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 		return false, fmt.Errorf("couldn't get the referenced secret: %v", err)
 	}
 
-	// check whether we already attempted this not to send unneccessary login
+	// check whether we already attempted this not to send unnecessary login
 	// requests against the provider
 	if cachedResult, ok := oidcPasswordCheckCache.Get(secret.ResourceVersion); ok {
 		log.Info("using cached result for OIDC password grant check")

@@ -69,7 +69,7 @@ Once you followed the Teardown procedure of the old Hosted Cluster, you will see
 
 **Cause:** This issue occurs when the old Hosted Cluster has a conflict with the AWSPrivateLink object. The old one is still running and the new one cannot handle it because the `hypershift.local` AWS internal DNS entry still points to the old LoadBalancer.
 
-## Dependant resources block the old Hosted Cluster teardown
+## Dependent resources block the old Hosted Cluster teardown
 
 To solve this issue you need to check all the objects in the HostedControlPlane Namespace and make sure all of them are being terminated. To do that we recommend to use an external tool called [ketall](https://github.com/corneliusweig/ketall) which gives you a complete overview of all resources in a kubernetes cluster.
 
