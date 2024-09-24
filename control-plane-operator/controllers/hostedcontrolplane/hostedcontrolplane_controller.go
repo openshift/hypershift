@@ -4807,7 +4807,31 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		return fmt.Errorf("failed to reconcile cluster storage operator roleBinding: %w", err)
 	}
 
-	// TODO: create custom kubeconfig to the guest cluster + RBAC
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		rootCA := manifests.RootCAConfigMap(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+			return err
+		}
+
+		csrSigner := manifests.CSRSignerCASecret(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+			return err
+		}
+
+		kubeconfigOperator := manifests.AWSEBSCSIDriverOperatorKubeconfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, kubeconfigOperator, func() error {
+			return pki.ReconcileServiceAccountKubeconfig(kubeconfigOperator, csrSigner, rootCA, hcp, "openshift-cluster-csi-drivers", "aws-ebs-csi-driver-operator")
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile AWS-EBS CSI Driver Operator kubeconfig: %w", err)
+		}
+
+		kubeconfigController := manifests.AWSEBSCSIDriverControllerKubeconfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, kubeconfigController, func() error {
+			return pki.ReconcileServiceAccountKubeconfig(kubeconfigController, csrSigner, rootCA, hcp, "openshift-cluster-csi-drivers", "aws-ebs-csi-driver-controller-sa")
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile AWS-EBS CSI Driver Controller kubeconfig: %w", err)
+		}
+	}
 
 	return nil
 }
