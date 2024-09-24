@@ -3,8 +3,8 @@ package azure
 import (
 	"context"
 	"fmt"
-
 	"github.com/go-logr/logr"
+
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
@@ -59,6 +59,10 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
+	var additionalResourceGroups = []string{
+		o.Name + "-vnet-" + o.InfraID,
+		o.Name + "-nsg-" + o.InfraID,
+	}
 	var destroyFuture *runtime.Poller[armresources.ResourceGroupsClientDeleteResponse]
 
 	// Setup subscription ID and Azure credential information
@@ -73,13 +77,29 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		return fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
-	destroyFuture, err = resourceGroupClient.BeginDelete(ctx, o.GetResourceGroupName(), nil)
-	if err != nil {
-		return fmt.Errorf("failed to start deletion: %w", err)
+	var resourceGroups []string
+	resourceGroups = append(resourceGroups, o.ResourceGroupName)
+
+	for _, rg := range additionalResourceGroups {
+		exists, err := resourceGroupClient.CheckExistence(ctx, rg, nil)
+		if err != nil {
+			return fmt.Errorf("failed to check existence of resource group %s: %w", rg, err)
+		}
+		if exists.Success {
+			resourceGroups = append(resourceGroups, rg)
+		}
 	}
 
-	if _, err = destroyFuture.PollUntilDone(ctx, nil); err != nil {
-		return fmt.Errorf("failed to wait for resourceGroup deletion: %w", err)
+	for _, rg := range resourceGroups {
+		fmt.Printf("Deleting resource group: %s\n", rg)
+		destroyFuture, err = resourceGroupClient.BeginDelete(ctx, rg, nil)
+		if err != nil {
+			return fmt.Errorf("failed to start deletion for resource group %s: %w", rg, err)
+		}
+
+		if _, err = destroyFuture.PollUntilDone(ctx, nil); err != nil {
+			return fmt.Errorf("failed to wait for resource group deletion %s: %w", rg, err)
+		}
 	}
 
 	return nil
