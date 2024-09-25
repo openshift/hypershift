@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -14,8 +13,7 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
-	hyperutil "github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,14 +56,6 @@ type ValidatedCreateOptions struct {
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
-	// Perform multi-arch validations except for render
-	if !opts.Render {
-		err := validateMultiArch(ctx, o, opts)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	if err := validateAWSOptions(ctx, opts, o); err != nil {
 		return nil, err
 	}
@@ -125,7 +115,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 
 	var secretData *util.CredentialsSecretData
 	if len(o.CredentialSecretName) > 0 {
-		//The opts.BaseDomain value is returned as-is if the input value len(opts.BaseDomain) > 0
+		// The opts.BaseDomain value is returned as-is if the input value len(opts.BaseDomain) > 0
 		secretData, err = util.ExtractOptionsFromSecret(
 			client,
 			o.CredentialSecretName,
@@ -241,7 +231,6 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 				Zone: o.infra.Zones[0].Name,
 			},
 			ResourceTags:   tags,
-			MultiArch:      o.MultiArch,
 			EndpointAccess: endpointAccess,
 		},
 	}
@@ -376,6 +365,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
+
+	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
@@ -460,84 +451,10 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 	return nil
 }
 
-// validateMultiArchRelease validates a release image or release stream is multi-arch if the multi-arch flag is set
-func validateMultiArchRelease(ctx context.Context, releaseImage, releaseStream, pullSecretFile string, awsOpts *RawCreateOptions) error {
-	// Validate the release image is multi-arch when the multi-arch flag is set and a release image is provided
-	if awsOpts.MultiArch && len(releaseImage) > 0 {
-		pullSecret, err := os.ReadFile(pullSecretFile)
-		if err != nil {
-			return fmt.Errorf("failed to read pull secret file: %w", err)
-		}
-
-		validMultiArchRelease, err := registryclient.IsMultiArchManifestList(ctx, releaseImage, pullSecret)
-		if err != nil {
-			return err
-		}
-
-		if !validMultiArchRelease {
-			return fmt.Errorf("release image is not a multi-arch image")
-		}
-	}
-
-	// Validate the release stream is multi-arch when the multi-arch flag is set and a release stream is provided
-	if awsOpts.MultiArch && len(releaseStream) > 0 && !strings.Contains(releaseStream, "multi") {
-		return fmt.Errorf("release stream is not a multi-arch stream")
-	}
-
-	return nil
-}
-
 // validateAWSOptions validates different AWS flag parameters
 func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
 	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile); err != nil {
 		return err
-	}
-
-	if err := validateMultiArchRelease(ctx, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile, awsOpts); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func validateMultiArch(ctx context.Context, o *RawCreateOptions, opts *core.CreateOptions) error {
-	validMultiArchImage := false
-
-	// Check if the release image is multi-arch
-	if len(opts.ReleaseImage) > 0 && len(opts.PullSecretFile) > 0 {
-		pullSecret, err := os.ReadFile(opts.PullSecretFile)
-		if err != nil {
-			return fmt.Errorf("failed to read pull secret file: %w", err)
-		}
-
-		validMultiArchImage, err = registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Check if a release stream was provided instead and its multi-arch
-	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) > 0 && strings.Contains(opts.ReleaseStream, "multi") {
-		validMultiArchImage = true
-	}
-
-	// The release image is not multi-arch so check the mgmt & nodepool cpu arches match
-	if !validMultiArchImage {
-		mgmtClusterCPUArch, err := hyperutil.GetMgmtClusterCPUArch(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to check mgmt cluster CPU arch: %v", err)
-		}
-
-		err = hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, opts.Arch)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Set the HostedCluster multi-arch flag since a valid multi-arch release image/stream was provided
-	if validMultiArchImage && !o.MultiArch {
-		o.MultiArch = true
-		opts.Log.Info("Auto-enabled MultiArch HostedCluster since a multi-arch release image was provided")
 	}
 
 	return nil

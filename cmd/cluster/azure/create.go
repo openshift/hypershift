@@ -27,8 +27,7 @@ import (
 
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
-		Location: "eastus",
-
+		Location:     "eastus",
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
 }
@@ -90,6 +89,8 @@ type ValidatedCreateOptions struct {
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+	var err error
+
 	// Check if the network security group is set and the resource group is not
 	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
@@ -101,7 +102,6 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		},
 	}
 
-	var err error
 	validOpts.ValidatedAzurePlatformCreateOptions, err = o.NodePoolOpts.Validate()
 
 	return validOpts, err

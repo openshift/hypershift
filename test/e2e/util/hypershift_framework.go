@@ -136,6 +136,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 	h.Run("EnsureHostedCluster", func(t *testing.T) {
 		hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
+		EnsurePayloadArchSetCorrectly(t, context.Background(), h.client, hostedCluster)
 		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
 		EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
 		EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)

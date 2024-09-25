@@ -18,7 +18,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	corev1 "k8s.io/api/core/v1"
@@ -352,44 +353,27 @@ func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.Hos
 	*/
 }
 
-func DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePoolArch string) error {
-	if mgmtClusterCPUArch != nodePoolArch {
-		return fmt.Errorf("multi-arch hosted cluster is not enabled and "+
-			"management cluster and nodepool cpu architectures do not match; "+
-			"please use a multi-arch release image or a multi-arch release stream - management cluster cpu arch: %s, nodepool cpu arch: %s", mgmtClusterCPUArch, nodePoolArch)
-	}
-
-	return nil
-}
-
-func GetMgmtClusterCPUArch(ctx context.Context) (string, error) {
-	cfg, err := util.GetConfig()
+func GetKubeClientSet() (kubeclient.Interface, error) {
+	cfg, err := cmdutil.GetConfig()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	kc, err := kubeclient.NewForConfig(cfg)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Get the API version in JSON format
-	versionJSON, err := kc.RESTClient().Get().AbsPath("/version").DoRaw(ctx)
+	return kc, nil
+}
+
+func GetMgmtClusterCPUArch(kc kubeclient.Interface) (string, error) {
+	info, err := kc.Discovery().ServerVersion()
 	if err != nil {
-		return "", fmt.Errorf("failed to get API version: %v", err)
-	}
-
-	// Unmarshal the version JSON so we can extract the platform field
-	var data map[string]interface{}
-	if err = json.Unmarshal(versionJSON, &data); err != nil {
 		return "", err
 	}
 
-	//Extract the platform field
-	platform, ok := data["platform"].(string)
-	if !ok {
-		return "", fmt.Errorf("failed to extract the platform info from the version JSON")
-	}
+	platform := info.Platform
 
 	// Split the platform into separate strings, we just want to check the CPU arch
 	// The normal structure should be something like 'linux/arm64'
@@ -401,6 +385,47 @@ func GetMgmtClusterCPUArch(ctx context.Context) (string, error) {
 	}
 
 	return platformParts[1], nil
+}
+
+// DetermineHostedClusterPayloadArch returns the HostedCluster payload's CPU architecture type
+func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, imageMetadataProvider ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
+	var pullSecret corev1.Secret
+	if err := c.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return "", fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+
+	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to determine if release image multi-arch: %w", err)
+	}
+
+	if isMultiArchReleaseImage {
+		return hyperv1.Multi, nil
+	}
+
+	arch, err := getImageArchitecture(ctx, hc.Spec.Release.Image, pullSecretBytes, imageMetadataProvider)
+	if err != nil {
+		return "", err
+	}
+	return arch, nil
+}
+
+func getImageArchitecture(ctx context.Context, image string, pullSecretBytes []byte, imageMetadataProvider ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
+	imageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, image, pullSecretBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up image metadata for %s: %w", image, err)
+	}
+
+	if imageMetadata != nil && len(imageMetadata.Architecture) > 0 {
+		// Uppercase this value since it will be lowercase, but the API expects the arch to be in uppercase
+		return hyperv1.ToPayloadArch(imageMetadata.Architecture), nil
+	}
+
+	return "", fmt.Errorf("failed to find image CPU architecture for %s", image)
 }
 
 // PredicatesForHostedClusterAnnotationScoping returns predicate filters for all event types that will ignore incoming
@@ -488,4 +513,18 @@ func SanitizeIgnitionPayload(payload []byte) error {
 	}
 
 	return nil
+}
+
+func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) ([]byte, error) {
+	pullSecret := corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return nil, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+
+	return pullSecretBytes, nil
 }
