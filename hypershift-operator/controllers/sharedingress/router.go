@@ -8,7 +8,6 @@ import (
 	"text/template"
 
 	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
@@ -143,8 +142,12 @@ func ReconcileRouterConfiguration(cm *corev1.ConfigMap, config string) error {
 	return nil
 }
 
-func ReconcileRouterDeployment(deployment *appsv1.Deployment, config *corev1.ConfigMap) error {
+func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.ConfigMap) error {
+	routerDeploymentConfig := config.DeploymentConfig{}
+	routerDeploymentConfig.SetMultizoneSpread(hcpRouterLabels(), false)
+
 	deployment.Spec = appsv1.DeploymentSpec{
+		Replicas: ptr.To(int32(2)),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: hcpRouterLabels(),
 		},
@@ -152,7 +155,7 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, config *corev1.Con
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: hcpRouterLabels(),
 				Annotations: map[string]string{
-					routerConfigHashKey: util.ComputeHash(config.Data[routerConfigKey]),
+					routerConfigHashKey: util.ComputeHash(configMap.Data[routerConfigKey]),
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -171,6 +174,9 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, config *corev1.Con
 				},
 				ServiceAccountName:           "",
 				AutomountServiceAccountToken: ptr.To(false),
+				Affinity: &corev1.Affinity{
+					PodAntiAffinity: routerDeploymentConfig.Scheduling.Affinity.PodAntiAffinity,
+				},
 			},
 		},
 	}
@@ -277,12 +283,12 @@ func ReconcileRouterService(svc *corev1.Service) error {
 	return nil
 }
 
-func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, availability hyperv1.AvailabilityPolicy, ownerRef config.OwnerRef) {
+func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, ownerRef config.OwnerRef) {
 	if pdb.CreationTimestamp.IsZero() {
 		pdb.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: hcpRouterLabels(),
 		}
 	}
 	ownerRef.ApplyTo(pdb)
-	util.ReconcilePodDisruptionBudget(pdb, availability)
+	pdb.Spec.MinAvailable = ptr.To(intstr.FromInt(1))
 }

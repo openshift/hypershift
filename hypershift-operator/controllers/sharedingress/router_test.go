@@ -2,6 +2,8 @@ package sharedingress
 
 import (
 	ctx "context"
+	appsv1 "k8s.io/api/apps/v1"
+	"reflect"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -172,6 +174,76 @@ func TestGenerateConfig(t *testing.T) {
 			config, _, err := r.generateConfig(ctx.Background())
 			g.Expect(err).ToNot(HaveOccurred())
 			testutil.CompareWithFixture(t, config, testutil.WithExtension(".cfg"))
+		})
+	}
+}
+
+func TestReconcileRouterDeployment(t *testing.T) {
+	type args struct {
+		deployment *appsv1.Deployment
+		configMap  *corev1.ConfigMap
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "Valid config map and deployment",
+			args: args{
+				deployment: &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-deployment",
+						Namespace: "test-namespace",
+					},
+				},
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-configmap",
+						Namespace: "test-namespace",
+					},
+					Data: map[string]string{
+						routerConfigKey: "test-config",
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ReconcileRouterDeployment(tt.args.deployment, tt.args.configMap)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ReconcileRouterDeployment() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				if *tt.args.deployment.Spec.Replicas != 2 {
+					t.Errorf("Expected replicas to be 2, got %d", *tt.args.deployment.Spec.Replicas)
+				}
+				if tt.args.deployment.Spec.Template.Annotations[routerConfigHashKey] != util.ComputeHash(tt.args.configMap.Data[routerConfigKey]) {
+					t.Errorf("Expected annotation %s to be %s, got %s", routerConfigHashKey, util.ComputeHash(tt.args.configMap.Data[routerConfigKey]), tt.args.deployment.Spec.Template.Annotations[routerConfigHashKey])
+				}
+				expectedAffinity := &corev1.Affinity{
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+							{
+								Weight: 100,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "router",
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+						},
+					},
+				}
+				if !reflect.DeepEqual(tt.args.deployment.Spec.Template.Spec.Affinity, expectedAffinity) {
+					t.Errorf("Expected affinity to be %v, got %v", expectedAffinity, tt.args.deployment.Spec.Template.Spec.Affinity)
+				}
+			}
 		})
 	}
 }

@@ -172,11 +172,11 @@ func colocationLabelValue(hcp *hyperv1.HostedControlPlane) string {
 	return clusterKey(hcp)
 }
 
-// setMultizoneSpread sets PodAntiAffinity with corev1.LabelTopologyZone as the topology key for a given set of labels.
+// SetMultizoneSpread sets PodAntiAffinity with corev1.LabelTopologyZone as the topology key for a given set of labels.
 // This is useful to e.g ensure pods are spread across availavility zones.
 // If required is true, the rule is set as RequiredDuringSchedulingIgnoredDuringExecution, otherwise it is set as
 // PreferredDuringSchedulingIgnoredDuringExecution.
-func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string, required bool) {
+func (c *DeploymentConfig) SetMultizoneSpread(labels map[string]string, required bool) {
 	if labels == nil {
 		return
 	}
@@ -383,7 +383,7 @@ func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZon
 		default:
 			multiZoneRequired = true
 		}
-		c.setMultizoneSpread(multiZoneSpreadLabels, multiZoneRequired)
+		c.SetMultizoneSpread(multiZoneSpreadLabels, multiZoneRequired)
 		c.setNodeSpread(multiZoneSpreadLabels)
 	}
 }
