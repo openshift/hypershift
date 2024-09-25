@@ -629,19 +629,21 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy the CVO conditions from the HCP.
 	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
-		hyperv1.ClusterVersionSucceeding:      nil,
-		hyperv1.ClusterVersionProgressing:     nil,
-		hyperv1.ClusterVersionReleaseAccepted: nil,
-		hyperv1.ClusterVersionUpgradeable:     nil,
-		hyperv1.ClusterVersionAvailable:       nil,
+		hyperv1.ClusterVersionSucceeding:       nil,
+		hyperv1.ClusterVersionProgressing:      nil,
+		hyperv1.ClusterVersionReleaseAccepted:  nil,
+		hyperv1.ClusterVersionRetrievedUpdates: nil,
+		hyperv1.ClusterVersionUpgradeable:      nil,
+		hyperv1.ClusterVersionAvailable:        nil,
 	}
 	if hcp != nil {
 		hcpCVOConditions = map[hyperv1.ConditionType]*metav1.Condition{
-			hyperv1.ClusterVersionSucceeding:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing)),
-			hyperv1.ClusterVersionProgressing:     meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionProgressing)),
-			hyperv1.ClusterVersionReleaseAccepted: meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionReleaseAccepted)),
-			hyperv1.ClusterVersionUpgradeable:     meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable)),
-			hyperv1.ClusterVersionAvailable:       meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable)),
+			hyperv1.ClusterVersionSucceeding:       meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing)),
+			hyperv1.ClusterVersionProgressing:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionProgressing)),
+			hyperv1.ClusterVersionReleaseAccepted:  meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionReleaseAccepted)),
+			hyperv1.ClusterVersionRetrievedUpdates: meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionRetrievedUpdates)),
+			hyperv1.ClusterVersionUpgradeable:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable)),
+			hyperv1.ClusterVersionAvailable:        meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable)),
 		}
 	}
 
@@ -679,6 +681,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 				hcCVOCondition.Status = status
 			}
+		}
+
+		if hcCVOCondition.Type == string(hyperv1.ClusterVersionRetrievedUpdates) && hcCVOCondition.Reason == hyperv1.StatusUnknownReason {
+			// until all HostedControlPlane controllers understand how to propagate this condition, avoid bothering folks with unknown status in HostedCluster conditions.
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.ClusterVersionRetrievedUpdates))
+			continue
 		}
 
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *hcCVOCondition)

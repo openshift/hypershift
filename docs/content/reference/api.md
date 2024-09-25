@@ -3384,6 +3384,9 @@ and kube resource deletion that affects cloud infra like service type load balan
 </tr><tr><td><p>&#34;ClusterVersionReleaseAccepted&#34;</p></td>
 <td><p>ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.</p>
 </td>
+</tr><tr><td><p>&#34;ClusterVersionRetrievedUpdates&#34;</p></td>
+<td><p>ClusterVersionRetrievedUpdates bubbles up RetrievedUpdates from the CVO.</p>
+</td>
 </tr><tr><td><p>&#34;ClusterVersionSucceeding&#34;</p></td>
 <td><p>ClusterVersionSucceeding indicates the current status of the desired release
 version of the HostedCluster as indicated by the Failing condition in the

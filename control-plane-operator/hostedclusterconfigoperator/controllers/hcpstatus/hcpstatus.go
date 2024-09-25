@@ -106,11 +106,12 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 	}
 
 	cvoConditions := map[hyperv1.ConditionType]*configv1.ClusterOperatorStatusCondition{
-		hyperv1.ClusterVersionFailing:         findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "Failing"),
-		hyperv1.ClusterVersionReleaseAccepted: findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "ReleaseAccepted"),
-		hyperv1.ClusterVersionProgressing:     findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorProgressing),
-		hyperv1.ClusterVersionUpgradeable:     findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorUpgradeable),
-		hyperv1.ClusterVersionAvailable:       findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorAvailable),
+		hyperv1.ClusterVersionFailing:          findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "Failing"),
+		hyperv1.ClusterVersionReleaseAccepted:  findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "ReleaseAccepted"),
+		hyperv1.ClusterVersionRetrievedUpdates: findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.RetrievedUpdates),
+		hyperv1.ClusterVersionProgressing:      findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorProgressing),
+		hyperv1.ClusterVersionUpgradeable:      findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorUpgradeable),
+		hyperv1.ClusterVersionAvailable:        findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorAvailable),
 	}
 
 	for conditionType, condition := range cvoConditions {

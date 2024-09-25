@@ -67,6 +67,8 @@ const (
 	ClusterVersionAvailable ConditionType = "ClusterVersionAvailable"
 	// ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.
 	ClusterVersionReleaseAccepted ConditionType = "ClusterVersionReleaseAccepted"
+	// ClusterVersionRetrievedUpdates bubbles up RetrievedUpdates from the CVO.
+	ClusterVersionRetrievedUpdates ConditionType = "ClusterVersionRetrievedUpdates"
 
 	// UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
 	// healthy.
