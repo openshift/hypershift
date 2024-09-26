@@ -34,6 +34,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
 	opts.AWSPlatform.Credentials.BindFlags(cmd.Flags())
+	opts.AWSPlatform.VPCOwnerCredentials.BindVPCOwnerFlags(cmd.Flags())
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -74,15 +75,16 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 
 	o.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
-		Region:                region,
-		InfraID:               infraID,
-		AWSCredentialsOpts:    &awsinfra.DelegatedAWSCredentialOptions{AWSCredentialsOpts: &o.AWSPlatform.Credentials},
-		Name:                  o.Name,
-		BaseDomain:            baseDomain,
-		BaseDomainPrefix:      baseDomainPrefix,
-		AwsInfraGracePeriod:   o.AWSPlatform.AwsInfraGracePeriod,
-		Log:                   o.Log,
-		CredentialsSecretData: secretData,
+		Region:                  region,
+		InfraID:                 infraID,
+		AWSCredentialsOpts:      &awsinfra.DelegatedAWSCredentialOptions{AWSCredentialsOpts: &o.AWSPlatform.Credentials},
+		Name:                    o.Name,
+		BaseDomain:              baseDomain,
+		BaseDomainPrefix:        baseDomainPrefix,
+		AwsInfraGracePeriod:     o.AWSPlatform.AwsInfraGracePeriod,
+		Log:                     o.Log,
+		CredentialsSecretData:   secretData,
+		VPCOwnerCredentialsOpts: o.AWSPlatform.VPCOwnerCredentials,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
@@ -91,11 +93,12 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	if !o.AWSPlatform.PreserveIAM {
 		o.Log.Info("Destroying IAM", "infraID", infraID)
 		destroyOpts := awsinfra.DestroyIAMOptions{
-			Region:                region,
-			AWSCredentialsOpts:    o.AWSPlatform.Credentials,
-			InfraID:               infraID,
-			Log:                   o.Log,
-			CredentialsSecretData: secretData,
+			Region:                  region,
+			AWSCredentialsOpts:      o.AWSPlatform.Credentials,
+			InfraID:                 infraID,
+			Log:                     o.Log,
+			CredentialsSecretData:   secretData,
+			VPCOwnerCredentialsOpts: o.AWSPlatform.VPCOwnerCredentials,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)

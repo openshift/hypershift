@@ -36,6 +36,7 @@ type CreateIAMOptions struct {
 	OutputFile                      string
 	KMSKeyARN                       string
 	AdditionalTags                  []string
+	VPCOwnerCredentialsOpts         awsutil.AWSCredentialsOptions
 
 	CredentialsSecretData *util.CredentialsSecretData
 
@@ -50,6 +51,9 @@ type CreateIAMOutput struct {
 	Roles              hyperv1.AWSRolesRef `json:"roles"`
 	KMSKeyARN          string              `json:"kmsKeyARN"`
 	KMSProviderRoleARN string              `json:"kmsProviderRoleARN"`
+
+	SharedIngressRoleARN      string `json:"sharedIngressRoleARN,omitempty"`
+	SharedControlPlaneRoleARN string `json:"sharedControlPlaneRoleARN,omitempty"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -77,6 +81,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("public-zone-id")
@@ -169,13 +174,30 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 
+	sharedVPC := false
+	if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
+		sharedVPC = true
+	}
+
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
-	results, err := o.CreateOIDCResources(iamClient, logger)
+	results, err := o.CreateOIDCResources(iamClient, logger, sharedVPC)
 	if err != nil {
 		return nil, err
 	}
+
+	if sharedVPC {
+		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession("cli-create-iam", nil, o.Region)
+		if err != nil {
+			return nil, err
+		}
+		vpcOwnerIAMClient := iam.New(vpcOwnerAWSSession, awsConfig)
+		if err := o.CreateSharedVPCRoles(vpcOwnerIAMClient, logger, results); err != nil {
+			return nil, err
+		}
+	}
+
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
 	results.KMSKeyARN = o.KMSKeyARN
