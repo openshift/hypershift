@@ -78,7 +78,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	}
 
 	var resourceGroups []string
-	resourceGroups = append(resourceGroups, o.ResourceGroupName)
+	resourceGroups = append(resourceGroups, o.GetResourceGroupName())
 
 	for _, rg := range additionalResourceGroups {
 		exists, err := resourceGroupClient.CheckExistence(ctx, rg, nil)
