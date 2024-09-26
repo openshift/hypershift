@@ -1489,7 +1489,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, "A")
 	g.Expect(err).ToNot(HaveOccurred(), "failed to find Route53 record %s", "*.apps."+clusterName+"."+baseDomain)
 
-	if len(record.ResourceRecords) == 0 {
+	if record == nil || len(record.ResourceRecords) == 0 {
 		t.Logf("Route53 record for HostedCluster %s not found: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
 	} else {
 		err = awsprivatelink.DeleteRecord(ctx, route53Client, zoneID, record)
