@@ -1136,8 +1136,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	{
 		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
-			log.Error(fmt.Errorf("configuration is invalid"), "reconciliation is blocked", "message", validConfig.Message)
-			return ctrl.Result{}, nil
+			// an error should be returned here because the ValidHostedClusterConfiguration status may be transient
+			return ctrl.Result{}, fmt.Errorf("configuration is invalid: %s", validConfig.Message)
 		}
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
