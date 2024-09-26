@@ -149,6 +149,7 @@ metadata:
 spec:
   arch: ppc64le
   clusterName: example
+  failureDomain: ""
   management:
     autoRepair: false
     upgradeType: Replace

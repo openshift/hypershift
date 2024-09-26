@@ -1644,6 +1644,10 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		},
 	}
 
+	if nodePool.Spec.FailureDomain != nil {
+		machineDeployment.Spec.Template.Spec.FailureDomain = nodePool.Spec.FailureDomain
+	}
+
 	// After a MachineDeployment is created we propagate label/taints directly into Machines.
 	// This is to avoid a NodePool label/taints to trigger a rolling upgrade.
 	// TODO(Alberto): drop this an rely on core in-place propagation once CAPI 1.4.0 https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.

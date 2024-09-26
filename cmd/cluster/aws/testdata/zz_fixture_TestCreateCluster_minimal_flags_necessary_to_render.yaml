@@ -118,6 +118,7 @@ metadata:
 spec:
   arch: amd64
   clusterName: example
+  failureDomain: ""
   management:
     autoRepair: false
     upgradeType: Replace

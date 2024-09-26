@@ -27,6 +27,7 @@ type CreateNodePoolOptions struct {
 	NodeUpgradeType hyperv1.UpgradeType
 	Arch            string
 	AutoRepair      bool
+	FailureDomain   string
 }
 
 type PlatformOptions interface {

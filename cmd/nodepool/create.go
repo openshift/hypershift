@@ -34,6 +34,7 @@ func NewCreateCommand() *cobra.Command {
 		ReleaseImage:    "",
 		NodeUpgradeType: hyperv1.UpgradeTypeReplace,
 		Arch:            "amd64",
+		FailureDomain:   "",
 	}
 
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "The name of the NodePool")
@@ -43,6 +44,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The release image for nodes. If empty, defaults to the same release image as the HostedCluster.")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
 	cmd.PersistentFlags().StringVar(&opts.Arch, "arch", opts.Arch, "The processor architecture for the NodePool (e.g. arm64, amd64)")
+	cmd.PersistentFlags().StringVar(&opts.FailureDomain, "failure-domain", opts.FailureDomain, "The failure domain for the NodePool")
 
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 	cmd.PersistentFlags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine auto-repair with machine health checks.")

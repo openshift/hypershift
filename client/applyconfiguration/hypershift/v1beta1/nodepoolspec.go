@@ -39,6 +39,7 @@ type NodePoolSpecApplyConfiguration struct {
 	PausedUntil             *string                                `json:"pausedUntil,omitempty"`
 	TuningConfig            []v1.LocalObjectReference              `json:"tuningConfig,omitempty"`
 	Arch                    *string                                `json:"arch,omitempty"`
+	FailureDomain           *string                                `json:"failureDomain,omitempty"`
 }
 
 // NodePoolSpecApplyConfiguration constructs an declarative configuration of the NodePoolSpec type for use with
@@ -171,5 +172,13 @@ func (b *NodePoolSpecApplyConfiguration) WithTuningConfig(values ...v1.LocalObje
 // If called multiple times, the Arch field is set to the value of the last call.
 func (b *NodePoolSpecApplyConfiguration) WithArch(value string) *NodePoolSpecApplyConfiguration {
 	b.Arch = &value
+	return b
+}
+
+// WithFailureDomain sets the FailureDomain field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the FailureDomain field is set to the value of the last call.
+func (b *NodePoolSpecApplyConfiguration) WithFailureDomain(value string) *NodePoolSpecApplyConfiguration {
+	b.FailureDomain = &value
 	return b
 }

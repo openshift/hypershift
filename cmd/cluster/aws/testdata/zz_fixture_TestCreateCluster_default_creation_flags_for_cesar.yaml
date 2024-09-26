@@ -121,6 +121,7 @@ metadata:
 spec:
   arch: amd64
   clusterName: cesar
+  failureDomain: ""
   management:
     autoRepair: true
     upgradeType: Replace

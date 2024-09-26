@@ -246,10 +246,10 @@ example-twxns         Ready    worker   88s     v1.27.4+18eadca
 Create additional NodePools for a guest cluster by specifying a name, number of
 replicas, and any additional information such as memory and cpu requirements.
 
-For example, let's create a NodePool with more CPUs assigned to the VMs (4 vs 2):
+For example, let's create a NodePool in another availability zone:
 
 ```shell linenums="1"
-export NODEPOOL_NAME=$CLUSTER_NAME-extra-cpu
+export NODEPOOL_NAME=$CLUSTER_NAME-az1
 export WORKER_COUNT="2"
 export IMAGE_NAME="rhcos"
 export FLAVOR="m1.xlarge"
@@ -259,7 +259,8 @@ hcp create nodepool openstack \
   --name $NODEPOOL_NAME \
   --node-count $WORKER_COUNT \
   --openstack-node-image-name $IMAGE_NAME \
-  --openstack-node-flavor $FLAVOR
+  --openstack-node-flavor $FLAVOR \
+  --failure-domain az1
 ```
 
 Check the status of the NodePool by listing `nodepool` resources in the `clusters`

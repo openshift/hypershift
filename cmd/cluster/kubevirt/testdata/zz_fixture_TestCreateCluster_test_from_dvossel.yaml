@@ -118,6 +118,7 @@ metadata:
 spec:
   arch: amd64
   clusterName: test1
+  failureDomain: ""
   management:
     autoRepair: false
     upgradeType: Replace

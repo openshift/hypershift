@@ -102,6 +102,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
+	flags.StringVar(&opts.FailureDomain, "failure-domain", opts.FailureDomain, "The failure domain for the NodePool")
 
 }
 
@@ -158,6 +159,7 @@ type RawCreateOptions struct {
 	PausedUntil                      string
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	OLMDisableDefaultSources         bool
+	FailureDomain                    string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -800,6 +802,7 @@ func defaultNodePool(opts *CreateOptions) func(platformType hyperv1.PlatformType
 				Arch:                    opts.Arch,
 				NodeDrainTimeout:        &metav1.Duration{Duration: opts.NodeDrainTimeout},
 				NodeVolumeDetachTimeout: &metav1.Duration{Duration: opts.NodeVolumeDetachTimeout},
+				FailureDomain:           ptr.To(opts.FailureDomain),
 			},
 		}
 	}
