@@ -186,7 +186,10 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.HostedCluster{}
-			conversion.Convert_HostedCluster_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			err := conversion.Convert_HostedCluster_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			if err != nil {
+				return err
+			}
 			destList.Items = append(destList.Items, *destItem)
 		}
 	case *hyperv1alpha1.NodePoolList:
@@ -196,7 +199,10 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.NodePool{}
-			conversion.Convert_NodePool_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			err := conversion.Convert_NodePool_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			if err != nil {
+				return err
+			}
 			destList.Items = append(destList.Items, *destItem)
 		}
 	case *hyperv1alpha1.AWSEndpointServiceList:
@@ -206,7 +212,10 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.AWSEndpointService{}
-			conversion.Convert_AWSEndpointService_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			err := conversion.Convert_AWSEndpointService_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			if err != nil {
+				return err
+			}
 			destList.Items = append(destList.Items, *destItem)
 		}
 	case *hyperv1alpha1.HostedControlPlaneList:
@@ -216,7 +225,10 @@ func convertListToV1Beta1(src, dest crclient.ObjectList) error {
 		}
 		for i := range srcList.Items {
 			destItem := &hyperv1.HostedControlPlane{}
-			conversion.Convert_HostedControlPlane_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			err := conversion.Convert_HostedControlPlane_v1alpha1_to_v1beta1(&srcList.Items[i], destItem)
+			if err != nil {
+				return err
+			}
 			destList.Items = append(destList.Items, *destItem)
 		}
 	}

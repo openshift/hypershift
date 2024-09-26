@@ -978,7 +978,10 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 
 	r.setAllNodesHealthyCondition(nodePool, machines)
 
-	r.setCIDRConflictCondition(nodePool, machines, hc)
+	err = r.setCIDRConflictCondition(nodePool, machines, hc)
+	if err != nil {
+		return err
+	}
 
 	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		err = r.setAllMachinesLMCondition(ctx, nodePool, hc)
@@ -1290,7 +1293,7 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 				Message:            err.Error(),
 				ObservedGeneration: generation,
 			}
-			return nil, fmt.Errorf("failed to get token secret: %w", err)
+			return condition, fmt.Errorf("failed to get token secret: %w", err)
 		} else {
 			condition = &hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
@@ -1337,7 +1340,7 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 				Message:            err.Error(),
 				ObservedGeneration: generation,
 			}
-			return nil, fmt.Errorf("failed to get token secret: %w", err)
+			return condition, fmt.Errorf("failed to get token secret: %w", err)
 		} else {
 			condition = &hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,

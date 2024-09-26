@@ -99,8 +99,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
@@ -138,7 +138,9 @@ func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
 		if err != nil {
 			return fmt.Errorf("cannot create output file: %w", err)
 		}
-		defer out.Close()
+		defer func(out *os.File) {
+			_ = out.Close()
+		}(out)
 	}
 	outputBytes, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {

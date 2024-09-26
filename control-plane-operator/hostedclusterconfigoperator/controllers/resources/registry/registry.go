@@ -47,6 +47,6 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.Platf
 
 func generateImageRegistrySecret() string {
 	num := make([]byte, 64)
-	rand.Read(num)
+	_, _ = rand.Read(num)
 	return hex.EncodeToString(num)
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
@@ -235,14 +235,14 @@ func NewCreateCommand() *cobra.Command {
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("cloud-connection")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("cloud-connection")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
-	cmd.MarkFlagRequired("base-domain")
-	cmd.MarkFlagRequired("resource-group")
-	cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("resource-group")
+	_ = cmd.MarkFlagRequired("infra-id")
 
 	logger := hypershiftLog.Log.WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -442,7 +442,10 @@ func (infra *Infra) setupSecrets(logger logr.Logger, options *CreateInfraOptions
 	}
 
 	if options.RecreateSecrets {
-		deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
+		err = deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
+		if err != nil {
+			return err
+		}
 	}
 
 	logger.Info("Creating Secrets ...")
@@ -788,7 +791,7 @@ func (infra *Infra) createCloudInstance(ctx context.Context, logger logr.Logger,
 		return resourceInstance, nil
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx context.Context) (bool, error) {
 		resourceInstance, _, err = rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: resourceInstance.ID})
 		logger.Info("Waiting for cloud instance to up", "id", resourceInstance.ID, "state", *resourceInstance.State)
 
@@ -806,7 +809,7 @@ func (infra *Infra) createCloudInstance(ctx context.Context, logger logr.Logger,
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, cloudInstanceCreationTimeout, true, f); err != nil {
 		return nil, err
 	}
 
@@ -965,7 +968,7 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 		return nil, err
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx context.Context) (bool, error) {
 
 		vpc, _, err = v1.GetVPCWithContext(ctx, &vpcv1.GetVPCOptions{ID: vpc.ID})
 		if err != nil {
@@ -978,7 +981,7 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, vpcCreationTimeout, true, f); err != nil {
 		return nil, err
 	}
 
@@ -988,10 +991,10 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 			SecurityGroupID: vpc.DefaultSecurityGroup.ID,
 
 			SecurityGroupRulePrototype: &vpcv1.SecurityGroupRulePrototype{
-				Direction: utilpointer.String("inbound"),
-				Protocol:  utilpointer.String("tcp"),
-				PortMax:   utilpointer.Int64(port),
-				PortMin:   utilpointer.Int64(port),
+				Direction: ptr.To("inbound"),
+				Protocol:  ptr.To("tcp"),
+				PortMax:   ptr.To[int64](port),
+				PortMin:   ptr.To[int64](port),
 			},
 		})
 
@@ -1120,7 +1123,7 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, logger logr.Logger, opt
 		return nil, fmt.Errorf("CreateSubnet returned nil")
 	}
 
-	f := func() (bool, error) {
+	f := func(ctx context.Context) (bool, error) {
 
 		subnet, _, err = v1.GetSubnetWithContext(ctx, &vpcv1.GetSubnetOptions{ID: subnet.ID})
 		if err != nil {
@@ -1133,7 +1136,7 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, logger logr.Logger, opt
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f); err != nil {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, vpcCreationTimeout, true, f); err != nil {
 		return nil, err
 	}
 
@@ -1176,7 +1179,7 @@ func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, logger logr
 	}
 
 	gwIntf, resp, err := directLinkV1.GetGateway(&directlinkv1.GetGatewayOptions{ID: &infra.CloudConnectionID})
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil && resp != nil && resp.StatusCode != 200 {
 		return fmt.Errorf("error getting gateway: %w, status code: %d", err, resp.StatusCode)
 	}
 
@@ -1340,9 +1343,9 @@ func (infra *Infra) createPowerVSDhcp(logger logr.Logger, options *CreateInfraOp
 	var dhcpServer *models.DHCPServerDetail
 
 	// With the recent update default DNS server is pointing to loop back address in DHCP. Hence, passed 1.1.1.1 public DNS resolver.
-	dhcpServerCreateOpts := &models.DHCPServerCreate{DNSServer: utilpointer.String("1.1.1.1")}
+	dhcpServerCreateOpts := &models.DHCPServerCreate{DNSServer: ptr.To("1.1.1.1")}
 	if !options.PER {
-		dhcpServerCreateOpts.CloudConnectionID = utilpointer.String(infra.CloudConnectionID)
+		dhcpServerCreateOpts.CloudConnectionID = ptr.To(infra.CloudConnectionID)
 	}
 	dhcp, err := client.Create(dhcpServerCreateOpts)
 
@@ -1412,14 +1415,14 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, logger logr.Logg
 		vpcL = append(vpcL, &models.CloudConnectionVPC{VpcID: &vpcCrn})
 
 		cloudConnUpdateOpt.Vpc = &models.CloudConnectionEndpointVPC{Enabled: true, Vpcs: vpcL}
-		cloudConnUpdateOpt.GlobalRouting = utilpointer.Bool(true)
+		cloudConnUpdateOpt.GlobalRouting = ptr.To(true)
 
 		_, job, err := client.Update(*cloudConn.CloudConnectionID, &cloudConnUpdateOpt)
 		if err != nil {
 			logger.Error(err, "error updating cloud connection with vpc")
 			return fmt.Errorf("error updating cloud connection with vpc %w", err)
 		}
-		err = monitorPowerVsJob(logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout)
+		err = monitorPowerVsJob(ctx, logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout)
 		if err != nil {
 			logger.Error(err, "error attaching cloud connection with vpc")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
@@ -1433,7 +1436,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, logger logr.Logg
 			logger.Error(err, "error attaching cloud connection with dhcp subnet")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
 		}
-		if err = monitorPowerVsJob(logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout); err != nil {
+		if err = monitorPowerVsJob(ctx, logger, *job.ID, jobClient, infra.CloudInstanceID, cloudConnUpdateTimeout); err != nil {
 			logger.Error(err, "error attaching cloud connection with dhcp subnet")
 			return fmt.Errorf("error attaching cloud connection with dhcp subnet %w", err)
 		}
@@ -1508,7 +1511,7 @@ func (infra *Infra) setupTransitGateway(ctx context.Context, logger logr.Logger,
 
 	tgapisv1, err := transitgatewayapisv1.NewTransitGatewayApisV1(&transitgatewayapisv1.TransitGatewayApisV1Options{
 		Authenticator: getIAMAuth(),
-		Version:       utilpointer.String(currentDate),
+		Version:       ptr.To(currentDate),
 	})
 
 	if err != nil {
@@ -1562,10 +1565,10 @@ func (infra *Infra) createTransitGateway(ctx context.Context, logger logr.Logger
 	// Checking if global routing required for transit gateway.
 	globalRouting := regionutils.IsGlobalRoutingRequiredForTG(options.Region, options.VPCRegion)
 	tg, _, err = tgapisv1.CreateTransitGatewayWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayOptions{
-		Location:      utilpointer.String(options.TransitGatewayLocation),
-		Name:          utilpointer.String(transitGatewayName),
-		Global:        utilpointer.Bool(globalRouting || options.TransitGatewayGlobalRouting),
-		ResourceGroup: &transitgatewayapisv1.ResourceGroupIdentity{ID: utilpointer.String(infra.ResourceGroupID)},
+		Location:      ptr.To(options.TransitGatewayLocation),
+		Name:          ptr.To(transitGatewayName),
+		Global:        ptr.To(globalRouting || options.TransitGatewayGlobalRouting),
+		ResourceGroup: &transitgatewayapisv1.ResourceGroupIdentity{ID: ptr.To(infra.ResourceGroupID)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating transit gateway: %w", err)
@@ -1573,9 +1576,9 @@ func (infra *Infra) createTransitGateway(ctx context.Context, logger logr.Logger
 
 	tgVPCCon, _, err := tgapisv1.CreateTransitGatewayConnectionWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayConnectionOptions{
 		TransitGatewayID: tg.ID,
-		NetworkType:      utilpointer.String("vpc"),
-		NetworkID:        utilpointer.String(infra.VPCCRN),
-		Name:             utilpointer.String(fmt.Sprintf("%s-vpc-con", transitGatewayName)),
+		NetworkType:      ptr.To("vpc"),
+		NetworkID:        ptr.To(infra.VPCCRN),
+		Name:             ptr.To(fmt.Sprintf("%s-vpc-con", transitGatewayName)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating vpc connection in transit gateway: %w", err)
@@ -1583,9 +1586,9 @@ func (infra *Infra) createTransitGateway(ctx context.Context, logger logr.Logger
 
 	tgPVSCon, _, err := tgapisv1.CreateTransitGatewayConnectionWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayConnectionOptions{
 		TransitGatewayID: tg.ID,
-		NetworkType:      utilpointer.String("power_virtual_server"),
-		NetworkID:        utilpointer.String(infra.CloudInstanceCRN),
-		Name:             utilpointer.String(fmt.Sprintf("%s-pvs-con", transitGatewayName)),
+		NetworkType:      ptr.To("power_virtual_server"),
+		NetworkID:        ptr.To(infra.CloudInstanceCRN),
+		Name:             ptr.To(fmt.Sprintf("%s-pvs-con", transitGatewayName)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating powervs connection in transit gateway: %w", err)
@@ -1595,7 +1598,7 @@ func (infra *Infra) createTransitGateway(ctx context.Context, logger logr.Logger
 		f := func(ctx2 context.Context) (bool, error) {
 			tgConn, _, err := tgapisv1.GetTransitGatewayConnectionWithContext(ctx2, &transitgatewayapisv1.GetTransitGatewayConnectionOptions{
 				TransitGatewayID: tg.ID,
-				ID:               utilpointer.String(connectionID),
+				ID:               ptr.To(connectionID),
 			})
 			if err != nil {
 				return false, err

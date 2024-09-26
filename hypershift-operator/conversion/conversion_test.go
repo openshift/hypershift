@@ -184,7 +184,8 @@ func serializeResource(obj runtime.Object) []byte {
 }
 
 func randomBool() bool {
-	rand.Seed(time.Now().UnixNano())
+	seed := time.Now().UnixNano()
+	rand.NewSource(seed)
 	return rand.Intn(2) == 1
 }
 

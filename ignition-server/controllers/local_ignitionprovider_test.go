@@ -67,7 +67,10 @@ func TestExtractMCOBinaries(t *testing.T) {
 			mcoImage := "fake"
 			pullSecret := []byte{}
 			binDir := filepath.Join(tempDir, "bin")
-			os.Mkdir(binDir, 0755)
+			err = os.Mkdir(binDir, 0755)
+			if err != nil {
+				print(err.Error())
+			}
 
 			// Create a fake file cache that returns the expected binaries.
 			imageFileCache := &imageFileCache{

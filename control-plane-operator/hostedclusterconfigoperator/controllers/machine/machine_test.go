@@ -143,7 +143,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{{
-				TargetPort: intstr.FromInt(2222),
+				TargetPort: intstr.FromInt32(2222),
 				Protocol:   corev1.ProtocolTCP,
 				Name:       "port1",
 			}},
@@ -158,7 +158,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{{
-				TargetPort: intstr.FromInt(3333),
+				TargetPort: intstr.FromInt32(3333),
 				Protocol:   corev1.ProtocolTCP,
 				Name:       "port1",
 			}},
@@ -177,7 +177,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{{
-				TargetPort: intstr.FromInt(4444),
+				TargetPort: intstr.FromInt32(4444),
 				Protocol:   corev1.ProtocolTCP,
 				Name:       "port1",
 			}},
@@ -196,7 +196,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{{
-				TargetPort: intstr.FromInt(4444),
+				TargetPort: intstr.FromInt32(4444),
 				Protocol:   corev1.ProtocolTCP,
 				Name:       "port1",
 			}},
@@ -370,11 +370,11 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		return service
 	}
 
-	capiv1.AddToScheme(scheme.Scheme)
-	hyperv1.AddToScheme(scheme.Scheme)
-	kubevirtv1.AddToScheme(scheme.Scheme)
-	discoveryv1.AddToScheme(scheme.Scheme)
-	corev1.AddToScheme(scheme.Scheme)
+	_ = capiv1.AddToScheme(scheme.Scheme)
+	_ = hyperv1.AddToScheme(scheme.Scheme)
+	_ = kubevirtv1.AddToScheme(scheme.Scheme)
+	_ = discoveryv1.AddToScheme(scheme.Scheme)
+	_ = corev1.AddToScheme(scheme.Scheme)
 	testCases := []struct {
 		name                          string
 		machines                      []capiv1.Machine
@@ -497,12 +497,18 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			}
 			obtainedEndpointSliceList := discoveryv1.EndpointSliceList{}
 			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedEndpointSliceList)).To(Succeed())
-			yaml.Marshal(obtainedEndpointSliceList)
+			_, err := yaml.Marshal(obtainedEndpointSliceList)
+			if err != nil {
+				t.Fatalf("failed to marshal endpoint slice list: %v", err)
+			}
 			g.Expect(obtainedEndpointSliceList.Items).To(WithTransform(resetResourceVersionFromEndpointSlices, ConsistOf(tc.expectedIngressEndpointSlices)))
 
 			obtainedServicesList := corev1.ServiceList{}
 			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedServicesList)).To(Succeed())
-			yaml.Marshal(obtainedServicesList)
+			_, err = yaml.Marshal(obtainedServicesList)
+			if err != nil {
+				t.Fatalf("failed to marshal service list: %v", err)
+			}
 			g.Expect(obtainedServicesList.Items).To(WithTransform(resetResourceVersionFromServices, ConsistOf(tc.expectedServices)))
 
 		})

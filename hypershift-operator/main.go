@@ -77,7 +77,7 @@ func main() {
 	cmd := &cobra.Command{
 		Use: "hypershift-operator",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -89,7 +89,7 @@ func main() {
 	cmd.AddCommand(etcdrecovery.NewRecoveryCommand())
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }

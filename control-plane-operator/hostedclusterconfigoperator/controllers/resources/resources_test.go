@@ -164,7 +164,10 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
-		r.Reconcile(context.Background(), controllerruntime.Request{})
+		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+		if err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
 			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
 		}

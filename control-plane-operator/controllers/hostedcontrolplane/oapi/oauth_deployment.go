@@ -6,15 +6,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-
-	policyv1 "k8s.io/api/policy/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -22,6 +13,14 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -64,8 +63,8 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
 
-	maxUnavailable := intstr.FromInt(1)
-	maxSurge := intstr.FromInt(3)
+	maxUnavailable := intstr.FromInt32(1)
+	maxSurge := intstr.FromInt32(3)
 
 	auditConfigBytes, ok := auditConfig.Data[auditPolicyConfigMapKey]
 	if !ok {
@@ -92,8 +91,8 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 	deployment.Spec.Template.Annotations[oapiAuditConfigHashAnnotation] = auditConfigHash
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken:  pointer.Bool(false),
-		TerminationGracePeriodSeconds: pointer.Int64(120),
+		AutomountServiceAccountToken:  ptr.To(false),
+		TerminationGracePeriodSeconds: ptr.To[int64](120),
 		Containers: []corev1.Container{
 			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(p)),
 		},
@@ -232,7 +231,7 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oauthVolumeEtcdClientCA() *corev1.Volume {
@@ -255,7 +254,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftOAuthAPIServerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oauthVolumeEtcdClientCert() *corev1.Volume {
@@ -300,7 +299,7 @@ func oauthAuditWebhookConfigFile() string {
 func buildOAuthVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *OAuthDeploymentParams) error {

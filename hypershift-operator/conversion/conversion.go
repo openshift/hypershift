@@ -28,10 +28,10 @@ var (
 )
 
 func init() {
-	configv1.AddToScheme(localScheme)
-	clientgoscheme.AddToScheme(localScheme)
-	hyperv1alpha1.AddToScheme(localScheme)
-	hyperv1beta1.AddToScheme(localScheme)
+	_ = configv1.AddToScheme(localScheme)
+	_ = clientgoscheme.AddToScheme(localScheme)
+	_ = hyperv1alpha1.AddToScheme(localScheme)
+	_ = hyperv1beta1.AddToScheme(localScheme)
 }
 
 // HostedCluster conversion

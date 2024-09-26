@@ -378,7 +378,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 }
 
 func TestValidateManagement(t *testing.T) {
-	intstrPointer1 := intstr.FromInt(1)
+	intstrPointer1 := intstr.FromInt32(1)
 	testCases := []struct {
 		name     string
 		nodePool *hyperv1.NodePool
@@ -724,7 +724,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 
 func TestListMachineTemplatesAWS(t *testing.T) {
 	g := NewWithT(t)
-	capiaws.AddToScheme(api.Scheme)
+	_ = capiaws.AddToScheme(api.Scheme)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,
@@ -936,8 +936,8 @@ func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
 }
 
 func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
-	intPointer1 := intstr.FromInt(1)
-	intPointer2 := intstr.FromInt(2)
+	intPointer1 := intstr.FromInt32(1)
+	intPointer2 := intstr.FromInt32(2)
 	strPointer10 := intstr.FromString("10%")
 	strPointer75 := intstr.FromString("75%")
 	testCases := []struct {
@@ -2227,7 +2227,10 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			g := NewWithT(t)
 			r := &NodePoolReconciler{}
 			mhc := &capiv1.MachineHealthCheck{}
-			r.reconcileMachineHealthCheck(context.Background(), mhc, tt.np, tt.hc, "cluster")
+			err := r.reconcileMachineHealthCheck(context.Background(), mhc, tt.np, tt.hc, "cluster")
+			if err != nil {
+				t.Fatalf("reconcileMachineHealthCheck failed: %v", err)
+			}
 			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
 		})
 	}
