@@ -309,86 +309,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	var kubevirtBootImage kubevirt.BootImage
-	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
-	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
-	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
-	// to the ignition settings, and so it will be ready, or almost ready, when the VMs are created.
-	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		if err := kubevirt.PlatformValidation(nodePool); err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
-		}
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
-
-		infraNS := controlPlaneNamespace
-		if hcluster.Spec.Platform.Kubevirt != nil &&
-			hcluster.Spec.Platform.Kubevirt.Credentials != nil &&
-			len(hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace) > 0 {
-
-			infraNS = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
-
-			if nodePool.Status.Platform == nil {
-				nodePool.Status.Platform = &hyperv1.NodePoolPlatformStatus{}
-			}
-
-			if nodePool.Status.Platform.KubeVirt == nil {
-				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
-			}
-
-			nodePool.Status.Platform.KubeVirt.Credentials = hcluster.Spec.Platform.Kubevirt.Credentials.DeepCopy()
-		}
-		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage, infraNS)
-		if err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPlatformImageType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
-		}
-
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPlatformImageType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %s", kubevirtBootImage.String()),
-			ObservedGeneration: nodePool.Generation,
-		})
-
-		uid := string(nodePool.GetUID())
-
-		var creds *hyperv1.KubevirtPlatformCredentials
-
-		if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
-			creds = hcluster.Spec.Platform.Kubevirt.Credentials
-		}
-
-		kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, creds, controlPlaneNamespace, hcluster.GetNamespace())
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get KubeVirt external infra-cluster: %w", err)
-		}
-		err = kubevirtBootImage.CacheImage(ctx, kvInfraClient.GetInfraClient(), nodePool, uid)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to create or validate KubeVirt image cache: %w", err)
-		}
-
-		r.addKubeVirtCacheNameToStatus(kubevirtBootImage, nodePool)
-
-		// If this is a new nodepool, or we're currently updating a nodepool, then it is safe to
-		// use the new topologySpreadConstraints feature over pod anti-affinity when
-		// spreading out the VMs across the infra cluster
-		if nodePool.Status.Version == "" || isUpdatingVersion(nodePool, releaseImage.Version()) {
-			nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation] = "true"
-		}
+	if err := r.setPlatformConditions(ctx, hcluster, nodePool, controlPlaneNamespace, releaseImage); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Validate IgnitionEndpoint.
@@ -471,82 +393,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Type:               hyperv1.NodePoolValidArchPlatform,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
-			ObservedGeneration: nodePool.Generation,
-		})
-	}
-
-	// Validate AWS platform specific input
-	var ami string
-	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
-		if hcluster.Spec.Platform.AWS == nil {
-			return ctrl.Result{}, fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
-		}
-		if nodePool.Spec.Platform.AWS.AMI != "" {
-			// User-defined AMIs cannot be validated
-			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
-		} else {
-			// TODO: Should the region be included in the NodePool platform information?
-			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
-			if err != nil {
-				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-					Type:               hyperv1.NodePoolValidPlatformImageType,
-					Status:             corev1.ConditionFalse,
-					Reason:             hyperv1.NodePoolValidationFailedReason,
-					Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-					ObservedGeneration: nodePool.Generation,
-				})
-				return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
-			}
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPlatformImageType,
-				Status:             corev1.ConditionTrue,
-				Reason:             hyperv1.AsExpectedReason,
-				Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
-				ObservedGeneration: nodePool.Generation,
-			})
-		}
-
-		if hcluster.Status.Platform == nil || hcluster.Status.Platform.AWS == nil || hcluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.DefaultAWSSecurityGroupNotReadyReason,
-				Message:            "Waiting for AWS default security group to be created for hosted cluster",
-				ObservedGeneration: nodePool.Generation,
-			})
-		} else {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
-				Status:             corev1.ConditionTrue,
-				Reason:             hyperv1.AsExpectedReason,
-				Message:            "NodePool has a default security group",
-				ObservedGeneration: nodePool.Generation,
-			})
-		}
-	}
-
-	// Validate PowerVS platform specific input
-	var coreOSPowerVSImage *releaseinfo.CoreOSPowerVSImage
-	var powervsImageRegion string
-	var powervsBootImage string
-	if nodePool.Spec.Platform.Type == hyperv1.PowerVSPlatform {
-		coreOSPowerVSImage, powervsImageRegion, err = getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
-		if err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPlatformImageType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("Couldn't discover a PowerVS Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover a PowerVS Image for release image: %w", err)
-		}
-		powervsBootImage = coreOSPowerVSImage.Release
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPlatformImageType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
@@ -759,8 +605,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
-	// Store new template hash.
-
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
 		nodePool.Status.Version = targetVersion
@@ -776,20 +620,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
-	// CoreOS images in the IBM Cloud are hosted in the IBM Cloud Object Storage for PowerVS platform, these images
-	// needs to be imported into the PowerVS service instance needed for the machines. IBMPowerVSImage is the spec
-	// controlled by the CAPIBM to import these images and used in the machine deployments.
-	if nodePool.Spec.Platform.Type == hyperv1.PowerVSPlatform {
-		ibmPowerVSImage := IBMPowerVSImage(controlPlaneNamespace, coreOSPowerVSImage.Release)
-		if result, err := r.CreateOrUpdate(ctx, r.Client, ibmPowerVSImage, func() error {
-			return reconcileIBMPowerVSImage(ibmPowerVSImage, hcluster, nodePool, infraID, powervsImageRegion, coreOSPowerVSImage)
-		}); err != nil {
-			return ctrl.Result{}, err
-		} else {
-			log.Info("Reconciled IBMPowerVSImage", "result", result)
-		}
-	}
-
 	if err := capi.Reconcile(ctx); err != nil {
 		if _, isNotReady := err.(*NotReadyError); isNotReady {
 			log.Info("Waiting to create machine template", "message", err.Error())
@@ -797,9 +627,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		return ctrl.Result{}, err
 	}
-
 	return ctrl.Result{}, nil
-
 }
 
 func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
@@ -1804,4 +1632,17 @@ func validateHCPayloadSupportsNodePoolCPUArch(hc *hyperv1.HostedCluster, np *hyp
 	}
 
 	return fmt.Errorf("NodePool CPU arch, %s, is not supported by the HostedCluster payload type, %s; either change the NodePool CPU arch or use a multi-arch release image", np.Spec.Arch, hc.Status.PayloadArch)
+}
+
+func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		return r.setKubevirtConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+	case hyperv1.AWSPlatform:
+		return r.setAWSConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+	case hyperv1.PowerVSPlatform:
+		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+	default:
+		return nil
+	}
 }
