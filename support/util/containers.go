@@ -75,6 +75,9 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 	if opts.WaitForLabeledPodsGone != "" {
 		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-labeled-pods-gone=%s", opts.WaitForLabeledPodsGone))
 	}
+	if opts.WaitForClusterRolebinding != "" {
+		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-cluster-rolebinding=%s", opts.WaitForClusterRolebinding))
+	}
 	if len(spec.InitContainers) == 0 || spec.InitContainers[0].Name != "availability-prober" {
 		spec.InitContainers = append([]corev1.Container{{}}, spec.InitContainers...)
 	}
@@ -88,6 +91,7 @@ type AvailabilityProberOpts struct {
 	RequiredAPIs                  []schema.GroupVersionKind
 	WaitForInfrastructureResource bool
 	WaitForLabeledPodsGone        string
+	WaitForClusterRolebinding     string
 }
 
 type AvailabilityProberOpt func(*AvailabilityProberOpts)
@@ -98,5 +102,6 @@ func WithOptions(opts *AvailabilityProberOpts) AvailabilityProberOpt {
 		o.RequiredAPIs = opts.RequiredAPIs
 		o.WaitForInfrastructureResource = opts.WaitForInfrastructureResource
 		o.WaitForLabeledPodsGone = opts.WaitForLabeledPodsGone
+		o.WaitForClusterRolebinding = opts.WaitForClusterRolebinding
 	}
 }

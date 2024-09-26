@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: configs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: configs,client-token
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       creationTimestamp: null
       labels:
@@ -23,11 +23,12 @@ spec:
         hypershift.openshift.io/control-plane-component: cluster-network-operator
         name: cluster-network-operator
     spec:
+      automountServiceAccountToken: true
       containers:
       - args:
         - start
         - --listen=0.0.0.0:9104
-        - --kubeconfig=/etc/hosted-kubernetes/kubeconfig
+        - --kubeconfig=/configs/hosted
         - --namespace=openshift-network-operator
         - --extra-clusters=management=/configs/management
         command:
@@ -91,10 +92,12 @@ spec:
             memory: 100Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /etc/hosted-kubernetes
-          name: hosted-etc-kube
         - mountPath: /configs
           name: configs
+        - mountPath: /var/run/secrets/kubernetes.io/hosted
+          name: client-token
+        - mountPath: /etc/certificate/ca
+          name: ca-bundle
       - args:
         - run
         command:
@@ -116,6 +119,32 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+      - args:
+        - --service-account-namespace
+        - openshift-network-operator
+        - --service-account-name
+        - cluster-network-operator
+        - --token-file
+        - /var/client-token/token
+        - --token-audience
+        - ""
+        - --kubeconfig
+        - /etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        imagePullPolicy: IfNotPresent
+        name: client-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/client-token
+          name: client-token
+        - mountPath: /etc/kubernetes
+          name: hosted-etc-kube
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -127,6 +156,7 @@ spec:
         - --required-api=network.operator.openshift.io,v1,EgressRouter
         - --required-api=network.operator.openshift.io,v1,OperatorPKI
         - --wait-for-infrastructure-resource
+        - --wait-for-cluster-rolebinding=cluster-network-operator
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
@@ -152,10 +182,38 @@ spec:
         - mountPath: /etc/hosted-kubernetes
           name: hosted-etc-kube
       - args:
+        - --service-account-namespace
+        - openshift-network-operator
+        - --service-account-name
+        - cluster-network-operator
+        - --token-file
+        - /var/client-token/token
+        - --token-audience
+        - ""
+        - --kubeconfig
+        - /etc/kubernetes/kubeconfig
+        - --oneshot
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        imagePullPolicy: IfNotPresent
+        name: init-client-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/client-token
+          name: client-token
+        - mountPath: /etc/kubernetes
+          name: hosted-etc-kube
+      - args:
         - -c
-        - |2-
-
+        - |
+          #!/bin/bash
           set -xeuo pipefail
+
           kc=/configs/management
           kubectl --kubeconfig $kc config set clusters.default.server "https://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}"
           kubectl --kubeconfig $kc config set clusters.default.certificate-authority /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
@@ -163,6 +221,16 @@ spec:
           kubectl --kubeconfig $kc config set contexts.default.cluster default
           kubectl --kubeconfig $kc config set contexts.default.user admin
           kubectl --kubeconfig $kc config set contexts.default.namespace $(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+          kubectl --kubeconfig $kc config use-context default
+
+
+          kc=/configs/hosted
+          kubectl --kubeconfig $kc config set clusters.default.server "https://kube-apiserver:${KUBE_APISERVER_SERVICE_PORT}"
+          kubectl --kubeconfig $kc config set clusters.default.certificate-authority /etc/certificate/ca/ca.crt
+          kubectl --kubeconfig $kc config set users.admin.tokenFile /var/run/secrets/kubernetes.io/hosted/token
+          kubectl --kubeconfig $kc config set contexts.default.cluster default
+          kubectl --kubeconfig $kc config set contexts.default.user admin
+          kubectl --kubeconfig $kc config set contexts.default.namespace openshift-network-operator
           kubectl --kubeconfig $kc config use-context default
         command:
         - /bin/bash
@@ -177,6 +245,10 @@ spec:
           name: hosted-etc-kube
         - mountPath: /configs
           name: configs
+        - mountPath: /var/run/secrets/kubernetes.io/hosted
+          name: client-token
+        - mountPath: /etc/certificate/ca
+          name: ca-bundle
       serviceAccountName: cluster-network-operator
       volumes:
       - name: hosted-etc-kube
@@ -192,4 +264,10 @@ spec:
           defaultMode: 416
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - emptyDir: {}
+        name: client-token
+      - name: ca-bundle
+        secret:
+          defaultMode: 416
+          secretName: root-ca
 status: {}

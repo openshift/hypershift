@@ -77,7 +77,6 @@ var (
 		"0000_50_operator-marketplace_11_service_monitor.yaml",
 		"0000_70_dns-operator_02-deployment-ibm-cloud-managed.yaml",
 		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
-		"0000_70_cluster-network-operator_02_rbac.yaml",
 		"0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml",
 		"0000_80_machine-config_01_containerruntimeconfigs.crd.yaml",
 		"0000_80_machine-config_01_kubeletconfigs.crd.yaml",
