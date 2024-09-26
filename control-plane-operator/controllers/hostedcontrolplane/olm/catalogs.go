@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"strconv"
 	"strings"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/assets"
@@ -30,12 +30,6 @@ var (
 	communityCatalogService         = assets.MustService(content.ReadFile, "assets/catalog-community.service.yaml")
 	redHatMarketplaceCatalogService = assets.MustService(content.ReadFile, "assets/catalog-redhat-marketplace.service.yaml")
 	redHatOperatorsCatalogService   = assets.MustService(content.ReadFile, "assets/catalog-redhat-operators.service.yaml")
-)
-
-type TestingContextKey string
-
-const (
-	TestKey TestingContextKey = "test"
 )
 
 func catalogLabels() map[string]string {
@@ -128,39 +122,43 @@ func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagRefe
 	return nil
 }
 
-func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte) (map[string]string, error) {
+func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, digestLister registryclient.DigestListerFN) (map[string]string, error) {
 	imageRef := hcp.Spec.ReleaseImage
 	imageConfig, _, _, err := registryclient.GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image metadata: %w", err)
 	}
 
-	versionParts := strings.Split(imageConfig.Config.Labels["io.openshift.release"], ".")
-	if len(versionParts) < 2 {
+	version, err := semver.Parse(imageConfig.Config.Labels["io.openshift.release"])
+	if err != nil {
 		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
 	}
 
-	operators := map[string]string{
-		"certified-operators": fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%s.%s", versionParts[0], versionParts[1]),
-		"community-operators": fmt.Sprintf("registry.redhat.io/redhat/community-operator-index:v%s.%s", versionParts[0], versionParts[1]),
-		"redhat-marketplace":  fmt.Sprintf("registry.redhat.io/redhat/redhat-marketplace-index:v%s.%s", versionParts[0], versionParts[1]),
-		"redhat-operators":    fmt.Sprintf("registry.redhat.io/redhat/redhat-operator-index:v%s.%s", versionParts[0], versionParts[1]),
+	//check catalogs of last 4 supported version incase new version is not available
+	supportedVersions := 4
+	for i := 0; i < supportedVersions; i++ {
+		_, err = digestLister(ctx, fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor), pullSecret)
+		if err == nil {
+			break
+		}
+		//manifest unknown error is expected if the image is not available.
+		//If the all supported versions are checked and the image is still not available, return the error
+		if !strings.Contains(err.Error(), "manifest unknown") {
+			return nil, err
+		}
+		if i == supportedVersions-1 {
+			return nil, fmt.Errorf("failed to get image digest for 4 previous versions of certified-operator-index: %w", err)
+		}
+		version.Minor--
 	}
 
-	_, err = registryclient.GetListDigest(ctx, operators["certified-operators"], pullSecret)
-	if err != nil && ctx.Value(TestKey) != "test-reconcile-olm" {
-		if strings.Contains(err.Error(), "manifest unknown") {
-			minor, err := strconv.Atoi(versionParts[1])
-			if err != nil {
-				return nil, fmt.Errorf("invalid minor version: %w", err)
-			}
-			for key, url := range operators {
-				operators[key] = strings.Replace(url, versionParts[1], strconv.Itoa(minor-1), 1)
-			}
-		} else {
-			return operators, err
-		}
+	operators := map[string]string{
+		"certified-operators": fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor),
+		"community-operators": fmt.Sprintf("registry.redhat.io/redhat/community-operator-index:v%d.%d", version.Major, version.Minor),
+		"redhat-marketplace":  fmt.Sprintf("registry.redhat.io/redhat/redhat-marketplace-index:v%d.%d", version.Major, version.Minor),
+		"redhat-operators":    fmt.Sprintf("registry.redhat.io/redhat/redhat-operator-index:v%d.%d", version.Major, version.Minor),
 	}
+
 	return operators, nil
 }
 
