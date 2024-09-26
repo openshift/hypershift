@@ -165,7 +165,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for network security group: %w", err)
 		}
-		l.Info(msg, "name", nsgResourceGroupName)
+		l.Info(msg, "name", nsgRG)
 
 		// Create a network security group
 		nsgID, err := createSecurityGroup(ctx, subscriptionID, nsgRG, o.Name, o.InfraID, o.Location, azureCreds)
