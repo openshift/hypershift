@@ -16,11 +16,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
+	"github.com/opencontainers/go-digest"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -125,15 +125,16 @@ var cpObjects = []client.Object{
 // for the initial objects.
 func TestReconcileErrorHandling(t *testing.T) {
 	// get initial number of creates with no get errors
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, olm.TestKey, "test-reconcile-olm")
-
 	var totalCreates int
 	{
 		fakeClient := &testClient{
 			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
 		}
 		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+
+		fakeDigestLister := func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
+			return "", nil
+		}
 
 		r := &reconciler{
 			client:                 fakeClient,
@@ -145,8 +146,9 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			DigestListerFN:         fakeDigestLister,
 		}
-		_, err := r.Reconcile(ctx, controllerruntime.Request{})
+		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
 			t.Fatalf("unexpected: %v", err)
 		}
@@ -169,7 +171,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
-		r.Reconcile(ctx, controllerruntime.Request{})
+		r.Reconcile(context.Background(), controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
 			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
 		}
@@ -184,8 +186,11 @@ func TestReconcileOLM(t *testing.T) {
 	fakeCPService.Spec.ClusterIP = "172.30.108.248"
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, olm.TestKey, "test-reconcile-olm")
 	pullSecret := fakePullSecret()
+
+	fakeDigestLister := func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
+		return "", nil
+	}
 
 	testCases := []struct {
 		name                string
@@ -275,10 +280,10 @@ func TestReconcileOLM(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, fakeDigestLister)...)
 			hcp.Spec.Configuration = tc.hcpClusterConfig
 			hcp.Spec.OLMCatalogPlacement = tc.olmCatalogPlacement
-			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, fakeDigestLister)...)
 			g.Expect(errs).To(BeEmpty(), "unexpected errors")
 			hcOpHub := manifests.OperatorHub()
 			err := r.client.Get(ctx, client.ObjectKeyFromObject(hcOpHub), hcOpHub)

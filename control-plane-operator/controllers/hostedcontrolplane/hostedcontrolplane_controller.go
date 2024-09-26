@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -122,6 +123,11 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+)
+
+var (
+	olmCatalogImagesOnce sync.Once
+	catalogImages        map[string]string
 )
 
 type HostedControlPlaneReconciler struct {
@@ -3831,7 +3837,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 			var getCatalogImagesErr error
 			olmCatalogImagesOnce.Do(func() {
-				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey])
+				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], registryclient.GetListDigest)
 				if err != nil {
 					getCatalogImagesErr = err
 					return
@@ -3908,7 +3914,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 			olmManagerImage := ""
 			exists := false
-			if olmManagerImage, exists = releaseImageProvider.ComponentImages()["operator-lifecycle-manager"]; !exists {
+			if olmManagerImage, exists = releaseImageProvider.ImageExist("operator-lifecycle-manager"); !exists {
 				return fmt.Errorf("failed to get olm image from release image provider")
 			}
 

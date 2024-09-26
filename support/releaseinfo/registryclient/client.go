@@ -467,3 +467,5 @@ func GetListDigest(ctx context.Context, imageRef string, pullSecret []byte) (dig
 	}
 	return srcDigest, nil
 }
+
+type DigestListerFN = func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error)
