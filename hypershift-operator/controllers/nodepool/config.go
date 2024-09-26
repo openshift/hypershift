@@ -118,6 +118,10 @@ func (cg *ConfigGenerator) HashWithoutVersion() string {
 	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
 }
 
+func (cg *ConfigGenerator) Version() string {
+	return cg.releaseImage.Version()
+}
+
 // generateMCORawConfig generates a mco consumable artefact of the mco Config.
 func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context) (configsRaw string, err error) {
 	var configs []corev1.ConfigMap

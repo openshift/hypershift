@@ -17,6 +17,7 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 )
@@ -352,7 +353,22 @@ func shouldAttachDefaultNetwork(kvPlatform *hyperv1.KubevirtNodePoolPlatform) bo
 	return kvPlatform.AttachDefaultNetwork == nil || *kvPlatform.AttachDefaultNetwork
 }
 
-func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hcluster *hyperv1.HostedCluster) (*capikubevirt.KubevirtMachineTemplateSpec, error) {
+func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, bootImage BootImage) (*capikubevirt.KubevirtMachineTemplateSpec, error) {
+	if bootImage == nil {
+		infraNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		if hcluster.Spec.Platform.Kubevirt != nil &&
+			hcluster.Spec.Platform.Kubevirt.Credentials != nil &&
+			len(hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace) > 0 {
+
+			infraNS = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+		}
+		var err error
+		bootImage, err = GetImage(nodePool, releaseImage, infraNS)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
+		}
+	}
+
 	vmTemplate := virtualMachineTemplateBase(nodePool, bootImage)
 
 	// Newer versions of the NodePool controller transitioned to spreading VMs across the cluster

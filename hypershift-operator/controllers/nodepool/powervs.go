@@ -41,7 +41,15 @@ func getImageRegion(region string) string {
 	}
 }
 
-func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, powerVSbootImage string) *capipowervs.IBMPowerVSMachineTemplateSpec {
+func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (*capipowervs.IBMPowerVSMachineTemplateSpec, error) {
+	// Validate PowerVS platform specific input
+	var coreOSPowerVSImage *releaseinfo.CoreOSPowerVSImage
+	coreOSPowerVSImage, _, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't discover a PowerVS Image for release image: %w", err)
+	}
+	powerVSBootImage := coreOSPowerVSImage.Release
+
 	var image *capipowervs.IBMPowerVSResourceReference
 	var imageRef *v1.LocalObjectReference
 	if nodePool.Spec.Platform.PowerVS.Image != nil {
@@ -51,7 +59,7 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 		}
 	} else {
 		imageRef = &v1.LocalObjectReference{
-			Name: powerVSbootImage,
+			Name: powerVSBootImage,
 		}
 	}
 	subnet := capipowervs.IBMPowerVSResourceReference{
@@ -71,7 +79,7 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 				MemoryGiB:         nodePool.Spec.Platform.PowerVS.MemoryGiB,
 			},
 		},
-	}
+	}, nil
 }
 
 func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*releaseinfo.CoreOSPowerVSImage, string, error) {
