@@ -47,6 +47,13 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.ManagedIdentityConfigurationFile, "managed-identity-config", opts.ManagedIdentityConfigurationFile, "Path to a file with the managed identity configuration for control plane components.")
+	flags.StringVar(&opts.KeyVaultInfo.KeyVaultName, "management-key-vault-name", opts.KeyVaultInfo.KeyVaultName, "The name of the management Azure Key Vault where the managed identity certificates are stored.")
+	flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
+	flags.StringVar(&opts.KeyVaultInfo.AuthorizedKeyVaultClientID, "authorized-key-vault-client-id", opts.KeyVaultInfo.AuthorizedKeyVaultClientID, "The client ID of the managed identity authorized to pull certificate information out of the management Azure Key Vault.")
+	flags.StringVar(&opts.KeyVaultUserClientID, "key-vault-user-client-id", opts.KeyVaultUserClientID, "The client ID of the managed identity authorized to pull certificate information out of the management Azure Key Vault.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -56,16 +63,21 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile        string
-	Location               string
-	EncryptionKeyID        string
-	AvailabilityZones      []string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
-	RHCOSImage             string
+	CredentialsFile                  string
+	Location                         string
+	EncryptionKeyID                  string
+	AvailabilityZones                []string
+	ResourceGroupName                string
+	VnetID                           string
+	NetworkSecurityGroupID           string
+	ResourceGroupTags                map[string]string
+	SubnetID                         string
+	RHCOSImage                       string
+	KMSClientID                      string
+	KMSCertName                      string
+	ManagedIdentityConfigurationFile string
+	KeyVaultUserClientID             string
+	KeyVaultInfo                     ManagementKeyVaultInfo
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -74,6 +86,12 @@ type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+}
+
+type ManagementKeyVaultInfo struct {
+	KeyVaultName               string
+	KeyVaultTenantID           string
+	AuthorizedKeyVaultClientID string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -94,6 +112,14 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	// Check if the network security group is set and the resource group is not
 	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
+	}
+
+	if o.KMSClientID != "" && o.KMSCertName == "" {
+		return nil, fmt.Errorf("flag --kms-cert-name is required when using --kms-client-id")
+	}
+
+	if o.KMSClientID == "" && o.KMSCertName != "" {
+		return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
 	}
 
 	validOpts := &ValidatedCreateOptions{
@@ -201,6 +227,11 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			ManagementKeyVault: hyperv1.ManagedAzureKeyVault{
+				Name:               o.KeyVaultInfo.KeyVaultName,
+				TenantID:           o.KeyVaultInfo.KeyVaultTenantID,
+				AuthorizedClientID: o.KeyVaultInfo.AuthorizedKeyVaultClientID,
+			},
 		},
 	}
 
@@ -215,9 +246,18 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 						KeyName:      o.encryptionKey.KeyName,
 						KeyVersion:   o.encryptionKey.KeyVersion,
 					},
+					KMS: hyperv1.ManagedIdentity{
+						ClientID:        o.KMSClientID,
+						CertificateName: o.KMSCertName,
+					},
 				},
 			},
 		}
+	}
+
+	err := util.SetupManagedIdentityCredentials(o.ManagedIdentityConfigurationFile, cluster)
+	if err != nil {
+		return err
 	}
 
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
