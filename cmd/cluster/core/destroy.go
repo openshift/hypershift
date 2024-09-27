@@ -57,6 +57,7 @@ type AzurePlatformDestroyOptions struct {
 	CredentialsFile   string
 	Location          string
 	ResourceGroupName string
+	ControlPlaneMIs   hyperv1.AzureResourceManagedIdentities
 }
 
 type PowerVSPlatformDestroyOptions struct {

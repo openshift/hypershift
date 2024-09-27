@@ -47,6 +47,10 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.KeyVaultInfo.KeyVaultName, "management-key-vault-name", opts.KeyVaultInfo.KeyVaultName, "The name of the management Azure Key Vault where the managed identity certificates are stored.")
+	flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -66,6 +70,9 @@ type RawCreateOptions struct {
 	ResourceGroupTags      map[string]string
 	SubnetID               string
 	RHCOSImage             string
+	KMSClientID            string
+	KMSCertName            string
+	KeyVaultInfo           ManagementKeyVaultInfo
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -74,6 +81,11 @@ type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+}
+
+type ManagementKeyVaultInfo struct {
+	KeyVaultName     string
+	KeyVaultTenantID string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -94,6 +106,14 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	// Check if the network security group is set and the resource group is not
 	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
+	}
+
+	if o.KMSClientID != "" && o.KMSCertName == "" {
+		return nil, fmt.Errorf("flag --kms-cert-name is required when using --kms-client-id")
+	}
+
+	if o.KMSClientID == "" && o.KMSCertName != "" {
+		return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
 	}
 
 	validOpts := &ValidatedCreateOptions{
@@ -151,6 +171,9 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		if err != nil {
 			return nil, fmt.Errorf("failed to create infra: %w", err)
 		}
+
+		output.infra.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.Name = o.KeyVaultInfo.KeyVaultName
+		output.infra.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.TenantID = o.KeyVaultInfo.KeyVaultTenantID
 	}
 
 	if o.EncryptionKeyID != "" {
@@ -201,6 +224,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			ManagedIdentities: o.infra.ControlPlaneMIs,
 		},
 	}
 
@@ -214,6 +238,10 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 						KeyVaultName: o.encryptionKey.KeyVaultName,
 						KeyName:      o.encryptionKey.KeyName,
 						KeyVersion:   o.encryptionKey.KeyVersion,
+					},
+					KMS: hyperv1.ManagedIdentity{
+						ClientID:        o.KMSClientID,
+						CertificateName: o.KMSCertName,
 					},
 				},
 			},
@@ -399,17 +427,18 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 	}
 
 	return azureinfra.CreateInfraOptions{
-		Name:                   opts.Name,
-		Location:               azureOpts.Location,
-		InfraID:                opts.InfraID,
-		CredentialsFile:        azureOpts.CredentialsFile,
-		BaseDomain:             opts.BaseDomain,
-		RHCOSImage:             rhcosImage,
-		VnetID:                 azureOpts.VnetID,
-		ResourceGroupName:      azureOpts.ResourceGroupName,
-		NetworkSecurityGroupID: azureOpts.NetworkSecurityGroupID,
-		ResourceGroupTags:      azureOpts.ResourceGroupTags,
-		SubnetID:               azureOpts.SubnetID,
+		Name:                        opts.Name,
+		Location:                    azureOpts.Location,
+		InfraID:                     opts.InfraID,
+		CredentialsFile:             azureOpts.CredentialsFile,
+		BaseDomain:                  opts.BaseDomain,
+		RHCOSImage:                  rhcosImage,
+		VnetID:                      azureOpts.VnetID,
+		ResourceGroupName:           azureOpts.ResourceGroupName,
+		NetworkSecurityGroupID:      azureOpts.NetworkSecurityGroupID,
+		ResourceGroupTags:           azureOpts.ResourceGroupTags,
+		SubnetID:                    azureOpts.SubnetID,
+		ManagedIdentityKeyVaultName: azureOpts.KeyVaultInfo.KeyVaultName,
 	}, nil
 }
 
