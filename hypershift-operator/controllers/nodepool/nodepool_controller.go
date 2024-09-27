@@ -245,17 +245,25 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	ignEndpoint := hcluster.Status.IgnitionEndpoint
 	infraID := hcluster.Spec.InfraID
+
+	// TODO(alberto): capture these in conditions.
+	// Consider having a condition "Degraded" with buckets for error types, e.g. INTERNAL_ERR, INFRA_ERR...
 	if err := validateInfraID(infraID); err != nil {
 		// We don't return the error here as reconciling won't solve the input problem.
 		// An update event will trigger reconciliation.
-		// TODO (alberto): consider this an condition failure reason when revisiting conditions.
 		log.Error(err, "Invalid infraID, waiting.")
 		return ctrl.Result{}, nil
 	}
-
-	_, err := globalConfigString(hcluster)
+	// Retrieve pull secret name to check for changes when config is checked for updates
+	_, err := r.getPullSecretName(ctx, hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if hcluster.Spec.AdditionalTrustBundle != nil {
+		_, err = r.getAdditionalTrustBundle(ctx, hcluster)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	if isAutoscalingEnabled(nodePool) {
@@ -308,6 +316,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidReleaseImageConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            fmt.Sprintf("Using release image: %s", nodePool.Spec.Release.Image),
+		ObservedGeneration: nodePool.Generation,
+	})
 
 	if err := r.setPlatformConditions(ctx, hcluster, nodePool, controlPlaneNamespace, releaseImage); err != nil {
 		return ctrl.Result{}, err
@@ -360,15 +375,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
-	// Validate and get releaseImage.
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidReleaseImageConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.AsExpectedReason,
-		Message:            fmt.Sprintf("Using release image: %s", nodePool.Spec.Release.Image),
-		ObservedGeneration: nodePool.Generation,
-	})
-
 	// Validate modifying CPU arch support for platform
 	if !isArchAndPlatformSupported(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -395,19 +401,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
-	}
-
-	// TODO(alberto): move this into a validation section.
-	// Retrieve pull secret name to check for changes when config is checked for updates
-	_, err = r.getPullSecretName(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if hcluster.Spec.AdditionalTrustBundle != nil {
-		_, err = r.getAdditionalTrustBundle(ctx, hcluster)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, hcluster, releaseImage)

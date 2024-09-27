@@ -7,7 +7,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -54,14 +53,14 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 	powerVSBootImage := coreOSPowerVSImage.Release
 
 	var image *capipowervs.IBMPowerVSResourceReference
-	var imageRef *v1.LocalObjectReference
+	var imageRef *corev1.LocalObjectReference
 	if nodePool.Spec.Platform.PowerVS.Image != nil {
 		image = &capipowervs.IBMPowerVSResourceReference{
 			ID:   nodePool.Spec.Platform.PowerVS.Image.ID,
 			Name: nodePool.Spec.Platform.PowerVS.Image.Name,
 		}
 	} else {
-		imageRef = &v1.LocalObjectReference{
+		imageRef = &corev1.LocalObjectReference{
 			Name: powerVSBootImage,
 		}
 	}
