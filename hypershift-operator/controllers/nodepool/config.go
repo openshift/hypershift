@@ -83,6 +83,10 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		},
 	}
 
+	if hostedCluster.Spec.AdditionalTrustBundle != nil {
+		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
+	}
+
 	mcoRawConfig, err := cg.generateMCORawConfig(ctx)
 	if err != nil {
 		return nil, err

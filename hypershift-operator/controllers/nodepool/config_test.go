@@ -108,36 +108,52 @@ spec:
   kernelType: ""
   osImageURL: ""
 `
+	hostedCluster := &hyperv1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "test",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{
+				Name: "pull-secret",
+			},
+		},
+	}
 
 	testCases := []struct {
 		name                 string
 		nodePool             *hyperv1.NodePool
 		releaseImage         *releaseinfo.ReleaseImage
+		hostedCluster        *hyperv1.HostedCluster
 		config               []crclient.Object
 		expectedMCORawConfig string
 		client               bool
 		error                error
 	}{
 		{
-			name:         "When all input is given it should not return an error",
-			nodePool:     &hyperv1.NodePool{},
-			releaseImage: &releaseinfo.ReleaseImage{},
-			client:       true,
-			error:        nil,
+			name:          "When all input is given it should not return an error",
+			nodePool:      &hyperv1.NodePool{},
+			releaseImage:  &releaseinfo.ReleaseImage{},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
 		},
 		{
-			name:         "When client is missing it should return an error",
-			nodePool:     &hyperv1.NodePool{},
-			releaseImage: &releaseinfo.ReleaseImage{},
-			client:       false,
-			error:        fmt.Errorf("client can't be nil"),
+			name:          "When client is missing it should return an error",
+			nodePool:      &hyperv1.NodePool{},
+			releaseImage:  &releaseinfo.ReleaseImage{},
+			hostedCluster: hostedCluster,
+			client:        false,
+			error:         fmt.Errorf("client can't be nil"),
 		},
 		{
-			name:         "When release image is missing it should return an error",
-			nodePool:     &hyperv1.NodePool{},
-			releaseImage: nil,
-			client:       true,
-			error:        fmt.Errorf("release image can't be nil"),
+			name:          "When release image is missing it should return an error",
+			nodePool:      &hyperv1.NodePool{},
+			releaseImage:  nil,
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         fmt.Errorf("release image can't be nil"),
 		},
 		{
 			name: "When nodepool has configs it should populate mcoRawConfig ",
@@ -166,6 +182,7 @@ spec:
 			},
 			expectedMCORawConfig: machineConfigDefaulted,
 			releaseImage:         &releaseinfo.ReleaseImage{},
+			hostedCluster:        hostedCluster,
 			client:               true,
 			error:                nil,
 		},
@@ -185,21 +202,59 @@ spec:
 			},
 			expectedMCORawConfig: machineConfigDefaulted,
 			releaseImage:         &releaseinfo.ReleaseImage{},
+			hostedCluster:        hostedCluster,
 			client:               true,
 			error:                fmt.Errorf("configmaps \"does-not-exist\" not found"),
+		},
+		{
+			name: "When additionalTrustBundle is specified it should be included in rolloutConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "config-1",
+						},
+					},
+				},
+			},
+			config: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-1",
+						Namespace: "test",
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: machineConfig,
+					},
+				},
+			},
+			expectedMCORawConfig: machineConfigDefaulted,
+			releaseImage:         &releaseinfo.ReleaseImage{},
+			client:               true,
+			error:                nil,
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret-2",
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "additional-trust-bundle",
+					},
+				},
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			hostedCluster := &hyperv1.HostedCluster{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test",
-				},
-			}
 
 			var client crclient.Client
 			if tc.client {
@@ -207,7 +262,7 @@ spec:
 				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build()
 			}
 
-			cg, err := NewConfigGenerator(context.Background(), client, hostedCluster, tc.nodePool, tc.releaseImage, "")
+			cg, err := NewConfigGenerator(context.Background(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "")
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))
@@ -219,6 +274,10 @@ spec:
 				if diff := cmp.Diff(cg.mcoRawConfig, tc.expectedMCORawConfig); diff != "" {
 					t.Errorf("actual config differs from expected: %s", diff)
 				}
+			}
+			g.Expect(cg.pullSecretName).To(Equal(tc.hostedCluster.Spec.PullSecret.Name))
+			if tc.hostedCluster.Spec.AdditionalTrustBundle != nil {
+				g.Expect(cg.additionalTrustBundleName).To(Equal("additional-trust-bundle"))
 			}
 		})
 	}
