@@ -47,6 +47,9 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.KeyVaultInfo.KeyVaultName, "management-key-vault-name", opts.KeyVaultInfo.KeyVaultName, "The name of the management Azure Key Vault where the managed identity certificates are stored.")
+	flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
+	flags.StringVar(&opts.KeyVaultInfo.AuthorizedKeyVaultClientID, "authorized-key-vault-client-id", opts.KeyVaultInfo.AuthorizedKeyVaultClientID, "The client ID of the managed identity authorized to pull certificate information out of the management Azure Key Vault.")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -66,6 +69,7 @@ type RawCreateOptions struct {
 	ResourceGroupTags      map[string]string
 	SubnetID               string
 	RHCOSImage             string
+	KeyVaultInfo           ManagementKeyVaultInfo
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -74,6 +78,12 @@ type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+}
+
+type ManagementKeyVaultInfo struct {
+	KeyVaultName               string
+	KeyVaultTenantID           string
+	AuthorizedKeyVaultClientID string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -191,6 +201,11 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	cluster.Spec.InfraID = o.infra.InfraID
 
+	managedIdentity := hyperv1.ManagedIdentity{
+		ClientID:        o.creds.ClientID,
+		CertificateName: o.creds.Certificate,
+	}
+
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type: hyperv1.AzurePlatform,
 		Azure: &hyperv1.AzurePlatformSpec{
@@ -201,6 +216,24 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
+				ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+					// TODO these are initialized with the same client ID of a Service Principal, and its cert at the moment.
+					CloudProvider:   managedIdentity,
+					ClusterAPIAzure: managedIdentity,
+					ControlPlane:    managedIdentity,
+					Network:         managedIdentity,
+					ImageRegistry:   managedIdentity,
+					Ingress:         managedIdentity,
+					File:            managedIdentity,
+					Disk:            managedIdentity,
+				},
+			},
+			ManagementKeyVault: hyperv1.ManagedAzureKeyVault{
+				Name:               o.KeyVaultInfo.KeyVaultName,
+				TenantID:           o.KeyVaultInfo.KeyVaultTenantID,
+				AuthorizedClientID: o.KeyVaultInfo.AuthorizedKeyVaultClientID,
+			},
 		},
 	}
 
@@ -215,6 +248,8 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 						KeyName:      o.encryptionKey.KeyName,
 						KeyVersion:   o.encryptionKey.KeyVersion,
 					},
+					// TODO these are initialized with the same client ID of a Service Principal, and its cert at the moment.
+					KMS: managedIdentity,
 				},
 			},
 		}
