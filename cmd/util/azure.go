@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-
 	"github.com/go-logr/logr"
-
 	"sigs.k8s.io/yaml"
 )
 
@@ -19,6 +19,14 @@ type AzureCreds struct {
 	ClientID       string `json:"clientId,omitempty"`
 	ClientSecret   string `json:"clientSecret,omitempty"`
 	TenantID       string `json:"tenantId,omitempty"`
+}
+
+// ManagedIdentityInfo is the file format we expect to get the managed identity client ID and its cert name for each
+// control plane component that needs to authenticate with Azure
+type ManagedIdentityInfo struct {
+	Name     string `json:"name"`
+	ClientID string `json:"clientId"`
+	CertName string `json:"certName"`
 }
 
 // SetupAzureCredentials creates the Azure credentials needed to create Azure resources from credentials passed in from the user or from a credentials file
@@ -81,5 +89,57 @@ func ValidateMarketplaceFlags(marketplaceFlags map[string]*string) error {
 		}
 	}
 
+	return nil
+}
+
+// readManagedIdentityConfiguration reads a file with managed identity info and returns it as a slice of type ManagedIdentityInfo
+func readManagedIdentityConfiguration(path string) ([]ManagedIdentityInfo, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from %s: %w", path, err)
+	}
+
+	var result []ManagedIdentityInfo
+	if err := yaml.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal credentials: %w", err)
+	}
+
+	return result, nil
+}
+
+func SetupManagedIdentityCredentials(ManagedIdentityConfigurationFile string, hc *hyperv1.HostedCluster) error {
+	managedIdentityCredentials, err := readManagedIdentityConfiguration(ManagedIdentityConfigurationFile)
+	if err != nil {
+		return fmt.Errorf("failed to read managed identity configuration file: %w", err)
+	}
+
+	for _, managedIdentityInfo := range managedIdentityCredentials {
+		switch managedIdentityInfo.Name {
+		case "azure-disk":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName = managedIdentityInfo.CertName
+		case "azure-file":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName = managedIdentityInfo.CertName
+		case "capz":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ClusterAPIAzure.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ClusterAPIAzure.CertificateName = managedIdentityInfo.CertName
+		case "cloud-provider":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName = managedIdentityInfo.CertName
+		case "cncc":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CertificateName = managedIdentityInfo.CertName
+		case "control-plane":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlane.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlane.CertificateName = managedIdentityInfo.CertName
+		case "image-registry":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName = managedIdentityInfo.CertName
+		case "ingress":
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ClientID = managedIdentityInfo.ClientID
+			hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName = managedIdentityInfo.CertName
+		}
+	}
 	return nil
 }
