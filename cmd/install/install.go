@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -534,6 +535,13 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		oidcSecret, images,
 	)
 	objects = append(objects, operatorObjs...)
+
+	// Setup feature gate tech preview ConfigMap
+	techPreviewCM := assets.TechPreviewFeatureGateConfig{
+		Namespace:          opts.Namespace,
+		TechPreviewEnabled: strconv.FormatBool(opts.TechPreviewNoUpgrade),
+	}.Build()
+	objects = append(objects, techPreviewCM)
 
 	// Setup Monitoring resources
 	monitoringObjs := setupMonitoring(opts, operatorNamespace)

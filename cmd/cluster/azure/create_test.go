@@ -7,16 +7,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
-
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
+	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 	"github.com/spf13/pflag"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 )
 
@@ -123,10 +124,14 @@ func TestCreateCluster(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
-			azureOpts := DefaultOptions()
+			azureOpts, err := DefaultOptions(fakeClient)
+			if err != nil {
+				t.Fatal("failed to create azure options: ", err)
+			}
 			azurenodepool.BindOptions(azureOpts.NodePoolOpts, flags)
 			BindDeveloperOptions(azureOpts, flags)
 			if err := flags.Parse(testCase.args); err != nil {

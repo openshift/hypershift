@@ -20,17 +20,30 @@ import (
 	"github.com/spf13/pflag"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
-func DefaultOptions() *RawCreateOptions {
-	return &RawCreateOptions{
-		Location:     "eastus",
-		NodePoolOpts: azurenodepool.DefaultOptions(),
+func DefaultOptions(client crclient.Client) (*RawCreateOptions, error) {
+	rawCreateOptions := &RawCreateOptions{
+		Location:           "eastus",
+		TechPreviewEnabled: false,
+		NodePoolOpts:       azurenodepool.DefaultOptions(),
 	}
+
+	techPreviewCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "hypershift", Name: "feature-gate"}}
+	if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(techPreviewCM), techPreviewCM); err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to retrieve feature-gate ConfigMap: %w", err)
+	}
+
+	if techPreviewCM.Data["TechPreviewEnabled"] == "true" {
+		rawCreateOptions.TechPreviewEnabled = true
+	}
+
+	return rawCreateOptions, nil
 }
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -48,6 +61,13 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+
+	if opts.TechPreviewEnabled {
+		flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
+		flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
+		flags.StringVar(&opts.KeyVaultInfo.KeyVaultName, "management-key-vault-name", opts.KeyVaultInfo.KeyVaultName, "The name of the management Azure Key Vault where the managed identity certificates are stored.")
+		flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
+	}
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -67,6 +87,10 @@ type RawCreateOptions struct {
 	ResourceGroupTags      map[string]string
 	SubnetID               string
 	RHCOSImage             string
+	KMSClientID            string
+	KMSCertName            string
+	TechPreviewEnabled     bool
+	KeyVaultInfo           ManagementKeyVaultInfo
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -75,6 +99,11 @@ type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+}
+
+type ManagementKeyVaultInfo struct {
+	KeyVaultName     string
+	KeyVaultTenantID string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -89,12 +118,30 @@ type ValidatedCreateOptions struct {
 	*validatedCreateOptions
 }
 
-func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
 
 	// Check if the network security group is set and the resource group is not
 	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
+	}
+
+	if o.TechPreviewEnabled {
+		if o.KMSClientID != "" && o.KMSCertName == "" {
+			return nil, fmt.Errorf("flag --kms-cert-name is required when using --kms-client-id")
+		}
+
+		if o.KMSClientID == "" && o.KMSCertName != "" {
+			return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
+		}
+
+		if o.KeyVaultInfo.KeyVaultName == "" {
+			return nil, fmt.Errorf("flag --management-key-vault-name is required")
+		}
+
+		if o.KeyVaultInfo.KeyVaultTenantID == "" {
+			return nil, fmt.Errorf("flag --management-key-vault-tenant-id is required")
+		}
 	}
 
 	validOpts := &ValidatedCreateOptions{
@@ -158,6 +205,11 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		if err != nil {
 			return nil, fmt.Errorf("failed to create infra: %w", err)
 		}
+
+		if o.TechPreviewEnabled {
+			output.infra.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.Name = o.KeyVaultInfo.KeyVaultName
+			output.infra.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.TenantID = o.KeyVaultInfo.KeyVaultTenantID
+		}
 	}
 
 	if o.EncryptionKeyID != "" {
@@ -211,6 +263,10 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		},
 	}
 
+	if o.TechPreviewEnabled {
+		cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
+	}
+
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
 			Type: hyperv1.KMS,
@@ -224,6 +280,13 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 					},
 				},
 			},
+		}
+	}
+
+	if o.encryptionKey != nil && o.TechPreviewEnabled {
+		cluster.Spec.SecretEncryption.KMS.Azure.KMS = hyperv1.ManagedIdentity{
+			ClientID:        o.KMSClientID,
+			CertificateName: o.KMSCertName,
 		}
 	}
 
@@ -386,7 +449,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	return []*hyperv1.NodePool{azureNodePool}
 }
 
-func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
+func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 	secret := credentialSecret(o.namespace, o.name)
 	secret.Data = map[string][]byte{
 		"AZURE_SUBSCRIPTION_ID": []byte(o.creds.SubscriptionID),
@@ -394,7 +457,7 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 		"AZURE_CLIENT_ID":       []byte(o.creds.ClientID),
 		"AZURE_CLIENT_SECRET":   []byte(o.creds.ClientSecret),
 	}
-	return []client.Object{secret}, nil
+	return []crclient.Object{secret}, nil
 }
 
 var _ core.Platform = (*CreateOptions)(nil)
@@ -406,7 +469,17 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	azureOpts := DefaultOptions()
+	client, err := util.GetClient()
+	if err != nil {
+		opts.Log.Error(err, "Failed to get client")
+		return nil
+	}
+
+	azureOpts, err := DefaultOptions(client)
+	if err != nil {
+		opts.Log.Error(err, "Failed to create default options")
+		return nil
+	}
 	BindOptions(azureOpts, cmd.Flags())
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -439,17 +512,19 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 	}
 
 	return azureinfra.CreateInfraOptions{
-		Name:                   opts.Name,
-		Location:               azureOpts.Location,
-		InfraID:                opts.InfraID,
-		CredentialsFile:        azureOpts.CredentialsFile,
-		BaseDomain:             opts.BaseDomain,
-		RHCOSImage:             rhcosImage,
-		VnetID:                 azureOpts.VnetID,
-		ResourceGroupName:      azureOpts.ResourceGroupName,
-		NetworkSecurityGroupID: azureOpts.NetworkSecurityGroupID,
-		ResourceGroupTags:      azureOpts.ResourceGroupTags,
-		SubnetID:               azureOpts.SubnetID,
+		Name:                        opts.Name,
+		Location:                    azureOpts.Location,
+		InfraID:                     opts.InfraID,
+		CredentialsFile:             azureOpts.CredentialsFile,
+		BaseDomain:                  opts.BaseDomain,
+		RHCOSImage:                  rhcosImage,
+		VnetID:                      azureOpts.VnetID,
+		ResourceGroupName:           azureOpts.ResourceGroupName,
+		NetworkSecurityGroupID:      azureOpts.NetworkSecurityGroupID,
+		ResourceGroupTags:           azureOpts.ResourceGroupTags,
+		SubnetID:                    azureOpts.SubnetID,
+		ManagedIdentityKeyVaultName: azureOpts.KeyVaultInfo.KeyVaultName,
+		TechPreviewEnabled:          azureOpts.TechPreviewEnabled,
 	}, nil
 }
 
