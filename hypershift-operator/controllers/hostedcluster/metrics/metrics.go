@@ -7,7 +7,7 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/library-go/pkg/crypto"
@@ -85,6 +85,9 @@ const (
 
 	EtcdManualInterventionRequiredMetricName = "hypershift_etcd_manual_intervention_required"
 	etcdManualInterventionRequiredMetricHelp = "Indicates that manual intervention is required to recover the ETCD cluster"
+
+	ClusterSizeOverrideMetricName = "hypershift_cluster_size_override_instances"
+	clusterSizeOverrideMetricHelp = "Number of HostedClusters with a cluster size override annotation"
 )
 
 // semantically constant - not suposed to be changed at runtime
@@ -104,7 +107,7 @@ var (
 		configv1.IdentityProviderTypeRequestHeader,
 	}
 
-	knownPlatforms = hyperv1.PlatformTypes()
+	knownPlatforms = hyperv1beta1.PlatformTypes()
 
 	// Metrics descriptions
 	countByIdentityProviderMetricDesc = prometheus.NewDesc(
@@ -174,6 +177,10 @@ var (
 	etcdManualInterventionRequiredMetricDesc = prometheus.NewDesc(
 		EtcdManualInterventionRequiredMetricName, etcdManualInterventionRequiredMetricHelp,
 		append(hclusterLabels, "environment", "id"), nil)
+
+	clusterSizeOverrideMetricDesc = prometheus.NewDesc(
+		ClusterSizeOverrideMetricName, clusterSizeOverrideMetricHelp,
+		append(hclusterLabels, "environment", "id", "size"), nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -210,7 +217,7 @@ func (c *hostedClustersMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	prometheus.DescribeByCollect(c, ch)
 }
 
-func createFailureConditionToHClustersCountMap(knownConditionToExpectedStatus map[hyperv1.ConditionType]metav1.ConditionStatus) *map[string]int {
+func createFailureConditionToHClustersCountMap(knownConditionToExpectedStatus map[hyperv1beta1.ConditionType]metav1.ConditionStatus) *map[string]int {
 	res := make(map[string]int)
 
 	for conditionType, expectedStatus := range knownConditionToExpectedStatus {
@@ -238,19 +245,19 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	// countByPlatformMetric - init
-	platformToHClustersCount := make(map[hyperv1.PlatformType]int)
+	platformToHClustersCount := make(map[hyperv1beta1.PlatformType]int)
 
 	for k := range knownPlatforms {
 		platformToHClustersCount[knownPlatforms[k]] = 0
 	}
 
 	// countByPlatformAndFailureConditionMetric - init
-	platformToFailureConditionToHClustersCount := make(map[hyperv1.PlatformType]*map[string]int)
+	platformToFailureConditionToHClustersCount := make(map[hyperv1beta1.PlatformType]*map[string]int)
 
 	for k := range knownPlatforms {
-		platformToFailureConditionToHClustersCount[knownPlatforms[k]] = createFailureConditionToHClustersCountMap(conditions.ExpectedHCConditions(&hyperv1.HostedCluster{
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
+		platformToFailureConditionToHClustersCount[knownPlatforms[k]] = createFailureConditionToHClustersCountMap(conditions.ExpectedHCConditions(&hyperv1beta1.HostedCluster{
+			Spec: hyperv1beta1.HostedClusterSpec{
+				Platform: hyperv1beta1.PlatformSpec{
 					Type: knownPlatforms[k],
 				},
 			},
@@ -259,7 +266,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// MAIN LOOP - Hosted clusters loop
 	{
-		hclusters := &hyperv1.HostedClusterList{}
+		hclusters := &hyperv1beta1.HostedClusterList{}
 
 		if err := c.List(context.Background(), hclusters); err != nil {
 			log.Error(err, "failed to list hosted clusters while collecting metrics")
@@ -291,7 +298,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 				failureConditionToHClustersCount := platformToFailureConditionToHClustersCount[platform]
 
 				for _, condition := range hcluster.Status.Conditions {
-					expectedStatus, isKnownCondition := expectedConditions[hyperv1.ConditionType(condition.Type)]
+					expectedStatus, isKnownCondition := expectedConditions[hyperv1beta1.ConditionType(condition.Type)]
 
 					if isKnownCondition && condition.Status != expectedStatus {
 						failureCondPrefix := ""
@@ -308,7 +315,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			}
 
 			// transitionDurationMetric - aggregation
-			for _, conditionType := range []hyperv1.ConditionType{hyperv1.EtcdAvailable, hyperv1.InfrastructureReady, hyperv1.ExternalDNSReachable} {
+			for _, conditionType := range []hyperv1beta1.ConditionType{hyperv1beta1.EtcdAvailable, hyperv1beta1.InfrastructureReady, hyperv1beta1.ExternalDNSReachable} {
 				condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(conditionType))
 
 				if condition != nil && condition.Status == metav1.ConditionTrue {
@@ -371,7 +378,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			// limitedSupportEnabledMetric
 			{
 				limitedSupportValue := 0.0
-				if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
+				if _, ok := hcluster.Labels[hyperv1beta1.LimitedSupportLabel]; ok {
 					limitedSupportValue = 1.0
 				}
 
@@ -386,7 +393,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			// silenceAlertsMetric
 			{
 				silenceAlertsValue := 0.0
-				if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
+				if _, ok := hcluster.Labels[hyperv1beta1.SilenceClusterAlertsLabel]; ok {
 					silenceAlertsValue = 1.0
 				}
 
@@ -456,9 +463,10 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			}
 
 			// etcdManualInterventionRequiredMetric
+			// clusterSizeOverrideMetric
 			{
 				metricLabels := make(map[string]string, 0)
-				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS.ResourceTags != nil {
+				if hcluster.Spec.Platform.Type == hyperv1beta1.AWSPlatform && hcluster.Spec.Platform.AWS.ResourceTags != nil {
 					for _, resourceTag := range hcluster.Spec.Platform.AWS.ResourceTags {
 						switch resourceTag.Key {
 						case "api.openshift.com/environment":
@@ -472,8 +480,8 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 				}
 
 				if metricLabels["cluster_type"] == "rosa" {
-					etcdRecoveryActiveCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
-					if etcdRecoveryActiveCondition.Status == metav1.ConditionFalse && etcdRecoveryActiveCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
+					etcdRecoveryActiveCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1beta1.EtcdRecoveryActive))
+					if etcdRecoveryActiveCondition.Status == metav1.ConditionFalse && etcdRecoveryActiveCondition.Reason == hyperv1beta1.EtcdRecoveryJobFailedReason {
 						etcdManualInterventionRequiredValue := 1.0
 						ch <- prometheus.MustNewConstMetric(
 							etcdManualInterventionRequiredMetricDesc,
@@ -482,6 +490,15 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 							append(hclusterLabelValues, metricLabels["environment"], metricLabels["id"])...,
 						)
 
+					}
+
+					if sizeOverride := hcluster.Annotations[hyperv1beta1.ClusterSizeOverrideAnnotation]; sizeOverride != "" {
+						ch <- prometheus.MustNewConstMetric(
+							clusterSizeOverrideMetricDesc,
+							prometheus.GaugeValue,
+							1.0,
+							append(hclusterLabelValues, metricLabels["environment"], metricLabels["id"], sizeOverride)...,
+						)
 					}
 				}
 			}
@@ -513,7 +530,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 				)
 
 				// guestCloudResourcesDeletingDurationMetric
-				condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+				condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1beta1.CloudResourcesDestroyed))
 
 				if condition == nil || condition.Status != metav1.ConditionTrue {
 					ch <- prometheus.MustNewConstMetric(
@@ -571,7 +588,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 // Load the CA bundle for the hosted cluster and find the earliest expiring certificate time.
 //
 // Returns the time.Time in UTC format.
-func (c *hostedClustersMetricsCollector) expiryTimeProxyCA(hcluster *hyperv1.HostedCluster) (*time.Time, error) {
+func (c *hostedClustersMetricsCollector) expiryTimeProxyCA(hcluster *hyperv1beta1.HostedCluster) (*time.Time, error) {
 	cmName := hcluster.Spec.Configuration.Proxy.TrustedCA.Name
 	caConfigMap := corev1.ConfigMap{}
 	err := c.Get(context.TODO(), types.NamespacedName{
@@ -601,7 +618,7 @@ func (c *hostedClustersMetricsCollector) expiryTimeProxyCA(hcluster *hyperv1.Hos
 // Load the CA bundle for the hosted cluster and verify the contained certificates are still valid.
 //
 // Return value of nil is considered valid, any error is considered invalid.
-func (c *hostedClustersMetricsCollector) validateProxyCAValidity(hcluster *hyperv1.HostedCluster) error {
+func (c *hostedClustersMetricsCollector) validateProxyCAValidity(hcluster *hyperv1beta1.HostedCluster) error {
 	cmName := hcluster.Spec.Configuration.Proxy.TrustedCA.Name
 	caConfigMap := corev1.ConfigMap{}
 	err := c.Get(context.TODO(), types.NamespacedName{
