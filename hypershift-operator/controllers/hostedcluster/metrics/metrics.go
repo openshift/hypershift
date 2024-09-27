@@ -173,7 +173,7 @@ var (
 
 	etcdManualInterventionRequiredMetricDesc = prometheus.NewDesc(
 		EtcdManualInterventionRequiredMetricName, etcdManualInterventionRequiredMetricHelp,
-		append(hclusterLabels, "rosa_environment", "rosa_id"), nil)
+		append(hclusterLabels, "environment", "id"), nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -479,7 +479,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 							etcdManualInterventionRequiredMetricDesc,
 							prometheus.GaugeValue,
 							etcdManualInterventionRequiredValue,
-							append(hclusterLabelValues, metricLabels["rosa_environment"], metricLabels["rosa_id"])...,
+							append(hclusterLabelValues, metricLabels["environment"], metricLabels["id"])...,
 						)
 
 					}
