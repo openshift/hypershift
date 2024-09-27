@@ -44,32 +44,29 @@ spec:
       managedIdentities:
         controlPlane:
           cloudProvider:
-            certificateName: ""
-            clientID: ""
-          controlPlaneOperator:
-            certificateName: ""
-            clientID: ""
+            certificateName: fakeCertificate
+            clientID: fakeClientID
+          clusterAPIAzure:
+            certificateName: fakeCertificate
+            clientID: fakeClientID
+          controlPlane:
+            certificateName: fakeCertificate
+            clientID: fakeClientID
           disk:
-            certificateName: ""
-            clientID: ""
+            certificateName: fakeCertificate
+            clientID: fakeClientID
           file:
-            certificateName: ""
-            clientID: ""
+            certificateName: fakeCertificate
+            clientID: fakeClientID
           imageRegistry:
-            certificateName: ""
-            clientID: ""
+            certificateName: fakeCertificate
+            clientID: fakeClientID
           ingress:
-            certificateName: ""
-            clientID: ""
-          managedIdentitiesKeyVault:
-            name: ""
-            tenantID: ""
+            certificateName: fakeCertificate
+            clientID: fakeClientID
           network:
-            certificateName: ""
-            clientID: ""
-          nodePoolManagement:
-            certificateName: ""
-            clientID: ""
+            certificateName: fakeCertificate
+            clientID: fakeClientID
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID

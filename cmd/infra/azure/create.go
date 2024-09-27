@@ -5,17 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/wait"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/yaml"
@@ -39,33 +41,35 @@ const (
 )
 
 type CreateInfraOptions struct {
-	Name                   string
-	BaseDomain             string
-	Location               string
-	InfraID                string
-	CredentialsFile        string
-	Credentials            *util.AzureCreds
-	OutputFile             string
-	RHCOSImage             string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
+	Name                        string
+	BaseDomain                  string
+	Location                    string
+	InfraID                     string
+	CredentialsFile             string
+	Credentials                 *util.AzureCreds
+	OutputFile                  string
+	RHCOSImage                  string
+	ResourceGroupName           string
+	VnetID                      string
+	NetworkSecurityGroupID      string
+	ResourceGroupTags           map[string]string
+	SubnetID                    string
+	ManagedIdentityKeyVaultName string
 }
 
 type CreateInfraOutput struct {
-	BaseDomain        string `json:"baseDomain"`
-	PublicZoneID      string `json:"publicZoneID"`
-	PrivateZoneID     string `json:"privateZoneID"`
-	Location          string `json:"region"`
-	ResourceGroupName string `json:"resourceGroupName"`
-	VNetID            string `json:"vnetID"`
-	SubnetID          string `json:"subnetID"`
-	BootImageID       string `json:"bootImageID"`
-	InfraID           string `json:"infraID"`
-	MachineIdentityID string `json:"machineIdentityID"`
-	SecurityGroupID   string `json:"securityGroupID"`
+	BaseDomain        string                                 `json:"baseDomain"`
+	PublicZoneID      string                                 `json:"publicZoneID"`
+	PrivateZoneID     string                                 `json:"privateZoneID"`
+	Location          string                                 `json:"region"`
+	ResourceGroupName string                                 `json:"resourceGroupName"`
+	VNetID            string                                 `json:"vnetID"`
+	SubnetID          string                                 `json:"subnetID"`
+	BootImageID       string                                 `json:"bootImageID"`
+	InfraID           string                                 `json:"infraID"`
+	MachineIdentityID string                                 `json:"machineIdentityID"`
+	SecurityGroupID   string                                 `json:"securityGroupID"`
+	ControlPlaneMIs   hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -186,6 +190,79 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		l.Info("Successfully created vnet", "ID", result.VNetID)
 	}
 
+	// Create ServicePrincipals with backing certificates
+	clientID, err := createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "ingress-"+o.InfraID, "ingress-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.Ingress.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.Ingress.CertificateName = "ingress-" + o.InfraID
+	l.Info("Successfully created ingress service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "cncc-"+o.InfraID, "cncc-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.Network.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.Network.CertificateName = "cncc-" + o.InfraID
+	l.Info("Successfully created cncc service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "azure-disk-"+o.InfraID, "azure-disk-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.Disk.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.Disk.CertificateName = "azure-disk-" + o.InfraID
+	l.Info("Successfully created azure-disk service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "azure-file-"+o.InfraID, "azure-file-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.File.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.File.CertificateName = "azure-file-" + o.InfraID
+	l.Info("Successfully created azure-file service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "azure-file-"+o.InfraID, "azure-file-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.File.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.File.CertificateName = "azure-file-" + o.InfraID
+	l.Info("Successfully created azure-file service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "cloud-provider-"+o.InfraID, "cloud-provider-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.CloudProvider.CertificateName = "cloud-provider-" + o.InfraID
+	l.Info("Successfully created cloud provider service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "capz-"+o.InfraID, "capz-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.NodePoolManagement.CertificateName = "capz-" + o.InfraID
+	l.Info("Successfully created capz service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "cpo-"+o.InfraID, "cpo-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.CertificateName = "cpo-" + o.InfraID
+	l.Info("Successfully created cpo service principal", "ID", clientID)
+
+	clientID, err = createServicePrincipalWithCertificate(subscriptionID, resourceGroupName, "ciro-"+o.InfraID, "ciro-"+o.InfraID, o.ManagedIdentityKeyVaultName)
+	if err != nil {
+		return nil, err
+	}
+	result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID = clientID
+	result.ControlPlaneMIs.ControlPlane.ImageRegistry.CertificateName = "ciro-" + o.InfraID
+	l.Info("Successfully created ciro service principal", "ID", clientID)
+
 	// Create private DNS zone
 	privateDNSZoneID, privateDNSZoneName, err := createPrivateDNSZone(ctx, subscriptionID, resourceGroupName, o.Name, o.BaseDomain, azureCreds)
 	if err != nil {
@@ -239,6 +316,30 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 	return &result, nil
 
+}
+
+func createServicePrincipalWithCertificate(subscriptionID, rgName, spName, certName, keyVaultName string) (string, error) {
+	// Construct the command string and output the results in a JSON format
+	// The command is create a Service Principal with a role over resource group and create a new certificate for it and store it in an existing keyvault
+	// '--only-show-errors' this flag only shows errors and not warning messages which can be verbose and mess up parsing out the client ID
+	// "| jq '.appId' | sed 's/"//g'" this just reads the appId which is the client ID and the sed strips off the json quotes around the value
+	cmdStr := `az ad sp create-for-rbac --name ` + spName +
+		` --role "Contributor" --scopes /subscriptions/` + subscriptionID + `/resourceGroups/` + rgName +
+		` --create-cert --cert ` + certName +
+		` --keyvault ` + keyVaultName +
+		` --output json --only-show-errors  | jq '.appId' | sed 's/"//g'`
+
+	// Run the az cli command and capture the output, which should be just the client ID with a newline character
+	cmd := exec.Command("sh", "-c", cmdStr)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to create service principal in Azure AD cluster: %w", err)
+	}
+
+	//Trim off any newline characters from the output
+	clientID := strings.ReplaceAll(string(output), "\n", "")
+
+	return clientID, nil
 }
 
 // createResourceGroup creates the three resource groups needed for the cluster
