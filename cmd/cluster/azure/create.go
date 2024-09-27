@@ -201,6 +201,22 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
+				ControlPlaneManagedIdentities: hyperv1.ControlPlaneManagedIdentities{
+					// TODO these are initialized with the client ID of the Service Principal at the moment. Once the
+					// Microsoft Adapter sidecar containers support Managed Identities, the CLI will create a new
+					// managed identity for each of these fields.
+					AzureCloudProviderManagedIdentityClientID: hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					ClusterAPIAzureManagedIdentityClientID:    hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					AzureKMSManagedIdentityClientID:           hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					ControlPlaneManagedIdentityClientID:       hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					NetworkManagedIdentityClientID:            hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					ImageRegistryManagedIdentityClientID:      hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					IngressManagedIdentityClientID:            hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					AzureFileManagedIdentityClientID:          hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+					AzureDiskManagedIdentityClientID:          hyperv1.ManagedIdentityClientID(o.creds.ClientID),
+				},
+			},
 		},
 	}
 
