@@ -1,10 +1,12 @@
 package nodepool
 
 import (
+	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	corev1 "k8s.io/api/core/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 )
@@ -149,4 +151,55 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	}
 
 	return awsMachineTemplateSpec, nil
+}
+
+func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
+		if hcluster.Spec.Platform.AWS == nil {
+			return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
+		}
+		if nodePool.Spec.Platform.AWS.AMI != "" {
+			// User-defined AMIs cannot be validated
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+		} else {
+			// TODO: Should the region be included in the NodePool platform information?
+			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
+			if err != nil {
+				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolValidPlatformImageType,
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.NodePoolValidationFailedReason,
+					Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+					ObservedGeneration: nodePool.Generation,
+				})
+				return fmt.Errorf("couldn't discover an AMI for release image: %w", err)
+			}
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidPlatformImageType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
+				ObservedGeneration: nodePool.Generation,
+			})
+		}
+
+		if hcluster.Status.Platform == nil || hcluster.Status.Platform.AWS == nil || hcluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.DefaultAWSSecurityGroupNotReadyReason,
+				Message:            "Waiting for AWS default security group to be created for hosted cluster",
+				ObservedGeneration: nodePool.Generation,
+			})
+		} else {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            "NodePool has a default security group",
+				ObservedGeneration: nodePool.Generation,
+			})
+		}
+	}
+	return nil
 }

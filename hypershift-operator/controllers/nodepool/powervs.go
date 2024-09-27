@@ -1,14 +1,16 @@
 package nodepool
 
 import (
+	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -51,14 +53,14 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 	powerVSBootImage := coreOSPowerVSImage.Release
 
 	var image *capipowervs.IBMPowerVSResourceReference
-	var imageRef *v1.LocalObjectReference
+	var imageRef *corev1.LocalObjectReference
 	if nodePool.Spec.Platform.PowerVS.Image != nil {
 		image = &capipowervs.IBMPowerVSResourceReference{
 			ID:   nodePool.Spec.Platform.PowerVS.Image.ID,
 			Name: nodePool.Spec.Platform.PowerVS.Image.Name,
 		}
 	} else {
-		imageRef = &v1.LocalObjectReference{
+		imageRef = &corev1.LocalObjectReference{
 			Name: powerVSBootImage,
 		}
 	}
@@ -121,5 +123,43 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 		StorageType:       string(nodePool.Spec.Platform.PowerVS.StorageType),
 		DeletePolicy:      string(nodePool.Spec.Platform.PowerVS.ImageDeletePolicy),
 	}
+	return nil
+}
+
+func (r *NodePoolReconciler) setPowerVSconditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+	log := ctrl.LoggerFrom(ctx)
+	var coreOSPowerVSImage *releaseinfo.CoreOSPowerVSImage
+	coreOSPowerVSImage, powervsImageRegion, err := getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Couldn't discover a PowerVS Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return fmt.Errorf("couldn't discover a PowerVS Image for release image: %w", err)
+	}
+	powervsBootImage := coreOSPowerVSImage.Release
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidPlatformImageType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
+		ObservedGeneration: nodePool.Generation,
+	})
+
+	// CoreOS images in the IBM Cloud are hosted in the IBM Cloud Object Storage for PowerVS platform, these images
+	// needs to be imported into the PowerVS service instance needed for the machines. IBMPowerVSImage is the spec
+	// controlled by the CAPIBM to import these images and used in the machine deployments.
+	ibmPowerVSImage := IBMPowerVSImage(controlPlaneNamespace, coreOSPowerVSImage.Release)
+	if result, err := r.CreateOrUpdate(ctx, r.Client, ibmPowerVSImage, func() error {
+		return reconcileIBMPowerVSImage(ibmPowerVSImage, hcluster, nodePool, hcluster.Spec.InfraID, powervsImageRegion, coreOSPowerVSImage)
+	}); err != nil {
+		return err
+	} else {
+		log.Info("Reconciled IBMPowerVSImage", "result", result)
+	}
+
 	return nil
 }
