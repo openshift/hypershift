@@ -4,18 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/openshift/hypershift/support/azureutil"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/wait"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/yaml"
@@ -36,36 +39,48 @@ const (
 	VirtualNetworkAddressPrefix       = "10.0.0.0/16"
 	VirtualNetworkLinkLocation        = "global"
 	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
+
+	azureDisk     = "azure-disk"
+	azureFile     = "azure-file"
+	ciro          = "ciro"
+	cloudProvider = "cloud-provider"
+	cncc          = "cncc"
+	cpo           = "cpo"
+	ingress       = "ingress"
+	nodePoolMgmt  = "capz"
 )
 
 type CreateInfraOptions struct {
-	Name                   string
-	BaseDomain             string
-	Location               string
-	InfraID                string
-	CredentialsFile        string
-	Credentials            *util.AzureCreds
-	OutputFile             string
-	RHCOSImage             string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
+	Name                        string
+	BaseDomain                  string
+	Location                    string
+	InfraID                     string
+	CredentialsFile             string
+	Credentials                 *util.AzureCreds
+	OutputFile                  string
+	RHCOSImage                  string
+	ResourceGroupName           string
+	VnetID                      string
+	NetworkSecurityGroupID      string
+	ResourceGroupTags           map[string]string
+	SubnetID                    string
+	ManagedIdentityKeyVaultName string
+	TechPreviewEnabled          bool
 }
 
 type CreateInfraOutput struct {
-	BaseDomain        string `json:"baseDomain"`
-	PublicZoneID      string `json:"publicZoneID"`
-	PrivateZoneID     string `json:"privateZoneID"`
-	Location          string `json:"region"`
-	ResourceGroupName string `json:"resourceGroupName"`
-	VNetID            string `json:"vnetID"`
-	SubnetID          string `json:"subnetID"`
-	BootImageID       string `json:"bootImageID"`
-	InfraID           string `json:"infraID"`
-	MachineIdentityID string `json:"machineIdentityID"`
-	SecurityGroupID   string `json:"securityGroupID"`
+	BaseDomain        string                                 `json:"baseDomain"`
+	PublicZoneID      string                                 `json:"publicZoneID"`
+	PrivateZoneID     string                                 `json:"privateZoneID"`
+	Location          string                                 `json:"region"`
+	ResourceGroupName string                                 `json:"resourceGroupName"`
+	VNetID            string                                 `json:"vnetID"`
+	SubnetID          string                                 `json:"subnetID"`
+	BootImageID       string                                 `json:"bootImageID"`
+	InfraID           string                                 `json:"infraID"`
+	MachineIdentityID string                                 `json:"machineIdentityID"`
+	SecurityGroupID   string                                 `json:"securityGroupID"`
+	ControlPlaneMIs   hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -136,12 +151,20 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Set the network security group ID either from the flag value or create one
+	nsgResourceGroupName := ""
 	if len(o.NetworkSecurityGroupID) > 0 {
 		result.SecurityGroupID = o.NetworkSecurityGroupID
+
+		// We need to get the resource group name for creating the service principals
+		_, nsgResourceGroupName, err = azureutil.GetNameAndResourceGroupFromNetworkSecurityGroupID(o.NetworkSecurityGroupID)
+		if err != nil {
+			return nil, err
+		}
+
 		l.Info("Using existing network security group", "ID", result.SecurityGroupID)
 	} else {
 		// Create a resource group for network security group
-		nsgResourceGroupName := o.Name + "-nsg"
+		nsgResourceGroupName = o.Name + "-nsg"
 		nsgRG, msg, err := createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for network security group: %w", err)
@@ -164,12 +187,20 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Retrieve a client's existing virtual network if a VNET ID was provided; otherwise, create a new one
+	vnetResourceGroupName := ""
 	if len(o.VnetID) > 0 {
 		result.VNetID = o.VnetID
+
+		// We need to get the resource group name for creating the service principals
+		_, vnetResourceGroupName, err = azureutil.GetVnetNameAndResourceGroupFromVnetID(o.VnetID)
+		if err != nil {
+			return nil, err
+		}
+
 		l.Info("Using existing vnet", "ID", result.VNetID)
 	} else {
 		//create a resource group for virtual network
-		vnetResourceGroupName := o.Name + "-vnet"
+		vnetResourceGroupName = o.Name + "-vnet"
 		vnetRG, msg, err := createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for virtual network: %w", err)
@@ -184,6 +215,81 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
 		result.VNetID = *vnet.ID
 		l.Info("Successfully created vnet", "ID", result.VNetID)
+	}
+
+	if o.TechPreviewEnabled {
+		// Create ServicePrincipals with backing certificates
+		cmdStr := buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ingress, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err := createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.Ingress.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.Ingress.CertificateName = fmt.Sprintf("%s-%s", ingress, o.InfraID)
+		l.Info("Successfully created ingress service principal", "ID", clientID)
+
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cncc, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err = createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.Network.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.Network.CertificateName = fmt.Sprintf("%s-%s", cncc, o.InfraID)
+		l.Info("Successfully created cncc service principal", "ID", clientID)
+
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, azureDisk, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err = createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.Disk.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.Disk.CertificateName = fmt.Sprintf("%s-%s", azureDisk, o.InfraID)
+		l.Info("Successfully created azure-disk service principal", "ID", clientID)
+
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, azureFile, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err = createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.File.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.File.CertificateName = fmt.Sprintf("%s-%s", azureFile, o.InfraID)
+		l.Info("Successfully created azure-file service principal", "ID", clientID)
+
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cloudProvider, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err = createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.CloudProvider.CertificateName = fmt.Sprintf("%s-%s", cloudProvider, o.InfraID)
+		l.Info("Successfully created cloud provider service principal", "ID", clientID)
+
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, nodePoolMgmt, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err = createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.NodePoolManagement.CertificateName = fmt.Sprintf("%s-%s", nodePoolMgmt, o.InfraID)
+		l.Info("Successfully created nodepool management service principal", "ID", clientID)
+
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cpo, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err = createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.CertificateName = fmt.Sprintf("%s-%s", cpo, o.InfraID)
+		l.Info("Successfully created cpo service principal", "ID", clientID)
+
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ciro, o.InfraID, o.ManagedIdentityKeyVaultName)
+		clientID, err = createServicePrincipalWithCertificate(cmdStr)
+		if err != nil {
+			return nil, err
+		}
+		result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID = clientID
+		result.ControlPlaneMIs.ControlPlane.ImageRegistry.CertificateName = fmt.Sprintf("%s-%s", ciro, o.InfraID)
+		l.Info("Successfully created ciro service principal", "ID", clientID)
 	}
 
 	// Create private DNS zone
@@ -239,6 +345,47 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 	return &result, nil
 
+}
+
+// createServicePrincipalWithCertificate runs the command to create a Service Principal with a role(s) over resource group(s),
+// create a new certificate for it, and store it in an existing key vault. The client ID of the service principal will be returned.
+func createServicePrincipalWithCertificate(cmdStr string) (string, error) {
+	// Run the az cli command and capture the output, which should be just the client ID with a newline character
+	cmd := exec.Command("sh", "-c", cmdStr)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to create service principal in Azure AD cluster: %w", err)
+	}
+
+	//Trim off any newline characters from the output
+	clientID := strings.ReplaceAll(string(output), "\n", "")
+
+	return clientID, nil
+}
+
+// buildCreateServicePrincipalCommand builds the command string to create a service principal, output the results in a JSON format to get the client ID, and strips off the quotes.
+func buildCreateServicePrincipalCommand(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, component, infraID, managedIdentityKeyVaultName string) string {
+	// Create a name with the component and infraID; this is used for both the service principal name and its certificate name.
+	name := fmt.Sprintf("%s-%s", component, infraID)
+
+	// By default, give each service principal contributor access over the managed resource group. Some components require additional permissions over other resource groups.
+	// TODO HOSTEDCP-1520 - these permissions will likely change once we complete this story.
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
+	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
+	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+	scopes := managedRG
+	switch component {
+	case cloudProvider:
+		scopes = fmt.Sprintf("%s %s", scopes, nsgRG)
+	case ingress:
+		scopes = fmt.Sprintf("%s %s", scopes, vnetRG)
+	}
+
+	// The command creates a Service Principal with a role(s) over resource group(s), create a new certificate for it, and store it in an existing keyvault
+	// '--only-show-errors' this flag only shows errors and not warning messages which can be verbose and mess up parsing out the client ID
+	// "| jq '.appId' | sed 's/"//g'" this just reads the appId which is the client ID and the sed strips off the json quotes around the value
+	cmdStr := fmt.Sprintf("az ad sp create-for-rbac --name %s --role \"Contributor\" --scopes %s --create-cert --cert %s --keyvault %s --output json --only-show-errors  | jq '.appId' | sed 's/\"//g'", name, scopes, name, managedIdentityKeyVaultName)
+	return cmdStr
 }
 
 // createResourceGroup creates the three resource groups needed for the cluster

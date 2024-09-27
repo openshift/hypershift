@@ -6,6 +6,12 @@ import (
 )
 
 const (
+	// AROHCPManagedIdentities is a feature gate for enabling HCP components to authenticate with Azure by client certificate
+	// owner: @username
+	// alpha: v0.1.49
+	// beta x.y.z
+	AROHCPManagedIdentities featuregate.Feature = "AROHCPManagedIdentities"
+
 	// OpenStack is a feature gate for running clusters on OpenStack.
 	// owner: @username
 	// alpha: v0.1.49
@@ -19,7 +25,8 @@ func init() {
 
 var defaultHypershiftFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	// Every feature should be initiated here:
-	OpenStack: {Default: false, PreRelease: featuregate.Alpha},
+	AROHCPManagedIdentities: {Default: false, PreRelease: featuregate.Alpha},
+	OpenStack:               {Default: false, PreRelease: featuregate.Alpha},
 
 	// TODO(alberto): Add the rest of the features here
 	// CPOV2:         {Default: false, PreRelease: featuregate.Alpha},
