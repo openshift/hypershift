@@ -89,6 +89,9 @@ const (
 
 	EtcdManualInterventionRequiredMetricName = "hypershift_etcd_manual_intervention_required"
 	etcdManualInterventionRequiredMetricHelp = "Indicates that manual intervention is required to recover the ETCD cluster"
+
+	ClusterSizeOverrideMetricName = "hypershift_cluster_size_override_instances"
+	clusterSizeOverrideMetricHelp = "Number of HostedClusters with a cluster size override annotation"
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -177,7 +180,11 @@ var (
 
 	etcdManualInterventionRequiredMetricDesc = prometheus.NewDesc(
 		EtcdManualInterventionRequiredMetricName, etcdManualInterventionRequiredMetricHelp,
-		append(hclusterLabels, "rosa_environment", "rosa_id"), nil)
+		append(hclusterLabels, "environment", "internal_id"), nil)
+
+	clusterSizeOverrideMetricDesc = prometheus.NewDesc(
+		ClusterSizeOverrideMetricName, clusterSizeOverrideMetricHelp,
+		append(hclusterLabels, "environment", "internal_id", "size"), nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -460,6 +467,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			}
 
 			// etcdManualInterventionRequiredMetric
+			// clusterSizeOverrideMetric
 			{
 				metricLabels := make(map[string]string, 0)
 				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS.ResourceTags != nil {
@@ -468,7 +476,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 						case "api.openshift.com/environment":
 							metricLabels["environment"] = resourceTag.Value
 						case "api.openshift.com/id":
-							metricLabels["id"] = resourceTag.Value
+							metricLabels["internal_id"] = resourceTag.Value
 						case "red-hat-clustertype":
 							metricLabels["cluster_type"] = resourceTag.Value
 						}
@@ -483,7 +491,17 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 							etcdManualInterventionRequiredMetricDesc,
 							prometheus.GaugeValue,
 							etcdManualInterventionRequiredValue,
-							append(hclusterLabelValues, metricLabels["rosa_environment"], metricLabels["rosa_id"])...,
+							append(hclusterLabelValues, metricLabels["environment"], metricLabels["internal_id"])...,
+						)
+
+					}
+
+					if sizeOverride := hcluster.Annotations[hyperv1.ClusterSizeOverrideAnnotation]; sizeOverride != "" {
+						ch <- prometheus.MustNewConstMetric(
+							clusterSizeOverrideMetricDesc,
+							prometheus.GaugeValue,
+							1.0,
+							append(hclusterLabelValues, metricLabels["environment"], metricLabels["internal_id"], sizeOverride)...,
 						)
 					}
 				}
