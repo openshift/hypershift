@@ -26,10 +26,11 @@ To deploy the OADP operator, we kindly redirect you to the [Official Red Hat doc
 
 Once installed, you'll need to create an object called DPA (Data Protection Application), which essentially describes the backup locations, Velero pod configurations, etc. This process varies depending on the cloud/remote storage location. All relevant documentation is available [here](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/about-installing-oadp.html).
 
-This guide will focus on two main platforms:
+This guide will focus on three main platforms:
 
 - [AWS](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-aws.html)
 - [Baremetal](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
+- [KubeVirt](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
 
 The first step is to create credentials for the platform where you'll upload the backups. Specific instructions can be found in the official documentation, but the basic steps are as follows:
 
@@ -155,130 +156,234 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
 
 ## Backup and Upload
+=== "**AWS and Bare Metal**"
+    ### Data Plane workloads backup
+    
+    !!! Note
+    
+        If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
+    
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    
+    The steps will indeed be quite similar:
+    
+    - Deploy the OADP operator from OLM.
+      - Create the DPA (Data Protection Application), with a manifest similar to the one provided earlier. It might be beneficial to adjust the `Prefix` or/and `Bucket` fields to keep the ControlPlane and DataPlane backups separated.
+      - Create the backup manifest. This step varies depending on the complexity of the workloads in the Data Plane. It's essential to thoroughly examine how to back up the PersistentVolumes, the backend used, and ensure compatibility with our storage provisioner.
+      
+      We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
+    
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    
+    !!! Important
+    
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+    
+    Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
+    
+    ### Manual actions before backup
+    
+    Before deploying the `backup` manifest, several actions are required:
+    
+    - Scale down the NodePool to 0 replicas.
+    
+        ```bash
+        oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> scale nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --replicas 0
+        ```
+        
+        This will make the HostedCluster nodes to come back to the Infraenv in the Bare Metal provider or the instance deletion in the other ones.
+        
+    - Pause the HostedCluster and NodePools.
+        
+        ```bash
+        oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch hostedcluster -n <HOSTEDCLUSTER NAMESPACE> <HOSTEDCLUSTER NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "true"}]'
+        oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "true"}]'
+        ```
+        
+        This will allow the controller to halt modifications over the ETCD.
+        
+    ### Control Plane backup
+        
+    Now, we will apply the backup manifest. Here is how it looks like:
+        
+    ```yaml
+    ---
+    apiVersion: velero.io/v1
+    kind: Backup
+    metadata:
+      name: hc-clusters-hosted-backup
+      namespace: openshift-adp
+      labels:
+        velero.io/storage-location: default
+        spec:
+      hooks: {}
+      includedNamespaces:
+      - clusters
+      - clusters-hosted
+      includedResources:
+      - sa
+      - role
+      - rolebinding
+      - pod
+      - pvc
+      - pv
+      - bmh
+      - configmap
+      - infraenv
+      - priorityclasses
+      - pdb
+      - agents
+      - hostedcluster
+      - nodepool
+      - secrets
+      - services
+      - deployments
+      - hostedcontrolplane
+      - cluster
+      - agentcluster
+      - agentmachinetemplate
+      - agentmachine
+      - machinedeployment
+      - machineset
+      - machine
+      excludedResources: []
+      storageLocation: default
+      ttl: 2h0m0s
+      snapshotMoveData: true
+      datamover: "velero"
+      defaultVolumesToFsBackup: true
+    ```
+        
+    We will emphasize the most important fields:
+    
+    - These two fields enable the CSI VolumeSnapshots to be automatically uploaded to the remote cloud storage.
+    
+    ```yaml
+    snapshotMoveData: true
+    datamover: "velero"
+    ```
+    
+    - This particular field is crucial if you utilize a combination of CSI Volume Snapshot and fs-backup. It designates fs-backup as the default method for Persistent Volume backup. If you wish to continue using CSI Volume Snapshot (within the same backup manifest), you will need to add an annotation to the desired pods, including the PVs `backup.velero.io/backup-volumes-excludes=<pvc-name>`. Further information can be found [here](https://velero.io/docs/latest/file-system-backup/#using-the-opt-out-approach).
+    
+    ```yaml
+    defaultVolumesToFsBackup: true
+    ```
+    
+    - This field selects the namespaces from which objects will be backed up. They should include namespaces from both the HostedCluster (in the example `clusters`) and the HostedControlPlane (in the example `clusters-hosted`).
+    
+    ```yaml
+    includedNamespaces:
+    - clusters
+    - clusters-hosted
+    ```
+    
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    
+    The backup process is considered complete when the `status.phase` is `Completed`.
 
-### Data Plane workloads backup
+=== "**KubeVirt**"
 
-!!! Note
+    ### Backup of a kubeVirt Hosted Cluster
+    !!! important
+        The restore may only be done on the same management cluster where the backup was created.
 
-    If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
+    Backup of a hosted cluster, running on a KubeVirt platform may be done on a running hosted cluster, and there is no
+    need to pause it. 
+    
+    The backup will contain the hosted control plane components, the hosted cluster ETCD, and the data stored on the 
+    hosted cluster PVCs.
 
-If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    The backup will not contain the KubeVirt VMs, used as worker nodes, and they will be automatically recreated after
+    the restore.
+    #### Performing the Backup
+    The backup itself is done by creating a velero Backup resource. Here is how its manifest looks like:
+    ```yaml
+    apiVersion: velero.io/v1
+    kind: Backup
+    metadata:
+      name: hc-clusters-hosted-backup
+      namespace: openshift-adp
+      labels:
+        velero.io/storage-location: default
+    spec:
+      includedNamespaces:
+      - clusters
+      - clusters-hosted
+      includedResources:
+      - sa
+      - role
+      - rolebinding
+      - deployment
+      - statefulset
+      - pv
+      - pvc
+      - bmh
+      - configmap
+      - infraenv
+      - priorityclasses
+      - pdb
+      - hostedcluster
+      - nodepool
+      - secrets
+      - hostedcontrolplane
+      - cluster
+      - datavolume
+      - service
+      - route
+      excludedResources: [ ]
+      labelSelector:
+        matchExpressions:
+        - key: 'hypershift.openshift.io/is-kubevirt-rhcos'
+          operator: 'DoesNotExist'
+      storageLocation: default
+      preserveNodePorts: true
+      ttl: 4h0m0s
+      snapshotMoveData: true
+      datamover: "velero"
+      defaultVolumesToFsBackup: false
+    ```
+    We will emphasize the most important fields:
+    
+    - These two fields enable the CSI VolumeSnapshots to be automatically uploaded to the remote cloud storage.
+    
+        ```yaml
+        snapshotMoveData: true
+        datamover: "velero"
+        ```
+    
+    - We don't want to use this feature. This will allow us to safely backup the PVCs we want 
+    
+        ```yaml
+        defaultVolumesToFsBackup: false
+        ```
+    
+    - This field selects the namespaces from which objects will be backed up. They should include namespaces from both
+      the HostedCluster (in the example `clusters`) and the HostedControlPlane (in the example `clusters-hosted`).
+      
+    
+        ```yaml
+        includedNamespaces:
+        - clusters
+        - clusters-hosted
+        ```
 
-The steps will indeed be quite similar:
-
-- Deploy the OADP operator from OLM.
-- Create the DPA (Data Protection Application), with a manifest similar to the one provided earlier. It might be beneficial to adjust the `Prefix` or/and `Bucket` fields to keep the ControlPlane and DataPlane backups separated.
-- Create the backup manifest. This step varies depending on the complexity of the workloads in the Data Plane. It's essential to thoroughly examine how to back up the PersistentVolumes, the backend used, and ensure compatibility with our storage provisioner.
-
-We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
-
-As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
-
-!!! Important
-
-    The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
-
-Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
-
-### Manual actions before backup
-
-Before deploying the `backup` manifest, several actions are required:
-
-- Scale down the NodePool to 0 replicas.
-
-```bash
-oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> scale nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --replicas 0
-```
-
-This will make the HostedCluster nodes to come back to the Infraenv in the Bare Metal provider or the instance deletion in the other ones.
-
-- Pause the HostedCluster and NodePools.
-
-```bash
-oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch hostedcluster -n <HOSTEDCLUSTER NAMESPACE> <HOSTEDCLUSTER NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "true"}]'
-oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "true"}]'
-```
-
-This will allow the controller to halt modifications over the ETCD.
-
-### Control Plane backup
-
-Now, we will apply the backup manifest. Here is how it looks like:
-
-```yaml
----
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: hc-clusters-hosted-backup
-  namespace: openshift-adp
-  labels:
-    velero.io/storage-location: default
-spec:
-  hooks: {}
-  includedNamespaces:
-  - clusters
-  - clusters-hosted
-  includedResources:
-  - sa
-  - role
-  - rolebinding
-  - pod
-  - pvc
-  - pv
-  - bmh
-  - configmap
-  - infraenv
-  - priorityclasses
-  - pdb
-  - agents
-  - hostedcluster
-  - nodepool
-  - secrets
-  - services
-  - deployments
-  - hostedcontrolplane
-  - cluster
-  - agentcluster
-  - agentmachinetemplate
-  - agentmachine
-  - machinedeployment
-  - machineset
-  - machine
-  excludedResources: []
-  storageLocation: default
-  ttl: 2h0m0s
-  snapshotMoveData: true
-  datamover: "velero"
-  defaultVolumesToFsBackup: true
-```
-
-We will emphasize the most important fields:
-
-- These two fields enable the CSI VolumeSnapshots to be automatically uploaded to the remote cloud storage.
-
-```yaml
-snapshotMoveData: true
-datamover: "velero"
-```
-
-- This particular field is crucial if you utilize a combination of CSI Volume Snapshot and fs-backup. It designates fs-backup as the default method for Persistent Volume backup. If you wish to continue using CSI Volume Snapshot (within the same backup manifest), you will need to add an annotation to the desired pods, including the PVs `backup.velero.io/backup-volumes-excludes=<pvc-name>`. Further information can be found [here](https://velero.io/docs/latest/file-system-backup/#using-the-opt-out-approach).
-
-```yaml
-defaultVolumesToFsBackup: true
-```
-
-- This field selects the namespaces from which objects will be backed up. They should include namespaces from both the HostedCluster (in the example `clusters`) and the HostedControlPlane (in the example `clusters-hosted`).
-
-```yaml
-  includedNamespaces:
-  - clusters
-  - clusters-hosted
-```
-
-Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
-
-The backup process is considered complete when the `status.phase` is `Completed`.
+    !!! hint
+        By default, the HostedControlPlane namespace is `clusters-<hosted cluster name>`.
+    
+    - The boot image of the KubeVirt VMs, that are used as the hosted cluster nodes, are stored in huge PVCs. We don't 
+      need these PVCs because the VMs are going to be recreated as new VMs. We want tilter these PVCs out of the backup 
+      to gain meaningful reduce in backup time and storage size. We'll filter these PVC using this label selector:
+   
+        ```yaml
+        labelSelector:
+          matchExpressions:
+          - key: 'hypershift.openshift.io/is-kubevirt-rhcos'
+            operator: 'DoesNotExist'
+        ```
+    
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    
+    The backup process is considered complete when the `status.phase` is `Completed`.
 
 ## Restore
 
@@ -330,28 +435,40 @@ You can monitor the restoration process by checking the restore status field and
 
 The restoration process is considered complete once the `status.phase` is `Completed`.
 
-Now, we need to undo the actions taken before the backup phase:
+### Post Restore Operations
 
-- Revert the controllers' reconciliation state to unpaused.
+=== "**AWS and Bare Metal**"
 
-```bash
-oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch hostedcluster -n <HOSTEDCLUSTER NAMESPACE> <HOSTEDCLUSTER NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "false"}]'
-oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "false"}]'
-```
+    Now, we need to undo the actions taken before the backup phase:
+    
+    - Revert the controllers' reconciliation state to unpaused.
+    
+    ```bash
+    oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch hostedcluster -n <HOSTEDCLUSTER NAMESPACE> <HOSTEDCLUSTER NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "false"}]'
+    oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "false"}]'
+    ```
+    
+    !!! Important
+    
+        **(For BareMetal Provider)** After some time in the BareMetal case, you will see Agents popping up. This indicates that the nodes have been booted up (which depends on the BareMetalHosts that you backed up). If you don't see those agents appearing, try recreating the BareMetalHosts in the proper namespace. This ensures that the Agents will appear. Then, you can rescale the node pool as follows:
+    
+    - Scale back the Nodepool/s to the desired number of replicas.
+    
+    ```bash
+    oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> scale nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --replicas X
+    ```
+    
+    After some time, the nodes will join the cluster, and the Hosted Cluster will be back online.
+    
+    Following that, you will need to restore the Data Plane workloads if applicable to your use case.
 
-!!! Important
+=== "**KubeVirt**"
 
-    **(For BareMetal Provider)** After some time in the BareMetal case, you will see Agents popping up. This indicates that the nodes have been booted up (which depends on the BareMetalHosts that you backed up). If you don't see those agents appearing, try recreating the BareMetalHosts in the proper namespace. This ensures that the Agents will appear. Then, you can rescale the node pool as follows:
+    !!! important
+        The restore may only be done on the same management cluster where the backup was created.
 
-- Scale back the Nodepool/s to the desired number of replicas.
-
-```bash
-oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> scale nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --replicas X
-```
-
-After some time, the nodes will join the cluster, and the Hosted Cluster will be back online.
-
-Following that, you will need to restore the Data Plane workloads if applicable to your use case.
+    After a while, new KubeVirt VMs will be created, and will join the hosted cluster as worker nodes. The hosted cluster workloads
+    are expected to be running again.
 
 ## Watching and Troubleshooting
 
