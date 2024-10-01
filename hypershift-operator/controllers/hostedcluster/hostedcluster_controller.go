@@ -388,84 +388,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
-		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
-		// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration annotation.
-		// This annotation will create a new condition called HostedClusterDestroyed which in conjuntion with CloudResourcesDestroyed
-		// a SRE could determine if there are dangling objects once the HostedCluster is deleted. These cloud dangling objects will remain
-		// in AWS, and SRE will report them to the final user.
-		hostedClusterDestroyedCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed))
-		if hostedClusterDestroyedCondition == nil || hostedClusterDestroyedCondition.Status != metav1.ConditionTrue {
-			// Keep trying to delete until we know it's safe to finalize.
-			completed, err := r.delete(ctx, hcluster)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
-			}
-			if !completed {
-				log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
-				return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
-			}
-		}
-
-		// Once the deletion has occurred, we need to clean up cluster-wide resources
-		selector := client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{
-			controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
-			controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
-		})}
-		var crs rbacv1.ClusterRoleList
-		if err := r.List(ctx, &crs, selector); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to list cluster roles: %w", err)
-		}
-		if len(crs.Items) > 0 {
-			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRole{}, selector); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete cluster roles: %w", err)
-			}
-		}
-		var crbs rbacv1.ClusterRoleBindingList
-		if err := r.List(ctx, &crbs, selector); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to list cluster role bindings: %w", err)
-		}
-		if len(crbs.Items) > 0 {
-			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
-			}
-		}
-
-		if hcDestroyGracePeriod > 0 {
-			if hostedClusterDestroyedCondition == nil {
-				hostedClusterDestroyedCondition = &metav1.Condition{
-					Type:               string(hyperv1.HostedClusterDestroyed),
-					Status:             metav1.ConditionTrue,
-					Message:            fmt.Sprintf("Grace period set: %v", hcDestroyGracePeriod),
-					Reason:             hyperv1.WaitingForGracePeriodReason,
-					LastTransitionTime: metav1.NewTime(time.Now()),
-					ObservedGeneration: hcluster.Generation,
-				}
-
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *hostedClusterDestroyedCondition)
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-				}
-				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
-				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod}, nil
-			}
-
-			if time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time) < hcDestroyGracePeriod {
-				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
-				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod - time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time)}, nil
-			}
-			log.Info("grace period finished", "gracePeriod", hcDestroyGracePeriod)
-		}
-
-		// Now we can remove the finalizer.
-		if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
-			controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
-			if err := r.Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
-			}
-		}
-
-		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, req, log, hcluster, hcDestroyGracePeriod)
 	}
 
 	// Part zero: fix up conversion
@@ -1836,6 +1759,96 @@ func (r *HostedClusterReconciler) reconcileMandatoryConditions(ctx context.Conte
 		}
 	}
 	return nil
+}
+
+// reconcileDeletion performs a graceful deletion of the HostedCluster and its resources by setting a destroyed
+// condition, attempting to delete resources, retrying during the grace period and finally removing the finalizer.
+func (r *HostedClusterReconciler) reconcileDeletion(ctx context.Context, req ctrl.Request, log logr.Logger,
+	hcluster *hyperv1.HostedCluster, hcDestroyGracePeriod time.Duration) (ctrl.Result, error) {
+	// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
+	// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration
+	// annotation. This annotation will create a new condition called HostedClusterDestroyed which in conjuntion with
+	// CloudResourcesDestroyed a SRE could determine if there are dangling objects once the HostedCluster is deleted.
+	// These cloud dangling objects will remain in AWS, and SRE will report them to the final user.
+	hostedClusterDestroyedCondition := meta.FindStatusCondition(
+		hcluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed),
+	)
+	if hostedClusterDestroyedCondition == nil || hostedClusterDestroyedCondition.Status != metav1.ConditionTrue {
+		// Keep trying to delete until we know it's safe to finalize.
+		completed, err := r.delete(ctx, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
+		}
+		if !completed {
+			log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
+			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
+		}
+	}
+
+	// Once the deletion has occurred, we need to clean up cluster-wide resources
+	selector := client.MatchingLabelsSelector{
+		Selector: labels.SelectorFromSet(
+			labels.Set{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		),
+	}
+	var crs rbacv1.ClusterRoleList
+	if err := r.List(ctx, &crs, selector); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list cluster roles: %w", err)
+	}
+	if len(crs.Items) > 0 {
+		if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRole{}, selector); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete cluster roles: %w", err)
+		}
+	}
+	var crbs rbacv1.ClusterRoleBindingList
+	if err := r.List(ctx, &crbs, selector); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list cluster role bindings: %w", err)
+	}
+	if len(crbs.Items) > 0 {
+		if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
+		}
+	}
+
+	if hcDestroyGracePeriod > 0 {
+		if hostedClusterDestroyedCondition == nil {
+			hostedClusterDestroyedCondition = &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionTrue,
+				Message:            fmt.Sprintf("Grace period set: %v", hcDestroyGracePeriod),
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				LastTransitionTime: metav1.NewTime(time.Now()),
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *hostedClusterDestroyedCondition)
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
+			log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
+			return ctrl.Result{RequeueAfter: hcDestroyGracePeriod}, nil
+		}
+
+		if time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time) < hcDestroyGracePeriod {
+			log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
+			return ctrl.Result{RequeueAfter: hcDestroyGracePeriod - time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time)}, nil
+		}
+		log.Info("grace period finished", "gracePeriod", hcDestroyGracePeriod)
+	}
+
+	// Now we can remove the finalizer.
+	if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
+		controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
+		if err := r.Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
+		}
+	}
+
+	log.Info("Deleted hostedcluster", "name", req.NamespacedName)
+	return ctrl.Result{}, nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
