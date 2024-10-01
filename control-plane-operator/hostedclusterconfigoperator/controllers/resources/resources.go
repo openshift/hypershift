@@ -12,6 +12,8 @@ import (
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -22,15 +24,18 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -228,6 +233,24 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	}
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
+	}
+	// HCCO needs to watch for KubeletConfig ConfigMaps on the Control plane cluster (MNG cluster)
+	// and mirrors them to the hosted cluster so the operators on the hosted cluster
+	// could access the data in the mirrored ConfigMaps.
+	// This is driven by Telco customers that would like to use the NUMAResource-operator
+	// https://github.com/openshift-kni/numaresources-operator/tree/main
+	// on their hosted clusters.
+	// NUMAResource-operator needs access to the KubeletConfig
+	//  so it could run properly on the cluster.
+	p := predicate.NewPredicateFuncs(func(o client.Object) bool {
+		cm := o.(*corev1.ConfigMap)
+		if _, ok := cm.Labels[nodepool.KubeletConfigConfigMapLabel]; ok {
+			return true
+		}
+		return false
+	})
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &corev1.ConfigMap{}, eventHandler(), p)); err != nil {
+		return fmt.Errorf("failed to watch ConfigMap: %w", err)
 	}
 
 	return nil
@@ -587,6 +610,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling olm resources")
 	errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, r.DigestListerFN)...)
+
+	log.Info("reconciling kubelet configs")
+	if err := r.reconcileKubeletConfig(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubelet config: %w", err))
+	}
 
 	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
 		log.Info("reconciling storage resources")
@@ -2049,6 +2077,72 @@ func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) e
 	}
 
 	return errors.NewAggregate(errs)
+}
+
+// reconcileKubeletConfig Lists the KubeletConfig ConfigMaps from the controlPlane cluster
+// and copies them to the hosted cluster.
+// In addition, it deletes KubeletConfig ConfigMaps from the hosted cluster which are no longer relevant.
+// I.e., has been deleted from the controlPlane cluster.
+// IOW, it makes sure to synchronize the KubeletConfig ConfigMaps to be the same between the controlPlane cluster
+// and the hosted-cluster.
+func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	wantCMList := &corev1.ConfigMapList{}
+	if err := r.cpClient.List(ctx, wantCMList, &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		Namespace:     r.hcpNamespace,
+	}); err != nil {
+		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from controlplane namespace %s: %w", r.hcpNamespace, err)
+	}
+	want := set.Set[string]{}
+	for _, cm := range wantCMList.Items {
+		want.Insert(cm.Name)
+	}
+	for _, cm := range wantCMList.Items {
+		hostedClusterCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cm.Name,
+				Namespace: ConfigManagedNamespace,
+			},
+		}
+		if result, err := r.CreateOrUpdate(ctx, r.client, hostedClusterCM, func() error {
+			return mutateKubeletConfig(&cm, hostedClusterCM)
+		}); err != nil {
+			return fmt.Errorf("failed to reconciled KubeletConfig %s ConfigMap: %w", client.ObjectKeyFromObject(hostedClusterCM).String(), err)
+		} else {
+			log.Info("reconciled ConfigMap", "result", result)
+		}
+	}
+
+	haveCMList := &corev1.ConfigMapList{}
+	if err := r.client.List(ctx, haveCMList, &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		Namespace:     ConfigManagedNamespace,
+	}); err != nil {
+		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from hostedcluster namespace %s: %w", ConfigManagedNamespace, err)
+	}
+	for i := range haveCMList.Items {
+		cm := &haveCMList.Items[i]
+		if want.Has(cm.Name) {
+			continue
+		}
+		log.Info("delete mirror config", "config", client.ObjectKeyFromObject(cm).String())
+		if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
+		}
+	}
+	return nil
+}
+
+func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
+	hostedClusterConfigMap.Immutable = ptr.To(true)
+	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
+		nodepool.KubeletConfigConfigMapLabel: "true",
+		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
+	})
+	hostedClusterConfigMap.Data = controlPlaneConfigMap.Data
+	return nil
 }
 
 func isAllowedWebhookUrl(disallowedUrls []string, url string) bool {

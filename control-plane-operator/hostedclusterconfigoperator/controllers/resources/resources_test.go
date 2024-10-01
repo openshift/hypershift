@@ -3,6 +3,9 @@ package resources
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	supportutil "github.com/openshift/hypershift/support/util"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"math/rand"
 	"testing"
 	"time"
@@ -1107,5 +1110,106 @@ func TestReconcileKASEndpoints(t *testing.T) {
 			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
 			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
 		})
+	}
+}
+
+func TestReconcileKubeletConfig(t *testing.T) {
+	hcpNamespace := "hostedcontrolplane-namespace"
+	hcNamespace := "openshift-config-managed"
+	npName1 := "nodepool-test1"
+	npName2 := "nodepool-test2"
+	kubeletConfig1 := `
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    metadata:
+      name: set-max-pods
+    spec:
+      kubeletConfig:
+        maxPods: 100
+`
+	testCases := []struct {
+		name                           string
+		hostedControlPlaneObjects      []client.Object
+		existHostedControlPlaneObjects []client.Object
+		expectedHostedClusterObjects   []client.Object
+	}{
+		{
+			name: "copy kubelet config from control plane NS",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
+		{
+			name: "some CM already exist and some are not, expect HCCO to catch up",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
+		{
+			name: "CM need to be deleted",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cpFakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlaneObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existHostedControlPlaneObjects...).Build()
+			r := &reconciler{
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				client:                 fakeClient,
+				cpClient:               cpFakeClient,
+			}
+			g.Expect(r.reconcileKubeletConfig(context.TODO())).To(Succeed())
+			for _, obj := range tc.expectedHostedClusterObjects {
+				g.Expect(r.client.Get(context.TODO(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+			}
+			listOpts := []client.ListOption{
+				client.InNamespace(hcNamespace),
+				client.MatchingLabels{
+					nodepool.KubeletConfigConfigMapLabel: "true",
+				},
+			}
+			cmList := &corev1.ConfigMapList{}
+			g.Expect(r.client.List(context.TODO(), cmList, listOpts...)).To(Succeed(), "failed to list KubeletConfig ConfigMap")
+			expectedLen := len(tc.expectedHostedClusterObjects)
+			g.Expect(cmList.Items).To(HaveLen(expectedLen), "more ConfigMaps found then expected; got=%d want=%", len(cmList.Items), expectedLen)
+		})
+	}
+}
+
+func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				nodepool.KubeletConfigConfigMapLabel: "true",
+			},
+		},
+		Data: map[string]string{
+			"config": data,
+		},
 	}
 }
