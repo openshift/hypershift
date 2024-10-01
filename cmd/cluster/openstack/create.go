@@ -86,8 +86,32 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
 	// Check that the OpenStack credentials file arg is set and that the file exists with the "openstack" cloud
-	if err := validateOpenStackCredentialsFile(o.OpenStackCredentialsFile); err != nil {
-		return nil, err
+	if o.OpenStackCredentialsFile == "" {
+		return nil, fmt.Errorf("OpenStack credentials file is required")
+	}
+
+	if _, err := os.Stat(o.OpenStackCredentialsFile); err != nil {
+		return nil, fmt.Errorf("OpenStack credentials file does not exist: %w", err)
+	}
+
+	cloudsFile, err := os.ReadFile(o.OpenStackCredentialsFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
+	}
+
+	clouds := make(map[string]interface{})
+	if err := yaml.Unmarshal(cloudsFile, &clouds); err != nil {
+		return nil, fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
+	}
+
+	_, ok := clouds["clouds"]
+	if !ok {
+		return nil, fmt.Errorf("'clouds' key not found in credentials file")
+	}
+
+	clouds = clouds["clouds"].(map[string]interface{})
+	if _, ok := clouds["openstack"]; !ok {
+		return nil, fmt.Errorf("'openstack' cloud not found in credentials file")
 	}
 
 	if err := util.ValidateRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
@@ -106,7 +130,6 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		},
 	}
 
-	var err error
 	validOpts.ValidatedOpenStackPlatformCreateOptions, err = o.NodePoolOpts.Validate()
 
 	return validOpts, err
@@ -208,34 +231,4 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	}
 
 	return cmd
-}
-
-// validateOpenStackCredentialsFile checks that the OpenStack credentials file exists
-// and that the cloud name is "openstack" which we hardcode for now.
-func validateOpenStackCredentialsFile(credentialsFile string) error {
-	if credentialsFile == "" {
-		return fmt.Errorf("OpenStack credentials file is required")
-	}
-
-	if _, err := os.Stat(credentialsFile); err != nil {
-		return fmt.Errorf("OpenStack credentials file does not exist: %w", err)
-	}
-
-	cloudsFile, err := os.ReadFile(credentialsFile)
-	if err != nil {
-		return fmt.Errorf("failed to read OpenStack credentials file: %w", err)
-	}
-	clouds := make(map[string]interface{})
-	if err := yaml.Unmarshal(cloudsFile, &clouds); err != nil {
-		return fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
-	}
-	_, ok := clouds["clouds"]
-	if !ok {
-		return fmt.Errorf("'clouds' key not found in credentials file")
-	}
-	clouds = clouds["clouds"].(map[string]interface{})
-	if _, ok := clouds["openstack"]; !ok {
-		return fmt.Errorf("'openstack' cloud not found in credentials file")
-	}
-	return nil
 }
