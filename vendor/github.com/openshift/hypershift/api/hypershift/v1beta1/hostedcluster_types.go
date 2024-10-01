@@ -334,6 +334,9 @@ const (
 	// SkipControlPlaneNamespaceDeletionAnnotation tells the the hosted cluster controller not to delete the hosted control plane
 	// namespace during hosted cluster deletion when this annotation is set to the value "true".
 	SkipControlPlaneNamespaceDeletionAnnotation = "hypershift.openshift.io/skip-delete-hosted-controlplane-namespace"
+
+	// DisableIgnitionServerAnnotation controls skipping of the ignition server deployment.
+	DisableIgnitionServerAnnotation = "hypershift.openshift.io/disable-ignition-server"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

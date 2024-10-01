@@ -1079,27 +1079,31 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	r.Log.Info("Reconciling ignition server")
-	if err := ignitionserver.ReconcileIgnitionServer(ctx,
-		r.Client,
-		createOrUpdate,
-		releaseImageProvider.Version(),
-		releaseImageProvider.GetImage(util.CPOImageName),
-		releaseImageProvider.ComponentImages(),
-		hostedControlPlane,
-		r.DefaultIngressDomain,
-		// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
-		// so we know it always exists here.
-		true,
-		r.ReleaseProvider.GetRegistryOverrides(),
-		util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
-		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-		config.OwnerRefFrom(hostedControlPlane),
-		openShiftTrustedCABundleConfigMapForCPOExists,
-		r.ReleaseProvider.GetMirroredReleaseImage(),
-		labelHCPRoutes(hostedControlPlane),
-	); err != nil {
-		return fmt.Errorf("failed to reconcile ignition server: %w", err)
+	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+		r.Log.Info("Reconciling ignition server")
+		if err := ignitionserver.ReconcileIgnitionServer(ctx,
+			r.Client,
+			createOrUpdate,
+			releaseImageProvider.Version(),
+			releaseImageProvider.GetImage(util.CPOImageName),
+			releaseImageProvider.ComponentImages(),
+			hostedControlPlane,
+			r.DefaultIngressDomain,
+			// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
+			// so we know it always exists here.
+			true,
+			r.ReleaseProvider.GetRegistryOverrides(),
+			util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+			config.OwnerRefFrom(hostedControlPlane),
+			openShiftTrustedCABundleConfigMapForCPOExists,
+			r.ReleaseProvider.GetMirroredReleaseImage(),
+			labelHCPRoutes(hostedControlPlane),
+		); err != nil {
+			return fmt.Errorf("failed to reconcile ignition server: %w", err)
+		}
+	} else {
+		r.Log.Info("Skipping ignition server reconciliation as specified")
 	}
 
 	// Reconcile Konnectivity
@@ -1206,16 +1210,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	// Reconcile Ignition
-	r.Log.Info("Reconciling core machine configs")
-	if err := r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile ignition: %w", err)
-	}
-
-	// Reconcile machine config server config
-	r.Log.Info("Reconciling machine config server config")
-	if err := r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile mcs config: %w", err)
+	// Reconcile Ignition-server configs
+	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+		r.Log.Info("Reconciling ignition-server configs")
+		if err := r.reconcileIgnitionServerConfigs(ctx, hostedControlPlane, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile ignition-server configs: %w", err)
+		}
 	}
 
 	// Reconcile kubeadmin password
@@ -2372,11 +2372,13 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}
 
 	// MCS Cert
-	machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, machineConfigServerCert, func() error {
-		return pki.ReconcileMachineConfigServerCert(machineConfigServerCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
+	if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+		machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, machineConfigServerCert, func() error {
+			return pki.ReconcileMachineConfigServerCert(machineConfigServerCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
+		}
 	}
 
 	// Cluster Node Tuning Operator metrics Serving Cert
@@ -2525,12 +2527,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}
 	}
 
-	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
-		ignitionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, ignitionServerCert, func() error {
-			return pki.ReconcileIgnitionServerCertSecret(ignitionServerCert, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile ignition server cert: %w", err)
+	if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+			ignitionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
+			if _, err := createOrUpdate(ctx, r, ignitionServerCert, func() error {
+				return pki.ReconcileIgnitionServerCertSecret(ignitionServerCert, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile ignition server cert: %w", err)
+			}
 		}
 	}
 
@@ -4007,6 +4011,21 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx contex
 		return fmt.Errorf("failed to reconcile image registry operator pod monitor: %w", err)
 	}
 
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileIgnitionServerConfigs(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	// Reconcile core ignition config
+	r.Log.Info("Reconciling core ignition config")
+	if err := r.reconcileCoreIgnitionConfig(ctx, hcp, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile core ignition config: %w", err)
+	}
+
+	// Reconcile machine config server config
+	r.Log.Info("Reconciling machine config server config")
+	if err := r.reconcileMachineConfigServerConfig(ctx, hcp, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile mcs config: %w", err)
+	}
 	return nil
 }
 
