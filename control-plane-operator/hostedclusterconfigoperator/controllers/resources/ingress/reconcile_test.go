@@ -24,6 +24,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputIsPrivate            bool
 		inputIsNLB                bool
 		inputLoadBalancerScope    operatorv1.LoadBalancerScope
+		inputLoadBalancerIP       string
 		expectedIngressController *operatorv1.IngressController
 	}{
 		{
@@ -284,11 +285,42 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                   "OpenStack uses Loadbalancer publishing strategy with a floating IP",
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputPlatformType:      hyperv1.OpenStackPlatform,
+			inputReplicas:          fakeInputReplicas,
+			inputIsIBMCloudUPI:     false,
+			inputIsPrivate:         false,
+			inputLoadBalancerIP:    "1.2.3.4",
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type: operatorv1.LoadBalancerServiceStrategyType,
+						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
+								Type: operatorv1.OpenStackLoadBalancerProvider,
+								OpenStack: &operatorv1.OpenStackLoadBalancerParameters{
+									FloatingIP: "1.2.3.4",
+								},
+							},
+						},
+					},
+					DefaultCertificate: &corev1.LocalObjectReference{
+						Name: manifests.IngressDefaultIngressControllerCert().Name,
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate, tc.inputIsNLB, tc.inputLoadBalancerScope)
+			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate, tc.inputIsNLB, tc.inputLoadBalancerScope, tc.inputLoadBalancerIP)
 			g.Expect(err).To(BeNil())
 			g.Expect(tc.inputIngressController).To(BeEquivalentTo(tc.expectedIngressController))
 		})

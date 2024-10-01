@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 )
 
-func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool, useNLB bool, loadBalancerScope operatorv1.LoadBalancerScope) error {
+func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool, useNLB bool, loadBalancerScope operatorv1.LoadBalancerScope, loadBalancerIP string) error {
 	// If ingress controller already exists, skip reconciliation to allow day-2 configuration
 	if ingressController.ResourceVersion != "" {
 		return nil
@@ -79,6 +79,22 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 					Value: "edge",
 				},
 			},
+		}
+	case hyperv1.OpenStackPlatform:
+		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+			Type: operatorv1.LoadBalancerServiceStrategyType,
+			LoadBalancer: &operatorv1.LoadBalancerStrategy{
+				Scope: loadBalancerScope,
+				ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
+					Type: operatorv1.OpenStackLoadBalancerProvider,
+					OpenStack: &operatorv1.OpenStackLoadBalancerParameters{
+						FloatingIP: loadBalancerIP,
+					},
+				},
+			},
+		}
+		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
+			Name: manifests.IngressDefaultIngressControllerCert().Name,
 		}
 	default:
 		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{

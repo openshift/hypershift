@@ -4074,6 +4074,20 @@ spec:
                         - cloudName
                         - name
                         type: object
+                      ingressFloatingIP:
+                        description: |-
+                          IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+                          be associated with the OpenShift ingress port.
+                          When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
+                          When specified, the floating IP has to be pre-created.  If the
+                          specified value is not a floating IP or is already claimed, the
+                          OpenStack cloud provider won't be able to provision the load
+                          balancer.
+                          This value must be a valid IPv4 or IPv6 address.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: floatingIP must be a valid IPv4 or IPv6 address
+                          rule: isIP(self)
                       managedSubnets:
                         description: |-
                           ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,

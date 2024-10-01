@@ -978,7 +978,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
-		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope)
+		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope, p.LoadBalancerIP)
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}

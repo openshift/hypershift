@@ -123,6 +123,19 @@ type OpenStackPlatformSpec struct {
 	// +listType=set
 	// +optional
 	Tags []string `json:"tags,omitempty"`
+
+	// IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+	// be associated with the OpenShift ingress port.
+	// When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
+	// When specified, the floating IP has to be pre-created.  If the
+	// specified value is not a floating IP or is already claimed, the
+	// OpenStack cloud provider won't be able to provision the load
+	// balancer.
+	// This value must be a valid IPv4 or IPv6 address.
+	//
+	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="floatingIP must be a valid IPv4 or IPv6 address"
+	// +optional
+	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
 }
 
 // OpenStackIdentityReference is a reference to an infrastructure

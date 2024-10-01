@@ -29,6 +29,7 @@ type OpenStackPlatformSpecApplyConfiguration struct {
 	ExternalNetwork        *NetworkParamApplyConfiguration               `json:"externalNetwork,omitempty"`
 	DisableExternalNetwork *bool                                         `json:"disableExternalNetwork,omitempty"`
 	Tags                   []string                                      `json:"tags,omitempty"`
+	IngressFloatingIP      *string                                       `json:"ingressFloatingIP,omitempty"`
 }
 
 // OpenStackPlatformSpecApplyConfiguration constructs an declarative configuration of the OpenStackPlatformSpec type for use with
@@ -118,5 +119,13 @@ func (b *OpenStackPlatformSpecApplyConfiguration) WithTags(values ...string) *Op
 	for i := range values {
 		b.Tags = append(b.Tags, values[i])
 	}
+	return b
+}
+
+// WithIngressFloatingIP sets the IngressFloatingIP field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IngressFloatingIP field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithIngressFloatingIP(value string) *OpenStackPlatformSpecApplyConfiguration {
+	b.IngressFloatingIP = &value
 	return b
 }

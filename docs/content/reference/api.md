@@ -8966,6 +8966,25 @@ to an external network is not possible or desirable, e.g. if using a provider ne
 <p>Tags to set on all resources in cluster which support tags</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ingressFloatingIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+be associated with the OpenShift ingress port.
+When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
+When specified, the floating IP has to be pre-created.  If the
+specified value is not a floating IP or is already claimed, the
+OpenStack cloud provider won&rsquo;t be able to provision the load
+balancer.
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PayloadArchType { #hypershift.openshift.io/v1beta1.PayloadArchType }
