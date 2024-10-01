@@ -1,13 +1,11 @@
 # Create a OpenStack cluster
 
-Install an OCP cluster running on VMs within a management OCP cluster
+This document describes how to set up an OpenStack cluster with HyperShift.
 
 ## Limitations
 
 * The HyperShift Operator with OpenStack support is currently in development and is not intended for production use.
 * OpenStack CSI (Cinder and Manila) are not functional.
-* Operators running in the workload cluster (e.g. console) won't be operational on day 1 and a manual and documented
-  action is required to make them work on day 2.
 
 ## Prerequisites
 
@@ -83,6 +81,22 @@ Here is an example of how to upload an RHCOS image to OpenStack:
 openstack image create --disk-format qcow2 --file rhcos-417.94.202407080309-0-openstack.x86_64.qcow2 rhcos
 ```
 
+## Create a floating IP for the Ingress (optional)
+
+To get Ingress functional on day 1, you need to can pre-create a floating IP that will be used by the Ingress service.
+
+```shell
+openstack floating ip create <external-network-id>
+```
+
+If you provide the floating IP to the `--openstack-ingress-floating-ip` flag without pre-creating it, cloud-provider-openstack will create it for you
+only if the Neutron API policy allows a user to create floating IP with a specific IP address.
+
+## Update the DNS record for the Ingress (optional)
+
+To get Ingress functional on day 1, you need to create a DNS record for the following wildcard domain that needs to point to the Ingress floating IP:
+`*.apps.<cluster-name>.<base-domain>`
+
 ## Create a HostedCluster
 
 Once all the [prerequisites](#prerequisites) are met, and the HyperShift
@@ -119,6 +133,8 @@ export CA_CERT_PATH="$HOME/ca.crt"
 # SSH Key for the nodepool VMs
 export SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
+export INGRESS_FLOATING_IP="<ingress-floating-ip>"
+
 hcp create cluster openstack \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
@@ -128,7 +144,8 @@ hcp create cluster openstack \
 --openstack-credentials-file $CLOUDS_YAML \
 --openstack-external-network-id $EXTERNAL_ID \
 --openstack-node-image-name $IMAGE_NAME \
---openstack-node-flavor $FLAVOR
+--openstack-node-flavor $FLAVOR \
+--openstack-ingress-floating-ip $INGRESS_FLOATING_IP
 ```
 
 !!! note
@@ -203,8 +220,9 @@ NAME      VERSION       AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.17.0        True        False         5m39s   Cluster version is 4.17.0
 ```
 
-## Ingress and DNS
+## Ingress and DNS (optional day 2)
 
+If you haven't used the `--openstack-ingress-floating-ip` flag, you'll need to update your DNS so Ingress can work.
 Once the workload cluster is deploying, the Ingress controller will be installed
 and a router named `router-default` will be created in the `openshift-ingress` namespace.
 
