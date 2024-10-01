@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"golang.org/x/net/context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -57,7 +58,7 @@ func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
 		tc.config.Data = map[string]string{"config.json": "test-json"}
 		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
 		tc.authConfig.Data = map[string]string{"auth.json": "test-data"}
-		err := ReconcileKubeAPIServerDeployment(kubeAPIDeployment, hcp, ownerRef, tc.deploymentConfig, tc.params.NamedCertificates(), tc.params.CloudProvider,
+		err := ReconcileKubeAPIServerDeployment(context.TODO(), nil, kubeAPIDeployment, hcp, ownerRef, tc.deploymentConfig, tc.params.NamedCertificates(), tc.params.CloudProvider,
 			tc.params.CloudProviderConfig, tc.params.CloudProviderCreds, tc.params.Images, tc.config, tc.auditConfig, tc.authConfig, tc.params.AuditWebhookRef, tc.activeKey, tc.backupKey, 6443, "test-payload-version", tc.params.FeatureGate, nil, tc.params.CipherSuites())
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(kubeAPIDeployment.Spec.MinReadySeconds))

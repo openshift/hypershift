@@ -8255,6 +8255,128 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      managedIdentities:
+                        description: |-
+                          managedIdentities contains the client IDs related to the managed identities needed for HCP control plane
+                          and data plane components that authenticate with Azure's API.
+                        properties:
+                          controlPlaneManagedIdentities:
+                            description: |-
+                              ControlPlaneManagedIdentities contains the client IDs of all the managed identities on the HCP control plane needing to
+                              authenticate with Azure's API.
+                            properties:
+                              azureCloudProviderManagedIdentityClientID:
+                                description: |-
+                                  azureCloudProviderManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the azure
+                                  cloud provider, aka ccm. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+                                  hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              azureDiskManagedIdentityClientID:
+                                description: |-
+                                  azureDiskManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+                                  azure-disk-controller. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen
+                                  separated hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              azureFileManagedIdentityClientID:
+                                description: |-
+                                  azureFileManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+                                  azure-disk-controller. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen
+                                  separated hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              azureKMSManagedIdentityClientID:
+                                description: |-
+                                  azureKMSManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with Azure KMS. The client
+                                  ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters
+                                  in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              clusterAPIAzureManagedIdentityClientID:
+                                description: |-
+                                  clusterAPIAzureManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with cluster-api
+                                  azure. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated
+                                  hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              controlPlaneManagedIdentityClientID:
+                                description: |-
+                                  controlPlaneManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the control plane
+                                  operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated
+                                  hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              imageRegistryManagedIdentityClientID:
+                                description: |-
+                                  imageRegistryManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+                                  cluster-image-registry-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups
+                                  of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              ingressManagedIdentityClientID:
+                                description: |-
+                                  ingressManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+                                  cluster-ingress-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+                                  hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              networkManagedIdentityClientID:
+                                description: |-
+                                  networkManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+                                  cluster-network-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+                                  hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                            required:
+                            - azureCloudProviderManagedIdentityClientID
+                            - azureDiskManagedIdentityClientID
+                            - azureFileManagedIdentityClientID
+                            - clusterAPIAzureManagedIdentityClientID
+                            - controlPlaneManagedIdentityClientID
+                            - imageRegistryManagedIdentityClientID
+                            - ingressManagedIdentityClientID
+                            - networkManagedIdentityClientID
+                            type: object
+                        required:
+                        - controlPlaneManagedIdentities
+                        type: object
                       resourceGroup:
                         default: default
                         description: |-

@@ -1,6 +1,8 @@
 package registryoperator
 
 import (
+	"context"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -35,8 +37,9 @@ func TestReconcileDeployment(t *testing.T) {
 	}
 	deployment := manifests.ImageRegistryOperatorDeployment("test-namespace")
 	imageProvider := imageprovider.NewFromImages(images)
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 	params := NewParams(hcp, "1.0.0", imageProvider, imageProvider, true)
-	if err := ReconcileDeployment(deployment, params); err != nil {
+	if err := ReconcileDeployment(context.TODO(), fakeClient, hcp, deployment, params); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	deploymentYaml, err := util.SerializeResource(deployment, api.Scheme)

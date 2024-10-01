@@ -2,6 +2,8 @@ package registryoperator
 
 import (
 	"bytes"
+	"context"
+	"os"
 	"path"
 	"text/template"
 
@@ -11,11 +13,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -152,7 +156,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	return params
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
+func ReconcileDeployment(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, deployment *appsv1.Deployment, params Params) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selectorLabels(),
@@ -192,6 +196,27 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 				MountPath: "/var/run/secrets/openshift/serviceaccount",
 			},
 		)
+	}
+
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "ARO_HCP_MI_CLIENT_ID",
+				Value: "true",
+			})
+
+		if deployment.Spec.Template.Spec.InitContainers == nil {
+			deployment.Spec.Template.Spec.InitContainers = []corev1.Container{}
+		}
+		deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers, azureutil.AdapterInitContainer())
+
+		azureCredentials, err := azureutil.GetAzureCredentialsFromSecret(ctx, c, hcp.Namespace, hcp.Spec.Platform.Azure.Credentials.Name)
+		if err != nil {
+			return err
+		}
+
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, azureutil.AdapterServerContainer(string(azureCredentials.Data["AZURE_CLIENT_ID"]), string(azureCredentials.Data["AZURE_CLIENT_SECRET"]), string(azureCredentials.Data["AZURE_TENANT_ID"])))
+		params.deploymentConfig.SetDefaultSecurityContext = false
 	}
 
 	params.deploymentConfig.ApplyTo(deployment)

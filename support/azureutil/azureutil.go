@@ -3,18 +3,23 @@ package azureutil
 import (
 	"context"
 	"fmt"
-	"k8s.io/utils/ptr"
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+)
+
+// We received this images directly from Microsoft; we should expect them to change as Microsoft continues development on both containers.
+// We are scheduled to receive new updates to these containers in October 2024 to support Managed Identities. They currently only support Service Principal.
+// TODO past October, will we receive new versions?
+const (
+	AdapterInitImage   = "aromiwi.azurecr.io/artifact/b8e9ef87-cd63-4085-ab14-1c637806568c/buddy/adapter-init:20240905.9"
+	AdapterServerImage = "aromiwi.azurecr.io/artifact/b8e9ef87-cd63-4085-ab14-1c637806568c/buddy/adapter-server:20240905.5"
 )
 
 // GetSubnetNameFromSubnetID extracts the subnet name from a subnet ID
@@ -145,8 +150,8 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 	return vnet, nil
 }
 
-// getNetworkSecurityGroupInfo gets the full information on a network security group based on its ID
-func getNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscriptionID string, azureCreds azcore.TokenCredential) (armnetwork.SecurityGroupsClientGetResponse, error) {
+// GetNetworkSecurityGroupInfo gets the full information on a network security group based on its ID
+func GetNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscriptionID string, azureCreds azcore.TokenCredential) (armnetwork.SecurityGroupsClientGetResponse, error) {
 	partialNSGInfo, err := arm.ParseResourceID(nsgID)
 	if err != nil {
 		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to parse network security group id %q: %v", nsgID, err)
@@ -165,8 +170,8 @@ func getNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscription
 	return nsg, nil
 }
 
-// getResourceGroupInfo gets the full information on a resource group based on its name
-func getResourceGroupInfo(ctx context.Context, rgName string, subscriptionID string, azureCreds azcore.TokenCredential) (armresources.ResourceGroupsClientGetResponse, error) {
+// GetResourceGroupInfo gets the full information on a resource group based on its name
+func GetResourceGroupInfo(ctx context.Context, rgName string, subscriptionID string, azureCreds azcore.TokenCredential) (armresources.ResourceGroupsClientGetResponse, error) {
 	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
 	if err != nil {
 		return armresources.ResourceGroupsClientGetResponse{}, fmt.Errorf("failed to create new resource groups client: %w", err)
@@ -180,40 +185,63 @@ func getResourceGroupInfo(ctx context.Context, rgName string, subscriptionID str
 	return rg, nil
 }
 
-// VerifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
-func VerifyResourceGroupLocationsMatch(ctx context.Context, hc *hyperv1.HostedCluster, credentialsSecret *corev1.Secret) error {
-	// Setup azureCreds so we can retrieve the locations of the resource groups
-	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-	clientID := string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	clientSecret := string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
+// GetAzureCredentialsFromSecret gets the Service Principal client ID, client secret, and tenant ID from the credentials
+// secret. This function will be modified a bit once the Microsoft sidecar containers support Managed Identity are
+// delivered (expected Oct 2024).
+func GetAzureCredentialsFromSecret(ctx context.Context, c client.Client, namespace, credsName string) (*corev1.Secret, error) {
+	var azureCredentials corev1.Secret
 
-	creds, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+	// Retrieve the Azure credentials secret to extract the needed fields for the managed identity containers
+	credentialsSecretName := client.ObjectKey{Namespace: namespace, Name: credsName}
+	if err := c.Get(ctx, credentialsSecretName, &azureCredentials); err != nil {
+		return nil, fmt.Errorf("failed to get secret %s: %w", credentialsSecretName, err)
 	}
 
-	// Retrieve full vnet information from the VNET ID
-	vnet, err := GetVnetInfoFromVnetID(ctx, hc.Spec.Platform.Azure.VnetID, hc.Spec.Platform.Azure.SubscriptionID, creds)
-	if err != nil {
-		return fmt.Errorf("failed to get vnet info to verify its location: %v", err)
+	for _, expectedKey := range []string{"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"} {
+		if _, found := azureCredentials.Data[expectedKey]; !found {
+			return nil, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey)
+		}
 	}
 
-	// Retrieve full network security group information from the network security group ID
-	nsg, err := getNetworkSecurityGroupInfo(ctx, hc.Spec.Platform.Azure.SecurityGroupID, hc.Spec.Platform.Azure.SubscriptionID, creds)
-	if err != nil {
-		return fmt.Errorf("failed to get network security group info to verify its location: %v", err)
-	}
+	return &azureCredentials, nil
+}
 
-	// Retrieve full resource group information from the resource group name
-	rg, err := getResourceGroupInfo(ctx, hc.Spec.Platform.Azure.ResourceGroupName, hc.Spec.Platform.Azure.SubscriptionID, creds)
-	if err != nil {
-		return fmt.Errorf("failed to get resource group info to verify its location: %v", err)
-	}
+// AdapterInitContainer returns the Microsoft adapter-init init container. This container needs the NET_ADMIN permission
+// so the adapter-server sidecar container can intercept the Managed Identity Azure API authentication calls.
+func AdapterInitContainer() corev1.Container {
+	return corev1.Container{
+		Name:            "adapter-init",
+		Image:           AdapterInitImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{
+					"NET_ADMIN",
+				},
+			},
+		}}
+}
 
-	// Verify the vnet resource group location, network security group resource group location, and the managed resource group location match
-	if ptr.Deref(vnet.Location, "") != ptr.Deref(nsg.Location, "") || ptr.Deref(nsg.Location, "") != ptr.Deref(rg.Location, "") {
-		return fmt.Errorf("the locations of the resource groups do not match - vnet location: %v; network security group location: %v; managed resource group location: %v", ptr.Deref(vnet.Location, ""), ptr.Deref(nsg.Location, ""), ptr.Deref(rg.Location, ""))
-	}
-
-	return nil
+// AdapterServerContainer returns the Microsoft adapter-server sidecar container. Currently, this container mimics Azure
+// Managed Identity approval and returns an authentication token. The container currently needs a Service Principal to
+// do this. Future versions of this container will be able to take a Managed Identity instead.
+func AdapterServerContainer(clientID, clientSecret, tenantID string) corev1.Container {
+	return corev1.Container{Name: "adapter-server",
+		Image:           AdapterServerImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Args:            []string{"sp"},
+		Env: []corev1.EnvVar{
+			{
+				Name:  "AZURE_CLIENT_ID",
+				Value: clientID,
+			},
+			{
+				Name:  "AZURE_CLIENT_SECRET",
+				Value: clientSecret,
+			},
+			{
+				Name:  "AZURE_TENANT_ID",
+				Value: tenantID,
+			},
+		}}
 }

@@ -2737,6 +2737,53 @@ configuration for the Azure cloud provider, aka Azure cloud controller manager (
 expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>managedIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
+AzureResourceManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>managedIdentities contains the client IDs related to the managed identities needed for HCP control plane
+and data plane components that authenticate with Azure&rsquo;s API.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureResourceManagedIdentities contains the client IDs related to the managed identities needed for HCP control plane
+and data plane components that authenticate with Azure&rsquo;s API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>controlPlaneManagedIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">
+ControlPlaneManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>ControlPlaneManagedIdentities contains the client IDs of all the managed identities on the HCP control plane needing to
+authenticate with Azure&rsquo;s API.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
@@ -3541,6 +3588,163 @@ A failure here is unlikely to resolve without the changing user input.</p>
 and reports missing images if any.</p>
 </td>
 </tr></tbody>
+</table>
+###ControlPlaneManagedIdentities { #hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">AzureResourceManagedIdentities</a>)
+</p>
+<p>
+<p>ControlPlaneManagedIdentities contains the client IDs of all the managed identities on the HCP control plane needing
+to authenticate with Azure&rsquo;s API.
+Managed identity regex pattern is from Microsoft here - <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftmanagedidentity">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftmanagedidentity</a>.
+The format a managed identity should be <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{managedIdentityName}</code>.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>azureCloudProviderManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>azureCloudProviderManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the azure
+cloud provider, aka ccm. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+hyphen separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterAPIAzureManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>clusterAPIAzureManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with cluster-api
+azure. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated
+hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>controlPlaneManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the control plane
+operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated
+hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureKMSManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azureKMSManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with Azure KMS. The client
+ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters
+in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistryManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>imageRegistryManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+cluster-image-registry-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups
+of hyphen separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>ingressManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+cluster-ingress-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+hyphen separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>networkManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+cluster-network-operator. The client ID of a managed identity must be a valid UUID. It should be 5 groups of
+hyphen separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureDiskManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>azureDiskManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+azure-disk-controller. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen
+separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureFileManagedIdentityClientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentityClientID">
+ManagedIdentityClientID
+</a>
+</em>
+</td>
+<td>
+<p>azureFileManagedIdentityClientID is the client ID of a pre-existing managed identity ID associated with the
+azure-disk-controller. The client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen
+separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
@@ -6729,6 +6933,14 @@ is empty.</p>
 </td>
 </tr></tbody>
 </table>
+###ManagedIdentityClientID { #hypershift.openshift.io/v1beta1.ManagedIdentityClientID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">ControlPlaneManagedIdentities</a>)
+</p>
+<p>
+<p>ManagedIdentityClientID is a client ID of a managed identity</p>
+</p>
 ###MarketplaceImage { #hypershift.openshift.io/v1beta1.MarketplaceImage }
 <p>
 (<em>Appears on:</em>

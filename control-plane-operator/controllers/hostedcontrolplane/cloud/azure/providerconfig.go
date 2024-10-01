@@ -17,7 +17,7 @@ const (
 
 // ReconcileCloudConfig reconciles as expected by Nodes Kubelet.
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	cfg, err := AzureConfigWithoutCredentials(hcp, credentialsSecret)
 	if err != nil {
 		return err
 	}
@@ -37,14 +37,13 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane,
 
 // ReconcileCloudConfigWithCredentials reconciles as expected by KAS/KCM.
 func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	cfg, err := AzureConfigWithoutCredentials(hcp, credentialsSecret)
 	if err != nil {
 		return err
 	}
 
-	cfg.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	cfg.AADClientSecret = string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
-	cfg.UseManagedIdentityExtension = false
+	cfg.UserAssignedIdentityID = string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlaneManagedIdentities.AzureCloudProviderManagedIdentityClientID)
+
 	cfg.UseInstanceMetadata = false
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -58,7 +57,7 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 	return nil
 }
 
-func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) (AzureConfig, error) {
+func AzureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) (AzureConfig, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(hcp.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return AzureConfig{}, fmt.Errorf("failed to determine subnet name from SubnetID: %w", err)
@@ -106,9 +105,8 @@ type AzureConfig struct {
 	Cloud                        string `json:"cloud"`
 	TenantID                     string `json:"tenantId"`
 	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
+	UserAssignedIdentityID       string `json:"userAssignedIdentityID"`
 	SubscriptionID               string `json:"subscriptionId"`
-	AADClientID                  string `json:"aadClientId"`
-	AADClientSecret              string `json:"aadClientSecret"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`

@@ -41,6 +41,17 @@ spec:
       credentials:
         name: bryans-cluster-cloud-credentials
       location: fakeLocation
+      managedIdentities:
+        controlPlaneManagedIdentities:
+          azureCloudProviderManagedIdentityClientID: fakeClientID
+          azureDiskManagedIdentityClientID: fakeClientID
+          azureFileManagedIdentityClientID: fakeClientID
+          azureKMSManagedIdentityClientID: fakeClientID
+          clusterAPIAzureManagedIdentityClientID: fakeClientID
+          controlPlaneManagedIdentityClientID: fakeClientID
+          imageRegistryManagedIdentityClientID: fakeClientID
+          ingressManagedIdentityClientID: fakeClientID
+          networkManagedIdentityClientID: fakeClientID
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID

@@ -1,9 +1,17 @@
 package azureutil
 
 import (
+	"context"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	. "github.com/onsi/gomega"
+	"github.com/openshift/hypershift/support/api"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestGetSubnetNameFromSubnetID(t *testing.T) {
@@ -134,6 +142,119 @@ func TestGetVnetNameAndResourceGroupFromVnetID(t *testing.T) {
 				g.Expect(err).To(BeNil())
 				g.Expect(vnetName).To(Equal(tc.expectedVnetName))
 				g.Expect(vnetRG).To(Equal(tc.expectedVnetRG))
+			}
+		})
+	}
+}
+
+func TestGetAzureCredentialsFromSecret(t *testing.T) {
+	tests := []struct {
+		testCaseName string
+		hc           *hyperv1.HostedCluster
+		secret       *corev1.Secret
+		expectedErr  bool
+	}{
+		{
+			testCaseName: "nominal test case",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Credentials: corev1.LocalObjectReference{Name: "cloud-credentials"},
+						},
+					},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cloud-credentials",
+					Namespace: "clusters",
+				},
+				Data: map[string][]byte{
+					"AZURE_CLIENT_ID":     []byte("46fb37b5"),
+					"AZURE_CLIENT_SECRET": []byte("46fb37b5"),
+					"AZURE_TENANT_ID":     []byte("46fb37b5"),
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			testCaseName: "wrong secret name, err",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Credentials: corev1.LocalObjectReference{Name: "cloud-credentialss"},
+						},
+					},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cloud-credentials",
+					Namespace: "clusters",
+				},
+				Data: map[string][]byte{
+					"AZURE_CLIENT_ID":     []byte("46fb37b5"),
+					"AZURE_CLIENT_SECRET": []byte("46fb37b5"),
+					"AZURE_TENANT_ID":     []byte("46fb37b5"),
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			testCaseName: "missing date from secret, err",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Credentials: corev1.LocalObjectReference{Name: "cloud-credentialss"},
+						},
+					},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cloud-credentials",
+					Namespace: "clusters",
+				},
+				Data: map[string][]byte{
+					"AZURE_CLIENT_ID": []byte("46fb37b5"),
+					"AZURE_TENANT_ID": []byte("46fb37b5"),
+				},
+			},
+			expectedErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.testCaseName, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			objs := []crclient.Object{tc.hc, tc.secret}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+
+			creds, err := GetAzureCredentialsFromSecret(context.TODO(), client, tc.hc.Namespace, tc.hc.Spec.Platform.Azure.Credentials.Name)
+			if !tc.expectedErr {
+				g.Expect(err).To(BeNil())
+				g.Expect(creds.Name).To(Equal(tc.hc.Spec.Platform.Azure.Credentials.Name))
+			} else {
+				g.Expect(err).To(Not(BeNil()))
 			}
 		})
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/go-logr/logr"
+
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -46,6 +47,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	hcpkms "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas/kms"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
@@ -64,8 +66,9 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
-	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -79,7 +82,9 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -391,7 +396,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(hostedControlPlane); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
@@ -844,12 +849,19 @@ func healthCheckKASEndpoint(ingressPoint string, port int) error {
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedControlPlane) error {
-	for _, svc := range hc.Spec.Services {
+func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	for _, svc := range hcp.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
 		}
 	}
+
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		if err := verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -2987,6 +2999,20 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			if hcp.Spec.SecretEncryption.KMS == nil {
 				return fmt.Errorf("kms metadata not specified")
 			}
+			if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+				azureCreds, err := hyperazureutil.GetAzureCredentialsFromSecret(ctx, r.Client, hcp.Namespace, hcp.Spec.Platform.Azure.Credentials.Name)
+				if err != nil {
+					return err
+				}
+
+				// Reconcile KMS config secret
+				kmsConfigSecret := manifests.AzureKMSConfigSecret(hcp.Namespace)
+				if _, err := createOrUpdate(ctx, r, kmsConfigSecret, func() error {
+					return hcpkms.ReconcileKMSConfigWithCredentials(kmsConfigSecret, hcp, azureCreds)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
+				}
+			}
 			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
 				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
 			}); err != nil {
@@ -3069,7 +3095,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	}
 
 	if _, err := createOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
-		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
+		return kas.ReconcileKubeAPIServerDeployment(ctx, r.Client, kubeAPIServerDeployment,
 			hcp,
 			p.OwnerRef,
 			p.DeploymentConfig,
@@ -3513,7 +3539,10 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, hasRouteCap bool, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
+	p, err := cno.NewParams(ctx, r.Client, hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
+	if err != nil {
+		return err
+	}
 
 	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
@@ -3680,7 +3709,9 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 
 	deployment := manifests.IngressOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		ingressoperator.ReconcileDeployment(deployment, p, hcp.Spec.Platform.Type)
+		if err := ingressoperator.ReconcileDeployment(ctx, r.Client, hcp, deployment, p, hcp.Spec.Platform.Type); err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator deployment: %w", err)
@@ -3998,7 +4029,7 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx contex
 
 	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return registryoperator.ReconcileDeployment(deployment, params)
+		return registryoperator.ReconcileDeployment(ctx, r.Client, hcp, deployment, params)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile image registry operator deployment: %w", err)
 	}
@@ -4583,7 +4614,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		p := azure.NewAzureParams(hcp)
 		deployment := azure.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
-			return azure.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider)
+			return azure.ReconcileDeployment(ctx, r.Client, deployment, hcp, p, sa.Name, releaseImageProvider)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
@@ -4796,7 +4827,10 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+	params, err := storage.NewParams(ctx, r.Client, hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+	if err != nil {
+		return err
+	}
 
 	deployment := manifests.ClusterStorageOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
@@ -4824,6 +4858,34 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		return storage.ReconcileOperatorRoleBinding(roleBinding, params)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster storage operator roleBinding: %w", err)
+	}
+
+	// Reconcile azure-disk-csi-controller and azure-file-csi-controller configuration secrets for ARO HCP. This is
+	// needed so we can specify a unique managed identity for each controller to authenticate with the Managed Identity
+	// Azure API.
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		// Get the credentials secret so we can retrieve the tenant ID for the configuration
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+		tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		// Reconcile the secret needed for azure-disk-csi-controller
+		azureDiskCSISecret := manifests.AzureDiskCSIConfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskCSISecret, func() error {
+			return storage.ReconcileAzureDiskCSISecret(azureDiskCSISecret, hcp, tenantID)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure Disk CSI config: %w", err)
+		}
+
+		// Reconcile the secret needed for azure-disk-csi-controller
+		azureFileCSISecret := manifests.AzureFileCSIConfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskCSISecret, func() error {
+			return storage.ReconcileAzureFileCSISecret(azureFileCSISecret, hcp, tenantID)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure File CSI config: %w", err)
+		}
 	}
 
 	// TODO: create custom kubeconfig to the guest cluster + RBAC
@@ -5247,24 +5309,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            fmt.Sprintf("failed to get azure credentials secret: %v", err),
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
+	options := &azidentity.ManagedIdentityCredentialOptions{
+		ID: azidentity.ClientID(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlaneManagedIdentities.AzureKMSManagedIdentityClientID),
 	}
 
-	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-	clientID := string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	clientSecret := string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
-
-	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	cred, err := azidentity.NewManagedIdentityCredential(options)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 			fmt.Sprintf("failed to obtain azure client credential: %v", err))
@@ -5365,4 +5414,41 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 		return true, nil
 	}
 	return false, nil
+}
+
+// verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
+func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	options := &azidentity.ManagedIdentityCredentialOptions{
+		ID: azidentity.ClientID(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlaneManagedIdentities.ControlPlaneManagedIdentityClientID),
+	}
+
+	creds, err := azidentity.NewManagedIdentityCredential(options)
+	if err != nil {
+		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+	}
+
+	// Retrieve full vnet information from the VNET ID
+	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get vnet info to verify its location: %v", err)
+	}
+
+	// Retrieve full network security group information from the network security group ID
+	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get network security group info to verify its location: %v", err)
+	}
+
+	// Retrieve full resource group information from the resource group name
+	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get resource group info to verify its location: %v", err)
+	}
+
+	// Verify the vnet resource group location, network security group resource group location, and the managed resource group location match
+	if ptr.Deref(vnet.Location, "") != ptr.Deref(nsg.Location, "") || ptr.Deref(nsg.Location, "") != ptr.Deref(rg.Location, "") {
+		return fmt.Errorf("the locations of the resource groups do not match - vnet location: %v; network security group location: %v; managed resource group location: %v", ptr.Deref(vnet.Location, ""), ptr.Deref(nsg.Location, ""), ptr.Deref(rg.Location, ""))
+	}
+
+	return nil
 }
