@@ -372,93 +372,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Bubble up ValidIdentityProvider condition from the hostedControlPlane.
-	// We set this condition even if the HC is being deleted. Otherwise, a hostedCluster with a conflicted identity provider
-	// would fail to complete deletion forever with no clear signal for consumers.
-	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		freshCondition := &metav1.Condition{
-			Type:               string(hyperv1.ValidAWSIdentityProvider),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcp != nil {
-			validIdentityProviderCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-			if validIdentityProviderCondition != nil {
-				freshCondition = validIdentityProviderCondition
-			}
-		}
-
-		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-
-		// Preserve previous status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
-		if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
-			freshCondition.Status = oldCondition.Status
-		}
-		if oldCondition == nil || oldCondition.Status != freshCondition.Status {
-			freshCondition.ObservedGeneration = hcluster.Generation
-			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-			// Persist status updates
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-			}
-		}
-	}
-
-	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
-	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
-	{
-		if hcp != nil && hcp.DeletionTimestamp != nil {
-			freshCondition := &metav1.Condition{
-				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				ObservedGeneration: hcluster.Generation,
-			}
-
-			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
-			if securityGroupDeletionCondition != nil {
-				freshCondition = securityGroupDeletionCondition
-			}
-
-			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
-			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
-				freshCondition.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-				// Persist status updates
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-				}
-			}
-		}
-	}
-
-	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
-	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
-	{
-		if hcp != nil && hcp.DeletionTimestamp != nil {
-			freshCondition := &metav1.Condition{
-				Type:               string(hyperv1.CloudResourcesDestroyed),
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				ObservedGeneration: hcluster.Generation,
-			}
-
-			cloudResourcesDestroyedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-			if cloudResourcesDestroyedCondition != nil {
-				freshCondition = cloudResourcesDestroyedCondition
-			}
-
-			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
-				freshCondition.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-				// Persist status updates
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-				}
-			}
-		}
+	err = r.reconcileMandatoryConditions(ctx, hcluster, hcp)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	var hcDestroyGracePeriod time.Duration
@@ -1826,6 +1742,100 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		result.RequeueAfter = *requeueAfter
 	}
 	return result, nil
+}
+
+// reconcileMandatoryConditions sets all conditions that must be set even if the HC is being deleted.
+func (r *HostedClusterReconciler) reconcileMandatoryConditions(ctx context.Context, hcluster *hyperv1.HostedCluster,
+	hcp *hyperv1.HostedControlPlane) error {
+	// Bubble up ValidIdentityProvider condition from the hostedControlPlane. We set this condition even if the HC is
+	// being deleted. Otherwise, a hostedCluster with a conflicted identity provider would fail to complete deletion
+	// forever with no clear signal for consumers.
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		freshCondition := &metav1.Condition{
+			Type:               string(hyperv1.ValidAWSIdentityProvider),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			validIdentityProviderCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+			if validIdentityProviderCondition != nil {
+				freshCondition = validIdentityProviderCondition
+			}
+		}
+
+		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+
+		// Preserve previous status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
+		if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
+			freshCondition.Status = oldCondition.Status
+		}
+		if oldCondition == nil || oldCondition.Status != freshCondition.Status {
+			freshCondition.ObservedGeneration = hcluster.Generation
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+			// Persist status updates
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return fmt.Errorf("failed to update status: %w", err)
+			}
+		}
+	}
+
+	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
+	{
+		if hcp != nil && hcp.DeletionTimestamp != nil {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if securityGroupDeletionCondition != nil {
+				freshCondition = securityGroupDeletionCondition
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
+				freshCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+				// Persist status updates
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return fmt.Errorf("failed to update status: %w", err)
+				}
+			}
+		}
+	}
+
+	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
+	{
+		if hcp != nil && hcp.DeletionTimestamp != nil {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.CloudResourcesDestroyed),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			cloudResourcesDestroyedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+			if cloudResourcesDestroyedCondition != nil {
+				freshCondition = cloudResourcesDestroyedCondition
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
+				freshCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+				// Persist status updates
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return fmt.Errorf("failed to update status: %w", err)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
