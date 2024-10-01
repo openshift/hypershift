@@ -1187,6 +1187,15 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"sign"},
 				// we can't specify a signer domain with ResourceNames (or even *): https://github.com/kubernetes/kubernetes/issues/122154
 			},
+			// TODO base this on ARO HCP
+			{
+				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
+				Resources: []string{"secretproviderclasses"},
+				Verbs: []string{
+					"list",
+					"create",
+				},
+			},
 		},
 	}
 	if o.EnableCVOManagementClusterMetricsAccess {

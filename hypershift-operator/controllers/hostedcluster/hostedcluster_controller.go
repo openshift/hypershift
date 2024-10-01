@@ -2975,6 +2975,15 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"delete",
 			},
 		},
+		// TODO base this on ARO HCP
+		{
+			APIGroups: []string{"secrets-store.csi.x-k8s.io"},
+			Resources: []string{"secretproviderclasses"},
+			Verbs: []string{
+				"list",
+				"create",
+			},
+		},
 	}
 	if enableCVOManagementClusterMetricsAccess {
 		role.Rules = append(role.Rules,

@@ -2,7 +2,6 @@ package ingressoperator
 
 import (
 	"fmt"
-
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -13,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"os"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -24,7 +25,6 @@ import (
 const (
 	operatorName                   = "ingress-operator"
 	ingressOperatorContainerName   = "ingress-operator"
-	metricsHostname                = "ingress-operator"
 	konnectivityProxyContainerName = "konnectivity-proxy"
 	ingressOperatorMetricsPort     = 60000
 	konnectivityProxyPort          = 8090
@@ -70,7 +70,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	return p
 }
 
-func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
+func ReconcileDeployment(hcp *hyperv1.HostedControlPlane, dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType, credentialsSecret *corev1.Secret) error {
+	// Initialize resource requests
 	ingressOpResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -199,7 +200,51 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		},
 	)
 
+	if os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AZURE_CLIENT_ID",
+				Value: hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ClientID,
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_TENANT_ID",
+				Value: string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_CLIENT_CERTIFICATE_PATH",
+				Value: "/mnt/certs/" + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName,
+			})
+
+		if dep.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
+			dep.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
+		}
+		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "ingress-cert",
+				MountPath: "/mnt/certs",
+				ReadOnly:  true,
+			})
+
+		if dep.Spec.Template.Spec.Volumes == nil {
+			dep.Spec.Template.Spec.Volumes = []corev1.Volume{}
+		}
+		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "ingress-cert",
+				VolumeSource: corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{
+						Driver:   "secrets-store.csi.k8s.io",
+						ReadOnly: ptr.To(true),
+						VolumeAttributes: map[string]string{
+							"secretProviderClass": "aro-hcp-ingress",
+						},
+					},
+				},
+			})
+	}
+
 	params.DeploymentConfig.ApplyTo(dep)
+	return nil
 }
 
 func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *configv1.ProxySpec, noProxy string) corev1.Container {
