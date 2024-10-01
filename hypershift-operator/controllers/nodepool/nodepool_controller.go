@@ -81,13 +81,13 @@ const (
 	nodePoolAnnotationTaints                  = "hypershift.openshift.io/nodePoolTaints"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
 
-	tuningConfigKey                                  = "tuning"
-	tunedConfigMapLabel                              = "hypershift.openshift.io/tuned-config"
-	nodeTuningGeneratedConfigLabel                   = "hypershift.openshift.io/nto-generated-machine-config"
-	PerformanceProfileConfigMapLabel                 = "hypershift.openshift.io/performanceprofile-config"
-	NodeTuningGeneratedPerformanceProfileStatusLabel = "hypershift.openshift.io/nto-generated-performance-profile-status"
-	ContainerRuntimeConfigConfigMapLabel             = "hypershift.openshift.io/containerruntimeconfig-config"
-
+	tuningConfigKey                                      = "tuning"
+	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"
+	nodeTuningGeneratedConfigLabel                       = "hypershift.openshift.io/nto-generated-machine-config"
+	PerformanceProfileConfigMapLabel                     = "hypershift.openshift.io/performanceprofile-config"
+	NodeTuningGeneratedPerformanceProfileStatusLabel     = "hypershift.openshift.io/nto-generated-performance-profile-status"
+	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
+	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
@@ -607,6 +607,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to build mirror configs: %w", err)
 	}
 	if err := r.reconcileMirroredConfigs(ctx, log, mirroredConfigs, controlPlaneNamespace, nodePool); err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
 		return ctrl.Result{}, fmt.Errorf("failed to mirror configs: %w", err)
 	}
 
