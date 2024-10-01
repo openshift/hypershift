@@ -4,9 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
@@ -23,17 +23,19 @@ func TestCreateOptions_Validate(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name:          "missing OpenStack credentials file",
-			input:         RawCreateOptions{},
-			expectedError: "OpenStack credentials file is required",
+			name: "missing OpenStack credentials file",
+			input: RawCreateOptions{
+				OpenStackCredentialsFile: "thisisajunkfilename.yaml",
+			},
+			expectedError: "OpenStack credentials file does not exist",
 		},
 	} {
 		var errString string
 		if _, err := test.input.Validate(context.Background(), nil); err != nil {
 			errString = err.Error()
 		}
-		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
-			t.Errorf("got incorrect error: %v", diff)
+		if !strings.Contains(errString, test.expectedError) {
+			t.Errorf("got incorrect error: expected: %v actual: %v", test.expectedError, errString)
 		}
 	}
 }

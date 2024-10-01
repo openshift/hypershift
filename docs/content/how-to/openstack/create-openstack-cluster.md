@@ -100,8 +100,7 @@ export CLUSTER_NAME=example
 export PULL_SECRET="$HOME/pull-secret"
 export WORKER_COUNT="2"
 
-# clouds.yaml should be in the format of the OpenStack clouds.yaml file and the cloud name has to be 'openstack' for now.
-export CLOUDS_YAML="$HOME/clouds.yaml"
+export OS_CLOUD="openstack"
 
 # Image name is the name of the image in OpenStack that was pushed in the previous step.
 export IMAGE_NAME="rhcos"
@@ -125,7 +124,6 @@ hcp create cluster openstack \
 --pull-secret $PULL_SECRET \
 --ssh-key $SSH_KEY \
 --openstack-ca-cert-file $CA_CERT_PATH \
---openstack-credentials-file $CLOUDS_YAML \
 --openstack-external-network-id $EXTERNAL_ID \
 --openstack-node-image-name $IMAGE_NAME \
 --openstack-node-flavor $FLAVOR
