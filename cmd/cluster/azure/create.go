@@ -50,6 +50,10 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.KeyVaultInfo.KeyVaultName, "management-key-vault-name", opts.KeyVaultInfo.KeyVaultName, "The name of the management Azure Key Vault where the managed identity certificates are stored.")
 	flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
 	flags.StringVar(&opts.KeyVaultInfo.AuthorizedKeyVaultClientID, "authorized-key-vault-client-id", opts.KeyVaultInfo.AuthorizedKeyVaultClientID, "The client ID of the managed identity authorized to pull certificate information out of the management Azure Key Vault.")
+
+	flags.StringVar(&opts.ClientID, "client-id", opts.ClientID, "The client ID of the managed identity authorized to pull certificate information out of the management Azure Key Vault.")
+	flags.StringVar(&opts.CertName, "cert-name", opts.CertName, "The client ID of the managed identity authorized to pull certificate information out of the management Azure Key Vault.")
+
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -70,6 +74,8 @@ type RawCreateOptions struct {
 	SubnetID               string
 	RHCOSImage             string
 	KeyVaultInfo           ManagementKeyVaultInfo
+	ClientID               string
+	CertName               string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -203,7 +209,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	managedIdentity := hyperv1.ManagedIdentity{
 		ClientID:        o.creds.ClientID,
-		CertificateName: o.creds.Certificate,
+		CertificateName: "",
 	}
 
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
@@ -224,9 +230,12 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 					ControlPlane:    managedIdentity,
 					Network:         managedIdentity,
 					ImageRegistry:   managedIdentity,
-					Ingress:         managedIdentity,
-					File:            managedIdentity,
-					Disk:            managedIdentity,
+					Ingress: hyperv1.ManagedIdentity{
+						ClientID:        o.ClientID,
+						CertificateName: o.CertName,
+					},
+					File: managedIdentity,
+					Disk: managedIdentity,
 				},
 			},
 			ManagementKeyVault: hyperv1.ManagedAzureKeyVault{

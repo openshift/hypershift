@@ -3726,9 +3726,25 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 		}
 	}
 
+	// Create Secret Provider Class
+	ingressSecretProviderClass := manifests.IngressSecretProviderClass(hcp)
+	if _, err := createOrUpdate(ctx, r, ingressSecretProviderClass, func() error {
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ingressoperator secret provider class: %w", err)
+	}
+
+	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+		return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+	}
+
 	deployment := manifests.IngressOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		ingressoperator.ReconcileDeployment(deployment, p, hcp.Spec.Platform.Type)
+		err := ingressoperator.ReconcileDeployment(hcp, deployment, p, hcp.Spec.Platform.Type, credentialsSecret)
+		if err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator deployment: %w", err)

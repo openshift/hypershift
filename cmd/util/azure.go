@@ -19,7 +19,6 @@ type AzureCreds struct {
 	ClientID       string `json:"clientId,omitempty"`
 	ClientSecret   string `json:"clientSecret,omitempty"`
 	TenantID       string `json:"tenantId,omitempty"`
-	Certificate    string `json:"certificate,omitempty"`
 }
 
 // SetupAzureCredentials creates the Azure credentials needed to create Azure resources from credentials passed in from the user or from a credentials file
