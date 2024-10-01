@@ -209,30 +209,30 @@ func reconcileInfraConfigMap(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPla
 	return nil
 }
 
-func reconcileController(controller *appsv1.Deployment, componentImages map[string]string, deploymentConfig *config.DeploymentConfig, hcp *hyperv1.HostedControlPlane) error {
+func reconcileController(controller *appsv1.Deployment, releaseImageProvider imageprovider.ReleaseImageProvider, deploymentConfig *config.DeploymentConfig, hcp *hyperv1.HostedControlPlane) error {
 	controller.Spec = *controllerDeployment.Spec.DeepCopy()
 
-	csiDriverImage, exists := componentImages["kubevirt-csi-driver"]
+	csiDriverImage, exists := releaseImageProvider.ImageExist("kubevirt-csi-driver")
 	if !exists {
 		return fmt.Errorf("unable to detect kubevirt-csi-driver image from release payload")
 	}
 
-	csiProvisionerImage, exists := componentImages["csi-external-provisioner"]
+	csiProvisionerImage, exists := releaseImageProvider.ImageExist("csi-external-provisioner")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-external-provisioner image from release payload")
 	}
 
-	csiAttacherImage, exists := componentImages["csi-external-attacher"]
+	csiAttacherImage, exists := releaseImageProvider.ImageExist("csi-external-attacher")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-external-attacher image from release payload")
 	}
 
-	csiLivenessProbeImage, exists := componentImages["csi-livenessprobe"]
+	csiLivenessProbeImage, exists := releaseImageProvider.ImageExist("csi-livenessprobe")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-livenessprobe image from release payload")
 	}
 
-	csiExternalSnapshotterImage, exists := componentImages["csi-external-snapshotter"]
+	csiExternalSnapshotterImage, exists := releaseImageProvider.ImageExist("csi-external-snapshotter")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-external-snapshotter image from release payload")
 	}
@@ -596,7 +596,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 
 // ReconcileInfra reconciles the csi driver controller on the underlying infra/Mgmt cluster
 // that is hosting the KubeVirt VMs.
-func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider imageprovider.ReleaseImageProvider) error {
 
 	// Do not install kubevirt-csi if the storage driver is set to NONE
 	if getStorageDriverType(hcp) == hyperv1.NoneKubevirtStorageDriverConfigType {
@@ -662,7 +662,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	controller := manifests.KubevirtCSIDriverController(infraNamespace)
 	_, err = createOrUpdate(ctx, client, controller, func() error {
-		return reconcileController(controller, releaseImageProvider.ComponentImages(), deploymentConfig, hcp)
+		return reconcileController(controller, releaseImageProvider, deploymentConfig, hcp)
 	})
 	if err != nil {
 		return err

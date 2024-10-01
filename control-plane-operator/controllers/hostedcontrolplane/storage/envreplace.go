@@ -3,6 +3,7 @@ package storage
 import (
 	"strings"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -64,17 +65,17 @@ func newEnvironmentReplacer() *environmentReplacer {
 	return &environmentReplacer{values: map[string]string{}}
 }
 
-func (er *environmentReplacer) setOperatorImageReferences(images map[string]string, userImages map[string]string) {
+func (er *environmentReplacer) setOperatorImageReferences(releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider) {
 	// `operatorImageRefs` is map from env. var name -> payload image name
 	// `images` is map from payload image name -> image URL
 	// Create map from env. var name -> image URL
 	for envVar, payloadName := range operatorImageRefs {
 		if envVar == "NODE_DRIVER_REGISTRAR_IMAGE" || envVar == "LIVENESS_PROBE_IMAGE" || strings.HasSuffix(envVar, "_DRIVER_IMAGE") {
-			if imageURL, ok := userImages[payloadName]; ok {
+			if imageURL, ok := userReleaseImageProvider.ImageExist(payloadName); ok {
 				er.values[envVar] = imageURL
 			}
 		} else {
-			if imageURL, ok := images[payloadName]; ok {
+			if imageURL, ok := releaseImageProvider.ImageExist(payloadName); ok {
 				er.values[envVar] = imageURL
 			}
 		}

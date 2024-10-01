@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -412,6 +413,7 @@ func NewStartCommand() *cobra.Command {
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
 
 		enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
+		_, isCPOV2 := os.LookupEnv(hyperv1.ControlPlaneOperatorV2EnvVar)
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
@@ -424,6 +426,7 @@ func NewStartCommand() *cobra.Command {
 			MetricsSet:                              metricsSet,
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
+			IsCPOV2:                                 isCPOV2,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

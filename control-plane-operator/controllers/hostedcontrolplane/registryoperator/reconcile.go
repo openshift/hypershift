@@ -107,7 +107,7 @@ type Params struct {
 	deploymentConfig config.DeploymentConfig
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	params := Params{
 		operatorImage:    releaseImageProvider.GetImage("cluster-image-registry-operator"),
 		tokenMinterImage: releaseImageProvider.GetImage("token-minter"),

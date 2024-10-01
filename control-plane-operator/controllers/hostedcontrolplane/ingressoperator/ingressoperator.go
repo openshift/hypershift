@@ -45,7 +45,7 @@ type Params struct {
 	NoProxy                 string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
 	p := Params{
 		IngressOperatorImage:    releaseImageProvider.GetImage("cluster-ingress-operator"),
 		IngressCanaryImage:      userReleaseImageProvider.GetImage("cluster-ingress-operator"),

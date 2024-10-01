@@ -24,9 +24,11 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
@@ -1571,4 +1573,75 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+var _ imageprovider.ReleaseImageProvider = &fakeImageProvider{}
+
+type fakeImageProvider struct {
+}
+
+func (f *fakeImageProvider) GetImage(key string) string {
+	return key
+}
+
+func (f *fakeImageProvider) ImageExist(key string) (string, bool) {
+	return key, true
+}
+
+// TestControlPlaneComponents is a generic test which generates a fixture for each registered component's deployment/statefulset.
+// This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
+func TestControlPlaneComponents(t *testing.T) {
+	reconciler := &HostedControlPlaneReconciler{}
+	reconciler.registerComponents()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "hcp-namespace",
+		},
+	}
+
+	for _, component := range reconciler.components {
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		cpContext := controlplanecomponent.ControlPlaneContext{
+			Context:                  context.Background(),
+			Client:                   fakeClient,
+			CreateOrUpdateProviderV2: upsert.NewV2(false),
+			ReleaseImageProvider:     &fakeImageProvider{},
+			HCP:                      hcp,
+			SkipPredicate:            true,
+		}
+
+		if err := component.Reconcile(cpContext); err != nil {
+			t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+		}
+
+		var deployments appsv1.DeploymentList
+		if err := fakeClient.List(context.Background(), &deployments); err != nil {
+			t.Fatalf("failed to list deployments: %v", err)
+		}
+
+		var statfulsets appsv1.StatefulSetList
+		if err := fakeClient.List(context.Background(), &statfulsets); err != nil {
+			t.Fatalf("failed to list statfulsets: %v", err)
+		}
+
+		if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 {
+			t.Fatalf("expected one of deployment or statefulSet to exist for component %s", component.Name())
+		}
+
+		var workload client.Object
+		if len(deployments.Items) > 0 {
+			workload = &deployments.Items[0]
+		} else {
+			workload = &statfulsets.Items[0]
+		}
+
+		yaml, err := util.SerializeResource(workload, api.Scheme)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
+	}
+
 }

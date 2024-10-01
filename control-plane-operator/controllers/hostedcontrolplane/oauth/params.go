@@ -84,7 +84,7 @@ type ConfigOverride struct {
 	Challenge *bool               `json:"challenge,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,

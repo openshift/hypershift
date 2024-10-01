@@ -62,7 +62,7 @@ func generateConfig(serviceServingCA *corev1.ConfigMap) (string, error) {
 	return string(b), nil
 }
 
-func ReconcileRecyclerConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func ReconcileRecyclerConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef, releaseImageProvider imageprovider.ReleaseImageProvider) error {
 	var result strings.Builder
 
 	ownerRef.ApplyTo(config)

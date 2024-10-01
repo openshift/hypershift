@@ -46,7 +46,7 @@ type Params struct {
 }
 
 // NewParams creates a new Params object for a DNS operator deployment.
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	p := Params{
 		Images: Images{
 			DNSOperator:   releaseImageProvider.GetImage("cluster-dns-operator"),

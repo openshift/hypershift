@@ -27,7 +27,7 @@ type Params struct {
 func NewParams(
 	hcp *hyperv1.HostedControlPlane,
 	version string,
-	releaseImageProvider *imageprovider.ReleaseImageProvider,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
 	setDefaultSecurityContext bool) *Params {
 
 	params := Params{

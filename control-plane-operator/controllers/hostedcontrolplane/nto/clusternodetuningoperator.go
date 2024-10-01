@@ -39,7 +39,7 @@ type Params struct {
 	OwnerRef                config.OwnerRef
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	p := Params{
 		Images: Images{
 			NodeTuningOperator: releaseImageProvider.GetImage(operatorName),

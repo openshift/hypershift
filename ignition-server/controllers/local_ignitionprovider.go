@@ -174,7 +174,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	}
 
 	// Look up the release image metadata
-	imageProvider, err := func() (*imageprovider.ReleaseImageProvider, error) {
+	imageProvider, err := func() (*imageprovider.SimpleReleaseImageProvider, error) {
 		img, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
@@ -656,7 +656,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	return payload, nil
 }
 
-func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.Context, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.Context, releaseImageProvider *imageprovider.SimpleReleaseImageProvider) error {
 	hcpList := &hyperv1.HostedControlPlaneList{}
 	if err := r.Client.List(ctx, hcpList, client.InNamespace(r.Namespace)); err != nil {
 		return err

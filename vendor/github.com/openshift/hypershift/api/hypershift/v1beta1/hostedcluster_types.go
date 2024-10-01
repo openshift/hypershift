@@ -337,6 +337,13 @@ const (
 
 	// DisableIgnitionServerAnnotation controls skipping of the ignition server deployment.
 	DisableIgnitionServerAnnotation = "hypershift.openshift.io/disable-ignition-server"
+
+	// ControlPlaneOperatorV2Annotation tells the hosted cluster to set 'CPO_V2' env variable on the CPO deployment which enables
+	// the new manifest based CPO implementation.
+	ControlPlaneOperatorV2Annotation = "hypershift.openshift.io/cpo-v2"
+
+	// ControlPlaneOperatorV2EnvVar when set on the CPO deplyoment, enables the new manifest based CPO implementation.
+	ControlPlaneOperatorV2EnvVar = "CPO_V2"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

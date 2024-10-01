@@ -78,7 +78,7 @@ func ReconcileCCMConfigMap(ccmConfig *corev1.ConfigMap, hcp *hyperv1.HostedContr
 	return nil
 }
 
-func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) error {
+func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) error {
 	commandToExec := []string{
 		"/bin/ibm-cloud-controller-manager",
 		"--authentication-skip-lookup",

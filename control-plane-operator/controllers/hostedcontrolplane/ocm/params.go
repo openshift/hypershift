@@ -25,7 +25,7 @@ type OpenShiftControllerManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftControllerManagerParams {
+func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftControllerManagerParams {
 	params := &OpenShiftControllerManagerParams{
 		OpenShiftControllerManagerImage: releaseImageProvider.GetImage("openshift-controller-manager"),
 		DockerBuilderImage:              releaseImageProvider.GetImage("docker-builder"),
