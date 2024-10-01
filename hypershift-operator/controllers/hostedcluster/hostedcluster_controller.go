@@ -436,501 +436,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Part one: update status
 
-	// Set kubeconfig status
-	{
-		kubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeConfigSecret), kubeConfigSecret)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeconfig secret: %w", err)
-			}
+	res, err := r.reconcileStatus(ctx, log, hcluster, hcp, controlPlaneNamespace, releaseProvider,
+		registryClientImageMetadataProvider, releaseImage)
+	if res != nil || err != nil {
+		if res == nil {
+			return ctrl.Result{}, err
 		} else {
-			hcluster.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
+			return *res, err
 		}
-	}
-
-	// Set kubeadminPassword status
-	{
-		explicitOauthConfig := hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.OAuth != nil
-		if explicitOauthConfig {
-			hcluster.Status.KubeadminPassword = nil
-		} else {
-			kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
-			err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
-			if err != nil {
-				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
-				}
-			} else {
-				hcluster.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: kubeadminPasswordSecret.Name}
-			}
-		}
-	}
-
-	// Set version status
-	hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
-
-	// Copy the CVO conditions from the HCP.
-	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
-		hyperv1.ClusterVersionSucceeding:       nil,
-		hyperv1.ClusterVersionProgressing:      nil,
-		hyperv1.ClusterVersionReleaseAccepted:  nil,
-		hyperv1.ClusterVersionRetrievedUpdates: nil,
-		hyperv1.ClusterVersionUpgradeable:      nil,
-		hyperv1.ClusterVersionAvailable:        nil,
-	}
-	if hcp != nil {
-		hcpCVOConditions = map[hyperv1.ConditionType]*metav1.Condition{
-			hyperv1.ClusterVersionSucceeding:       meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing)),
-			hyperv1.ClusterVersionProgressing:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionProgressing)),
-			hyperv1.ClusterVersionReleaseAccepted:  meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionReleaseAccepted)),
-			hyperv1.ClusterVersionRetrievedUpdates: meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionRetrievedUpdates)),
-			hyperv1.ClusterVersionUpgradeable:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable)),
-			hyperv1.ClusterVersionAvailable:        meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable)),
-		}
-	}
-
-	for conditionType := range hcpCVOConditions {
-		var hcCVOCondition *metav1.Condition
-		// Set unknown status.
-		var unknownStatusMessage string
-		if hcpCVOConditions[conditionType] == nil {
-			unknownStatusMessage = "Condition not found in the CVO."
-		}
-
-		hcCVOCondition = &metav1.Condition{
-			Type:               string(conditionType),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			Message:            unknownStatusMessage,
-			ObservedGeneration: hcluster.Generation,
-		}
-
-		if hcp != nil && hcpCVOConditions[conditionType] != nil {
-			// Bubble up info from HCP.
-			hcCVOCondition = hcpCVOConditions[conditionType]
-			hcCVOCondition.ObservedGeneration = hcluster.Generation
-
-			// Inverse ClusterVersionFailing condition into ClusterVersionSucceeding
-			// So consumers e.g. UI can categorize as good (True) / bad (False).
-			if conditionType == hyperv1.ClusterVersionSucceeding {
-				hcCVOCondition.Type = string(hyperv1.ClusterVersionSucceeding)
-				var status metav1.ConditionStatus
-				switch hcpCVOConditions[conditionType].Status {
-				case metav1.ConditionTrue:
-					status = metav1.ConditionFalse
-				case metav1.ConditionFalse:
-					status = metav1.ConditionTrue
-				}
-				hcCVOCondition.Status = status
-			}
-		}
-
-		if hcCVOCondition.Type == string(hyperv1.ClusterVersionRetrievedUpdates) && hcCVOCondition.Reason == hyperv1.StatusUnknownReason {
-			// until all HostedControlPlane controllers understand how to propagate this condition, avoid bothering folks with unknown status in HostedCluster conditions.
-			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.ClusterVersionRetrievedUpdates))
-			continue
-		}
-
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *hcCVOCondition)
-	}
-
-	// Copy the Degraded condition on the hostedcontrolplane
-	{
-		condition := &metav1.Condition{
-			Type:               string(hyperv1.HostedClusterDegraded),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			Message:            "The hosted control plane is not found",
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcp != nil {
-			degradedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneDegraded))
-			if degradedCondition != nil {
-				condition = degradedCondition
-				condition.Type = string(hyperv1.HostedClusterDegraded)
-				if condition.Status == metav1.ConditionFalse {
-					condition.Message = "The hosted cluster is not degraded"
-				}
-			}
-		}
-		condition.ObservedGeneration = hcluster.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
-	}
-
-	// Copy the ValidKubeVirtInfraNetworkMTU condition from the HostedControlPlane
-	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		if hcp != nil {
-			validMtuCondCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidKubeVirtInfraNetworkMTU))
-			if validMtuCondCreated != nil {
-				validMtuCondCreated.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *validMtuCondCreated)
-			}
-		}
-		if err := r.syncKVLiveMigratableCondition(ctx, hcluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update condition: %w", err)
-		}
-	}
-
-	// Copy conditions from hostedcontrolplane
-	{
-		hcpConditions := []hyperv1.ConditionType{
-			hyperv1.EtcdAvailable,
-			hyperv1.KubeAPIServerAvailable,
-			hyperv1.InfrastructureReady,
-			hyperv1.ExternalDNSReachable,
-			hyperv1.ValidHostedControlPlaneConfiguration,
-			hyperv1.ValidReleaseInfo,
-		}
-
-		for _, conditionType := range hcpConditions {
-			condition := &metav1.Condition{
-				Type:               string(conditionType),
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				Message:            "The hosted control plane is not found",
-				ObservedGeneration: hcluster.Generation,
-			}
-			if hcp != nil {
-				hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(conditionType))
-				if hcpCondition != nil {
-					condition = hcpCondition
-				} else {
-					condition.Message = "Condition not found in the HCP"
-				}
-			}
-			condition.ObservedGeneration = hcluster.Generation
-			meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
-		}
-	}
-
-	// Copy the platform status from the hostedcontrolplane
-	if hcp != nil {
-		hcluster.Status.Platform = hcp.Status.Platform
-	}
-
-	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
-	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		if hcp != nil {
-			sgCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
-			if sgCreated != nil {
-				sgCreated.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *sgCreated)
-			}
-
-			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSKMSConfig))
-			if validKMSConfig != nil {
-				validKMSConfig.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
-			}
-		}
-	}
-
-	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
-		if hcp != nil {
-			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
-			if validKMSConfig != nil {
-				validKMSConfig.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
-			}
-		}
-	}
-
-	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
-	// provide clear status to the user on the resource without having to look at operator logs.
-	{
-		if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-			unmanagedEtcdTLSClientSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: hcluster.GetNamespace(),
-					Name:      hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name,
-				},
-			}
-			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(unmanagedEtcdTLSClientSecret), unmanagedEtcdTLSClientSecret); err != nil {
-				if apierrors.IsNotFound(err) {
-					unmanagedEtcdTLSClientSecret = nil
-				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to get unmanaged etcd tls secret: %w", err)
-				}
-			}
-			meta.SetStatusCondition(&hcluster.Status.Conditions, computeUnmanagedEtcdAvailability(hcluster, unmanagedEtcdTLSClientSecret))
-		}
-	}
-
-	// Set the Available condition
-	// TODO: This is really setting something that could be more granular like
-	// HostedControlPlaneAvailable, and then the HostedCluster high-level Available
-	// condition could be computed as a function of the granular ThingAvailable
-	// conditions (so that it could incorporate e.g. HostedControlPlane and IgnitionServer
-	// availability in the ultimate HostedCluster Available condition)
-	{
-		availableCondition := computeHostedClusterAvailability(hcluster, hcp)
-		_, isHasBeenAvailableAnnotationSet := hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation]
-
-		meta.SetStatusCondition(&hcluster.Status.Conditions, availableCondition)
-
-		if availableCondition.Status == metav1.ConditionTrue && !isHasBeenAvailableAnnotationSet {
-			original := hcluster.DeepCopy()
-
-			if hcluster.Annotations == nil {
-				hcluster.Annotations = make(map[string]string)
-			}
-
-			hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation] = "true"
-
-			if err := r.Patch(ctx, hcluster, client.MergeFromWithOptions(original)); err != nil {
-				return ctrl.Result{}, fmt.Errorf("cannot patch hosted cluster with has been available annotation: %w", err)
-			}
-		}
-	}
-
-	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
-	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
-		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
-			condition := metav1.Condition{
-				Type:    string(hyperv1.AWSEndpointAvailable),
-				Status:  metav1.ConditionUnknown,
-				Reason:  hyperv1.NotFoundReason,
-				Message: fmt.Sprintf("error listing awsendpointservices in namespace %s: %v", hcpNamespace, err),
-			}
-			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-		} else {
-			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
-			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
-		}
-	}
-
-	// Set ValidConfiguration condition
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidHostedClusterConfiguration),
-			ObservedGeneration: hcluster.Generation,
-		}
-		if err := r.validateConfigAndClusterCapabilities(ctx, hcluster); err != nil {
-			condition.Status = metav1.ConditionFalse
-			condition.Message = err.Error()
-			condition.Reason = hyperv1.InvalidConfigurationReason
-		} else {
-			condition.Status = metav1.ConditionTrue
-			condition.Message = "Configuration passes validation"
-			condition.Reason = hyperv1.AsExpectedReason
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-	}
-
-	// Set SupportedHostedCluster condition
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.SupportedHostedCluster),
-			ObservedGeneration: hcluster.Generation,
-		}
-		if err := r.validateHostedClusterSupport(hcluster); err != nil {
-			condition.Status = metav1.ConditionFalse
-			condition.Message = err.Error()
-			condition.Reason = hyperv1.UnsupportedHostedClusterReason
-		} else {
-			condition.Status = metav1.ConditionTrue
-			condition.Message = "HostedCluster is supported by operator configuration"
-			condition.Reason = hyperv1.AsExpectedReason
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-	}
-
-	// Set Ignition Server endpoint
-	{
-		serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
-		if serviceStrategy == nil {
-			// We don't return the error here as reconciling won't solve the input problem.
-			// An update event will trigger reconciliation.
-			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
-			return ctrl.Result{}, nil
-		}
-		switch serviceStrategy.Type {
-		case hyperv1.Route:
-			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
-				hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
-			} else {
-				ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
-				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
-					if !apierrors.IsNotFound(err) {
-						return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
-					}
-				}
-				if ignitionServerRoute.Spec.Host != "" {
-					hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
-				}
-			}
-		case hyperv1.NodePort:
-			if serviceStrategy.NodePort == nil {
-				// We don't return the error here as reconciling won't solve the input problem.
-				// An update event will trigger reconciliation.
-				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
-				return ctrl.Result{}, nil
-			}
-			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
-			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to get ignition proxy service: %w", err)
-				} else {
-					// ignition-server-proxy service not found, possible IBM platform or older CPO that doesn't create the service
-					ignitionService = ignitionserver.Service(controlPlaneNamespace.GetName())
-					if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
-						if !apierrors.IsNotFound(err) {
-							return ctrl.Result{}, fmt.Errorf("failed to get ignition service: %w", err)
-						}
-					}
-				}
-			}
-			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
-				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
-			}
-		default:
-			// We don't return the error here as reconciling won't solve the input problem.
-			// An update event will trigger reconciliation.
-			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
-			return ctrl.Result{}, nil
-		}
-	}
-
-	// Set the Control Plane and OAuth endpoints URL
-	{
-		if hcp != nil {
-			hcluster.Status.ControlPlaneEndpoint = hcp.Status.ControlPlaneEndpoint
-
-			// TODO: (cewong) Remove this hack when we no longer need to support HostedControlPlanes that report
-			// the wrong port for the route strategy.
-			if isAPIServerRoute(hcluster) {
-				hcluster.Status.ControlPlaneEndpoint.Port = 443
-			}
-			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
-		}
-	}
-
-	// Set the ignition server availability condition by checking its deployment.
-	{
-		// Assume the server is unavailable unless proven otherwise.
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.IgnitionEndpointAvailable),
-			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.StatusUnknownReason,
-		}
-		// Check to ensure the deployment exists and is available.
-		deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
-			if apierrors.IsNotFound(err) {
-				newCondition = metav1.Condition{
-					Type:    string(hyperv1.IgnitionEndpointAvailable),
-					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.NotFoundReason,
-					Message: "Ignition server deployment not found",
-				}
-			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to get ignition server deployment: %w", err)
-			}
-		} else {
-			// Assume the deployment is unavailable until proven otherwise.
-			newCondition = metav1.Condition{
-				Type:    string(hyperv1.IgnitionEndpointAvailable),
-				Status:  metav1.ConditionFalse,
-				Reason:  hyperv1.WaitingForAvailableReason,
-				Message: "Ignition server deployment is not yet available",
-			}
-			for _, cond := range deployment.Status.Conditions {
-				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
-					newCondition = metav1.Condition{
-						Type:    string(hyperv1.IgnitionEndpointAvailable),
-						Status:  metav1.ConditionTrue,
-						Reason:  hyperv1.AsExpectedReason,
-						Message: "Ignition server deployment is available",
-					}
-					break
-				}
-			}
-		}
-		newCondition.ObservedGeneration = hcluster.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
-	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
-
-	// Set ValidReleaseImage condition
-	{
-		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
-
-		// This check can be expensive looking up release image versions
-		// (hopefully they are cached).  Skip if we have already observed for
-		// this generation.
-		if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
-			condition := metav1.Condition{
-				Type:               string(hyperv1.ValidReleaseImage),
-				ObservedGeneration: hcluster.Generation,
-			}
-			err := r.validateReleaseImage(ctx, hcluster, releaseProvider)
-			if err != nil {
-				condition.Status = metav1.ConditionFalse
-				condition.Message = err.Error()
-
-				if apierrors.IsNotFound(err) {
-					condition.Reason = hyperv1.SecretNotFoundReason
-				} else {
-					condition.Reason = hyperv1.InvalidImageReason
-				}
-			} else {
-				condition.Status = metav1.ConditionTrue
-				condition.Message = "Release image is valid"
-				condition.Reason = hyperv1.AsExpectedReason
-			}
-			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-		}
-	}
-
-	// Set HostedCluster payload arch
-	payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, r.Client, hcluster, registryClientImageMetadataProvider)
-	if err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidReleaseImage),
-			ObservedGeneration: hcluster.Generation,
-		}
-		condition.Status = metav1.ConditionFalse
-		condition.Message = err.Error()
-		condition.Reason = hyperv1.PayloadArchNotFoundReason
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-
-		return ctrl.Result{}, err
-	}
-
-	hcluster.Status.PayloadArch = payloadArch
-
-	// Set Progressing condition
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.HostedClusterProgressing),
-			ObservedGeneration: hcluster.Generation,
-			Status:             metav1.ConditionFalse,
-			Message:            "HostedCluster is at expected version",
-			Reason:             hyperv1.AsExpectedReason,
-		}
-		progressing, err := isProgressing(hcluster, releaseImage)
-		if err != nil {
-			condition.Status = metav1.ConditionFalse
-			condition.Message = err.Error()
-			condition.Reason = hyperv1.BlockedReason
-		}
-		if progressing {
-			condition.Status = metav1.ConditionTrue
-			condition.Message = "HostedCluster is deploying, upgrading, or reconfiguring"
-			condition.Reason = "Progressing"
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-	}
-
-	// Persist status updates
-	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
 
 	// Part two: reconcile the state of the world
@@ -1849,6 +1362,527 @@ func (r *HostedClusterReconciler) reconcileDeletion(ctx context.Context, req ctr
 
 	log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 	return ctrl.Result{}, nil
+}
+
+// reconcileStatus sets all different fields and conditions of the HostedClusterStatus. Returns an error or a result is
+// returned if the HostedCluster reconciliation should end with the returned result and/or error.
+func (r *HostedClusterReconciler) reconcileStatus(
+	ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
+	controlPlaneNamespace *corev1.Namespace, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
+	registryClientImageMetadataProvider hyperutil.ImageMetadataProvider, releaseImage *releaseinfo.ReleaseImage,
+) (*ctrl.Result, error) {
+	// Set kubeconfig status
+	kubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeConfigSecret), kubeConfigSecret)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to reconcile kubeconfig secret: %w", err)
+		}
+	} else {
+		hcluster.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
+	}
+
+	// Set kubeadminPassword status
+	{
+		explicitOauthConfig := hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.OAuth != nil
+		if explicitOauthConfig {
+			hcluster.Status.KubeadminPassword = nil
+		} else {
+			kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
+			err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return nil, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
+				}
+			} else {
+				hcluster.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: kubeadminPasswordSecret.Name}
+			}
+		}
+	}
+
+	// Set version status
+	hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
+
+	// Copy the CVO conditions from the HCP.
+	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
+		hyperv1.ClusterVersionSucceeding:       nil,
+		hyperv1.ClusterVersionProgressing:      nil,
+		hyperv1.ClusterVersionReleaseAccepted:  nil,
+		hyperv1.ClusterVersionRetrievedUpdates: nil,
+		hyperv1.ClusterVersionUpgradeable:      nil,
+		hyperv1.ClusterVersionAvailable:        nil,
+	}
+	if hcp != nil {
+		hcpCVOConditions = map[hyperv1.ConditionType]*metav1.Condition{
+			hyperv1.ClusterVersionSucceeding:       meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionFailing)),
+			hyperv1.ClusterVersionProgressing:      meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionProgressing)),
+			hyperv1.ClusterVersionReleaseAccepted:  meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionReleaseAccepted)),
+			hyperv1.ClusterVersionRetrievedUpdates: meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionRetrievedUpdates)),
+			hyperv1.ClusterVersionUpgradeable:      meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionUpgradeable)),
+			hyperv1.ClusterVersionAvailable:        meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionAvailable)),
+		}
+	}
+
+	for conditionType := range hcpCVOConditions {
+		var hcCVOCondition *metav1.Condition
+		// Set unknown status.
+		var unknownStatusMessage string
+		if hcpCVOConditions[conditionType] == nil {
+			unknownStatusMessage = "Condition not found in the CVO."
+		}
+
+		hcCVOCondition = &metav1.Condition{
+			Type:               string(conditionType),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+			Message:            unknownStatusMessage,
+			ObservedGeneration: hcluster.Generation,
+		}
+
+		if hcp != nil && hcpCVOConditions[conditionType] != nil {
+			// Bubble up info from HCP.
+			hcCVOCondition = hcpCVOConditions[conditionType]
+			hcCVOCondition.ObservedGeneration = hcluster.Generation
+
+			// Inverse ClusterVersionFailing condition into ClusterVersionSucceeding
+			// So consumers e.g. UI can categorize as good (True) / bad (False).
+			if conditionType == hyperv1.ClusterVersionSucceeding {
+				hcCVOCondition.Type = string(hyperv1.ClusterVersionSucceeding)
+				var status metav1.ConditionStatus
+				switch hcpCVOConditions[conditionType].Status {
+				case metav1.ConditionTrue:
+					status = metav1.ConditionFalse
+				case metav1.ConditionFalse:
+					status = metav1.ConditionTrue
+				}
+				hcCVOCondition.Status = status
+			}
+		}
+
+		if hcCVOCondition.Type == string(hyperv1.ClusterVersionRetrievedUpdates) && hcCVOCondition.Reason == hyperv1.StatusUnknownReason {
+			// until all HostedControlPlane controllers understand how to propagate this condition, avoid bothering folks with unknown status in HostedCluster conditions.
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.ClusterVersionRetrievedUpdates))
+			continue
+		}
+
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *hcCVOCondition)
+	}
+
+	// Copy the Degraded condition on the hostedcontrolplane
+	{
+		condition := &metav1.Condition{
+			Type:               string(hyperv1.HostedClusterDegraded),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+			Message:            "The hosted control plane is not found",
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			degradedCondition := meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.HostedControlPlaneDegraded))
+			if degradedCondition != nil {
+				condition = degradedCondition
+				condition.Type = string(hyperv1.HostedClusterDegraded)
+				if condition.Status == metav1.ConditionFalse {
+					condition.Message = "The hosted cluster is not degraded"
+				}
+			}
+		}
+		condition.ObservedGeneration = hcluster.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+	}
+
+	// Copy the ValidKubeVirtInfraNetworkMTU condition from the HostedControlPlane
+	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if hcp != nil {
+			validMtuCondCreated := meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ValidKubeVirtInfraNetworkMTU))
+			if validMtuCondCreated != nil {
+				validMtuCondCreated.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *validMtuCondCreated)
+			}
+		}
+		if err := r.syncKVLiveMigratableCondition(ctx, hcluster); err != nil {
+			return nil, fmt.Errorf("failed to update condition: %w", err)
+		}
+	}
+
+	// Copy conditions from hostedcontrolplane
+	{
+		hcpConditions := []hyperv1.ConditionType{
+			hyperv1.EtcdAvailable,
+			hyperv1.KubeAPIServerAvailable,
+			hyperv1.InfrastructureReady,
+			hyperv1.ExternalDNSReachable,
+			hyperv1.ValidHostedControlPlaneConfiguration,
+			hyperv1.ValidReleaseInfo,
+		}
+
+		for _, conditionType := range hcpConditions {
+			condition := &metav1.Condition{
+				Type:               string(conditionType),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				Message:            "The hosted control plane is not found",
+				ObservedGeneration: hcluster.Generation,
+			}
+			if hcp != nil {
+				hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(conditionType))
+				if hcpCondition != nil {
+					condition = hcpCondition
+				} else {
+					condition.Message = "Condition not found in the HCP"
+				}
+			}
+			condition.ObservedGeneration = hcluster.Generation
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+		}
+	}
+
+	// Copy the platform status from the hostedcontrolplane
+	if hcp != nil {
+		hcluster.Status.Platform = hcp.Status.Platform
+	}
+
+	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		if hcp != nil {
+			sgCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
+			if sgCreated != nil {
+				sgCreated.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *sgCreated)
+			}
+
+			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSKMSConfig))
+			if validKMSConfig != nil {
+				validKMSConfig.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
+			}
+		}
+	}
+
+	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+		if hcp != nil {
+			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+			if validKMSConfig != nil {
+				validKMSConfig.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
+			}
+		}
+	}
+
+	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
+	// provide clear status to the user on the resource without having to look at operator logs.
+	{
+		if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+			unmanagedEtcdTLSClientSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: hcluster.GetNamespace(),
+					Name:      hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name,
+				},
+			}
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(unmanagedEtcdTLSClientSecret),
+				unmanagedEtcdTLSClientSecret); err != nil {
+				if apierrors.IsNotFound(err) {
+					unmanagedEtcdTLSClientSecret = nil
+				} else {
+					return nil, fmt.Errorf("failed to get unmanaged etcd tls secret: %w", err)
+				}
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions,
+				computeUnmanagedEtcdAvailability(hcluster, unmanagedEtcdTLSClientSecret))
+		}
+	}
+
+	// Set the Available condition
+	// TODO: This is really setting something that could be more granular like
+	// HostedControlPlaneAvailable, and then the HostedCluster high-level Available
+	// condition could be computed as a function of the granular ThingAvailable
+	// conditions (so that it could incorporate e.g. HostedControlPlane and IgnitionServer
+	// availability in the ultimate HostedCluster Available condition)
+	{
+		availableCondition := computeHostedClusterAvailability(hcluster, hcp)
+		_, isHasBeenAvailableAnnotationSet := hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation]
+
+		meta.SetStatusCondition(&hcluster.Status.Conditions, availableCondition)
+
+		if availableCondition.Status == metav1.ConditionTrue && !isHasBeenAvailableAnnotationSet {
+			original := hcluster.DeepCopy()
+
+			if hcluster.Annotations == nil {
+				hcluster.Annotations = make(map[string]string)
+			}
+
+			hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation] = "true"
+
+			if err := r.Patch(ctx, hcluster, client.MergeFromWithOptions(original)); err != nil {
+				return nil, fmt.Errorf("cannot patch hosted cluster with has been available annotation: %w", err)
+			}
+		}
+	}
+
+	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
+		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
+			condition := metav1.Condition{
+				Type:    string(hyperv1.AWSEndpointAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.NotFoundReason,
+				Message: fmt.Sprintf("error listing awsendpointservices in namespace %s: %v", hcpNamespace, err),
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		} else {
+			meta.SetStatusCondition(&hcluster.Status.Conditions,
+				computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
+			meta.SetStatusCondition(&hcluster.Status.Conditions,
+				computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
+		}
+	}
+
+	// Set ValidConfiguration condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidHostedClusterConfiguration),
+			ObservedGeneration: hcluster.Generation,
+		}
+		if err := r.validateConfigAndClusterCapabilities(ctx, hcluster); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.InvalidConfigurationReason
+		} else {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "Configuration passes validation"
+			condition.Reason = hyperv1.AsExpectedReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
+	// Set SupportedHostedCluster condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.SupportedHostedCluster),
+			ObservedGeneration: hcluster.Generation,
+		}
+		if err := r.validateHostedClusterSupport(hcluster); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.UnsupportedHostedClusterReason
+		} else {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "HostedCluster is supported by operator configuration"
+			condition.Reason = hyperv1.AsExpectedReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
+	// Set Ignition Server endpoint
+	{
+		serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
+		if serviceStrategy == nil {
+			// We don't return the error here as reconciling won't solve the input problem.
+			// An update event will trigger reconciliation.
+			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
+			return &ctrl.Result{}, nil
+		}
+		switch serviceStrategy.Type {
+		case hyperv1.Route:
+			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+				hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
+			} else {
+				ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
+				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute),
+					ignitionServerRoute); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return nil, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
+					}
+				}
+				if ignitionServerRoute.Spec.Host != "" {
+					hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+				}
+			}
+		case hyperv1.NodePort:
+			if serviceStrategy.NodePort == nil {
+				// We don't return the error here as reconciling won't solve the input problem.
+				// An update event will trigger reconciliation.
+				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
+				return &ctrl.Result{}, nil
+			}
+			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
+			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return nil, fmt.Errorf("failed to get ignition proxy service: %w", err)
+				} else {
+					// ignition-server-proxy service not found, possible IBM platform or older CPO that doesn't create the service
+					ignitionService = ignitionserver.Service(controlPlaneNamespace.GetName())
+					if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService),
+						ignitionService); err != nil {
+						if !apierrors.IsNotFound(err) {
+							return nil, fmt.Errorf("failed to get ignition service: %w", err)
+						}
+					}
+				}
+			}
+			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
+				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address,
+					ignitionService.Spec.Ports[0].NodePort)
+			}
+		default:
+			// We don't return the error here as reconciling won't solve the input problem.
+			// An update event will trigger reconciliation.
+			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
+			return &ctrl.Result{}, nil
+		}
+	}
+
+	// Set the Control Plane and OAuth endpoints URL
+	{
+		if hcp != nil {
+			hcluster.Status.ControlPlaneEndpoint = hcp.Status.ControlPlaneEndpoint
+
+			// TODO: (cewong) Remove this hack when we no longer need to support HostedControlPlanes that report
+			// the wrong port for the route strategy.
+			if isAPIServerRoute(hcluster) {
+				hcluster.Status.ControlPlaneEndpoint.Port = 443
+			}
+			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
+		}
+	}
+
+	// Set the ignition server availability condition by checking its deployment.
+	{
+		// Assume the server is unavailable unless proven otherwise.
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.IgnitionEndpointAvailable),
+			Status: metav1.ConditionUnknown,
+			Reason: hyperv1.StatusUnknownReason,
+		}
+		// Check to ensure the deployment exists and is available.
+		deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
+			if apierrors.IsNotFound(err) {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.IgnitionEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.NotFoundReason,
+					Message: "Ignition server deployment not found",
+				}
+			} else {
+				return nil, fmt.Errorf("failed to get ignition server deployment: %w", err)
+			}
+		} else {
+			// Assume the deployment is unavailable until proven otherwise.
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.IgnitionEndpointAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.WaitingForAvailableReason,
+				Message: "Ignition server deployment is not yet available",
+			}
+			for _, cond := range deployment.Status.Conditions {
+				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+					newCondition = metav1.Condition{
+						Type:    string(hyperv1.IgnitionEndpointAvailable),
+						Status:  metav1.ConditionTrue,
+						Reason:  hyperv1.AsExpectedReason,
+						Message: "Ignition server deployment is available",
+					}
+					break
+				}
+			}
+		}
+		newCondition.ObservedGeneration = hcluster.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions,
+		hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+
+	// Set ValidReleaseImage condition
+	{
+		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
+
+		// This check can be expensive looking up release image versions
+		// (hopefully they are cached).  Skip if we have already observed for
+		// this generation.
+		if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
+			condition := metav1.Condition{
+				Type:               string(hyperv1.ValidReleaseImage),
+				ObservedGeneration: hcluster.Generation,
+			}
+			err := r.validateReleaseImage(ctx, hcluster, releaseProvider)
+			if err != nil {
+				condition.Status = metav1.ConditionFalse
+				condition.Message = err.Error()
+
+				if apierrors.IsNotFound(err) {
+					condition.Reason = hyperv1.SecretNotFoundReason
+				} else {
+					condition.Reason = hyperv1.InvalidImageReason
+				}
+			} else {
+				condition.Status = metav1.ConditionTrue
+				condition.Message = "Release image is valid"
+				condition.Reason = hyperv1.AsExpectedReason
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		}
+	}
+
+	// Set HostedCluster payload arch
+	payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, r.Client, hcluster,
+		registryClientImageMetadataProvider)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidReleaseImage),
+			ObservedGeneration: hcluster.Generation,
+		}
+		condition.Status = metav1.ConditionFalse
+		condition.Message = err.Error()
+		condition.Reason = hyperv1.PayloadArchNotFoundReason
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+
+		return nil, err
+	}
+
+	hcluster.Status.PayloadArch = payloadArch
+
+	// Set Progressing condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.HostedClusterProgressing),
+			ObservedGeneration: hcluster.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "HostedCluster is at expected version",
+			Reason:             hyperv1.AsExpectedReason,
+		}
+		progressing, err := isProgressing(hcluster, releaseImage)
+		if err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.BlockedReason
+		}
+		if progressing {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "HostedCluster is deploying, upgrading, or reconfiguring"
+			condition.Reason = "Progressing"
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
+	// Persist status updates
+	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+		if apierrors.IsConflict(err) {
+			return &ctrl.Result{Requeue: true}, nil
+		}
+		return nil, fmt.Errorf("failed to update status: %w", err)
+	}
+	return nil, nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
