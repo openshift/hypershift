@@ -66,8 +66,12 @@ func NewRecoveryCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.etcdClientKeyFile, "etcd-client-key", opts.etcdClientKeyFile, "etcd client cert key file.")
 	cmd.PersistentFlags().StringVar(&opts.etcdCAFile, "etcd-ca-cert", opts.etcdCAFile, "etcd trusted CA cert file.")
 	cmd.PersistentFlags().StringVar(&opts.namespace, "namespace", "", "namespace of etcd cluster")
-	_ = cmd.MarkFlagRequired("etcd-endpoints")
-	_ = cmd.MarkFlagRequired("namespace")
+
+	err := cmd.MarkPersistentFlagRequired("namespace")
+	if err != nil {
+		cmd.PrintErrf("error setting up namespace flag as required: %v\n", err)
+		os.Exit(1)
+	}
 
 	cmd.AddCommand(NewStatusCommand(&opts))
 	cmd.AddCommand(NewRunCommand(&opts))
