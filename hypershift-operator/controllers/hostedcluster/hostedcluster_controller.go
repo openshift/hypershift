@@ -424,6 +424,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, r.Client.Update(ctx, hcluster)
 	}
 
+	// Reconcile the ICSP/IDMS from the management cluster
+	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.RegistryOverrides)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+
 	// Part one: update status
 
 	// Set kubeconfig status
@@ -437,12 +447,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			hcluster.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
 		}
-	}
-
-	// Reconcile the ICSP/IDMS from the management cluster
-	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.RegistryOverrides)
-	if err != nil {
-		return ctrl.Result{}, err
 	}
 
 	// Set kubeadminPassword status
@@ -898,10 +902,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	hcluster.Status.PayloadArch = payloadArch
 
-	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-	}
 	// Set Progressing condition
 	{
 		condition := metav1.Condition{
