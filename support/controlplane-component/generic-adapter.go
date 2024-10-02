@@ -37,7 +37,7 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName
 		return nil
 	}
 
-	obj, err := assets.LoadManifest(componentName, manifestName, nil)
+	obj, _, err := assets.LoadManifest(componentName, manifestName)
 	if err != nil {
 		return err
 	}

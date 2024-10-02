@@ -8,6 +8,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -21,7 +22,7 @@ const (
 
 func LoadDeploymentManifest(componentName string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
-	_, err := LoadManifest(componentName, deploymentManifest, deploy)
+	_, _, err := LoadManifestInto(componentName, deploymentManifest, deploy)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +32,7 @@ func LoadDeploymentManifest(componentName string) (*appsv1.Deployment, error) {
 
 func LoadStatefulSetManifest(componentName string) (*appsv1.StatefulSet, error) {
 	sts := &appsv1.StatefulSet{}
-	_, err := LoadManifest(componentName, statefulSetManifest, sts)
+	_, _, err := LoadManifestInto(componentName, statefulSetManifest, sts)
 	if err != nil {
 		return nil, err
 	}
@@ -39,17 +40,22 @@ func LoadStatefulSetManifest(componentName string) (*appsv1.StatefulSet, error) 
 	return sts, nil
 }
 
+// LoadManifest decodes the manifest data and load it into a new object.
+func LoadManifest(componentName string, fileName string) (client.Object, *schema.GroupVersionKind, error) {
+	return LoadManifestInto(componentName, fileName, nil)
+}
+
 // LoadManifest decodes the manifest data and load it into the provided 'into' object.
 // If 'into' is nil, it will generate and return a new object.
-func LoadManifest(componentName string, fileName string, into client.Object) (client.Object, error) {
+func LoadManifestInto(componentName string, fileName string, into client.Object) (client.Object, *schema.GroupVersionKind, error) {
 	filePath := path.Join(componentName, fileName)
 	bytes, err := manifestsAssets.ReadFile(filePath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	obj, _, err := hyperapi.YamlSerializer.Decode(bytes, nil, into)
-	return obj.(client.Object), err
+	obj, gvk, err := hyperapi.YamlSerializer.Decode(bytes, nil, into)
+	return obj.(client.Object), gvk, err
 }
 
 func ForEachManifest(componentName string, action func(manifestName string) error) error {

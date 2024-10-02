@@ -61,6 +61,11 @@ func (b *controlPlaneWorkloadBuilder[T]) WatchResource(resource client.Object, n
 	return b
 }
 
+func (b *controlPlaneWorkloadBuilder[T]) WithDependencies(dependencies ...string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.dependencies = append(b.workload.dependencies, dependencies...)
+	return b
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) InjectKonnectivityContainer(opts KonnectivityContainerOptions) *controlPlaneWorkloadBuilder[T] {
 	b.workload.konnectivityContainerOpts = &opts
 	return b
