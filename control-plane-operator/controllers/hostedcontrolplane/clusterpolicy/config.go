@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"path"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +22,7 @@ const (
 	bindPort  = 10357
 )
 
-func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string) error {
+func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string, featureGates []string) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -34,7 +33,7 @@ func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef confi
 			return fmt.Errorf("unable to decode existing cluster policy controller configuration: %w", err)
 		}
 	}
-	if err := reconcileConfig(config, minTLSVersion, cipherSuites); err != nil {
+	if err := reconcileConfig(config, minTLSVersion, cipherSuites, featureGates); err != nil {
 		return err
 	}
 	buf := &bytes.Buffer{}
@@ -45,7 +44,7 @@ func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef confi
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string, featureGates []string) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(cpcContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -69,22 +68,12 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLS
 		},
 	}
 
-	// disables automatically setting the `pod-security.kubernetes.io/enforce` label on namespaces by the pod-security-admission-label-synchronization-controller
-	// see https://github.com/openshift/cluster-policy-controller/blob/50c2a8337f08856bbae4cd419bb8ffcbdf92567c/pkg/cmd/controller/psalabelsyncer.go#L19
-	index := -1
-	for i := range cfg.FeatureGates {
-		fg := cfg.FeatureGates[i]
-		if strings.HasPrefix(fg, "OpenShiftPodSecurityAdmission") {
-			index = i
-			break
-		}
-	}
-
-	if index != -1 {
-		// overwrite
-		cfg.FeatureGates[index] = "OpenShiftPodSecurityAdmission=false"
+	if featureGates != nil {
+		cfg.FeatureGates = featureGates
 	} else {
-		cfg.FeatureGates = append(cfg.FeatureGates, "OpenShiftPodSecurityAdmission=false")
+		cfg.FeatureGates = config.FeatureGates(&configv1.FeatureGateSelection{
+			FeatureSet: configv1.Default,
+		})
 	}
 
 	return nil
