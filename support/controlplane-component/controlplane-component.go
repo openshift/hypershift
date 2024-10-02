@@ -265,10 +265,11 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 		deploymentConfig.Scheduling.PriorityClass = cpContext.HCP.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 
+	deploymentConfig.AdditionalLabels = map[string]string{
+		hyperv1.ControlPlaneComponentLabel: c.Name(),
+	}
 	if c.NeedsManagementKASAccess() {
-		deploymentConfig.AdditionalLabels = map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		}
+		deploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
 
 	var replicas *int
