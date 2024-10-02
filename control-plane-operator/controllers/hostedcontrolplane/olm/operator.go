@@ -34,7 +34,7 @@ var (
 )
 
 func olmOperatorLabels() map[string]string {
-	return map[string]string{"app": olmOperatorName, hyperv1.ControlPlaneComponent: olmOperatorName}
+	return map[string]string{"app": olmOperatorName, hyperv1.ControlPlaneComponentLabel: olmOperatorName}
 }
 
 func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config.OwnerRef) error {

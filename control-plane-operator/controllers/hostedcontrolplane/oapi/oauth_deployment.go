@@ -50,8 +50,8 @@ var (
 
 func openShiftOAuthAPIServerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-oauth-apiserver",
-		hyperv1.ControlPlaneComponent: "openshift-oauth-apiserver",
+		"app":                              "openshift-oauth-apiserver",
+		hyperv1.ControlPlaneComponentLabel: "openshift-oauth-apiserver",
 	}
 }
 
