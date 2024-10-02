@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 
@@ -29,13 +30,15 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (required)")
+	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (optional)")
+	flags.StringVar(&opts.OpenStackCloud, "openstack-cloud", opts.OpenStackCloud, "Name of the cloud in clouds.yaml (optional) (default: 'openstack')")
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 }
 
 type RawCreateOptions struct {
 	OpenStackCredentialsFile   string
+	OpenStackCloud             string
 	OpenStackCACertFile        string
 	OpenStackExternalNetworkID string
 
@@ -85,9 +88,48 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
-	// Check that the OpenStack credentials file arg is set and that the file exists with the "openstack" cloud
-	if err := validateOpenStackCredentialsFile(o.OpenStackCredentialsFile); err != nil {
-		return nil, err
+	// Check that the OpenStack credentials file arg is set and that the file exists with the correct cloud
+	if o.OpenStackCredentialsFile != "" {
+		if _, err := os.Stat(o.OpenStackCredentialsFile); err != nil {
+			return nil, fmt.Errorf("OpenStack credentials file does not exist: %w", err)
+		}
+	} else {
+		credentialsFile, err := findOpenStackCredentialsFile()
+		if err != nil {
+			return nil, fmt.Errorf("failed to find clouds.yaml file: %w", err)
+		}
+		if credentialsFile == "" {
+			return nil, fmt.Errorf("failed to find clouds.yaml file")
+		}
+		o.OpenStackCredentialsFile = credentialsFile
+	}
+
+	if o.OpenStackCloud == "" {
+		cloud := os.Getenv("OS_CLOUD")
+		if cloud == "" {
+			cloud = "openstack"
+		}
+		o.OpenStackCloud = cloud
+	}
+
+	cloudsFile, err := os.ReadFile(o.OpenStackCredentialsFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
+	}
+
+	clouds := make(map[string]interface{})
+	if err := yaml.Unmarshal(cloudsFile, &clouds); err != nil {
+		return nil, fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
+	}
+
+	_, ok := clouds["clouds"]
+	if !ok {
+		return nil, fmt.Errorf("'clouds' key not found in credentials file")
+	}
+
+	clouds = clouds["clouds"].(map[string]interface{})
+	if _, ok := clouds[o.OpenStackCloud]; !ok {
+		return nil, fmt.Errorf("'%s' cloud not found in credentials file", o.OpenStackCloud)
 	}
 
 	if err := util.ValidateRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
@@ -106,7 +148,6 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		},
 	}
 
-	var err error
 	validOpts.ValidatedOpenStackPlatformCreateOptions, err = o.NodePoolOpts.Validate()
 
 	return validOpts, err
@@ -210,32 +251,34 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	return cmd
 }
 
-// validateOpenStackCredentialsFile checks that the OpenStack credentials file exists
-// and that the cloud name is "openstack" which we hardcode for now.
-func validateOpenStackCredentialsFile(credentialsFile string) error {
-	if credentialsFile == "" {
-		return fmt.Errorf("OpenStack credentials file is required")
-	}
-
-	if _, err := os.Stat(credentialsFile); err != nil {
-		return fmt.Errorf("OpenStack credentials file does not exist: %w", err)
-	}
-
-	cloudsFile, err := os.ReadFile(credentialsFile)
+// findOpenStackCredentialsFile searches for a clouds.yaml in the standard locations,
+// returning the first match found else the empty string
+func findOpenStackCredentialsFile() (string, error) {
+	currDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to read OpenStack credentials file: %w", err)
+		return "", err
 	}
-	clouds := make(map[string]interface{})
-	if err := yaml.Unmarshal(cloudsFile, &clouds); err != nil {
-		return fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
 	}
-	_, ok := clouds["clouds"]
-	if !ok {
-		return fmt.Errorf("'clouds' key not found in credentials file")
+
+	paths := []string{
+		filepath.Join(currDir, "clouds.yaml"),
+		filepath.Join(homeDir, ".config", "openstack", "clouds.yaml"),
+		"/etc/openstack/clouds.yaml",
 	}
-	clouds = clouds["clouds"].(map[string]interface{})
-	if _, ok := clouds["openstack"]; !ok {
-		return fmt.Errorf("'openstack' cloud not found in credentials file")
+
+	if os.Getenv("OS_CLIENT_CONFIG_FILE") != "" {
+		paths = append([]string{os.Getenv("OS_CLIENT_CONFIG_FILE")}, paths...)
 	}
-	return nil
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", nil
 }
