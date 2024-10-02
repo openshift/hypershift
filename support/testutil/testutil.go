@@ -70,6 +70,8 @@ type options struct {
 	Prefix    string
 	Suffix    string
 	Extension string
+
+	SubDir string
 }
 
 type option func(*options)
@@ -80,12 +82,24 @@ func WithExtension(extension string) option {
 	}
 }
 
+func WithSuffix(suffix string) option {
+	return func(opts *options) {
+		opts.Suffix = suffix
+	}
+}
+
+func WithSubDir(subDir string) option {
+	return func(opts *options) {
+		opts.SubDir = subDir
+	}
+}
+
 // golden determines the golden file to use
 func golden(t *testing.T, opts *options) (string, error) {
 	if opts.Extension == "" {
 		opts.Extension = ".yaml"
 	}
-	return filepath.Abs(filepath.Join("testdata", sanitizeFilename(opts.Prefix+t.Name()+opts.Suffix)) + opts.Extension)
+	return filepath.Abs(filepath.Join("testdata", opts.SubDir, sanitizeFilename(opts.Prefix+t.Name()+opts.Suffix)) + opts.Extension)
 }
 
 func sanitizeFilename(s string) string {

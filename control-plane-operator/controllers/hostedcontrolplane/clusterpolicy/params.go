@@ -20,7 +20,7 @@ type ClusterPolicyControllerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
 		Image:                   releaseImageProvider.GetImage("cluster-policy-controller"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),

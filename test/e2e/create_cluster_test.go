@@ -98,6 +98,60 @@ func TestCreateCluster(t *testing.T) {
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
+// TestCreateClusterV2 tests the new CPO implementation, which is currently hidden behind an annotation.
+func TestCreateClusterV2(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
+	if len(zones) >= 3 {
+		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
+		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
+		clusterOpts.AWSPlatform.Zones = zones
+		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+		clusterOpts.NodePoolReplicas = 1
+	}
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch obj := o.(type) {
+		case *hyperv1.HostedCluster:
+			if obj.Annotations == nil {
+				obj.Annotations = make(map[string]string)
+			}
+			obj.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] = "true"
+		}
+	}
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Sanity check the cluster by waiting for the nodes to report ready
+		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+
+		t.Logf("fetching mgmt kubeconfig")
+		mgmtCfg, err := e2eutil.GetConfig()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
+		mgmtCfg.QPS = -1
+		mgmtCfg.Burst = -1
+
+		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
+
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
+
+		guestClients, err := integrationframework.NewClients(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
+
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
+		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+}
+
 func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	if !globalOpts.RequestServingIsolation {
 		t.Skip("Skipping request serving isolation test")

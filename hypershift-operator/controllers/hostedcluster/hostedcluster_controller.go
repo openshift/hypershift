@@ -78,7 +78,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
@@ -1187,7 +1186,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	_, ignitionServerHasHealthzHandler := controlPlaneOperatorImageLabels[ignitionServerHealthzHandlerLabel]
 	_, controlplaneOperatorManagesIgnitionServer := controlPlaneOperatorImageLabels[controlplaneOperatorManagesIgnitionServerLabel]
-	_, controlPlaneOperatorManagesMachineAutoscaler := controlPlaneOperatorImageLabels[controlPlaneOperatorManagesMachineAutoscaler]
 	_, controlPlaneOperatorManagesMachineApprover := controlPlaneOperatorImageLabels[controlPlaneOperatorManagesMachineApprover]
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
@@ -1718,16 +1716,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
-	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
-	// For IBM existing clusters < 4.11 we need to stay consistent and keep deploying existing pods to satisfy validations.
-	// TODO (alberto): drop this after dropping < 4.11 support.
-	if !controlPlaneOperatorManagesMachineAutoscaler {
-		// Reconcile the autoscaler.
-		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion, releaseProvider)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
-		}
-	}
 	if !controlPlaneOperatorManagesMachineApprover {
 		// Reconcile the machine approver.
 		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion, releaseProvider); err != nil {
@@ -2368,22 +2356,6 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 	return nil
 }
 
-// reconcileAutoscaler orchestrates reconciliation of autoscaler components using
-// both the HostedCluster and the HostedControlPlane which the autoscaler takes
-// inputs from.
-func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
-	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, releaseProvider, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
-	}
-	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
-	if imageVal, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
-		clusterAutoscalerImage = imageVal
-	}
-
-	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
-}
-
 // reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
 // hosted cluster, has an owner reference of the hosted cluster.
 func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
@@ -2663,6 +2635,15 @@ func reconcileControlPlaneOperatorDeployment(
 			corev1.EnvVar{
 				Name:  certs.CertificateRenewalEnvVar,
 				Value: certRenewalPercentage,
+			},
+		)
+	}
+
+	if _, exist := hc.Annotations[hyperv1.ControlPlaneOperatorV2Annotation]; exist {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  hyperv1.ControlPlaneOperatorV2EnvVar,
+				Value: "true",
 			},
 		)
 	}

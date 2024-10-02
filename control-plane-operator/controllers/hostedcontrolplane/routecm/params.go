@@ -20,7 +20,7 @@ type OpenShiftRouteControllerManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftRouteControllerManagerParams {
+func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftRouteControllerManagerParams {
 	params := &OpenShiftRouteControllerManagerParams{
 		OpenShiftControllerManagerImage: releaseImageProvider.GetImage("route-controller-manager"),
 	}

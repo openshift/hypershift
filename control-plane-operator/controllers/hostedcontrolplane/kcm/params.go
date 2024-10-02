@@ -38,7 +38,7 @@ const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration

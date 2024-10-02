@@ -24,13 +24,13 @@ type Params struct {
 func NewParams(
 	hcp *hyperv1.HostedControlPlane,
 	version string,
-	releaseImageProvider *imageprovider.ReleaseImageProvider,
-	userReleaseImageProvider *imageprovider.ReleaseImageProvider,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
+	userReleaseImageProvider imageprovider.ReleaseImageProvider,
 	setDefaultSecurityContext bool) *Params {
 
 	ir := newEnvironmentReplacer()
 	ir.setVersions(version)
-	ir.setOperatorImageReferences(releaseImageProvider.ComponentImages(), userReleaseImageProvider.ComponentImages())
+	ir.setOperatorImageReferences(releaseImageProvider, userReleaseImageProvider)
 
 	params := Params{
 		OwnerRef:                config.OwnerRefFrom(hcp),

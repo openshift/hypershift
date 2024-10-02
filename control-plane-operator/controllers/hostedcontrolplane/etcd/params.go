@@ -38,7 +38,7 @@ func etcdPodSelector() map[string]string {
 	return map[string]string{"app": "etcd"}
 }
 
-func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider) (*EtcdParams, error) {
+func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider) (*EtcdParams, error) {
 
 	ipv4, err := hyputils.IsIPv4(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {

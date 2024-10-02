@@ -26,7 +26,7 @@ type KubeSchedulerParams struct {
 	DisableProfiling        bool                    `json:"disableProfiling"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		HyperkubeImage:          releaseImageProvider.GetImage("hyperkube"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),

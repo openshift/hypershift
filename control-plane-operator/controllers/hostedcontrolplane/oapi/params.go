@@ -50,7 +50,7 @@ type OAuthDeploymentParams struct {
 	AccessTokenInactivityTimeout *metav1.Duration
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: releaseImageProvider.GetImage("openshift-apiserver"),
 		OAuthAPIServerImage:     releaseImageProvider.GetImage("oauth-apiserver"),

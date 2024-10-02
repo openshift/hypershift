@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openshift-route-controller-manager
+  namespace: HCP_NAMESPACE
+spec:
+  endpoints:
+  - scheme: https
+    targetPort: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: metrics-client
+      keySecret:
+        key: tls.key
+        name: metrics-client
+      serverName: openshift-controller-manager
+  namespaceSelector:
+    matchNames:
+    - HCP_NAMESPACE
+  selector:
+    matchLabels:
+      app: openshift-route-controller-manager
+      hypershift.openshift.io/control-plane-component: openshift-route-controller-manager

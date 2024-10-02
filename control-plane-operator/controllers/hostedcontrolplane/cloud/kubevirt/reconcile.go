@@ -96,7 +96,7 @@ func ReconcileCCMRoleBinding(roleBinding *rbacv1.RoleBinding, ownerRef config.Ow
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImageProvider imageprovider.ReleaseImageProvider) error {
 	clusterName, ok := hcp.Labels["cluster.x-k8s.io/cluster-name"]
 	if !ok {
 		return fmt.Errorf("\"cluster.x-k8s.io/cluster-name\" label doesn't exist in HostedControlPlane")
@@ -167,7 +167,7 @@ func podVolumeMounts(isExternalInfra bool) util.PodVolumeMounts {
 	}
 }
 
-func buildCCMContainer(clusterName string, releaseImageProvider *imageprovider.ReleaseImageProvider, isExternalInfra bool) func(c *corev1.Container) {
+func buildCCMContainer(clusterName string, releaseImageProvider imageprovider.ReleaseImageProvider, isExternalInfra bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = releaseImageProvider.GetImage("kubevirt-cloud-controller-manager")
 		c.ImagePullPolicy = corev1.PullIfNotPresent

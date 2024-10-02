@@ -2,29 +2,35 @@ package imageprovider
 
 import "github.com/openshift/hypershift/support/releaseinfo"
 
-type ReleaseImageProvider struct {
+// ReleaseImageProvider provides the functionality to retrieve OpenShift components' container image from a release image.
+type ReleaseImageProvider interface {
+	GetImage(key string) string
+	ImageExist(key string) (string, bool)
+}
+
+type SimpleReleaseImageProvider struct {
 	missingImages    []string
 	componentsImages map[string]string
 
 	*releaseinfo.ReleaseImage
 }
 
-func New(releaseImage *releaseinfo.ReleaseImage) *ReleaseImageProvider {
-	return &ReleaseImageProvider{
+func New(releaseImage *releaseinfo.ReleaseImage) *SimpleReleaseImageProvider {
+	return &SimpleReleaseImageProvider{
 		componentsImages: releaseImage.ComponentImages(),
 		missingImages:    make([]string, 0),
 		ReleaseImage:     releaseImage,
 	}
 }
 
-func NewFromImages(componentsImages map[string]string) *ReleaseImageProvider {
-	return &ReleaseImageProvider{
+func NewFromImages(componentsImages map[string]string) *SimpleReleaseImageProvider {
+	return &SimpleReleaseImageProvider{
 		componentsImages: componentsImages,
 		missingImages:    make([]string, 0),
 	}
 }
 
-func (p *ReleaseImageProvider) GetImage(key string) string {
+func (p *SimpleReleaseImageProvider) GetImage(key string) string {
 	image, exist := p.componentsImages[key]
 	if !exist || image == "" {
 		p.missingImages = append(p.missingImages, key)
@@ -33,11 +39,11 @@ func (p *ReleaseImageProvider) GetImage(key string) string {
 	return image
 }
 
-func (p *ReleaseImageProvider) GetMissingImages() []string {
+func (p *SimpleReleaseImageProvider) GetMissingImages() []string {
 	return p.missingImages
 }
 
-func (p *ReleaseImageProvider) ImageExist(key string) (string, bool) {
+func (p *SimpleReleaseImageProvider) ImageExist(key string) (string, bool) {
 	img, exist := p.componentsImages[key]
 	return img, exist
 }

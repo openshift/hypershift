@@ -25,7 +25,7 @@ type HostedClusterConfigOperatorParams struct {
 	AvailabilityProberImage string
 }
 
-func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, openShiftVersion, kubernetesVersion string, setDefaultSecurityContext bool) *HostedClusterConfigOperatorParams {
+func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, openShiftVersion, kubernetesVersion string, setDefaultSecurityContext bool) *HostedClusterConfigOperatorParams {
 	params := &HostedClusterConfigOperatorParams{
 		Image:                   releaseImageProvider.GetImage("hosted-cluster-config-operator"),
 		ReleaseImage:            hcp.Spec.ReleaseImage,

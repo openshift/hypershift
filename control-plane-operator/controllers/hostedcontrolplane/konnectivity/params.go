@@ -22,7 +22,7 @@ type KonnectivityParams struct {
 	AgentDeamonSetConfig   config.DeploymentConfig
 }
 
-func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
+func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
 	p := &KonnectivityParams{
 		KonnectivityAgentImage: releaseImageProvider.GetImage("apiserver-network-proxy"),
 		OwnerRef:               config.OwnerRefFrom(hcp),

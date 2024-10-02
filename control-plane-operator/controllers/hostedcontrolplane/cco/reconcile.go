@@ -52,7 +52,7 @@ type Params struct {
 	config.OwnerRef
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	params := Params{
 		operatorImage:           releaseImageProvider.GetImage("cloud-credential-operator"),
 		kubeRbacProxyImage:      releaseImageProvider.GetImage("kube-rbac-proxy"),

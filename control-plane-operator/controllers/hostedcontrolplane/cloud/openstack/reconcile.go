@@ -27,7 +27,7 @@ func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.Owner
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *OpenStackParams, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider, hasCACert bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *OpenStackParams, serviceAccountName string, releaseImageProvider imageprovider.ReleaseImageProvider, hasCACert bool) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: ccmLabels(),

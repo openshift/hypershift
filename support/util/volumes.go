@@ -31,3 +31,11 @@ func DeploymentAddTrustBundleVolume(trustBundleConfigMap *corev1.LocalObjectRefe
 		},
 	})
 }
+
+func UpdateVolume(name string, volumes []corev1.Volume, update func(v *corev1.Volume)) {
+	for i, v := range volumes {
+		if v.Name == name {
+			update(&volumes[i])
+		}
+	}
+}

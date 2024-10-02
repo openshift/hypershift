@@ -23,7 +23,7 @@ type CVOParams struct {
 	PlatformType            hyperv1.PlatformType
 }
 
-func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext, enableCVOManagementClusterMetricsAccess bool) *CVOParams {
+func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext, enableCVOManagementClusterMetricsAccess bool) *CVOParams {
 	p := &CVOParams{
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
