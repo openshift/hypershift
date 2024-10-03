@@ -7,7 +7,8 @@ theme:
   - content.code.annotate
 plugins:
 - search
-- mermaid2
+- mermaid2:
+    version: 11.2.0
 - glightbox:
     touchNavigation: true
     loop: false
@@ -25,7 +26,7 @@ repo_url: https://github.com/openshift/hypershift
 edit_uri: edit/main/docs/content
 repo_name: openshift/hypershift
 extra_javascript:
-  - https://unpkg.com/mermaid@9.2.2/dist/mermaid.min.js
+  - https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
 markdown_extensions:
 - toc:
     toc_depth: "2-3"
@@ -85,6 +86,7 @@ nav:
     - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
+    - how-to/aws/shared-vpc.md
     - 'Other SDN providers': how-to/aws/other-sdn-providers.md
     - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md

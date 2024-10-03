@@ -48,6 +48,10 @@ func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
 	flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
 }
 
+func (opts *AWSCredentialsOptions) BindVPCOwnerFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&opts.AWSCredentialsFile, "vpc-owner-aws-creds", opts.AWSCredentialsFile, "Path to VPC owner AWS credentials file")
+}
+
 func (opts *AWSCredentialsOptions) BindProductFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&opts.RoleArn, "role-arn", opts.RoleArn, "The ARN of the role to assume.")
 	flags.StringVar(&opts.STSCredentialsFile, "sts-creds", opts.STSCredentialsFile, "Path to the STS credentials file to use when assuming the role. Can be generated with 'aws sts get-session-token --output json'")

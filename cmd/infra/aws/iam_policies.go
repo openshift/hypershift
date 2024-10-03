@@ -20,12 +20,12 @@ type ServicesByDelegate map[string]EndpointsByService
 // APIs that each component has access to with their limited credentials.
 func APIsByDelegatedServices() (ServicesByDelegate, error) {
 	bindings := []policyBinding{
-		ingressPermPolicy("fake", "fake"),
+		ingressPermPolicy("fake", "fake", false),
 		imageRegistryPermPolicy,
 		awsEBSCSIPermPolicy,
 		cloudControllerPolicy,
 		nodePoolPolicy,
-		controlPlaneOperatorPolicy("fake"),
+		controlPlaneOperatorPolicy("fake", false),
 		kmsProviderPolicy("fake"),
 		cloudNetworkConfigControllerPolicy,
 	}

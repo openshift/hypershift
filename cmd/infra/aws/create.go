@@ -13,9 +13,12 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/ram"
 	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
@@ -42,6 +45,8 @@ type CreateInfraOptions struct {
 
 	CredentialsSecretData *util.CredentialsSecretData
 
+	VPCOwnerCredentialOpts awsutil.AWSCredentialsOptions
+
 	additionalEC2Tags []*ec2.Tag
 }
 
@@ -64,6 +69,10 @@ type CreateInfraOutput struct {
 	PrivateZoneID    string                   `json:"privateZoneID"`
 	LocalZoneID      string                   `json:"localZoneID"`
 	ProxyAddr        string                   `json:"proxyAddr"`
+
+	// Fields related to shared VPCs
+	VPCCreatorAccountID string `json:"vpcCreatorAccountID"`
+	ClusterAccountID    string `json:"clusterAccountID"`
 }
 
 const (
@@ -103,6 +112,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("base-domain")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+	opts.VPCOwnerCredentialOpts.BindVPCOwnerFlags(cmd.Flags())
 
 	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -158,8 +168,26 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	if err != nil {
 		return nil, err
 	}
-	ec2Client := ec2.New(awsSession, awsutil.NewConfig())
-	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	var vpcOwnerAWSSession *session.Session
+	if o.VPCOwnerCredentialOpts.AWSCredentialsFile != "" {
+		vpcOwnerAWSSession, err = o.VPCOwnerCredentialOpts.GetSession("cli-create-infra", nil, o.Region)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var ec2Client *ec2.EC2
+	var vpcOwnerRoute53Client, route53Client *route53.Route53
+	ec2Client = ec2.New(awsSession, awsutil.NewConfig())
+	if vpcOwnerAWSSession != nil {
+		ec2Client = ec2.New(vpcOwnerAWSSession, awsutil.NewConfig())
+	}
+	route53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	if vpcOwnerAWSSession != nil {
+		vpcOwnerRoute53Client = route53.New(vpcOwnerAWSSession, awsutil.NewAWSRoute53Config())
+	} else {
+		vpcOwnerRoute53Client = route53Client
+	}
 
 	if err := o.parseAdditionalTags(); err != nil {
 		return nil, err
@@ -249,13 +277,19 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 
-	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, route53Client, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID)
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, vpcOwnerRoute53Client, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
+	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, vpcOwnerRoute53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
 	if err != nil {
 		return nil, err
+	}
+
+	if vpcOwnerAWSSession != nil {
+		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, awsSession, publicSubnetIDs, result); err != nil {
+			return nil, err
+		}
 	}
 
 	if o.EnableProxy {
@@ -388,6 +422,101 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 	l.Info("Created proxy host")
 
 	return fmt.Sprintf("http://%s:3128", *result.Instances[0].PrivateIpAddress), nil
+}
+
+func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession, clusterSession *session.Session, publicSubnetIDs []string, output *CreateInfraOutput) error {
+	// Obtain account IDs for both accounts
+	clusterSTSClient := sts.New(clusterSession, awsutil.NewConfig())
+	clusterEC2Client := ec2.New(clusterSession, awsutil.NewConfig())
+	vpcOwnerSTSClient := sts.New(vpcOwnerSession, awsutil.NewConfig())
+	vpcOwnerEC2Client := ec2.New(vpcOwnerSession, awsutil.NewConfig())
+
+	clusterAccountID, err := clusterSTSClient.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return err
+	}
+	vpcOwnerAccountID, err := vpcOwnerSTSClient.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return err
+	}
+	output.VPCCreatorAccountID = aws.StringValue(vpcOwnerAccountID.Account)
+	output.ClusterAccountID = aws.StringValue(clusterAccountID.Account)
+
+	privateSubnetIDsToShare := make([]*string, 0, len(output.Zones))
+	publicSubnetIDsToShare := make([]*string, 0, len(publicSubnetIDs))
+	allSubnetIDsToShare := make([]*string, 0, len(output.Zones)+len(publicSubnetIDs))
+
+	for _, zone := range output.Zones {
+		privateSubnetIDsToShare = append(privateSubnetIDsToShare, aws.String(zone.SubnetID))
+	}
+	for _, subnetID := range publicSubnetIDs {
+		publicSubnetIDsToShare = append(publicSubnetIDsToShare, aws.String(subnetID))
+	}
+
+	allSubnetIDsToShare = append(allSubnetIDsToShare, privateSubnetIDsToShare...)
+	allSubnetIDsToShare = append(allSubnetIDsToShare, publicSubnetIDsToShare...)
+
+	subnetsResult, err := vpcOwnerEC2Client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
+		SubnetIds: allSubnetIDsToShare,
+	})
+	if err != nil {
+		return err
+	}
+	subnetArns := make([]*string, 0, len(subnetsResult.Subnets))
+	for _, subnet := range subnetsResult.Subnets {
+		subnetArns = append(subnetArns, subnet.SubnetArn)
+	}
+
+	// Share subnets
+	l.Info("Sharing VPC subnets with cluster creator account", "subnetids", allSubnetIDsToShare)
+	ramClient := ram.New(vpcOwnerSession, awsutil.NewConfig())
+	if _, err = ramClient.CreateResourceShareWithContext(ctx, &ram.CreateResourceShareInput{
+		Name:         aws.String(fmt.Sprintf("%s-share", o.InfraID)),
+		Principals:   []*string{aws.String(output.ClusterAccountID)},
+		ResourceArns: subnetArns,
+		Tags: []*ram.Tag{
+			{
+				Key:   aws.String(clusterTag(o.InfraID)),
+				Value: aws.String(clusterTagValue),
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// Wait for subnets to be visible in the cluster creator account
+	backoff := wait.Backoff{
+		Steps:    10,
+		Duration: 30 * time.Second,
+		Factor:   1.0,
+		Jitter:   0.1,
+	}
+	var subnetResult *ec2.DescribeSubnetsOutput
+	if err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+		var err error
+		subnetResult, err = clusterEC2Client.DescribeSubnets(&ec2.DescribeSubnetsInput{
+			SubnetIds: allSubnetIDsToShare,
+		})
+		if err != nil || len(subnetResult.Subnets) != len(allSubnetIDsToShare) {
+			l.Info("Waiting for subnets to be available in cluster creator account")
+			return fmt.Errorf("not ready yet")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Tag subnets in cluster creator account
+	for _, subnet := range subnetsResult.Subnets {
+		l.Info("Tagging subnet", "id", aws.StringValue(subnet.SubnetId))
+		if _, err := clusterEC2Client.CreateTagsWithContext(ctx, &ec2.CreateTagsInput{
+			Resources: []*string{subnet.SubnetId},
+			Tags:      subnet.Tags,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ec2Backoff() wait.Backoff {

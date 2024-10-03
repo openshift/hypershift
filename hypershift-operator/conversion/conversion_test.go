@@ -385,6 +385,10 @@ func fixHostedControlPlaneAfterFuzz(in runtime.Object) {
 	if hc.Spec.Platform.Azure != nil {
 		hc.Spec.Platform.Azure = nil
 	}
+
+	if hc.Spec.Platform.AWS != nil {
+		hc.Spec.Platform.AWS.SharedVPC = nil
+	}
 }
 
 func fixHosterClusterAfterFuzz(in runtime.Object) {
@@ -406,6 +410,10 @@ func fixHosterClusterAfterFuzz(in runtime.Object) {
 	}
 
 	hc.Status.PayloadArch = ""
+
+	if hc.Spec.Platform.AWS != nil {
+		hc.Spec.Platform.AWS.SharedVPC = nil
+	}
 }
 
 func fixNodePoolAfterFuzz(in runtime.Object) {

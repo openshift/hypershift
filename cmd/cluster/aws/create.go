@@ -43,6 +43,7 @@ type RawCreateOptions struct {
 	ProxyVPCEndpointServiceName string
 	SingleNATGateway            bool
 	MultiArch                   bool
+	VPCOwnerCredentials         awsutil.AWSCredentialsOptions
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -235,6 +236,18 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		},
 	}
 
+	if o.iamInfo.SharedIngressRoleARN != "" && o.iamInfo.SharedControlPlaneRoleARN != "" {
+		cluster.Spec.Platform.AWS.SharedVPC = &hyperv1.AWSSharedVPC{
+			RolesRef: hyperv1.AWSSharedVPCRolesRef{
+				IngressARN:      o.iamInfo.SharedIngressRoleARN,
+				ControlPlaneARN: o.iamInfo.SharedControlPlaneRoleARN,
+			},
+			LocalZoneID: o.infra.LocalZoneID,
+		}
+		cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals = append(cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals,
+			o.iamInfo.SharedControlPlaneRoleARN)
+	}
+
 	if o.infra.ProxyAddr != "" {
 		cluster.Spec.Configuration.Proxy = &configv1.ProxySpec{
 			HTTPProxy:  o.infra.ProxyAddr,
@@ -374,6 +387,7 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	flags.BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	opts.Credentials.BindFlags(flags)
+	opts.VPCOwnerCredentials.BindVPCOwnerFlags(flags)
 }
 
 var _ core.Platform = (*CreateOptions)(nil)
@@ -419,20 +433,22 @@ func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOption
 		ProxyVPCEndpointServiceName: awsOpts.ProxyVPCEndpointServiceName,
 		SSHKeyFile:                  opts.SSHKeyFile,
 		SingleNATGateway:            awsOpts.SingleNATGateway,
+		VPCOwnerCredentialOpts:      awsOpts.VPCOwnerCredentials,
 	}
 }
 
 func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInfraOutput) awsinfra.CreateIAMOptions {
 	return awsinfra.CreateIAMOptions{
-		Region:             awsOpts.Region,
-		AWSCredentialsOpts: awsOpts.Credentials,
-		InfraID:            infra.InfraID,
-		IssuerURL:          awsOpts.IssuerURL,
-		AdditionalTags:     awsOpts.AdditionalTags,
-		PrivateZoneID:      infra.PrivateZoneID,
-		PublicZoneID:       infra.PublicZoneID,
-		LocalZoneID:        infra.LocalZoneID,
-		KMSKeyARN:          awsOpts.EtcdKMSKeyARN,
+		Region:                  awsOpts.Region,
+		AWSCredentialsOpts:      awsOpts.Credentials,
+		InfraID:                 infra.InfraID,
+		IssuerURL:               awsOpts.IssuerURL,
+		AdditionalTags:          awsOpts.AdditionalTags,
+		PrivateZoneID:           infra.PrivateZoneID,
+		PublicZoneID:            infra.PublicZoneID,
+		LocalZoneID:             infra.LocalZoneID,
+		KMSKeyARN:               awsOpts.EtcdKMSKeyARN,
+		VPCOwnerCredentialsOpts: awsOpts.VPCOwnerCredentials,
 	}
 }
 

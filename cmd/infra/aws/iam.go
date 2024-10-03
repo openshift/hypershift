@@ -6,19 +6,40 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 )
 
 type policyBinding struct {
 	name            string
 	serviceAccounts []string
 	policy          string
+	allowAssumeRole bool
 }
+
+type sharedVPCPolicyBinding struct {
+	name        string
+	policy      string
+	allowedRole string
+}
+
+const allowAssumeRolePolicy = `{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+			"Resource": "*"
+        }
+    ]
+}`
 
 var (
 	imageRegistryPermPolicy = policyBinding{
@@ -325,77 +346,209 @@ var (
 	}
 )
 
-func ingressPermPolicy(publicZone, privateZone string) policyBinding {
+func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool) policyBinding {
 	publicZone = ensureHostedZonePrefix(publicZone)
 	privateZone = ensureHostedZonePrefix(privateZone)
+
+	var policy string
+	if sharedVPC {
+		policy = fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"elasticloadbalancing:DescribeLoadBalancers",
+						"tag:GetResources",
+						"route53:ListHostedZones"
+					],
+					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets"
+					],
+					"Resource": [
+						"arn:aws:route53:::%s"
+					]
+				}
+			]
+		}`, publicZone)
+	} else {
+		policy = fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"elasticloadbalancing:DescribeLoadBalancers",
+						"tag:GetResources",
+						"route53:ListHostedZones"
+					],
+					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets"
+					],
+					"Resource": [
+						"arn:aws:route53:::%s",
+						"arn:aws:route53:::%s"
+					]
+				}
+			]
+		}`, publicZone, privateZone)
+	}
+
 	return policyBinding{
 		name:            "openshift-ingress",
 		serviceAccounts: []string{"system:serviceaccount:openshift-ingress-operator:ingress-operator"},
-		policy: fmt.Sprintf(`{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"elasticloadbalancing:DescribeLoadBalancers",
-				"tag:GetResources",
-				"route53:ListHostedZones"
-			],
-			"Resource": "*"
-		},
-		{
-			"Effect": "Allow",
-			"Action": [
-				"route53:ChangeResourceRecordSets"
-			],
-			"Resource": [
-				"arn:aws:route53:::%s",
-				"arn:aws:route53:::%s"
-			]
-		}
-	]
-}`, publicZone, privateZone),
+		policy:          policy,
+		allowAssumeRole: sharedVPC,
 	}
 }
 
-func controlPlaneOperatorPolicy(hostedZone string) policyBinding {
+func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding {
 	hostedZone = ensureHostedZonePrefix(hostedZone)
+	var policy string
+	if sharedVPC {
+		policy = `{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+					    "ec2:DescribeVpcEndpoints",
+						"ec2:CreateTags",
+						"ec2:CreateSecurityGroup",
+						"ec2:AuthorizeSecurityGroupIngress",
+						"ec2:AuthorizeSecurityGroupEgress",
+						"ec2:DeleteSecurityGroup",
+						"ec2:RevokeSecurityGroupIngress",
+						"ec2:RevokeSecurityGroupEgress",
+						"ec2:DescribeSecurityGroups",
+						"ec2:DescribeVpcs"
+					],
+					"Resource": "*"
+				}
+			]
+		}`
+	} else {
+		policy = fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"ec2:CreateVpcEndpoint",
+						"ec2:DescribeVpcEndpoints",
+						"ec2:ModifyVpcEndpoint",
+						"ec2:DeleteVpcEndpoints",
+						"ec2:CreateTags",
+						"route53:ListHostedZones",
+						"ec2:CreateSecurityGroup",
+						"ec2:AuthorizeSecurityGroupIngress",
+						"ec2:AuthorizeSecurityGroupEgress",
+						"ec2:DeleteSecurityGroup",
+						"ec2:RevokeSecurityGroupIngress",
+						"ec2:RevokeSecurityGroupEgress",
+						"ec2:DescribeSecurityGroups",
+						"ec2:DescribeVpcs"
+					],
+					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets",
+						"route53:ListResourceRecordSets"
+					],
+					"Resource": "arn:aws:route53:::%s"
+				}
+			]
+		}`, hostedZone)
+	}
 	return policyBinding{
 		name:            "control-plane-operator",
 		serviceAccounts: []string{"system:serviceaccount:kube-system:control-plane-operator"},
-		policy: fmt.Sprintf(`{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"ec2:CreateVpcEndpoint",
-				"ec2:DescribeVpcEndpoints",
-				"ec2:ModifyVpcEndpoint",
-				"ec2:DeleteVpcEndpoints",
-				"ec2:CreateTags",
-				"route53:ListHostedZones",
-				"ec2:CreateSecurityGroup",
-				"ec2:AuthorizeSecurityGroupIngress",
-				"ec2:AuthorizeSecurityGroupEgress",
-				"ec2:DeleteSecurityGroup",
-				"ec2:RevokeSecurityGroupIngress",
-				"ec2:RevokeSecurityGroupEgress",
-				"ec2:DescribeSecurityGroups",
-				"ec2:DescribeVpcs"
-			],
-			"Resource": "*"
-		},
+		policy:          policy,
+		allowAssumeRole: sharedVPC,
+	}
+}
+
+func sharedVPCIngressRole(privateHostedZoneID string, ingressRoleARN string) sharedVPCPolicyBinding {
+	policyTemplate := `{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "route53:ListHostedZones",
+                "route53:ListHostedZonesByName",
+                "route53:ChangeTagsForResource",
+                "route53:GetAccountLimit",
+                "route53:GetChange",
+                "route53:GetHostedZone",
+                "route53:ListTagsForResource",
+                "route53:UpdateHostedZoneComment",
+                "tag:GetResources",
+                "tag:UntagResources"
+            ],
+            "Resource": "*"
+        },
 		{
 			"Effect": "Allow",
 			"Action": [
 				"route53:ChangeResourceRecordSets",
 				"route53:ListResourceRecordSets"
 			],
-			"Resource": "arn:aws:route53:::%s"
+			"Resource": "arn:aws:route53:::hostedzone/%s"
 		}
-	]
-}`, hostedZone),
+    ]
+}`
+	policy := fmt.Sprintf(policyTemplate, privateHostedZoneID)
+
+	return sharedVPCPolicyBinding{
+		name:        "shared-vpc-ingress",
+		policy:      policy,
+		allowedRole: ingressRoleARN,
+	}
+}
+
+func sharedVPCControlPlaneRole(controlPlaneRoleARN string) sharedVPCPolicyBinding {
+	policy := `{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"ec2:CreateVpcEndpoint",
+						"ec2:DescribeVpcEndpoints",
+						"ec2:ModifyVpcEndpoint",
+						"ec2:DeleteVpcEndpoints",
+						"ec2:CreateTags",
+						"route53:ListHostedZones",
+						"ec2:CreateSecurityGroup",
+						"ec2:AuthorizeSecurityGroupIngress",
+						"ec2:AuthorizeSecurityGroupEgress",
+						"ec2:DeleteSecurityGroup",
+						"ec2:RevokeSecurityGroupIngress",
+						"ec2:RevokeSecurityGroupEgress",
+						"ec2:DescribeSecurityGroups",
+						"ec2:DescribeVpcs",
+						"route53:ChangeResourceRecordSets",
+						"route53:ListResourceRecordSets"
+					],
+					"Resource": "*"
+				}
+			]
+		}`
+	return sharedVPCPolicyBinding{
+		name:        "shared-vpc-control-plane",
+		policy:      policy,
+		allowedRole: controlPlaneRoleARN,
 	}
 }
 
@@ -435,7 +588,7 @@ func DefaultProfileName(infraID string) string {
 
 // inputs: none
 // outputs rsa keypair
-func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger logr.Logger) (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger logr.Logger, sharedVPC bool) (*CreateIAMOutput, error) {
 	var providerName string
 	var providerARN string
 	if o.IssuerURL == "" {
@@ -478,12 +631,12 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
 	bindings := map[*string]policyBinding{
-		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID),
+		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID, sharedVPC),
 		&output.Roles.ImageRegistryARN:        imageRegistryPermPolicy,
 		&output.Roles.StorageARN:              awsEBSCSIPermPolicy,
 		&output.Roles.KubeCloudControllerARN:  cloudControllerPolicy,
 		&output.Roles.NodePoolManagementARN:   nodePoolPolicy,
-		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID),
+		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID, sharedVPC),
 		&output.Roles.NetworkARN:              cloudNetworkConfigControllerPolicy,
 	}
 	if len(o.KMSKeyARN) > 0 {
@@ -492,7 +645,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger
 
 	for into, binding := range bindings {
 		trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
-		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, logger)
+		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, binding.allowAssumeRole, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create OIDC Role %q: with trust policy %s and permission policy %s: %v", binding.name, trustPolicy, binding.policy, err)
 		}
@@ -547,12 +700,13 @@ func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI, logger 
 }
 
 // CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
-func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string, logger logr.Logger) (string, error) {
+func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string, allowAssume bool, logger logr.Logger) (string, error) {
 	createIAMRoleOpts := CreateIAMRoleOptions{
 		RoleName:          fmt.Sprintf("%s-%s", o.InfraID, name),
 		TrustPolicy:       trustPolicy,
 		PermissionsPolicy: permPolicy,
 		additionalIAMTags: o.additionalIAMTags,
+		AllowAssume:       allowAssume,
 	}
 
 	return createIAMRoleOpts.CreateRoleWithInlinePolicy(context.Background(), logger, client)
@@ -663,6 +817,7 @@ type CreateIAMRoleOptions struct {
 	RoleName          string
 	TrustPolicy       string
 	PermissionsPolicy string
+	AllowAssume       bool
 
 	additionalIAMTags []*iam.Tag
 }
@@ -701,7 +856,49 @@ func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, l
 	}
 	logger.Info("Added/Updated role policy", "name", rolePolicyName)
 
+	if o.AllowAssume {
+		rolePolicyName = fmt.Sprintf("%s-assume", o.RoleName)
+		_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(rolePolicyName),
+			PolicyDocument: aws.String(allowAssumeRolePolicy),
+			RoleName:       aws.String(o.RoleName),
+		})
+		if err != nil {
+			return "", err
+		}
+		logger.Info("Added/Updated role policy", "name", rolePolicyName)
+	}
+
 	return arn, nil
+}
+
+func (o *CreateIAMOptions) CreateSharedVPCRoles(iamClient iamiface.IAMAPI, logger logr.Logger, output *CreateIAMOutput) error {
+	bindings := map[*string]sharedVPCPolicyBinding{
+		&output.SharedIngressRoleARN:      sharedVPCIngressRole(o.PrivateZoneID, output.Roles.IngressARN),
+		&output.SharedControlPlaneRoleARN: sharedVPCControlPlaneRole(output.Roles.ControlPlaneOperatorARN),
+	}
+
+	for into, binding := range bindings {
+		trustPolicy := sharedVPCRoleTrustPolicy(binding.allowedRole)
+		backoff := wait.Backoff{
+			Steps:    10,
+			Duration: 10 * time.Second,
+			Factor:   1.0,
+			Jitter:   0.1,
+		}
+		if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
+			var err error
+			arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, false, logger)
+			if err != nil {
+				return err
+			}
+			*into = arn
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
@@ -803,4 +1000,21 @@ func oidcTrustPolicy(providerARN, providerName string, serviceAccounts ...string
 		panic(fmt.Sprintf("failed to execute oidcTrustPolicyTemplate: %v", err))
 	}
 	return b.String()
+}
+
+func sharedVPCRoleTrustPolicy(allowedRoleARN string) string {
+	policy := `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+	  "Sid": "Statement1",
+	  "Effect": "Allow",
+	  "Principal": {
+	  	"AWS": "%s"
+	  },
+	  "Action": "sts:AssumeRole"
+	}
+  ]
+}`
+	return fmt.Sprintf(policy, allowedRoleARN)
 }

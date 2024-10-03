@@ -50,6 +50,7 @@ type AWSPlatformDestroyOptions struct {
 	Region              string
 	PostDeleteAction    func()
 	AwsInfraGracePeriod time.Duration
+	VPCOwnerCredentials awsutil.AWSCredentialsOptions
 }
 
 type AzurePlatformDestroyOptions struct {

@@ -45,6 +45,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
+	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -240,6 +241,18 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		hcpClient, err := hyperclient.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to create hcp client")
+			os.Exit(1)
+		}
+		hcpList, err := hcpClient.HypershiftV1beta1().HostedControlPlanes(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil || len(hcpList.Items) == 0 {
+			setupLog.Error(err, "failed to get hostedcontrolplane for the cluster")
+			os.Exit(1)
+		}
+		hcp := &hcpList.Items[0]
+
 		// The HyperShift operator is generally able to specify with precision the images
 		// that we need to use here. In order to be backwards-compatible, though, we need
 		// to do so with environment variables. While it's possible that a more vigorous
@@ -432,7 +445,7 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		if mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+		if hcp.Spec.Platform.AWS != nil && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
 			controllerName := "PrivateKubeAPIServerServiceObserver"
 			if err := (&awsprivatelink.PrivateServiceObserver{
 				Client:                 mgr.GetClient(),
@@ -461,8 +474,18 @@ func NewStartCommand() *cobra.Command {
 				os.Exit(1)
 			}
 
+			var assumeRole *string
+			var localZoneID *string
+
+			if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
+				assumeRole = &hcp.Spec.Platform.AWS.SharedVPC.RolesRef.ControlPlaneARN
+				localZoneID = &hcp.Spec.Platform.AWS.SharedVPC.LocalZoneID
+			}
+
 			if err := (&awsprivatelink.AWSEndpointServiceReconciler{
+				AssumeRoleARN:          assumeRole,
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+				LocalZoneID:            localZoneID,
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
 				os.Exit(1)

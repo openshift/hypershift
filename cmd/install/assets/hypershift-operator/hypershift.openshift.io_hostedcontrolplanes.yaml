@@ -8173,6 +8173,72 @@ spec:
                           - url
                           type: object
                         type: array
+                      sharedVPC:
+                        description: |-
+                          SharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
+                          created in a different AWS account and is shared with the AWS account where the HostedCluster
+                          will be created.
+                        properties:
+                          localZoneID:
+                            description: |-
+                              LocalZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
+                              associated with the HostedCluster's VPC and exists in the VPC owner account.
+                            maxLength: 32
+                            type: string
+                          rolesRef:
+                            description: |-
+                              RolesRef contains references to roles in the VPC owner account that enable a
+                              HostedCluster on a shared VPC.
+                            properties:
+                              controlPlaneARN:
+                                description: "ControlPlaneARN is an ARN value referencing
+                                  the role in the VPC owner account that allows\nthe
+                                  control plane operator in the cluster account to
+                                  create and manage a VPC endpoint, its\ncorresponding
+                                  Security Group, and DNS records in the hypershift
+                                  local hosted zone.\n\n\nThe referenced role must
+                                  have a trust relationship that allows it to be assumed
+                                  by the\ncontrol plane operator role in the VPC creator
+                                  account.\nExample:\n{\n\t \"Version\": \"2012-10-17\",\n\t
+                                  \"Statement\": [\n\t \t{\n\t \t\t\"Sid\": \"Statement1\",\n\t
+                                  \t\t\"Effect\": \"Allow\",\n\t \t\t\"Principal\":
+                                  {\n\t \t\t\t\"AWS\": \"arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-control-plane-operator\"\n\t
+                                  \t\t},\n\t \t\t\"Action\": \"sts:AssumeRole\"\n\t
+                                  \t}\n\t ]\n}\n\n\nThe following is an example of
+                                  the policy document for this role.\n\n\n{\n\t\"Version\":
+                                  \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:CreateVpcEndpoint\",\n\t\t\t\t\"ec2:DescribeVpcEndpoints\",\n\t\t\t\t\"ec2:ModifyVpcEndpoint\",\n\t\t\t\t\"ec2:DeleteVpcEndpoints\",\n\t\t\t\t\"ec2:CreateTags\",\n\t\t\t\t\"route53:ListHostedZones\",\n\t\t\t\t\"ec2:CreateSecurityGroup\",\n\t\t\t\t\"ec2:AuthorizeSecurityGroupIngress\",\n\t\t\t\t\"ec2:AuthorizeSecurityGroupEgress\",\n\t\t\t\t\"ec2:DeleteSecurityGroup\",\n\t\t\t\t\"ec2:RevokeSecurityGroupIngress\",\n\t\t\t\t\"ec2:RevokeSecurityGroupEgress\",\n\t\t\t\t\"ec2:DescribeSecurityGroups\",\n\t\t\t\t\"ec2:DescribeVpcs\",\n\t\t\t\t\"route53:ChangeResourceRecordSets\",\n\t\t\t\t\"route53:ListResourceRecordSets\"\n\t\t\t],\n\t\t\t\"Resource\":
+                                  \"*\"\n\t\t}\n\t]\n}"
+                                pattern: ^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$
+                                type: string
+                              ingressARN:
+                                description: "IngressARN is an ARN value referencing
+                                  the role in the VPC owner account that allows the\ningress
+                                  operator in the cluster account to create and manage
+                                  records in the private DNS\nhosted zone.\n\n\nThe
+                                  referenced role must have a trust relationship that
+                                  allows it to be assumed by the\ningress operator
+                                  role in the VPC creator account.\nExample:\n{\n\t
+                                  \"Version\": \"2012-10-17\",\n\t \"Statement\":
+                                  [\n\t \t{\n\t \t\t\"Sid\": \"Statement1\",\n\t \t\t\"Effect\":
+                                  \"Allow\",\n\t \t\t\"Principal\": {\n\t \t\t\t\"AWS\":
+                                  \"arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-openshift-ingress\"\n\t
+                                  \t\t},\n\t \t\t\"Action\": \"sts:AssumeRole\"\n\t
+                                  \t}\n\t ]\n}\n\n\nThe following is an example of
+                                  the policy document for this role.\n(Based on https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html#rosa-sharing-vpc-dns-and-roles_rosa-shared-vpc-config)\n\n\n{\n\t\"Version\":
+                                  \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"route53:ListHostedZones\",\n\t\t\t\t\"route53:ListHostedZonesByName\",\n\t\t\t\t\"route53:ChangeTagsForResource\",\n\t\t\t\t\"route53:GetAccountLimit\",\n\t\t\t\t\"route53:GetChange\",\n\t\t\t\t\"route53:GetHostedZone\",\n\t\t\t\t\"route53:ListTagsForResource\",\n\t\t\t\t\"route53:UpdateHostedZoneComment\",\n\t\t\t\t\"tag:GetResources\",\n\t\t\t\t\"tag:UntagResources\"\n\t\t\t\t\"route53:ChangeResourceRecordSets\",\n\t\t\t\t\"route53:ListResourceRecordSets\"\n\t\t\t],\n\t\t\t\"Resource\":
+                                  \"*\"\n\t\t},\n\t]\n}"
+                                pattern: ^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$
+                                type: string
+                            required:
+                            - controlPlaneARN
+                            - ingressARN
+                            type: object
+                        required:
+                        - localZoneID
+                        - rolesRef
+                        type: object
                     required:
                     - region
                     - rolesRef
