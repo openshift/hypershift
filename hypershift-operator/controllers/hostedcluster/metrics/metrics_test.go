@@ -765,6 +765,102 @@ func TestReportDeletingDuration(t *testing.T) {
 	}
 }
 
+func TestReportEtcdManualInterventionRequired(t *testing.T) {
+	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name: pointer.String(EtcdManualInterventionRequiredMetricName),
+			Help: pointer.String(etcdManualInterventionRequiredMetricHelp),
+			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+			Metric: []*dto.Metric{{
+				Label: []*dto.LabelPair{
+					{Name: pointer.String("_id"), Value: pointer.String("id")},
+					{Name: pointer.String("name"), Value: pointer.String("hc")},
+					{Name: pointer.String("namespace"), Value: pointer.String("any")},
+					{Name: pointer.String("rosa_environment"), Value: pointer.String("")},
+					{Name: pointer.String("rosa_id"), Value: pointer.String("")},
+				},
+				Gauge: &dto.Gauge{Value: pointer.Float64(expectedValue)},
+			}},
+		}
+	}
+
+	testCases := []struct {
+		name       string
+		timestamp  time.Time
+		conditions []metav1.Condition
+		tags       map[string]string
+		expected   *dto.MetricFamily
+	}{
+		{
+			name:      "When cluster does not have the required tags, metric is not reported",
+			timestamp: now,
+		},
+		{
+			name:      "When cluster has the required tags but etcd recovery is not active, metric is not reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.EtcdRecoveryActive),
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+		{
+			name:      "When cluster has the required tags and etcd recovery job failed, metric is reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.EtcdRecoveryActive),
+					Status: metav1.ConditionFalse,
+					Reason: hyperv1.EtcdRecoveryJobFailedReason,
+				},
+			},
+			expected: wrapExpectedValueAsMetric(1.0),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: func() []hyperv1.AWSResourceTag {
+								var tags []hyperv1.AWSResourceTag
+								for k, v := range tc.tags {
+									tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+								}
+								return tags
+							}(),
+						},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			checkMetric(t,
+				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
+				clocktesting.NewFakeClock(tc.timestamp),
+				EtcdManualInterventionRequiredMetricName,
+				tc.expected)
+		})
+	}
+}
+
 func TestProxyCAValidity(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
