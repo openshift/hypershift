@@ -116,7 +116,7 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		o.OpenStackCloud = cloud
 	}
 
-	_, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCloud)
+	_, _, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCACertFile, o.OpenStackCloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
 	}
@@ -174,7 +174,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 }
 
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
-	cloudsYAML, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCloud)
+	cloudsYAML, caCert, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCACertFile, o.OpenStackCloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
 	}
@@ -184,12 +184,8 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 		"clouds.yaml": cloudsYAML,
 	}
 
-	if o.OpenStackCACertFile != "" {
-		caCertContents, err := os.ReadFile(o.OpenStackCACertFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read OpenStack CA certificate file: %w", err)
-		}
-		credentialsSecret.Data["cacert"] = caCertContents
+	if caCert != nil {
+		credentialsSecret.Data["cacert"] = caCert
 	}
 
 	return []client.Object{credentialsSecret}, nil
@@ -275,33 +271,53 @@ func findOpenStackCredentialsFile() (string, error) {
 
 // extractCloud extracts the relevant cloud from a provided clouds.yaml and return a new clouds.yaml
 // with only that cloud in it and using a well-known cloud name
-func extractCloud(cloudsYAMLPath, cloud string) ([]byte, error) {
+func extractCloud(cloudsYAMLPath, caCertPath, cloudName string) ([]byte, []byte, error) {
 	cloudsFile, err := os.ReadFile(cloudsYAMLPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
+		return nil, nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
 	}
 
-	clouds := make(map[string]any)
+	clouds := make(map[string]interface{})
 	if err := yaml.Unmarshal(cloudsFile, &clouds); err != nil {
-		return nil, fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
 	}
 
 	_, ok := clouds["clouds"]
 	if !ok {
-		return nil, fmt.Errorf("'clouds' key not found in credentials file")
+		return nil, nil, fmt.Errorf("'clouds' key not found in credentials file")
 	}
 
 	clouds = clouds["clouds"].(map[string]any)
-	if _, ok := clouds[cloud]; !ok {
-		return nil, fmt.Errorf("'%s' cloud not found in credentials file", cloud)
+	if _, ok := clouds[cloudName]; !ok {
+		return nil, nil, fmt.Errorf("'%s' cloud not found in credentials file", cloudName)
+	}
+
+	cloud := clouds[cloudName].(map[string]any)
+	if _, ok := cloud["cacert"]; ok {
+		if caCertPath == "" {
+			caCertPath = cloud["cacert"].(string)
+		}
+		// Always unset this key if present since it's not used and can therefore be confusing. We
+		// set '[Global] ca-file' in the cloud provider and CSI configs, which means takes priority
+		// over configuration sourced from clouds.yaml
+		// https://github.com/kubernetes/cloud-provider-openstack/blob/v1.31.0/pkg/client/client.go#L228
+		delete(cloud, "cacert")
+	}
+
+	var caCert []byte
+	if caCertPath != "" {
+		caCert, err = os.ReadFile(caCertPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read CA cert: %w", err)
+		}
 	}
 
 	cloudsYAML, err := yaml.Marshal(map[string]any{
-		"clouds": map[string]any{credentialCloudName: clouds[cloud]},
+		"clouds": map[string]any{credentialCloudName: cloud},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshall OpenStack credentials file: %w", err)
+		return nil, nil, fmt.Errorf("failed to marshall OpenStack credentials file: %w", err)
 	}
 
-	return cloudsYAML, nil
+	return cloudsYAML, caCert, nil
 }
