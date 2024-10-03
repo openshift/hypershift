@@ -20,6 +20,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+const (
+	credentialCloudName = "openstack"
+)
+
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{NodePoolOpts: openstacknodepool.DefaultOptions()}
 }
@@ -107,29 +111,14 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	if o.OpenStackCloud == "" {
 		cloud := os.Getenv("OS_CLOUD")
 		if cloud == "" {
-			cloud = "openstack"
+			cloud = credentialCloudName
 		}
 		o.OpenStackCloud = cloud
 	}
 
-	cloudsFile, err := os.ReadFile(o.OpenStackCredentialsFile)
+	_, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
-	}
-
-	clouds := make(map[string]interface{})
-	if err := yaml.Unmarshal(cloudsFile, &clouds); err != nil {
-		return nil, fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
-	}
-
-	_, ok := clouds["clouds"]
-	if !ok {
-		return nil, fmt.Errorf("'clouds' key not found in credentials file")
-	}
-
-	clouds = clouds["clouds"].(map[string]interface{})
-	if _, ok := clouds[o.OpenStackCloud]; !ok {
-		return nil, fmt.Errorf("'%s' cloud not found in credentials file", o.OpenStackCloud)
 	}
 
 	if err := util.ValidateRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
@@ -161,7 +150,7 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 
 	cluster.Spec.Platform.OpenStack.IdentityRef = hyperv1.OpenStackIdentityReference{
 		Name:      credentialsSecret(cluster.Namespace, cluster.Name).Name,
-		CloudName: "openstack", // TODO: make this configurable or at least check the clouds.yaml file
+		CloudName: credentialCloudName,
 	}
 
 	if o.OpenStackExternalNetworkID != "" {
@@ -185,13 +174,14 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 }
 
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
-	credentialsContents, err := os.ReadFile(o.OpenStackCredentialsFile)
+	cloudsYAML, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
 	}
+
 	credentialsSecret := credentialsSecret(o.namespace, o.name)
 	credentialsSecret.Data = map[string][]byte{
-		"clouds.yaml": credentialsContents,
+		"clouds.yaml": cloudsYAML,
 	}
 
 	if o.OpenStackCACertFile != "" {
@@ -281,4 +271,37 @@ func findOpenStackCredentialsFile() (string, error) {
 	}
 
 	return "", nil
+}
+
+// extractCloud extracts the relevant cloud from a provided clouds.yaml and return a new clouds.yaml
+// with only that cloud in it and using a well-known cloud name
+func extractCloud(cloudsYAMLPath, cloud string) ([]byte, error) {
+	cloudsFile, err := os.ReadFile(cloudsYAMLPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
+	}
+
+	clouds := make(map[string]any)
+	if err := yaml.Unmarshal(cloudsFile, &clouds); err != nil {
+		return nil, fmt.Errorf("failed to parse OpenStack credentials file: %w", err)
+	}
+
+	_, ok := clouds["clouds"]
+	if !ok {
+		return nil, fmt.Errorf("'clouds' key not found in credentials file")
+	}
+
+	clouds = clouds["clouds"].(map[string]any)
+	if _, ok := clouds[cloud]; !ok {
+		return nil, fmt.Errorf("'%s' cloud not found in credentials file", cloud)
+	}
+
+	cloudsYAML, err := yaml.Marshal(map[string]any{
+		"clouds": map[string]any{credentialCloudName: clouds[cloud]},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshall OpenStack credentials file: %w", err)
+	}
+
+	return cloudsYAML, nil
 }
