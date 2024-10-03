@@ -112,7 +112,7 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 
 	// KubeVirt Caching is disabled by default
 	if rootVolume != nil && rootVolume.CacheStrategy != nil && rootVolume.CacheStrategy.Type == hyperv1.KubevirtCachingStrategyPVC {
-		return newCachedBootImage(imageName, imageHash, hostedNamespace, isHTTP), nil
+		return newCachedBootImage(imageName, imageHash, hostedNamespace, isHTTP, nodePool), nil
 	}
 
 	return newBootImage(imageName, isHTTP), nil
@@ -147,7 +147,7 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
-func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage) *capikubevirt.VirtualMachineTemplateSpec {
+func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage) (*capikubevirt.VirtualMachineTemplateSpec, error) {
 	const rootVolumeName = "rhcos"
 
 	var (
@@ -156,7 +156,10 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		guaranteedResources = false
 	)
 
-	dvSource := bootImage.getDVSourceForVMTemplate()
+	dvSource, err := bootImage.getDVSourceForVMTemplate()
+	if err != nil {
+		return nil, err
+	}
 
 	kvPlatform := nodePool.Spec.Platform.Kubevirt
 
@@ -299,7 +302,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		template.Spec.Template.Spec.Domain.Devices.HostDevices = hostDevices
 	}
 
-	return template
+	return template, nil
 }
 
 func virtualMachineInterfaceName(idx int, name string) string {
@@ -369,7 +372,10 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		}
 	}
 
-	vmTemplate := virtualMachineTemplateBase(nodePool, bootImage)
+	vmTemplate, err := virtualMachineTemplateBase(nodePool, bootImage)
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate kubevirt machine template: %w", err)
+	}
 
 	// Newer versions of the NodePool controller transitioned to spreading VMs across the cluster
 	// using TopologySpreadConstraints instead of Pod Anti-Affinity. When the new controller interacts

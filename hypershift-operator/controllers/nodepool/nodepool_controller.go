@@ -899,22 +899,6 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool
 	return nil
 }
 
-func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kubevirt.BootImage, nodePool *hyperv1.NodePool) {
-	if namer, ok := kubevirtBootImage.(kubevirt.BootImageNamer); ok {
-		if cacheName := namer.GetCacheName(); len(cacheName) > 0 {
-			if nodePool.Status.Platform == nil {
-				nodePool.Status.Platform = &hyperv1.NodePoolPlatformStatus{}
-			}
-
-			if nodePool.Status.Platform.KubeVirt == nil {
-				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
-			}
-
-			nodePool.Status.Platform.KubeVirt.CacheName = cacheName
-		}
-	}
-}
-
 // createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
 func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
 	var condition *hyperv1.NodePoolCondition

@@ -10,6 +10,22 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kubevirt.BootImage, nodePool *hyperv1.NodePool) {
+	if namer, ok := kubevirtBootImage.(kubevirt.BootImageNamer); ok {
+		if cacheName := namer.GetCacheName(); len(cacheName) > 0 {
+			if nodePool.Status.Platform == nil {
+				nodePool.Status.Platform = &hyperv1.NodePoolPlatformStatus{}
+			}
+
+			if nodePool.Status.Platform.KubeVirt == nil {
+				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
+			}
+
+			nodePool.Status.Platform.KubeVirt.CacheName = cacheName
+		}
+	}
+}
+
 func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
 	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
