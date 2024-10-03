@@ -297,6 +297,10 @@ const (
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifing the log verbosity of kube-apiserver.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
+
+	// SkipControlPlaneNamespaceDeletionAnnotation tells the the hosted cluster controller not to delete the hosted control plane
+	// namespace during hosted cluster deletion when this annotation is set to the value "true".
+	SkipControlPlaneNamespaceDeletionAnnotation = "hypershift.openshift.io/skip-delete-hosted-controlplane-namespace"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

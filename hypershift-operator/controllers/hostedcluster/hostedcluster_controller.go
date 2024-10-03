@@ -3833,6 +3833,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 	r.KubevirtInfraClients.Delete(hc.Spec.InfraID)
 
+	if skipNSDeletion := hc.Annotations[hyperv1.SkipControlPlaneNamespaceDeletionAnnotation]; skipNSDeletion == "true" {
+		return true, nil
+	}
+
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
 	exists, err = hyperutil.DeleteIfNeeded(ctx, r.Client, &corev1.Namespace{
