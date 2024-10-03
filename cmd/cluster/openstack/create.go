@@ -34,6 +34,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	// TODO(stephenfin): This is unnecessary given the information should already be in clouds.yaml. We should deprecate and remove it.
 	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (optional)")
 	flags.StringVar(&opts.OpenStackCloud, "openstack-cloud", opts.OpenStackCloud, "Name of the cloud in clouds.yaml (optional) (default: 'openstack')")
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
