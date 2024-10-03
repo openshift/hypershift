@@ -54,6 +54,8 @@ func getCloudConfig(externalNetworkID *string, cloudName string, credentialsSecr
 	config += "use-clouds = true\n"
 	config += "clouds-file=" + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
 	config += "cloud=" + cloudName + "\n"
+	// This takes priority over the 'cacert' value in 'clouds.yaml' and we therefore
+	// unset then when creating the initial secret.
 	if caCertData != nil {
 		config += "ca-file=" + CaDir + "/" + CABundleKey + "\n"
 	}
