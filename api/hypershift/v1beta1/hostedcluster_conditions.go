@@ -99,6 +99,11 @@ const (
 	// A failure here may require external user intervention to resolve. E.g. oidc was deleted out of band.
 	ValidOIDCConfiguration ConditionType = "ValidOIDCConfiguration"
 
+	// ValidIDPConfiguration indicates if the Identity Provider configuration is valid.
+	// A failure here may require external user intervention to resolve
+	// e.g. the user-provided IDP configuration provided is invalid or the IDP is not reachable.
+	ValidIDPConfiguration ConditionType = "ValidIDPConfiguration"
+
 	// ValidReleaseImage indicates if the release image set in the spec is valid
 	// for the HostedCluster. For example, this can be set false if the
 	// HostedCluster itself attempts an unsupported version before 4.9 or an
