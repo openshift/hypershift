@@ -57,6 +57,7 @@ type Images struct {
 	CloudNetworkConfigController string
 	TokenMinter                  string
 	CLI                          string
+	CLIControlPlane              string
 	Socks5Proxy                  string
 }
 
@@ -98,7 +99,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			NetworkingConsolePlugin:      userReleaseImageProvider.GetImage("networking-console-plugin"),
 			CloudNetworkConfigController: releaseImageProvider.GetImage("cloud-network-config-controller"),
 			TokenMinter:                  releaseImageProvider.GetImage("token-minter"),
-			CLI:                          releaseImageProvider.GetImage("cli"),
+			CLI:                          userReleaseImageProvider.GetImage("cli"),
+			CLIControlPlane:              releaseImageProvider.GetImage("cli"),
 			Socks5Proxy:                  releaseImageProvider.GetImage("socks5-proxy"),
 		},
 		ReleaseVersion:          version,
@@ -406,7 +408,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 				"network-operator",
 			},
 			Name:  "remove-old-cno",
-			Image: params.Images.CLI,
+			Image: params.Images.CLIControlPlane,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
@@ -435,7 +437,7 @@ kubectl --kubeconfig $kc config set contexts.default.namespace $(cat /var/run/se
 kubectl --kubeconfig $kc config use-context default`,
 			},
 			Name:  "rewrite-config",
-			Image: params.Images.CLI,
+			Image: params.Images.CLIControlPlane,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
@@ -460,7 +462,7 @@ sc=$(kubectl --kubeconfig $kc get --ignore-not-found validatingwebhookconfigurat
 if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validatingwebhookconfiguration multus.openshift.io; fi`,
 			},
 			Name:  "remove-old-multus-validating-webhook-configuration",
-			Image: params.Images.CLI,
+			Image: params.Images.CLIControlPlane,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
@@ -521,6 +523,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE", Value: params.Images.CloudNetworkConfigController},
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
 			{Name: "CLI_IMAGE", Value: params.Images.CLI},
+			{Name: "CLI_CONTROL_PLANE_IMAGE", Value: params.Images.CLIControlPlane},
 			{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
 			{Name: "OPENSHIFT_RELEASE_IMAGE", Value: params.DeploymentConfig.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]},
 		}...),
