@@ -84,7 +84,7 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	return path.Join(i.VolumeMounts[i.Container][v.Name], key)
 }
 
-func convertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
+func ConvertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
 	converted := make([]osinv1.IdentityProvider, 0, len(identityProviders))
 	errs := []error{}
 	volumeMountInfo := &IDPVolumeMountInfo{
