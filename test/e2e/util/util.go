@@ -1594,6 +1594,11 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
 	}
+	if IsLessThan(Version418) {
+		// ValidIDPConfiguration condition is not present in versions < 4.18
+		// TODO: Change gate back to 4.14 after https://github.com/openshift/hypershift/pull/4852 is fully backported
+		delete(expectedConditions, hyperv1.ValidIDPConfiguration)
+	}
 	if IsLessThan(Version415) {
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)

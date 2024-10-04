@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -3435,6 +3436,38 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
+
+	// Report any IDP configuration errors as a condition on the HCP
+	orig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidIDPConfiguration))
+	// zero out LastTransitionTime so that we can compare the condition without it
+	if orig != nil {
+		orig.LastTransitionTime = metav1.Time{}
+	}
+	new := &metav1.Condition{
+		Type:    string(hyperv1.ValidIDPConfiguration),
+		Status:  metav1.ConditionTrue,
+		Reason:  "IDPConfigurationValid",
+		Message: "Identity provider configuration is valid",
+	}
+	if _, _, err := oauth.ConvertIdentityProviders(ctx, p.IdentityProviders(), p.OauthConfigOverrides, r, hcp.Namespace); err != nil {
+		// Report the error in a condition on the HCP
+		r.Log.Error(err, "failed to initialize identity providers")
+		new = &metav1.Condition{
+			Type:    string(hyperv1.ValidIDPConfiguration),
+			Status:  metav1.ConditionFalse,
+			Reason:  "IDPConfigurationError",
+			Message: fmt.Sprintf("failed to initialize identity providers: %v", err),
+		}
+	}
+	// Update the condition on the HCP if it has changed
+	if !reflect.DeepEqual(orig, new) {
+		new.LastTransitionTime = metav1.Now()
+		meta.SetStatusCondition(&hcp.Status.Conditions, *new)
+		if err := r.Status().Update(ctx, hcp); err != nil {
+			return fmt.Errorf("failed to update valid IDP configuration condition: %w", err)
+		}
+	}
+
 	return nil
 }
 
