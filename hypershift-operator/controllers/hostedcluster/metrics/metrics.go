@@ -473,7 +473,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 				if metricLabels["cluster_type"] == "rosa" {
 					etcdRecoveryActiveCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
-					if etcdRecoveryActiveCondition.Status == metav1.ConditionFalse && etcdRecoveryActiveCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
+					if etcdRecoveryActiveCondition != nil && etcdRecoveryActiveCondition.Status == metav1.ConditionFalse && etcdRecoveryActiveCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
 						etcdManualInterventionRequiredValue := 1.0
 						ch <- prometheus.MustNewConstMetric(
 							etcdManualInterventionRequiredMetricDesc,
@@ -481,7 +481,6 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 							etcdManualInterventionRequiredValue,
 							append(hclusterLabelValues, metricLabels["rosa_environment"], metricLabels["rosa_id"])...,
 						)
-
 					}
 				}
 			}
