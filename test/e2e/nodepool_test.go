@@ -106,6 +106,10 @@ func TestNodePool(t *testing.T) {
 						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
 					},
 					{
+						name: "OpenStackNodeMultinetTest",
+						test: NewOpenStackMultinetTest(ctx, mgtClient, hostedCluster),
+					},
+					{
 						name: "TestNTOPerformanceProfile",
 						test: NewNTOPerformanceProfileTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
