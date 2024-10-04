@@ -41,7 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -228,8 +228,8 @@ func TestReconcileAPIServerService(t *testing.T) {
 		APIVersion:         "hypershift.openshift.io/v1beta1",
 		Kind:               "HostedControlPlane",
 		Name:               "test",
-		Controller:         pointer.Bool(true),
-		BlockOwnerDeletion: pointer.Bool(true),
+		Controller:         ptr.To(true),
+		BlockOwnerDeletion: ptr.To(true),
 	}
 	kasPublicService := func(m ...func(*corev1.Service)) corev1.Service {
 		svc := corev1.Service{
@@ -560,10 +560,10 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 		},
 		"contains all optional parameters": {
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
-				MaxNodesTotal:        pointer.Int32(100),
-				MaxPodGracePeriod:    pointer.Int32(300),
+				MaxNodesTotal:        ptr.To[int32](100),
+				MaxPodGracePeriod:    ptr.To[int32](300),
 				MaxNodeProvisionTime: "20m",
-				PodPriorityThreshold: pointer.Int32(-5),
+				PodPriorityThreshold: ptr.To[int32](-5),
 			},
 			ExpectedArgs: []string{
 				"--cloud-provider=clusterapi",
@@ -634,7 +634,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      1,
@@ -674,7 +674,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      1,
@@ -720,7 +720,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      3,

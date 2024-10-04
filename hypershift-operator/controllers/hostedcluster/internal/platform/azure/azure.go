@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -82,7 +82,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	return &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Containers: []corev1.Container{{
 					Name:            "manager",
 					Image:           image,

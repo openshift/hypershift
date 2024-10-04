@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -108,7 +108,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            sa.Name,
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",
@@ -121,7 +121,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  kubeConfigSecret.Name,
-								DefaultMode: k8sutilspointer.Int32(0640),
+								DefaultMode: ptr.To[int32](0640),
 								Items: []corev1.KeyToPath{
 									{
 										// TODO: should the key be published on status?
@@ -206,9 +206,9 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 
-	replicas := k8sutilspointer.Int(1)
+	replicas := ptr.To(1)
 	if _, exists := hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation]; exists {
-		replicas = k8sutilspointer.Int(0)
+		replicas = ptr.To(0)
 	}
 	deploymentConfig.SetDefaults(hcp, nil, replicas)
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)

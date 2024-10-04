@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -90,7 +90,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",

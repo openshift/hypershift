@@ -12,7 +12,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -77,9 +77,9 @@ func (c *DeploymentConfig) SetReleaseImageAnnotation(releaseImage string) {
 
 func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	if c.DebugDeployments != nil && c.DebugDeployments.Has(deployment.Name) {
-		deployment.Spec.Replicas = pointer.Int32(0)
+		deployment.Spec.Replicas = ptr.To[int32](0)
 	} else {
-		deployment.Spec.Replicas = pointer.Int32(int32(c.Replicas))
+		deployment.Spec.Replicas = ptr.To(int32(c.Replicas))
 	}
 	// there are three standard cases currently with hypershift: HA mode where there are 3 replicas spread across
 	// zones, HA mode with 2 replicas, and then non ha with one replica. When only 3 zones are available you need
@@ -104,12 +104,12 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	}
 
 	// set revision history limit
-	deployment.Spec.RevisionHistoryLimit = pointer.Int32(int32(c.RevisionHistoryLimit))
+	deployment.Spec.RevisionHistoryLimit = ptr.To(int32(c.RevisionHistoryLimit))
 
 	// set default security context for pod
 	if c.SetDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: pointer.Int64(DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](DefaultSecurityContextUser),
 		}
 	}
 
@@ -160,7 +160,7 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 }
 
 func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
-	sts.Spec.Replicas = pointer.Int32(int32(c.Replicas))
+	sts.Spec.Replicas = ptr.To(int32(c.Replicas))
 	c.Scheduling.ApplyTo(&sts.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&sts.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&sts.Spec.Template.Spec)

@@ -7,15 +7,15 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/gomega"
 )
 
 func TestGenerateReconciliationPausedCondition(t *testing.T) {
 	fakeInputGeneration := int64(5)
-	fakeFutureDate := pointer.String(time.Now().Add(4 * time.Hour).Format(time.RFC3339))
-	fakePastDate := pointer.String(time.Now().Add(-4 * time.Hour).Format(time.RFC3339))
+	fakeFutureDate := ptr.To(time.Now().Add(4 * time.Hour).Format(time.RFC3339))
+	fakePastDate := ptr.To(time.Now().Add(-4 * time.Hour).Format(time.RFC3339))
 	testsCases := []struct {
 		name              string
 		inputPausedField  *string
@@ -56,7 +56,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field is true then ReconciliationActive condition is false",
-			inputPausedField: pointer.String("true"),
+			inputPausedField: ptr.To("true"),
 			expectedCondition: hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 				Status:             corev1.ConditionFalse,
@@ -67,7 +67,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field has an improper value then ReconciliationActive condition is true with a reason indicating invalid value provided",
-			inputPausedField: pointer.String("badValue"),
+			inputPausedField: ptr.To("badValue"),
 			expectedCondition: hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
 				Status:             corev1.ConditionTrue,

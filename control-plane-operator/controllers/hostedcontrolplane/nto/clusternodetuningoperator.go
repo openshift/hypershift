@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -53,7 +53,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		config.NeedManagementKASAccessLabel: "true",
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
@@ -260,7 +260,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		{Name: "node-tuning-operator-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "node-tuning-operator-tls"}}},
 		{Name: "metrics-client-ca", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "metrics-client"}}},
 		{Name: "trusted-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
-			Optional:             utilpointer.Bool(true),
+			Optional:             ptr.To(true),
 			LocalObjectReference: corev1.LocalObjectReference{Name: "trusted-ca"},
 			Items: []corev1.KeyToPath{
 				{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"},

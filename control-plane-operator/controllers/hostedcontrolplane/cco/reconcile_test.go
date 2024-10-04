@@ -1,6 +1,7 @@
 package cco
 
 import (
+	"k8s.io/utils/ptr"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -10,7 +11,6 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
 )
 
 func TestReconcileDeployment(t *testing.T) {
@@ -24,7 +24,7 @@ func TestReconcileDeployment(t *testing.T) {
 			IssuerURL:    "https://www.example.com",
 			Networking: hyperv1.ClusterNetworking{
 				APIServer: &hyperv1.APIServerNetworking{
-					Port: pointer.Int32(1234),
+					Port: ptr.To[int32](1234),
 				},
 			},
 		},

@@ -5,7 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 )
 
@@ -16,7 +16,7 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 
 	if nodePool.Spec.Platform.OpenStack.ImageName != "" {
 		openStackMachineTemplate.Template.Spec.Image.Filter = &capiopenstack.ImageFilter{
-			Name: utilpointer.String(nodePool.Spec.Platform.OpenStack.ImageName),
+			Name: ptr.To(nodePool.Spec.Platform.OpenStack.ImageName),
 		}
 	} else {
 		// TODO(emilien): Add support for using the image from the release payload.

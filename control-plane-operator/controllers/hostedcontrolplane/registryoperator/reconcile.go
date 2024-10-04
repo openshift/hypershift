@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -147,7 +147,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), pointer.Int(1))
+	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), ptr.To(1))
 	params.deploymentConfig.SetReleaseImageAnnotation(util.HCPControlPlaneReleaseImage(hcp))
 	return params
 }
@@ -165,7 +165,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 				Labels: selectorLabels(),
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(containerMain(), buildMainContainer(params.operatorImage, params.registryImage, params.prunerImage, params.releaseVersion)),
 					util.BuildContainer(containerClientTokenMinter(), buildClientTokenMinter(params.tokenMinterImage, params.issuerURL)),
@@ -353,7 +353,7 @@ func volumeServingCert() *corev1.Volume {
 func buildVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.ImageRegistryOperatorServingCert("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -366,7 +366,7 @@ func volumeAdminKubeconfig() *corev1.Volume {
 func buildVolumeAdminKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -379,7 +379,7 @@ func volumeCABundle() *corev1.Volume {
 func buildVolumeCABundle(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.RootCASecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 

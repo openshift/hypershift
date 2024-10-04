@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path"
 
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -69,7 +69,7 @@ func konnectivityVolumeAgentCerts() *corev1.Volume {
 func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityAgentSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -89,7 +89,7 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 			Labels: konnectivityAgentLabels(),
 		},
 		Spec: corev1.PodSpec{
-			AutomountServiceAccountToken: pointer.Bool(false),
+			AutomountServiceAccountToken: ptr.To(false),
 			Containers: []corev1.Container{
 				util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 			},

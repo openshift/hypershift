@@ -48,7 +48,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1195,7 +1194,7 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 			AdmissionReviewVersions: []string{"v1"},
 			Name:                    "etcd-client.example.com",
 			ClientConfig: admissionregistrationv1.WebhookClientConfig{
-				URL: pointer.String("https://etcd-client:2379"),
+				URL: ptr.To("https://etcd-client:2379"),
 			},
 			Rules: []admissionregistrationv1.RuleWithOperations{{
 				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},

@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -92,8 +92,8 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 	deployment.Spec.Template.Annotations[oapiAuditConfigHashAnnotation] = auditConfigHash
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken:  pointer.Bool(false),
-		TerminationGracePeriodSeconds: pointer.Int64(120),
+		AutomountServiceAccountToken:  ptr.To(false),
+		TerminationGracePeriodSeconds: ptr.To[int64](120),
 		Containers: []corev1.Container{
 			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(p)),
 		},
@@ -232,7 +232,7 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oauthVolumeEtcdClientCA() *corev1.Volume {
@@ -255,7 +255,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftOAuthAPIServerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oauthVolumeEtcdClientCert() *corev1.Volume {
@@ -300,7 +300,7 @@ func oauthAuditWebhookConfigFile() string {
 func buildOAuthVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *OAuthDeploymentParams) error {

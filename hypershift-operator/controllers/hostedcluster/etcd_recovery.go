@@ -355,7 +355,7 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc 
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  cpomanifests.EtcdClientSecret("").Name,
-								DefaultMode: ptr.To(int32(420)),
+								DefaultMode: ptr.To[int32](420),
 							},
 						},
 					},
@@ -366,7 +366,7 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc 
 								LocalObjectReference: corev1.LocalObjectReference{
 									Name: cpomanifests.EtcdSignerCAConfigMap("").Name,
 								},
-								DefaultMode: ptr.To(int32(420)),
+								DefaultMode: ptr.To[int32](420),
 							},
 						},
 					},

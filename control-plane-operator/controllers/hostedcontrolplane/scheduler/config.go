@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	componentbasev1 "k8s.io/component-base/config/v1alpha1"
 	schedulerv1 "k8s.io/kube-scheduler/config/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -58,7 +58,7 @@ func generateConfig(profile configv1.SchedulerProfile) (string, error) {
 			Kubeconfig: kubeConfigPath,
 		},
 		LeaderElection: componentbasev1.LeaderElectionConfiguration{
-			LeaderElect:   pointer.Bool(true),
+			LeaderElect:   ptr.To(true),
 			LeaseDuration: metav1.Duration{Duration: leaseDuration},
 			RenewDeadline: metav1.Duration{Duration: renewDeadline},
 			RetryPeriod:   metav1.Duration{Duration: retryPeriod},
@@ -81,7 +81,7 @@ func generateConfig(profile configv1.SchedulerProfile) (string, error) {
 
 func highNodeUtilizationProfile() schedulerv1.KubeSchedulerProfile {
 	return schedulerv1.KubeSchedulerProfile{
-		SchedulerName: pointer.String("default-scheduler"),
+		SchedulerName: ptr.To("default-scheduler"),
 		PluginConfig: []schedulerv1.PluginConfig{
 			{
 				Name: "NodeResourcesFit",
@@ -100,7 +100,7 @@ func highNodeUtilizationProfile() schedulerv1.KubeSchedulerProfile {
 				Enabled: []schedulerv1.Plugin{
 					{
 						Name:   "NodeResourcesFit",
-						Weight: pointer.Int32(5),
+						Weight: ptr.To[int32](5),
 					},
 				},
 			},
@@ -110,7 +110,7 @@ func highNodeUtilizationProfile() schedulerv1.KubeSchedulerProfile {
 
 func noScoringProfile() schedulerv1.KubeSchedulerProfile {
 	return schedulerv1.KubeSchedulerProfile{
-		SchedulerName: pointer.String("default-scheduler"),
+		SchedulerName: ptr.To("default-scheduler"),
 		Plugins: &schedulerv1.Plugins{
 			Score: schedulerv1.PluginSet{
 				Disabled: []schedulerv1.Plugin{

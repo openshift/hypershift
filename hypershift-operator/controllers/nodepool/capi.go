@@ -380,9 +380,9 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
 	// However, since we don't run the webhook, CAPI updates the machinedeployment
 	// after it has been created with defaults.
-	machineDeployment.Spec.MinReadySeconds = ptr.To(int32(0))
-	machineDeployment.Spec.RevisionHistoryLimit = ptr.To(int32(1))
-	machineDeployment.Spec.ProgressDeadlineSeconds = ptr.To(int32(600))
+	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
+	machineDeployment.Spec.RevisionHistoryLimit = ptr.To[int32](1)
+	machineDeployment.Spec.ProgressDeadlineSeconds = ptr.To[int32](600)
 
 	machineDeployment.Spec.ClusterName = capiClusterName
 	if machineDeployment.Spec.Selector.MatchLabels == nil {

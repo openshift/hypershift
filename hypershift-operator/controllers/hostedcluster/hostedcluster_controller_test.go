@@ -46,7 +46,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
@@ -371,25 +371,25 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 		{
 			name: "advertise address specified",
 			networking: &hyperv1.APIServerNetworking{
-				AdvertiseAddress: pointer.String("1.2.3.4"),
+				AdvertiseAddress: ptr.To("1.2.3.4"),
 			},
-			expectedAPIAdvertiseAddress: pointer.String("1.2.3.4"),
+			expectedAPIAdvertiseAddress: ptr.To("1.2.3.4"),
 		},
 		{
 			name: "port specified",
 			networking: &hyperv1.APIServerNetworking{
-				Port: pointer.Int32(1234),
+				Port: ptr.To[int32](1234),
 			},
-			expectedAPIPort: pointer.Int32(1234),
+			expectedAPIPort: ptr.To[int32](1234),
 		},
 		{
 			name: "both specified",
 			networking: &hyperv1.APIServerNetworking{
-				Port:             pointer.Int32(6789),
-				AdvertiseAddress: pointer.String("9.8.7.6"),
+				Port:             ptr.To[int32](6789),
+				AdvertiseAddress: ptr.To("9.8.7.6"),
 			},
-			expectedAPIPort:             pointer.Int32(6789),
-			expectedAPIAdvertiseAddress: pointer.String("9.8.7.6"),
+			expectedAPIPort:             ptr.To[int32](6789),
+			expectedAPIAdvertiseAddress: ptr.To("9.8.7.6"),
 		},
 	}
 
@@ -2840,7 +2840,7 @@ func TestCheckAdvertiseAddressOverlapping(t *testing.T) {
 	}{
 		{
 			name:    "given an IPv6 defined AdvertiseAddress overlapped with ClusterNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -2855,7 +2855,7 @@ func TestCheckAdvertiseAddressOverlapping(t *testing.T) {
 		},
 		{
 			name:    "given an IPv4 defined AdvertiseAddress overlapped with MachineNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -2870,7 +2870,7 @@ func TestCheckAdvertiseAddressOverlapping(t *testing.T) {
 		},
 		{
 			name:    "given a not valid AdvertiseAddress, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.2.1.2")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.2.1.2")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -2911,7 +2911,7 @@ func TestFindAdvertiseAddress(t *testing.T) {
 	}{
 		{
 			name:             "given a defined AdvertiseAddress, should be the result and IPv4",
-			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			resultAdvAddress: "192.168.1.1",
 		},
@@ -2922,7 +2922,7 @@ func TestFindAdvertiseAddress(t *testing.T) {
 		},
 		{
 			name:             "given an IPv6 hc with defined AdvertiseAddress, it should return that address",
-			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			resultAdvAddress: "fd03::1",
 		},
@@ -2933,13 +2933,13 @@ func TestFindAdvertiseAddress(t *testing.T) {
 		},
 		{
 			name:    "given an invalid IPv4 AdvertiseAddress, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1222")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1222")},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			wantErr: true,
 		},
 		{
 			name:    "given an invalid IPv6 AdvertiseAddress, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::4444444")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::4444444")},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			wantErr: true,
 		},
@@ -2981,7 +2981,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 	}{
 		{
 			name:    "given an IPv6 clusterNetwork and an IPv4 ServiceNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -2989,7 +2989,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv6 and IPv4 Advertise Address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -2997,7 +2997,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv6 and defining Advertise Address, it should success",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -3005,7 +3005,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "given an IPv4 clusterNetwork and an IPv6 ServiceNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -3013,7 +3013,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv4 and defining IPv6 Advertise Address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -3021,7 +3021,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv4 and defining Advertise Address, it should success",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.0.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -3043,7 +3043,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "given an IPv4 invalid advertise address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1.2")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1.2")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
@@ -3051,7 +3051,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "given an IPv6 invalid advertise address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1::32")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1::32")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -3199,7 +3199,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
 				},
@@ -3241,7 +3241,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
 				},
@@ -3276,7 +3276,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
 				},
@@ -3313,7 +3313,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
 				},
@@ -3351,7 +3351,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
 				},
@@ -3393,7 +3393,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
 				},
@@ -3427,7 +3427,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
 				},

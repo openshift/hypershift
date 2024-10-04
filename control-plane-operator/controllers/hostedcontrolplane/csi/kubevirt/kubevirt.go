@@ -24,7 +24,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	sigyaml "sigs.k8s.io/yaml"
 )
@@ -363,8 +363,8 @@ func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 }
 
 func reconcileDefaultTenantCSIDriverResource(csiDriver *storagev1.CSIDriver) error {
-	csiDriver.Spec.AttachRequired = utilpointer.Bool(true)
-	csiDriver.Spec.PodInfoOnMount = utilpointer.Bool(true)
+	csiDriver.Spec.AttachRequired = ptr.To(true)
+	csiDriver.Spec.PodInfoOnMount = ptr.To(true)
 	fsPolicy := storagev1.ReadWriteOnceWithFSTypeFSGroupPolicy
 	csiDriver.Spec.FSGroupPolicy = &fsPolicy
 	return nil
@@ -606,7 +606,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 	deploymentConfig := &config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 
 	infraNamespace := hcp.Namespace
 

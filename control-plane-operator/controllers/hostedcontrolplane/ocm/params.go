@@ -4,7 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -56,9 +56,9 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 		params.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	replicas := pointer.Int(2)
+	replicas := ptr.To(2)
 	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
-		replicas = pointer.Int(1)
+		replicas = ptr.To(1)
 	}
 	params.DeploymentConfig.SetDefaults(hcp, openShiftControllerManagerLabels(), replicas)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext

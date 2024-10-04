@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	utilpointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 )
 
@@ -169,7 +168,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	if util.IsPrivateHCP(hcp) {
 		p.APIServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
@@ -381,7 +380,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		}
 	}
 
-	dep.Spec.Replicas = utilpointer.Int32(1)
+	dep.Spec.Replicas = ptr.To[int32](1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	if dep.Spec.Template.Annotations == nil {
@@ -601,10 +600,10 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{Name: "hosted-etc-kube", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name}}},
 		{Name: "configs", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32(0640)}}},
-		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32(0640)}}},
+		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: ptr.To[int32](0640)}}},
+		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: ptr.To[int32](0640)}}},
 		{Name: "client-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: "ca-bundle", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.RootCASecret("").Name, DefaultMode: ptr.To(int32(0640))}}},
+		{Name: "ca-bundle", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.RootCASecret("").Name, DefaultMode: ptr.To[int32](0640)}}},
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)

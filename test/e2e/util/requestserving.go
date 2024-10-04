@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -66,7 +66,7 @@ func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconf
 			Namespace: mgmtHCNamespace,
 		}
 		np.Status = hyperv1.NodePoolStatus{}
-		np.Spec.Replicas = pointer.Int32(1)
+		np.Spec.Replicas = ptr.To[int32](1)
 		np.Spec.AutoScaling = nil
 		np.Spec.NodeLabels = map[string]string{
 			hyperv1.RequestServingComponentLabel:      "true",
@@ -88,7 +88,7 @@ func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconf
 			Namespace: mgmtHCNamespace,
 		}
 		np.Status = hyperv1.NodePoolStatus{}
-		np.Spec.Replicas = pointer.Int32(1)
+		np.Spec.Replicas = ptr.To[int32](1)
 		np.Spec.AutoScaling = nil
 		np.Spec.NodeLabels = map[string]string{
 			"hypershift.openshift.io/control-plane": "true",

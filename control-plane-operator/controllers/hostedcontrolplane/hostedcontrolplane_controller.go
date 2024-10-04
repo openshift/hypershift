@@ -101,7 +101,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1459,7 +1458,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 													Name: configMap.Name,
 												},
 												Key:      "s3-endpoint-url",
-												Optional: pointer.Bool(true),
+												Optional: ptr.To(true),
 											},
 										},
 									},
@@ -1503,7 +1502,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 								VolumeSource: corev1.VolumeSource{
 									Secret: &corev1.SecretVolumeSource{
 										SecretName:  manifests.EtcdClientSecret("").Name,
-										DefaultMode: pointer.Int32(420),
+										DefaultMode: ptr.To[int32](420),
 									},
 								},
 							},
@@ -1514,7 +1513,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 										LocalObjectReference: corev1.LocalObjectReference{
 											Name: manifests.EtcdSignerCAConfigMap("").Name,
 										},
-										DefaultMode: pointer.Int32(420),
+										DefaultMode: ptr.To[int32](420),
 									},
 								},
 							},
@@ -1526,12 +1525,12 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 											{
 												ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 													Audience:          "openshift",
-													ExpirationSeconds: pointer.Int64(86400),
+													ExpirationSeconds: ptr.To[int64](86400),
 													Path:              "token",
 												},
 											},
 										},
-										DefaultMode: pointer.Int32(420),
+										DefaultMode: ptr.To[int32](420),
 									},
 								},
 							},

@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -61,7 +61,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig),
 		util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	deploymentConfig.ApplyTo(deployment)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), availabilityProberImage, &deployment.Spec.Template.Spec)
@@ -117,7 +117,7 @@ func cpcVolumeKubeconfig() *corev1.Volume {
 func buildCPCVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func cpcVolumeServingCert() *corev1.Volume {
@@ -129,5 +129,5 @@ func cpcVolumeServingCert() *corev1.Volume {
 func buildCPCVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.ClusterPolicyControllerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }

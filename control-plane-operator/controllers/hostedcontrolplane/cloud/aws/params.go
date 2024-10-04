@@ -4,7 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
@@ -35,7 +35,7 @@ func NewAWSParams(hcp *hyperv1.HostedControlPlane) *AWSParams {
 	}
 	p.OwnerRef = config.ControllerOwnerRef(hcp)
 
-	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), pointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		ccmContainer().Name: {
 			Requests: corev1.ResourceList{

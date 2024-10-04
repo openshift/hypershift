@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
@@ -136,7 +136,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 				Labels: cvoLabels(),
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				InitContainers: []corev1.Container{
 					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(releaseImage, platformType, oauthEnabled)),
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
@@ -153,10 +153,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			},
 		},
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	if enableCVOManagementClusterMetricsAccess {
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.ClusterVersionOperatorServiceAccount("").Name
-		deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(true)
+		deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(true)
 	}
 	deploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(
@@ -412,7 +412,7 @@ func buildCVOVolumeUpdatePayloads(v *corev1.Volume) {
 func buildCVOVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func buildCVOVolumePayload(v *corev1.Volume) {
@@ -429,7 +429,7 @@ func buildCVOVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.ClusterVersionOperatorServerCertSecret("").Name
 }
 

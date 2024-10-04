@@ -166,7 +166,7 @@ func (k KubeVirtQoSClassGuaranteedTest) BuildNodePoolManifest(defaultNodepool hy
 		nodePool.Spec.Platform.Kubevirt.Compute.QosClass = ptr.To(hyperv1.QoSClassGuaranteed)
 	}
 
-	nodePool.Spec.Replicas = ptr.To(int32(1))
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 
 	return nodePool, nil
 }

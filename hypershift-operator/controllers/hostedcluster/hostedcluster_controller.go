@@ -60,7 +60,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -2787,7 +2787,7 @@ func reconcileControlPlaneOperatorDeployment(
 	// set security context
 	if setDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 
@@ -2803,7 +2803,7 @@ func reconcileControlPlaneOperatorDeployment(
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 
@@ -3184,7 +3184,7 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 
@@ -3309,7 +3309,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	// set security context
 	if setDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 
@@ -3325,7 +3325,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 
@@ -4407,7 +4407,7 @@ func findAdvertiseAddress(hc *hyperv1.HostedCluster) (netip.Addr, *field.Error) 
 		ipaddr, err := netip.ParseAddr(*hc.Spec.Networking.APIServer.AdvertiseAddress)
 		if err != nil {
 			return ipaddr, field.Invalid(field.NewPath("hc.Spec.Networking.APIServer.AdvertiseAddress"),
-				k8sutilspointer.String(ipaddr.String()),
+				ptr.To(ipaddr.String()),
 				fmt.Sprintf("advertise address set in HostedCluster %s is not parseable", *hc.Spec.Networking.APIServer.AdvertiseAddress),
 			)
 		}
@@ -4418,7 +4418,7 @@ func findAdvertiseAddress(hc *hyperv1.HostedCluster) (netip.Addr, *field.Error) 
 	ipaddr, err := netip.ParseAddr(hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String())
 	if err != nil {
 		return ipaddr, field.Invalid(field.NewPath("hc.Spec.Networking.ClusterNetwork[0].CIDR.IP"),
-			k8sutilspointer.String(ipaddr.String()),
+			ptr.To(ipaddr.String()),
 			fmt.Sprintf("Cluster Network ip address %s is not parseable", hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String()),
 		)
 	}
@@ -4476,7 +4476,7 @@ func validateNetworkStackAddresses(hc *hyperv1.HostedCluster) field.ErrorList {
 		// This check ensures that the IPv6 and IPv4 is a valid ip
 		if checkIP == nil {
 			errs = append(errs, field.Invalid(field.NewPath(fieldpath),
-				k8sutilspointer.String(ipaddr),
+				ptr.To(ipaddr),
 				fmt.Sprintf("error checking network stack of %s with ip %s", fieldpath, ipaddr),
 			))
 		}
@@ -4522,14 +4522,14 @@ func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList
 		network, err := netip.ParsePrefix(cidr)
 		if err != nil {
 			errs = append(errs, field.Invalid(field.NewPath(fieldPath),
-				k8sutilspointer.String(cidr),
+				ptr.To(cidr),
 				fmt.Sprintf("error parsing field %s prefix: %v", fieldPath, err),
 			))
 		}
 
 		if network.Contains(advAddr) {
 			errs = append(errs, field.Invalid(field.NewPath(fieldPath),
-				k8sutilspointer.String(cidr),
+				ptr.To(cidr),
 				fmt.Sprintf("the field %s with content %s overlaps with the defined AdvertiseAddress %s prefix: %v", fieldPath, cidr, advAddr.String(), err),
 			))
 		}

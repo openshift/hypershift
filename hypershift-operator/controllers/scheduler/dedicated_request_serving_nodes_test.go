@@ -438,7 +438,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 				Generation: 1,
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: ptr.To(int32(2)),
+				Replicas: ptr.To[int32](2),
 				Selector: &metav1.LabelSelector{
 					MatchLabels: labels,
 				},
@@ -467,7 +467,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 		d.Labels = labels
 		d.Generation = 1
 		d.Spec = appsv1.DeploymentSpec{
-			Replicas: ptr.To(int32(2)),
+			Replicas: ptr.To[int32](2),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},

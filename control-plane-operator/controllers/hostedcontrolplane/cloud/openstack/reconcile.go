@@ -3,7 +3,7 @@ package openstack
 import (
 	"fmt"
 
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -45,7 +45,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 				},
 				Volumes:                      []corev1.Volume{},
 				ServiceAccountName:           serviceAccountName,
-				AutomountServiceAccountToken: k8sutilspointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 			},
 		},
 	}

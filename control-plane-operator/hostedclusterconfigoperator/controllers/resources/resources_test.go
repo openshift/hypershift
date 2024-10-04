@@ -1048,7 +1048,7 @@ func TestReconcileKASEndpoints(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							Port: ptr.To(int32(443)),
+							Port: ptr.To[int32](443),
 						},
 					},
 				},

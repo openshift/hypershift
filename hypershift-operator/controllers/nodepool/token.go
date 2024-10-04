@@ -19,7 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -277,7 +277,7 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
 	// Therefore, this secret is mutable.
-	tokenSecret.Immutable = k8sutilspointer.Bool(false)
+	tokenSecret.Immutable = ptr.To(false)
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
@@ -329,7 +329,7 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
 	// Therefore, this secret is mutable.
-	userDataSecret.Immutable = k8sutilspointer.Bool(false)
+	userDataSecret.Immutable = ptr.To(false)
 
 	if userDataSecret.Annotations == nil {
 		userDataSecret.Annotations = make(map[string]string)
@@ -358,7 +358,7 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 				TLS: ignitionapi.TLS{
 					CertificateAuthorities: []ignitionapi.Resource{
 						{
-							Source: k8sutilspointer.String(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+							Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
 						},
 					},
 				},
@@ -366,19 +366,19 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 			Config: ignitionapi.IgnitionConfig{
 				Merge: []ignitionapi.Resource{
 					{
-						Source: k8sutilspointer.String(fmt.Sprintf("https://%s/ignition", endpoint)),
+						Source: ptr.To(fmt.Sprintf("https://%s/ignition", endpoint)),
 						HTTPHeaders: []ignitionapi.HTTPHeader{
 							{
 								Name:  "Authorization",
-								Value: k8sutilspointer.String(fmt.Sprintf("Bearer %s", encodedToken)),
+								Value: ptr.To(fmt.Sprintf("Bearer %s", encodedToken)),
 							},
 							{
 								Name:  "NodePool",
-								Value: k8sutilspointer.String(client.ObjectKeyFromObject(nodePool).String()),
+								Value: ptr.To(client.ObjectKeyFromObject(nodePool).String()),
 							},
 							{
 								Name:  "TargetConfigVersionHash",
-								Value: k8sutilspointer.String(targetConfigVersionHash),
+								Value: ptr.To(targetConfigVersionHash),
 							},
 						},
 					},
@@ -387,10 +387,10 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 		},
 	}
 	if proxy.Status.HTTPProxy != "" {
-		cfg.Ignition.Proxy.HTTPProxy = k8sutilspointer.String(proxy.Status.HTTPProxy)
+		cfg.Ignition.Proxy.HTTPProxy = ptr.To(proxy.Status.HTTPProxy)
 	}
 	if proxy.Status.HTTPSProxy != "" {
-		cfg.Ignition.Proxy.HTTPSProxy = k8sutilspointer.String(proxy.Status.HTTPSProxy)
+		cfg.Ignition.Proxy.HTTPSProxy = ptr.To(proxy.Status.HTTPSProxy)
 	}
 	if proxy.Status.NoProxy != "" {
 		for _, item := range strings.Split(proxy.Status.NoProxy, ",") {

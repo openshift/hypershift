@@ -12,7 +12,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
@@ -120,7 +120,7 @@ func ReconcileDeployment(
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 

@@ -17,7 +17,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -120,7 +120,7 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		"app": "machine-approver",
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32(1),
+		Replicas: ptr.To[int32](1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selector,
 		},
@@ -153,8 +153,8 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 								LocalObjectReference: corev1.LocalObjectReference{
 									Name: cm.Name,
 								},
-								Optional:    k8sutilspointer.Bool(true),
-								DefaultMode: k8sutilspointer.Int32(440),
+								Optional:    ptr.To(true),
+								DefaultMode: ptr.To[int32](440),
 							},
 						},
 					},
@@ -197,7 +197,7 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 

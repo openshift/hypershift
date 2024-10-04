@@ -15,7 +15,7 @@ import (
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -1264,7 +1264,7 @@ func storageTmpltOpt(volumeSize string) nodeTemplateOption {
 
 func networkInterfaceMultiQueueTmpltOpt() nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
-		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = pointer.Bool(true)
+		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = ptr.To(true)
 	}
 }
 

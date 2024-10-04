@@ -126,7 +126,7 @@ func (k KubeVirtJsonPatchTest) BuildNodePoolManifest(defaultNodepool hyperv1.Nod
 	}
 	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 
-	nodePool.Spec.Replicas = ptr.To(int32(1))
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 
 	return nodePool, nil
 }

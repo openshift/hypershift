@@ -13,7 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
@@ -196,9 +196,9 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			// The KAS takes 90 seconds to finish its graceful shutdown, give it enough
 			// time to do that + 5 seconds margin. The shutdown sequence is described
 			// in detail here: https://github.com/openshift/installer/blob/master/docs/dev/kube-apiserver-health-check.md
-			TerminationGracePeriodSeconds: pointer.Int64(95),
+			TerminationGracePeriodSeconds: ptr.To[int64](95),
 			SchedulerName:                 corev1.DefaultSchedulerName,
-			AutomountServiceAccountToken:  pointer.Bool(false),
+			AutomountServiceAccountToken:  ptr.To(false),
 			InitContainers: []corev1.Container{
 				util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
 			},
@@ -506,7 +506,7 @@ func buildKASVolumeLocalhostKubeconfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KASLocalhostKubeconfigSecret("").Name
 }
 
@@ -527,7 +527,7 @@ func buildKASVolumeConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.KASConfig("").Name
 }
 func kasVolumeAuthConfig() *corev1.Volume {
@@ -539,7 +539,7 @@ func buildKASVolumeAuthConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.AuthConfig("").Name
 }
 func kasVolumeAuditConfig() *corev1.Volume {
@@ -551,7 +551,7 @@ func buildKASVolumeAuditConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.KASAuditConfig("").Name
 }
 func kasVolumeKonnectivityCA() *corev1.Volume {
@@ -561,7 +561,7 @@ func kasVolumeKonnectivityCA() *corev1.Volume {
 }
 func buildKASVolumeKonnectivityCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
@@ -579,7 +579,7 @@ func buildKASVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KASServerCertSecret("").Name
 }
 
@@ -587,7 +587,7 @@ func buildKASVolumeServerPrivateCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KASServerPrivateCertSecret("").Name
 }
 
@@ -600,7 +600,7 @@ func buildKASVolumeKubeletClientCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.TotalClientCABundle("").Name
 }
 
@@ -613,7 +613,7 @@ func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 }
 
@@ -627,7 +627,7 @@ func buildKASVolumeAggregatorCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KASAggregatorCertSecret("").Name
 }
 
@@ -641,7 +641,7 @@ func buildKASVolumeEgressSelectorConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.KASEgressSelectorConfig("").Name
 }
 
@@ -654,7 +654,7 @@ func buildKASVolumeServiceAccountKey(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.ServiceAccountSigningKeySecret("").Name
 }
 
@@ -668,7 +668,7 @@ func buildKASVolumeKubeletClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KASKubeletClientCertSecret("").Name
 }
 
@@ -681,7 +681,7 @@ func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
 }
 
@@ -705,7 +705,7 @@ func buildKASVolumeOauthMetadata(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.KASOAuthMetadata("").Name
 }
 
@@ -718,7 +718,7 @@ func buildKASVolumeAuthTokenWebhookConfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KASAuthenticationTokenWebhookConfigSecret("").Name
 }
 
@@ -735,7 +735,7 @@ func buildKASVolumeCloudConfig(configMapName, providerName string) func(v *corev
 		} else {
 			v.ConfigMap = &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
-				DefaultMode:          pointer.Int32(420),
+				DefaultMode:          ptr.To[int32](420),
 			}
 		}
 	}
@@ -845,7 +845,7 @@ func applyNamedCertificateMounts(certs []configv1.APIServerNamedServingCert, spe
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  namedCert.ServingCertificate.Name,
-					DefaultMode: pointer.Int32(0640),
+					DefaultMode: ptr.To[int32](0640),
 				},
 			},
 		})
@@ -911,7 +911,7 @@ func kasVolumeKubeconfig() *corev1.Volume {
 func buildKASVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KASLocalhostKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -989,7 +989,7 @@ func konnectivityVolumeServerCerts() *corev1.Volume {
 func buildKonnectivityVolumeServerCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityServerSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -1002,7 +1002,7 @@ func konnectivityVolumeClusterCerts() *corev1.Volume {
 func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityClusterSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 

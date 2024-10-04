@@ -14,7 +14,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -130,7 +130,7 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hc
 		ports = append(ports, discoveryv1.EndpointPort{
 			Name:     &port.Name,
 			Protocol: &port.Protocol,
-			Port:     pointer.Int32(int32(port.TargetPort.IntValue())),
+			Port:     ptr.To(int32(port.TargetPort.IntValue())),
 		})
 	}
 
@@ -249,14 +249,14 @@ func (r *reconciler) removeOrphanKubevirtPassthroughEndpointSlices(ctx context.C
 func machinePhaseToEndpointConditions(machine *capiv1.Machine) discoveryv1.EndpointConditions {
 	if machine.Status.GetTypedPhase() == capiv1.MachinePhaseRunning {
 		return discoveryv1.EndpointConditions{
-			Ready:       pointer.Bool(true),
-			Serving:     pointer.Bool(true),
-			Terminating: pointer.Bool(false),
+			Ready:       ptr.To(true),
+			Serving:     ptr.To(true),
+			Terminating: ptr.To(false),
 		}
 	}
 	return discoveryv1.EndpointConditions{
-		Ready:       pointer.Bool(false),
-		Serving:     pointer.Bool(false),
-		Terminating: pointer.Bool(false),
+		Ready:       ptr.To(false),
+		Serving:     ptr.To(false),
+		Terminating: ptr.To(false),
 	}
 }

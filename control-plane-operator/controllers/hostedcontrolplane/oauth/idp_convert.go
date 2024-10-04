@@ -29,7 +29,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/net"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -77,7 +77,7 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	}
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = secretName
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	i.Volumes = append(i.Volumes, v)
 	i.VolumeMounts[i.Container][v.Name] = fmt.Sprintf("%s/idp_secret_%d_%s", IDPVolumePathPrefix, index, field)
 	return path.Join(i.VolumeMounts[i.Container][v.Name], key)

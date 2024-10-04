@@ -3,7 +3,7 @@ package kubevirt
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"gopkg.in/yaml.v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -49,7 +49,7 @@ func cloudConfig(hcp *hyperv1.HostedControlPlane, namespace string, kubeconfigPa
 	return CloudConfig{
 		LoadBalancer: LoadBalancerConfig{
 			Enabled:      true,
-			Selectorless: pointer.Bool(true),
+			Selectorless: ptr.To(true),
 		},
 		InstancesV2: InstancesV2Config{
 			Enabled:              true,

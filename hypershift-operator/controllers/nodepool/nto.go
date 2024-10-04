@@ -25,7 +25,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -95,7 +95,7 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 }
 
 func reconcileNodeTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, rawConfig string) error {
-	tuningConfigMap.Immutable = k8sutilspointer.Bool(false)
+	tuningConfigMap.Immutable = ptr.To(false)
 	if tuningConfigMap.Annotations == nil {
 		tuningConfigMap.Annotations = make(map[string]string)
 	}
@@ -137,7 +137,7 @@ func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.Co
 }
 
 func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, nodePool *hyperv1.NodePool) error {
-	cm.Immutable = k8sutilspointer.Bool(true)
+	cm.Immutable = ptr.To(true)
 	if cm.Annotations == nil {
 		cm.Annotations = make(map[string]string)
 	}

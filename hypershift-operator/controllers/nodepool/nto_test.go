@@ -17,7 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
@@ -537,7 +537,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			existingConfigsInHcpNs: nil,
 			expectedMirroredConfigs: []corev1.ConfigMap{
 				{
-					Immutable: k8sutilspointer.Bool(true),
+					Immutable: ptr.To(true),
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
@@ -587,7 +587,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			},
 			expectedMirroredConfigs: []corev1.ConfigMap{
 				{
-					Immutable: k8sutilspointer.Bool(true),
+					Immutable: ptr.To(true),
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
@@ -907,8 +907,8 @@ func makePerformanceProfileStatusAsString(opts ...func(*performanceprofilev2.Per
 				Status: "False",
 			},
 		},
-		Tuned:        k8sutilspointer.String("openshift-cluster-node-tuning-operator/openshift-node-performance-performance"),
-		RuntimeClass: k8sutilspointer.String("performance-performance"),
+		Tuned:        ptr.To("openshift-cluster-node-tuning-operator/openshift-node-performance-performance"),
+		RuntimeClass: ptr.To("performance-performance"),
 	}
 
 	for _, f := range opts {

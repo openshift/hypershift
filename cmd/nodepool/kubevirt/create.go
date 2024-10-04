@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
@@ -26,7 +26,7 @@ func DefaultOptions() *RawKubevirtPlatformCreateOptions {
 			Memory:               "4Gi",
 			Cores:                2,
 			RootVolumeSize:       32,
-			AttachDefaultNetwork: pointer.Bool(true),
+			AttachDefaultNetwork: ptr.To(true),
 		},
 		QoSClass:                   "Burstable",
 		NetworkInterfaceMultiQueue: string(hyperv1.MultiQueueEnable),

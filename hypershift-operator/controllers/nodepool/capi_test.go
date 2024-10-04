@@ -20,7 +20,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -106,7 +105,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: k8sutilspointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 				},
 			},
 			expectReplicas: 2,
@@ -132,7 +131,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: k8sutilspointer.Int32(10),
+					Replicas: ptr.To[int32](10),
 				},
 			},
 			expectReplicas: 5,
@@ -1048,7 +1047,7 @@ func TestCAPIReconcile(t *testing.T) {
 						},
 						AutoRepair: false,
 					},
-					Replicas: ptr.To(int32(3)),
+					Replicas: ptr.To[int32](3),
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSNodePoolPlatform{
@@ -1144,7 +1143,7 @@ func TestCAPIReconcile(t *testing.T) {
 						},
 						AutoRepair: false,
 					},
-					Replicas: ptr.To(int32(3)),
+					Replicas: ptr.To[int32](3),
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSNodePoolPlatform{
@@ -1243,7 +1242,7 @@ func TestCAPIReconcile(t *testing.T) {
 						Min: 3,
 						Max: 10,
 					},
-					Replicas: ptr.To(int32(3)),
+					Replicas: ptr.To[int32](3),
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSNodePoolPlatform{
@@ -1408,7 +1407,7 @@ func TestCAPIReconcile(t *testing.T) {
 				md := &capiv1.MachineDeployment{}
 				err = capi.Client.Get(context.Background(), client.ObjectKey{Namespace: controlpaneNamespace, Name: "test-nodepool"}, md)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(md.Spec.Replicas).To(Equal(k8sutilspointer.Int32(3)))
+				g.Expect(md.Spec.Replicas).To(Equal(ptr.To[int32](3)))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(awsMachineTemplateName))
 				// Check MachineDeployment annotations
 				g.Expect(md.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "test-namespace/test-nodepool"))
@@ -1515,7 +1514,7 @@ func TestPause(t *testing.T) {
 		},
 		Spec: hyperv1.NodePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    k8sutilspointer.Int32(3),
+			Replicas:    ptr.To[int32](3),
 			Management: hyperv1.NodePoolManagement{
 				UpgradeType: hyperv1.UpgradeTypeReplace,
 			},

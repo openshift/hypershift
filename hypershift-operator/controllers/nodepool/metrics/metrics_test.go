@@ -14,7 +14,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -40,9 +40,9 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 
 			switch *instanceType {
 			case "m5.xlarge":
-				vCpusCount = pointer.Int64(4)
+				vCpusCount = ptr.To[int64](4)
 			case "m5.2xlarge":
-				vCpusCount = pointer.Int64(8)
+				vCpusCount = ptr.To[int64](8)
 			}
 
 			instanceTypesInfo = append(instanceTypesInfo, &ec2.InstanceTypeInfo{
@@ -167,39 +167,39 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 
 			expectedBaseLabels := []*dto.LabelPair{
 				{
-					Name: pointer.String("_id"), Value: pointer.String("id"),
+					Name: ptr.To("_id"), Value: ptr.To("id"),
 				},
 				{
-					Name: pointer.String("name"), Value: pointer.String("hc"),
+					Name: ptr.To("name"), Value: ptr.To("hc"),
 				},
 				{
-					Name: pointer.String("namespace"), Value: pointer.String("any"),
+					Name: ptr.To("namespace"), Value: ptr.To("any"),
 				},
 				{
-					Name: pointer.String("platform"), Value: pointer.String(string(hyperv1.AWSPlatform)),
+					Name: ptr.To("platform"), Value: ptr.To(string(hyperv1.AWSPlatform)),
 				},
 			}
 
 			expectedVCpusCountMetricValue := &dto.MetricFamily{
-				Name: pointer.String(VCpusCountByHClusterMetricName),
-				Help: pointer.String(VCpusCountByHClusterMetricHelp),
+				Name: ptr.To(VCpusCountByHClusterMetricName),
+				Help: ptr.To(VCpusCountByHClusterMetricHelp),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
 					Label: expectedBaseLabels,
-					Gauge: &dto.Gauge{Value: pointer.Float64(tc.expectedVCpusCount)},
+					Gauge: &dto.Gauge{Value: ptr.To(tc.expectedVCpusCount)},
 				}},
 			}
 
 			if tc.expectedVCpusCountErrorReason != "" {
 				expectedVCpusComputationErrorMetricValue = &dto.MetricFamily{
-					Name: pointer.String(VCpusComputationErrorByHClusterMetricName),
-					Help: pointer.String(VCpusComputationErrorByHClusterMetricHelp),
+					Name: ptr.To(VCpusComputationErrorByHClusterMetricName),
+					Help: ptr.To(VCpusComputationErrorByHClusterMetricHelp),
 					Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 					Metric: []*dto.Metric{{
 						Label: append(expectedBaseLabels, &dto.LabelPair{
-							Name: pointer.String("reason"), Value: pointer.String(tc.expectedVCpusCountErrorReason),
+							Name: ptr.To("reason"), Value: ptr.To(tc.expectedVCpusCountErrorReason),
 						}),
-						Gauge: &dto.Gauge{Value: pointer.Float64(1.0)},
+						Gauge: &dto.Gauge{Value: ptr.To[float64](1.0)},
 					}},
 				}
 			}
