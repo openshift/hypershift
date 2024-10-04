@@ -1237,7 +1237,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
 		AtLeast(t, Version418)
 		t.Log("Waiting for ValidatingAdmissionPolicies to exist")
-		var expectedVAPCount int = 3
+		var expectedVAPCount int = 4
 		g := NewWithT(t)
 		start := time.Now()
 		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
@@ -1271,6 +1271,8 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameMirror), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameMirror))
 			case hccokasvap.AdmissionPolicyNameICSP:
 				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameICSP), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameICSP))
+			case hccokasvap.AdmissionPolicyNameInfra:
+				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameInfra), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameICSP))
 			default:
 				t.Errorf("Unexpected ValidatingAdmissionPolicy %s found in the list", vap.Name)
 			}
