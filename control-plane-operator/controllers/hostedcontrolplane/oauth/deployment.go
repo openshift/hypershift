@@ -157,12 +157,13 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 
 	deploymentConfig.ApplyTo(deployment)
 	if len(identityProviders) > 0 {
-		_, volumeMountInfo, err := convertIdentityProviders(ctx, identityProviders, providerOverrides, client, deployment.Namespace)
-		if err != nil {
-			return err
+		_, volumeMountInfo, err := ConvertIdentityProviders(ctx, identityProviders, providerOverrides, client, deployment.Namespace)
+		// Eat the error here, since we don't want to fail the deployment if the identity providers are invalid
+		// A condition will be set on the HC to indicate the error
+		if err == nil {
+			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumeMountInfo.Volumes...)
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(oauthContainerMain().Name)...)
 		}
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumeMountInfo.Volumes...)
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(oauthContainerMain().Name)...)
 	}
 	globalconfig.ApplyNamedCertificateMounts(oauthContainerMain().Name, oauthNamedCertificateMountPathPrefix, namedCertificates, &deployment.Spec.Template.Spec)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), availabilityProberImage, &deployment.Spec.Template.Spec)
