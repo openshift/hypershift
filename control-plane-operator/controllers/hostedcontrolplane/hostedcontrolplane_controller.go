@@ -2775,13 +2775,15 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 		r.Log.Info("reconciled etcd servicemonitor", "result", result)
 	}
 
-	pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
-	if result, err := createOrUpdate(ctx, r, pdb, func() error {
-		return etcd.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
-	} else {
-		r.Log.Info("reconciled etcd pdb", "result", result)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
+		if result, err := createOrUpdate(ctx, r, pdb, func() error {
+			return etcd.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
+		} else {
+			r.Log.Info("reconciled etcd pdb", "result", result)
+		}
 	}
 
 	// reconcile etcd-defrag-operator serviceAccount, role and roleBinding
@@ -3079,13 +3081,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile authentication token webhook config: %w", err)
 	}
 
-	pdb := manifests.KASPodDisruptionBudget(hcp.Namespace)
-	if result, err := createOrUpdate(ctx, r, pdb, func() error {
-		return kas.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile api server pdb: %w", err)
-	} else {
-		r.Log.Info("Reconciled api server pdb", "result", result)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		pdb := manifests.KASPodDisruptionBudget(hcp.Namespace)
+		if result, err := createOrUpdate(ctx, r, pdb, func() error {
+			return kas.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile api server pdb: %w", err)
+		} else {
+			r.Log.Info("Reconciled api server pdb", "result", result)
+		}
 	}
 
 	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
@@ -3296,13 +3300,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		return fmt.Errorf("failed to reconcile openshift apiserver audit config: %w", err)
 	}
 
-	pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
-	if result, err := createOrUpdate(ctx, r, pdb, func() error {
-		return oapi.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift apiserver pdb: %w", err)
-	} else {
-		r.Log.Info("Reconciled openshift apiserver pdb", "result", result)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
+		if result, err := createOrUpdate(ctx, r, pdb, func() error {
+			return oapi.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift apiserver pdb: %w", err)
+		} else {
+			r.Log.Info("Reconciled openshift apiserver pdb", "result", result)
+		}
 	}
 
 	serviceMonitor := manifests.OpenShiftAPIServerServiceMonitor(hcp.Namespace)
@@ -3351,13 +3357,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver audit config: %w", err)
 	}
 
-	pdb := manifests.OpenShiftOAuthAPIServerDisruptionBudget(hcp.Namespace)
-	if result, err := createOrUpdate(ctx, r, pdb, func() error {
-		return oapi.ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb, p.OAuthAPIServerDeploymentParams(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift oauth apiserver pdb: %w", err)
-	} else {
-		r.Log.Info("Reconciled openshift oauth apiserver pdb", "result", result)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		pdb := manifests.OpenShiftOAuthAPIServerDisruptionBudget(hcp.Namespace)
+		if result, err := createOrUpdate(ctx, r, pdb, func() error {
+			return oapi.ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb, p.OAuthAPIServerDeploymentParams(hcp))
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift oauth apiserver pdb: %w", err)
+		} else {
+			r.Log.Info("Reconciled openshift oauth apiserver pdb", "result", result)
+		}
 	}
 
 	deployment := manifests.OpenShiftOAuthAPIServerDeployment(hcp.Namespace)
@@ -3412,13 +3420,15 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return fmt.Errorf("failed to reconcile oauth server config: %w", err)
 	}
 
-	pdb := manifests.OAuthServerPodDisruptionBudget(hcp.Namespace)
-	if result, err := createOrUpdate(ctx, r, pdb, func() error {
-		return oauth.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth pdb: %w", err)
-	} else {
-		r.Log.V(2).Info("Reconciled oauth pdb", "result", result)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		pdb := manifests.OAuthServerPodDisruptionBudget(hcp.Namespace)
+		if result, err := createOrUpdate(ctx, r, pdb, func() error {
+			return oauth.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile oauth pdb: %w", err)
+		} else {
+			r.Log.V(2).Info("Reconciled oauth pdb", "result", result)
+		}
 	}
 
 	auditCfg := manifests.OAuthAuditConfig(hcp.Namespace)
@@ -4254,12 +4264,14 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 			return fmt.Errorf("failed to reconcile router deployment: %w", err)
 		}
 
-		pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
-			ingress.ReconcileRouterPodDisruptionBudget(pdb, hcp.Spec.ControllerAvailabilityPolicy, config.OwnerRefFrom(hcp))
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
+		if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+			pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
+			if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
+				ingress.ReconcileRouterPodDisruptionBudget(pdb, config.OwnerRefFrom(hcp))
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
+			}
 		}
 	}
 

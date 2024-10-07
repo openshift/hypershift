@@ -304,12 +304,12 @@ func ReconcileRouteStatus(route *routev1.Route, externalHostname, internalHostna
 	route.Status.Ingress = []routev1.RouteIngress{ingress}
 }
 
-func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, availability hyperv1.AvailabilityPolicy, ownerRef config.OwnerRef) {
+func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, ownerRef config.OwnerRef) {
 	if pdb.CreationTimestamp.IsZero() {
 		pdb.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: hcpRouterLabels(),
 		}
 	}
 	ownerRef.ApplyTo(pdb)
-	util.ReconcilePodDisruptionBudget(pdb, availability)
+	util.ReconcilePodDisruptionBudget(pdb)
 }
