@@ -583,8 +583,17 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			}
 			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
 
-			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
-			bootImage.dvName = bootImageNamePrefix + "12345"
+			np := &hyperv1.NodePool{
+				Status: hyperv1.NodePoolStatus{
+					Platform: &hyperv1.NodePoolPlatformStatus{
+						KubeVirt: &hyperv1.KubeVirtNodePoolStatus{
+							CacheName: bootImageNamePrefix + "12345",
+						},
+					},
+				},
+			}
+
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, np)
 			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
@@ -721,7 +730,7 @@ func TestCacheImage(t *testing.T) {
 			_ = v1beta1.AddToScheme(scheme)
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.existingResources...).Build()
 
-			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, nil)
 			err := bootImage.CacheImage(ctx, cl, tc.nodePool, infraId)
 
 			if tc.errExpected != (err != nil) {
@@ -1117,7 +1126,7 @@ func TestJsonPatch(t *testing.T) {
 
 			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
 
-			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, nil)
 			bootImage.dvName = bootImageNamePrefix + "12345"
 			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
 			g.Expect(err).ToNot(HaveOccurred())
