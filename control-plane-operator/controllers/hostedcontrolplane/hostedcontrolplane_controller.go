@@ -2717,14 +2717,14 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 
 		cfg := manifests.OpenStackProviderConfig(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, cfg, func() error {
-			return openstack.ReconcileCloudConfigConfigMap(hcp.Spec.Platform.OpenStack.ExternalNetwork.ID, cfg, hcp.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData)
+			return openstack.ReconcileCloudConfigConfigMap(hcp.Spec.Platform.OpenStack.ExternalNetwork.ID, cfg, hcp.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
 		}
 
 		withSecrets := manifests.OpenStackProviderConfigWithCredentials(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, withSecrets, func() error {
-			return openstack.ReconcileCloudConfigSecret(hcp.Spec.Platform.OpenStack.ExternalNetwork.ID, withSecrets, hcp.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData)
+			return openstack.ReconcileCloudConfigSecret(hcp.Spec.Platform.OpenStack.ExternalNetwork.ID, withSecrets, hcp.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OpenStack cloud config with credentials: %w", err)
 		}
