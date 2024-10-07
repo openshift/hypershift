@@ -97,6 +97,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	componentcrd "github.com/openshift/hypershift/support/controlplane-component/crds"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
@@ -2213,6 +2214,12 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile controlplane operator ingress operator rolebinding: %w", err)
+		}
+	}
+
+	if _, exist := hcluster.Annotations[hyperv1.ControlPlaneOperatorV2Annotation]; exist {
+		if err := componentcrd.InstallCRDs(ctx, r.Client); err != nil {
+			return fmt.Errorf("failed to install controlplanecomponent CRDs: %w", err)
 		}
 	}
 
