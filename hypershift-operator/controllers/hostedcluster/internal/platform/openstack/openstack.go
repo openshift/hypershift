@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	defaultCIDRBlock  = "10.0.0.0/16"
 	sgRuleDescription = "Managed by the Hypershift Control Plane Operator"
 )
 
@@ -78,7 +77,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
 	// See https://github.com/openshift/hypershift/pull/4287
 	if len(hcluster.Spec.Networking.MachineNetwork) == 0 {
-		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
+		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(openstackutil.DefaultMachineNetwork)}}
 	} else {
 		machineNetworks = hcluster.Spec.Networking.MachineNetwork
 	}
