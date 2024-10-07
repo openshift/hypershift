@@ -1457,10 +1457,10 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		externalNetworkID := hcp.Spec.Platform.OpenStack.ExternalNetwork.ID
 
 		errs = append(errs,
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cluster-csi-drivers", "openstack-cloud-credentials", credentialsSecret, cloudName, caCertData),
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-image-registry", "installer-cloud-credentials", credentialsSecret, cloudName, caCertData),
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cloud-network-config-controller", "cloud-credentials", credentialsSecret, cloudName, caCertData),
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, cloudName, caCertData),
+			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cluster-csi-drivers", "openstack-cloud-credentials", credentialsSecret, cloudName, caCertData, hcp.Spec.Networking.MachineNetwork),
+			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-image-registry", "installer-cloud-credentials", credentialsSecret, cloudName, caCertData, hcp.Spec.Networking.MachineNetwork),
+			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cloud-network-config-controller", "cloud-credentials", credentialsSecret, cloudName, caCertData, hcp.Spec.Networking.MachineNetwork),
+			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, cloudName, caCertData, hcp.Spec.Networking.MachineNetwork),
 		)
 	case hyperv1.PowerVSPlatform:
 		createPowerVSSecret := func(srcSecret, destSecret *corev1.Secret) error {
@@ -1537,7 +1537,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 }
 
 // reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack cloud config secrets.
-func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, externalNetworkID *string, namespace, name string, credentialsSecret *corev1.Secret, cloudName string, caCertData []byte) error {
+func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, externalNetworkID *string, namespace, name string, credentialsSecret *corev1.Secret, cloudName string, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -1546,7 +1546,7 @@ func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, ex
 		Data: credentialsSecret.Data,
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-		return openstack.ReconcileCloudConfigSecret(externalNetworkID, secret, cloudName, credentialsSecret, caCertData)
+		return openstack.ReconcileCloudConfigSecret(externalNetworkID, secret, cloudName, credentialsSecret, caCertData, machineNetwork)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
