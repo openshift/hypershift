@@ -759,7 +759,7 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 							Protocol:          ptr.To(armnetwork.ProbeProtocolHTTP),
 							Port:              ptr.To[int32](30595),
 							IntervalInSeconds: ptr.To[int32](5),
-							NumberOfProbes:    ptr.To[int32](2),
+							ProbeThreshold:    ptr.To[int32](2),
 							RequestPath:       ptr.To("/healthz"),
 						},
 					},
