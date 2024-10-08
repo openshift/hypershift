@@ -149,10 +149,10 @@ func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster
 	}
 }
 
-func (r *NodePoolReconciler) AutoscalerEnabledCondition(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) autoscalerEnabledCondition(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	if isAutoscalingEnabled(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", nodePool.Spec.AutoScaling.Max, nodePool.Spec.AutoScaling.Min),
@@ -160,7 +160,7 @@ func (r *NodePoolReconciler) AutoscalerEnabledCondition(_ context.Context, nodeP
 		})
 	} else {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
@@ -169,11 +169,11 @@ func (r *NodePoolReconciler) AutoscalerEnabledCondition(_ context.Context, nodeP
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) UpdateManagementEnabledCondition(ctx context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) updateManagementEnabledCondition(ctx context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	if err := validateManagement(nodePool); err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
 			Status:             corev1.ConditionFalse,
 			Message:            err.Error(),
 			Reason:             hyperv1.NodePoolValidationFailedReason,
@@ -186,7 +186,7 @@ func (r *NodePoolReconciler) UpdateManagementEnabledCondition(ctx context.Contex
 
 	} else {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
@@ -195,11 +195,11 @@ func (r *NodePoolReconciler) UpdateManagementEnabledCondition(ctx context.Contex
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) releaseImageCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) releaseImageCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	_, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedReason,
 			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
@@ -208,7 +208,7 @@ func (r *NodePoolReconciler) releaseImageCondition(ctx context.Context, nodePool
 		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	} else {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Using release image: %s", nodePool.Spec.Release.Image),
@@ -218,7 +218,7 @@ func (r *NodePoolReconciler) releaseImageCondition(ctx context.Context, nodePool
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) IgnitionEndpointAvailableCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) ignitionEndpointAvailableCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	// Validate Ignition CA Secret.
 	log := ctrl.LoggerFrom(ctx)
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -240,7 +240,7 @@ func (r *NodePoolReconciler) IgnitionEndpointAvailableCondition(ctx context.Cont
 	if err := r.Get(ctx, client.ObjectKeyFromObject(caSecret), caSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               string(conditionType),
+				Type:               string(hyperv1.IgnitionEndpointAvailable),
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.IgnitionCACertMissingReason,
 				Message:            "still waiting for ignition CA cert Secret to exist",
@@ -252,7 +252,7 @@ func (r *NodePoolReconciler) IgnitionEndpointAvailableCondition(ctx context.Cont
 			return &ctrl.Result{}, fmt.Errorf("failed to get ignition CA Secret: %w", err)
 		}
 	}
-	removeStatusCondition(&nodePool.Status.Conditions, conditionType)
+	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	_, hasCACert := caSecret.Data[corev1.TLSCertKey]
 	if !hasCACert {
@@ -271,7 +271,7 @@ func (r *NodePoolReconciler) IgnitionEndpointAvailableCondition(ctx context.Cont
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	// Validate modifying CPU arch support for platform
 	if !isArchAndPlatformSupported(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -284,7 +284,7 @@ func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nod
 	} else {
 		if err := validateHCPayloadSupportsNodePoolCPUArch(hcluster, nodePool); err != nil {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               conditionType,
+				Type:               hyperv1.NodePoolValidArchPlatform,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolInvalidArchPlatform,
 				Message:            err.Error(),
@@ -293,7 +293,7 @@ func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nod
 			return &ctrl.Result{}, err
 		} else {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               conditionType,
+				Type:               hyperv1.NodePoolValidArchPlatform,
 				Status:             corev1.ConditionTrue,
 				Reason:             hyperv1.AsExpectedReason,
 				ObservedGeneration: nodePool.Generation,
@@ -303,7 +303,7 @@ func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nod
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
@@ -317,7 +317,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedReason,
 			Message:            err.Error(),
@@ -328,7 +328,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	token, err := r.token(ctx, hcluster, nodePool)
 	if err != nil {
@@ -359,7 +359,7 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) updatingVersionCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) updatingVersionCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
@@ -370,7 +370,7 @@ func (r *NodePoolReconciler) updatingVersionCondition(ctx context.Context, nodeP
 	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
 	if isUpdatingVersion {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Updating version in progress. Target version: %s", targetVersion),
@@ -380,7 +380,7 @@ func (r *NodePoolReconciler) updatingVersionCondition(ctx context.Context, nodeP
 			"current", nodePool.Status.Version, "target", targetVersion)
 	} else {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               conditionType,
+			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
@@ -390,7 +390,7 @@ func (r *NodePoolReconciler) updatingVersionCondition(ctx context.Context, nodeP
 	return nil, nil
 }
 
-func (r NodePoolReconciler) validGeneratedPayloadCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r NodePoolReconciler) validGeneratedPayloadCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	// Signal ignition payload generation
 	token, err := r.token(ctx, hcluster, nodePool)
 	if err != nil {
@@ -405,7 +405,7 @@ func (r NodePoolReconciler) validGeneratedPayloadCondition(ctx context.Context, 
 	return nil, nil
 }
 
-func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	token, err := r.token(ctx, hcluster, nodePool)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
@@ -429,7 +429,7 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	return nil, nil
 }
 
-func (r NodePoolReconciler) MachineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r NodePoolReconciler) machineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	// Set AllMachinesReadyCondition.
 	// Get all Machines for NodePool.
 	err := r.setMachineAndNodeConditions(ctx, nodePool, hcluster)
@@ -439,7 +439,7 @@ func (r NodePoolReconciler) MachineAndNodeConditions(ctx context.Context, nodePo
 	return nil, nil
 }
 
-func (r NodePoolReconciler) reconciliationActiveCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, conditionType string) (*ctrl.Result, error) {
+func (r NodePoolReconciler) reconciliationActiveCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	// Set ReconciliationActive condition
 	SetStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
 	return nil, nil
