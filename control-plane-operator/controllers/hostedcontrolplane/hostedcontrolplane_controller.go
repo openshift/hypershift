@@ -2682,12 +2682,33 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
 		}
 
+		// Reconcile the Cloud Provider configuration secret
 		withSecrets := manifests.AzureProviderConfigWithCredentials(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, withSecrets, func() error {
 			return azure.ReconcileCloudConfigWithCredentials(withSecrets, hcp, credentialsSecret)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
+
+		// Reconcile the Azure Disk configuration secret
+		// TODO this just copies the cloud provider secret at the moment. There will be a follow-on PR to provide
+		// different credentials for Azure Disk and Azure File (right below).
+		// This is related to https://github.com/openshift/csi-operator/pull/290.
+		azureDiskConfigSecret := manifests.AzureDiskConfigWithCredentials(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskConfigSecret, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(azureDiskConfigSecret, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
+		}
+
+		// Reconcile the Azure File configuration secret
+		azureFileConfigSecret := manifests.AzureFileConfigWithCredentials(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureFileConfigSecret, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(azureFileConfigSecret, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
+		}
+
 	case hyperv1.OpenStackPlatform:
 		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.OpenStack.IdentityRef.Name}}
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
