@@ -45,4 +45,6 @@ const (
 	EnableCVOManagementClusterMetricsAccessEnvVar = "ENABLE_CVO_MANAGEMENT_CLUSTER_METRICS_ACCESS"
 
 	EnableEtcdRecoveryEnvVar = "ENABLE_ETCD_RECOVERY"
+
+	AuditWebhookService = "audit-webhook"
 )
