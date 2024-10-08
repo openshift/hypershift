@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: hosted-cluster-config-operator
+  namespace: HCP_NAMESPACE
+spec:
+  namespaceSelector:
+    matchNames:
+    - HCP_NAMESPACE
+  podMetricsEndpoints:
+  - port: metrics
+  selector:
+    matchLabels:
+      app: hosted-cluster-config-operator

@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
@@ -969,7 +970,7 @@ func TestEventHandling(t *testing.T) {
 		Build(),
 	}
 
-	readyInfraStatus := InfrastructureStatus{
+	readyInfraStatus := infra.InfrastructureStatus{
 		APIHost:          "foo",
 		APIPort:          1,
 		OAuthHost:        "foo",
@@ -987,7 +988,7 @@ func TestEventHandling(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
-		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
 		ec2Client: &fakeEC2Client{},
@@ -1322,8 +1323,8 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
-		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
-			return InfrastructureStatus{}, nil
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
+			return infra.InfrastructureStatus{}, nil
 		},
 		ec2Client: &fakeEC2Client{},
 	}
@@ -1578,7 +1579,9 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 // TestControlPlaneComponents is a generic test which generates a fixture for each registered component's deployment/statefulset.
 // This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
 func TestControlPlaneComponents(t *testing.T) {
-	reconciler := &HostedControlPlaneReconciler{}
+	reconciler := &HostedControlPlaneReconciler{
+		ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{},
+	}
 	reconciler.registerComponents()
 
 	hcp := &hyperv1.HostedControlPlane{

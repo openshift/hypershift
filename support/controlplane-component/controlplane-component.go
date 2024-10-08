@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
@@ -43,7 +44,9 @@ type ControlPlaneContext struct {
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
 
+	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
+	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
 
 	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
