@@ -62,7 +62,7 @@ func (o *CreateInfraOptions) createVPC(l logr.Logger, client ec2iface.EC2API) (s
 	}
 	if len(vpcID) == 0 {
 		createResult, err := client.CreateVpc(&ec2.CreateVpcInput{
-			CidrBlock:         aws.String(DefaultCIDRBlock),
+			CidrBlock:         aws.String(o.VPCCIDR),
 			TagSpecifications: o.ec2TagSpecifications("vpc", vpcName),
 		})
 		if err != nil {

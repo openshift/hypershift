@@ -42,6 +42,7 @@ type CreateInfraOptions struct {
 	ProxyVPCEndpointServiceName string
 	SSHKeyFile                  string
 	SingleNATGateway            bool
+	VPCCIDR                     string
 
 	CredentialsSecretData *util.CredentialsSecretData
 
@@ -107,6 +108,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 	cmd.Flags().StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
+	cmd.Flags().StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("base-domain")
@@ -164,6 +166,14 @@ func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
 func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
 	l.Info("Creating infrastructure", "id", o.InfraID)
 
+	if o.VPCCIDR == "" {
+		o.VPCCIDR = DefaultCIDRBlock
+	}
+
+	if err := awsutil.ValidateVPCCIDR(o.VPCCIDR); err != nil {
+		return nil, err
+	}
+
 	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-create-infra", o.CredentialsSecretData, o.Region)
 	if err != nil {
 		return nil, err
@@ -195,7 +205,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 
 	result := &CreateInfraOutput{
 		InfraID:          o.InfraID,
-		MachineCIDR:      DefaultCIDRBlock,
+		MachineCIDR:      o.VPCCIDR,
 		Region:           o.Region,
 		Name:             o.Name,
 		BaseDomain:       o.BaseDomain,
@@ -223,16 +233,19 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	// Per zone resources
+	_, cidrNetwork, err := net.ParseCIDR(o.VPCCIDR)
+	if err != nil {
+		return nil, err
+	}
+	publicNetwork := copyIPNet(cidrNetwork)
+	publicNetwork.Mask = net.CIDRMask(20, 32)
+
+	privateNetwork := copyIPNet(cidrNetwork)
+	privateNetwork.Mask = net.CIDRMask(20, 32)
+	privateNetwork.IP[2] += 128
+
 	var endpointRouteTableIds []*string
 	var publicSubnetIDs []string
-	_, privateNetwork, err := net.ParseCIDR(basePrivateSubnetCIDR)
-	if err != nil {
-		return nil, err
-	}
-	_, publicNetwork, err := net.ParseCIDR(basePublicSubnetCIDR)
-	if err != nil {
-		return nil, err
-	}
 	var natGatewayID string
 	for _, zone := range o.Zones {
 		privateSubnetID, err := o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
@@ -550,3 +563,11 @@ echo -e '%s' >/home/ec2-user/.ssh/authorized_keys
 chmod 0600 /home/ec2-user/.ssh/authorized_keys
 chown -R ec2-user:ec2-user /home/ec2-user/.ssh
 `
+
+func copyIPNet(in *net.IPNet) *net.IPNet {
+	result := *in
+	resultIP := make(net.IP, len(in.IP))
+	copy(resultIP, in.IP)
+	result.IP = resultIP
+	return &result
+}
