@@ -942,7 +942,11 @@ func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
 	if sharedingress.UseSharedIngress() {
 		return false
 	}
-	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicKASWithDNS(hostedControlPlane)
+	return labelHCPRoutes(hostedControlPlane)
+}
+
+func labelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
+	return util.IsPrivateHCP(hcp) || util.IsPublicKASWithDNS(hcp)
 }
 
 func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool {
@@ -1093,6 +1097,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		config.OwnerRefFrom(hostedControlPlane),
 		openShiftTrustedCABundleConfigMapForCPOExists,
 		r.ReleaseProvider.GetMirroredReleaseImage(),
+		labelHCPRoutes(hostedControlPlane),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
@@ -1636,7 +1641,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, labelHCPRoutes(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Konnectivity server external route: %w", err)
 		}
@@ -1663,47 +1668,41 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	oauthExternalPrivateRoute := manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
 	if util.IsPublicHCP(hcp) {
 		// Remove the external private route if it exists
-		err := r.Get(ctx, client.ObjectKeyFromObject(oauthExternalPrivateRoute), oauthExternalPrivateRoute)
+		_, err := util.DeleteIfNeeded(ctx, r.Client, oauthExternalPrivateRoute)
 		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to check whether OAuth external private route exists: %w", err)
-			}
-		} else {
-			if err := r.Delete(ctx, oauthExternalPrivateRoute); err != nil {
-				return fmt.Errorf("failed to delete OAuth external private route: %w", err)
-			}
+			return fmt.Errorf("failed to delete OAuth external private route: %w", err)
 		}
+
 		// Reconcile the external public route
 		if _, err := createOrUpdate(ctx, r.Client, oauthExternalPublicRoute, func() error {
 			hostname := ""
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, labelHCPRoutes(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OAuth external public route: %w", err)
 		}
 	} else {
-		// Remove the external route if it exists
-		err := r.Get(ctx, client.ObjectKeyFromObject(oauthExternalPublicRoute), oauthExternalPublicRoute)
+		// Remove the external public route if it exists
+		_, err := util.DeleteIfNeeded(ctx, r.Client, oauthExternalPublicRoute)
 		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to check whether OAuth external public route exists: %w", err)
+			return fmt.Errorf("failed to delete OAuth external public route: %w", err)
+		}
+
+		// Reconcile the external private route if a hostname is specified
+		if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+			if _, err := createOrUpdate(ctx, r.Client, oauthExternalPrivateRoute, func() error {
+				return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, serviceStrategy.Route.Hostname, r.DefaultIngressDomain, labelHCPRoutes(hcp))
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile OAuth external private route: %w", err)
 			}
 		} else {
-			if err := r.Delete(ctx, oauthExternalPublicRoute); err != nil {
-				return fmt.Errorf("failed to delete OAuth external public route: %w", err)
+			// Remove the external private route if it exists when hostname is not specified
+			_, err := util.DeleteIfNeeded(ctx, r.Client, oauthExternalPrivateRoute)
+			if err != nil {
+				return fmt.Errorf("failed to delete OAuth external private route: %w", err)
 			}
-		}
-		// Reconcile the external private route
-		if _, err := createOrUpdate(ctx, r.Client, oauthExternalPrivateRoute, func() error {
-			hostname := ""
-			if serviceStrategy.Route != nil {
-				hostname = serviceStrategy.Route.Hostname
-			}
-			return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile OAuth external private route: %w", err)
 		}
 	}
 	if util.IsPrivateHCP(hcp) {
@@ -2026,8 +2025,18 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.C
 				err = fmt.Errorf("failed to get oauth external route: %w", err)
 				return
 			}
-		} else {
+		} else if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 			route = manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
+			if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
+				if apierrors.IsNotFound(err) {
+					err = nil
+					return
+				}
+				err = fmt.Errorf("failed to get oauth internal route: %w", err)
+				return
+			}
+		} else {
+			route = manifests.OauthServerInternalRoute(hcp.Namespace)
 			if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
 				if apierrors.IsNotFound(err) {
 					err = nil
