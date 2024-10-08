@@ -6,13 +6,14 @@ Install an OCP cluster running on VMs within a management OCP cluster
 
 * Admin access to an OpenShift cluster (version 4.14+) specified by the `KUBECONFIG` environment variable.
 * The management OCP cluster must have wildcard dns routes enabled. `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'`
-* The management OCP cluster must have Openshift Virtualization (4.14+) installed on it. [Instructions for installing Openshift Virtualization](https://docs.openshift.com/container-platform/4.12/virt/install/installing-virt-web.html)
+* The management OCP cluster must have OpenShift Virtualization (4.14+) installed on it. [Instructions for installing Openshift Virtualization](https://docs.openshift.com/container-platform/4.12/virt/install/installing-virt-web.html)
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
 * The Management OCP cluster must have LoadBalancer service support. [Instructions for installing MetalLB](https://docs.openshift.com/container-platform/4.12/networking/metallb/metallb-operator-install.html)
 * The management OCP cluster must have default storage class. [Storage Configuration Documentation](https://docs.openshift.com/container-platform/4.12/post_installation_configuration/storage-configuration.html) Example of how to set a default storage class: `oc patch storageclass ocs-storagecluster-ceph-rbd -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'`
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
 * A network MTU of 9000 or larger on the OCP cluster hosting the KubeVirt VMs is recommended for optimial network performance. Smaller MTU settings will work, but network latency and throughput of the hosted pods will be impacted. Multiqueue should only be enabled on NodePools when the MTU is 9000 or larger.
+* Usage of a ReadWriteMany (RWX) storageclass is required on the OCP cluster hosting the OpenShift Virtualization VMs in order for live migration to be enabled.
 
 ## Installing HyperShift Operator and cli tooling
 
