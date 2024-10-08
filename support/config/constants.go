@@ -43,4 +43,6 @@ const (
 
 	DefaultIngressDomainEnvVar                    = "DEFAULT_INGRESS_DOMAIN"
 	EnableCVOManagementClusterMetricsAccessEnvVar = "ENABLE_CVO_MANAGEMENT_CLUSTER_METRICS_ACCESS"
+
+	AuditWebhookService = "audit-webhook"
 )
