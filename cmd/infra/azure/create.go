@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
-	"github.com/hashicorp/go-uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/log"
@@ -22,10 +21,8 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -125,7 +122,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Create an Azure resource group
-	resourceGroupID, resourceGroupName, msg, err := createResourceGroup(ctx, o, azureCreds, "", subscriptionID)
+	resourceGroupName, msg, err := createResourceGroup(ctx, o, azureCreds, "", subscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a resource group: %w", err)
 	}
@@ -138,22 +135,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		return nil, err
 	}
 
-	// Create the managed identity
-	identityID, identityRolePrincipalID, err := createManagedIdentity(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
-	if err != nil {
-		return nil, err
-	}
-	result.MachineIdentityID = identityID
-	l.Info("Successfully created managed identity", "name", identityID)
-
-	// Assign 'Contributor' role definition to managed identity
-	l.Info("Assigning role to managed identity, this may take some time")
-	err = setManagedIdentityRole(ctx, subscriptionID, resourceGroupID, identityRolePrincipalID, azureCreds)
-	if err != nil {
-		return nil, err
-	}
-	l.Info("Successfully assigned contributor role to managed identity", "name", identityID)
-
 	// Set the network security group ID either from the flag value or create one
 	if len(o.NetworkSecurityGroupID) > 0 {
 		result.SecurityGroupID = o.NetworkSecurityGroupID
@@ -161,7 +142,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	} else {
 		// Create a resource group for network security group
 		nsgResourceGroupName := o.Name + "-nsg"
-		_, nsgRG, msg, err := createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
+		nsgRG, msg, err := createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for network security group: %w", err)
 		}
@@ -189,7 +170,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	} else {
 		//create a resource group for virtual network
 		vnetResourceGroupName := o.Name + "-vnet"
-		_, vnetRG, msg, err := createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
+		vnetRG, msg, err := createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for virtual network: %w", err)
 		}
@@ -264,23 +245,23 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 // 1. The resource group for the cluster's infrastructure
 // 2. The resource group for the virtual network
 // 3. The resource group for the network security group
-func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds azcore.TokenCredential, rgName, subscriptionID string) (string, string, string, error) {
+func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds azcore.TokenCredential, rgName, subscriptionID string) (string, string, error) {
 	existingRGSuccessMsg := "Successfully found existing resource group"
 	createdRGSuccessMsg := "Successfully created resource group"
 
 	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
+		return "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
 	// Use a provided resource group if it was provided
 	if o.ResourceGroupName != "" && rgName == "" {
 		response, err := resourceGroupClient.Get(ctx, o.ResourceGroupName, nil)
 		if err != nil {
-			return "", "", "", fmt.Errorf("failed to get resource group name, '%s': %w", o.ResourceGroupName, err)
+			return "", "", fmt.Errorf("failed to get resource group name, '%s': %w", o.ResourceGroupName, err)
 		}
 
-		return *response.ID, *response.Name, existingRGSuccessMsg, nil
+		return *response.Name, existingRGSuccessMsg, nil
 	} else {
 
 		resourceGroupTags := map[string]*string{}
@@ -299,10 +280,10 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 		}
 		response, err := resourceGroupClient.CreateOrUpdate(ctx, resourceGroupName, parameters, nil)
 		if err != nil {
-			return "", "", "", fmt.Errorf("createResourceGroup: failed to create a resource group: %w", err)
+			return "", "", fmt.Errorf("createResourceGroup: failed to create a resource group: %w", err)
 		}
 
-		return *response.ID, *response.Name, createdRGSuccessMsg, nil
+		return *response.Name, createdRGSuccessMsg, nil
 	}
 }
 
@@ -327,78 +308,6 @@ func getBaseDomainID(ctx context.Context, subscriptionID string, azureCreds azco
 		}
 	}
 	return "", fmt.Errorf("could not find any DNS zones in subscription")
-}
-
-// createManagedIdentity creates a managed identity
-func createManagedIdentity(ctx context.Context, subscriptionID string, resourceGroupName string, name string, infraID string, location string, azureCreds azcore.TokenCredential) (string, string, error) {
-	identityClient, err := armmsi.NewUserAssignedIdentitiesClient(subscriptionID, azureCreds, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create new identity client: %w", err)
-	}
-	identity, err := identityClient.CreateOrUpdate(ctx, resourceGroupName, name+"-"+infraID, armmsi.Identity{Location: &location}, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create managed identity: %w", err)
-	}
-	return *identity.ID, *identity.Properties.PrincipalID, nil
-}
-
-// setManagedIdentityRole sets the managed identity's principal role to 'Contributor'
-func setManagedIdentityRole(ctx context.Context, subscriptionID string, resourceGroupID string, identityRolePrincipalID string, azureCreds azcore.TokenCredential) error {
-	roleDefinitionClient, err := armauthorization.NewRoleDefinitionsClient(azureCreds, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new role definitions client: %w", err)
-	}
-
-	found := false
-	var roleDefinition *armauthorization.RoleDefinition = nil
-	roleDefinitionsResponse := roleDefinitionClient.NewListPager(resourceGroupID, nil)
-	for roleDefinitionsResponse.More() && !found {
-		page, err := roleDefinitionsResponse.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve next page for role definitions: %w", err)
-		}
-
-		for _, role := range page.Value {
-			if *role.Properties.RoleName == "Contributor" {
-				roleDefinition = role
-				found = true
-				break
-			}
-		}
-	}
-
-	if roleDefinition == nil {
-		return fmt.Errorf("didn't find the 'Contributor' role")
-	}
-
-	roleAssignmentClient, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, azureCreds, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new role assignments client: %w", err)
-	}
-
-	roleAssignmentName, err := uuid.GenerateUUID()
-	if err != nil {
-		return fmt.Errorf("failed to generate uuid for role assignment name: %w", err)
-	}
-
-	for try := 0; try < 100; try++ {
-		_, err := roleAssignmentClient.Create(ctx, resourceGroupID, roleAssignmentName,
-			armauthorization.RoleAssignmentCreateParameters{
-				Properties: &armauthorization.RoleAssignmentProperties{
-					RoleDefinitionID: roleDefinition.ID,
-					PrincipalID:      ptr.To(identityRolePrincipalID),
-				},
-			}, nil)
-		if err != nil {
-			if try < 99 {
-				time.Sleep(time.Second)
-				continue
-			}
-			return fmt.Errorf("failed to add role assignment to role: %w", err)
-		}
-		break
-	}
-	return nil
 }
 
 // createSecurityGroup creates the security group the virtual network will use
