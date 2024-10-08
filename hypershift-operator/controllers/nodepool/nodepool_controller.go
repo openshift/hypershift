@@ -761,7 +761,6 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 				Message:            err.Error(),
 				ObservedGeneration: generation,
 			}
-			return nil, fmt.Errorf("failed to get token secret: %w", err)
 		} else {
 			condition = &hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
@@ -808,7 +807,6 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 				Message:            err.Error(),
 				ObservedGeneration: generation,
 			}
-			return nil, fmt.Errorf("failed to get token secret: %w", err)
 		} else {
 			condition = &hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
