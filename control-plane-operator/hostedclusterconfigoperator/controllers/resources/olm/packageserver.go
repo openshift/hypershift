@@ -2,7 +2,7 @@ package olm
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
@@ -15,7 +15,7 @@ func ReconcilePackageServerAPIService(apiService *apiregistrationv1.APIService, 
 		Service: &apiregistrationv1.ServiceReference{
 			Name:      "packageserver",
 			Namespace: "default",
-			Port:      pointer.Int32(443),
+			Port:      ptr.To[int32](443),
 		},
 		Version:         "v1",
 		VersionPriority: 15,

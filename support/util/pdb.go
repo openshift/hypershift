@@ -13,9 +13,9 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, availabilit
 	var maxUnavailable *intstr.IntOrString
 	switch availability {
 	case hyperv1.SingleReplica:
-		minAvailable = ptr.To(intstr.FromInt(1))
+		minAvailable = ptr.To(intstr.FromInt32(1))
 	case hyperv1.HighlyAvailable:
-		maxUnavailable = ptr.To(intstr.FromInt(1))
+		maxUnavailable = ptr.To(intstr.FromInt32(1))
 	}
 	pdb.Spec.MinAvailable = minAvailable
 	pdb.Spec.MaxUnavailable = maxUnavailable

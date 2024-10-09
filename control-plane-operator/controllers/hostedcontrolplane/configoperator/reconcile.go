@@ -20,7 +20,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -445,19 +445,19 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 func buildHCCVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.HCCOKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
 func buildHCCVolumeRootCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
 }
 
 func buildHCCClusterSignerCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.DefaultMode = pointer.Int32(0640)
+	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
 	v.ConfigMap.Name = manifests.KubeletClientCABundle("").Name
 }
 

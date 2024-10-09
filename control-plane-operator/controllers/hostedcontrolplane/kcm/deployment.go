@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -102,7 +102,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 	deployment.Spec.Template.ObjectMeta.Annotations[rootCAHashAnnotation] = util.HashSimple(rootCA.Data)
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.Bool(false),
+		AutomountServiceAccountToken: ptr.To(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args, DefaultPort)),
 		},
@@ -181,7 +181,7 @@ func kcmVolumeRootCA() *corev1.Volume {
 func buildKCMVolumeRootCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 }
 
 func kcmVolumeWorkLogs() *corev1.Volume {
@@ -203,7 +203,7 @@ func kcmVolumeServiceSigner() *corev1.Volume {
 func buildKCMVolumeServiceSigner(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.ServiceAccountSigningKeySecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -226,7 +226,7 @@ func kcmVolumeClusterSigner() *corev1.Volume {
 func buildKCMVolumeClusterSigner(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.CSRSignerCASecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -239,7 +239,7 @@ func kcmVolumeKubeconfig() *corev1.Volume {
 func buildKCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KCMKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -274,9 +274,9 @@ func buildKCMVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KCMServerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func kcmVolumeRecyclerConfig() *corev1.Volume {

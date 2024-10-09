@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func etcdContainer() *corev1.Container {
@@ -76,7 +76,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 	ss.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: etcdPodSelector(),
 	}
-	ss.Spec.Replicas = pointer.Int32(int32(p.DeploymentConfig.Replicas))
+	ss.Spec.Replicas = ptr.To(int32(p.DeploymentConfig.Replicas))
 	ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
 	ss.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
 		{

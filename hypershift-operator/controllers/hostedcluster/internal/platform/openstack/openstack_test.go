@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	k8sutilspointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	"github.com/openshift/hypershift/api/util/ipnet"
@@ -67,7 +66,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					Host: "api-endpoint",
 					Port: 6443,
 				},
-				DisableAPIServerFloatingIP: k8sutilspointer.BoolPtr(true),
+				DisableAPIServerFloatingIP: ptr.To(true),
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"10.0.0.0/24"}),
 				},
@@ -109,7 +108,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					Host: "api-endpoint",
 					Port: 6443,
 				},
-				DisableAPIServerFloatingIP: k8sutilspointer.BoolPtr(true),
+				DisableAPIServerFloatingIP: ptr.To(true),
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},
@@ -164,7 +163,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					Host: "api-endpoint",
 					Port: 6443,
 				},
-				DisableAPIServerFloatingIP: k8sutilspointer.BoolPtr(true),
+				DisableAPIServerFloatingIP: ptr.To(true),
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},

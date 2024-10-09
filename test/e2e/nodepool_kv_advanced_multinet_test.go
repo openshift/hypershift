@@ -19,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capkv1alpha1 "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -109,9 +108,9 @@ func (k KubeVirtAdvancedMultinetTest) BuildNodePoolManifest(defaultNodepool hype
 		nodePool.Spec.Platform.Kubevirt.AdditionalNetworks = []hyperv1.KubevirtNetwork{{
 			Name: "default/" + k.infra.NADName(),
 		}}
-		nodePool.Spec.Platform.Kubevirt.AttachDefaultNetwork = pointer.Bool(false)
+		nodePool.Spec.Platform.Kubevirt.AttachDefaultNetwork = ptr.To(false)
 	}
-	nodePool.Spec.Replicas = ptr.To(int32(1))
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 	return nodePool, nil
 }
 
@@ -164,7 +163,7 @@ func (k KubeVirtAdvancedMultinetTest) SetupInfra(t *testing.T) error {
 		ports = append(ports, discoveryv1.EndpointPort{
 			Name:     &port.Name,
 			Protocol: &port.Protocol,
-			Port:     pointer.Int32(int32(port.TargetPort.IntValue())),
+			Port:     ptr.To(int32(port.TargetPort.IntValue())),
 		})
 	}
 	eps := discoveryv1.EndpointSlice{
@@ -180,9 +179,9 @@ func (k KubeVirtAdvancedMultinetTest) SetupInfra(t *testing.T) error {
 		Endpoints: []discoveryv1.Endpoint{{
 			Addresses: []string{dnsmasqPod.Status.PodIP},
 			Conditions: discoveryv1.EndpointConditions{
-				Ready:       pointer.Bool(true),
-				Serving:     pointer.Bool(true),
-				Terminating: pointer.Bool(false),
+				Ready:       ptr.To(true),
+				Serving:     ptr.To(true),
+				Terminating: ptr.To(false),
 			},
 		}},
 	}
@@ -329,7 +328,7 @@ dnsmasq -d --interface=%[1]s --dhcp-option=option:router,192.168.66.1 --dhcp-ran
 					},
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					SecurityContext: &corev1.SecurityContext{
-						Privileged: pointer.Bool(true),
+						Privileged: ptr.To(true),
 					},
 				},
 			},

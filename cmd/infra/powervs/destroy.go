@@ -19,7 +19,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
@@ -803,7 +803,7 @@ func findCOSInstance(rcv2 *resourcecontrollerv2.ResourceControllerV2, cosInstanc
 		&resourcecontrollerv2.ListResourceInstancesOptions{
 			Name:            &cosInstanceName,
 			ResourceGroupID: &resourceGroupID,
-			ResourcePlanID:  utilpointer.String(cosResourcePlanID),
+			ResourcePlanID:  ptr.To(cosResourcePlanID),
 		},
 	)
 	if err != nil {
@@ -948,7 +948,7 @@ func deleteCOS(ctx context.Context, logger logr.Logger, options *DestroyInfraOpt
 func destroyTransitGateway(ctx context.Context, logger logr.Logger, options *DestroyInfraOptions) error {
 	tgapisv1, err := transitgatewayapisv1.NewTransitGatewayApisV1(&transitgatewayapisv1.TransitGatewayApisV1Options{
 		Authenticator: getIAMAuth(),
-		Version:       utilpointer.String(currentDate),
+		Version:       ptr.To(currentDate),
 	})
 	if err != nil {
 		return err

@@ -24,7 +24,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/yaml"
@@ -89,7 +89,7 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 		Storage: ignitionapi.Storage{
 			Files: []ignitionapi.File{{
 				Node:          ignitionapi.Node{Path: "/etc/custom-config"},
-				FileEmbedded1: ignitionapi.FileEmbedded1{Contents: ignitionapi.Resource{Source: utilpointer.String("data:,content%0A")}},
+				FileEmbedded1: ignitionapi.FileEmbedded1{Contents: ignitionapi.Resource{Source: ptr.To("data:,content%0A")}},
 			}},
 		},
 	}

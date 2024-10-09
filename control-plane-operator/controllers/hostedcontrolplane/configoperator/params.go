@@ -3,7 +3,7 @@ package configoperator
 import (
 	"context"
 
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -85,7 +85,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 		config.NeedManagementKASAccessLabel: "true",
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	params.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return params

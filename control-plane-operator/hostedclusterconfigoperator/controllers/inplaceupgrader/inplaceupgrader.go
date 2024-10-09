@@ -14,7 +14,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -361,7 +361,7 @@ func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoIm
 			},
 			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			SecurityContext: &corev1.SecurityContext{
-				Privileged: k8sutilspointer.Bool(true),
+				Privileged: ptr.To(true),
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{

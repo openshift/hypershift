@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
@@ -164,9 +164,9 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 			SuccessThreshold: 1,
 		},
 	}
-	replicas := pointer.Int(2)
+	replicas := ptr.To(2)
 	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
-		replicas = pointer.Int(1)
+		replicas = ptr.To(1)
 	}
 	p.DeploymentConfig.SetRequestServingDefaults(hcp, oauthServerLabels, replicas)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)

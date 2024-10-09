@@ -700,7 +700,7 @@ func createPublicIPAddressForLB(ctx context.Context, subscriptionID string, reso
 			Properties: &armnetwork.PublicIPAddressPropertiesFormat{
 				PublicIPAddressVersion:   ptr.To(armnetwork.IPVersionIPv4),
 				PublicIPAllocationMethod: ptr.To(armnetwork.IPAllocationMethodStatic),
-				IdleTimeoutInMinutes:     ptr.To(int32(4)),
+				IdleTimeoutInMinutes:     ptr.To[int32](4),
 			},
 			SKU: &armnetwork.PublicIPAddressSKU{
 				Name: ptr.To(armnetwork.PublicIPAddressSKUNameStandard),
@@ -779,9 +779,9 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 								},
 							},
 							Protocol:               ptr.To(armnetwork.LoadBalancerOutboundRuleProtocolAll),
-							AllocatedOutboundPorts: ptr.To(int32(1024)),
+							AllocatedOutboundPorts: ptr.To[int32](1024),
 							EnableTCPReset:         ptr.To(true),
-							IdleTimeoutInMinutes:   ptr.To(int32(4)),
+							IdleTimeoutInMinutes:   ptr.To[int32](4),
 						},
 					},
 				},

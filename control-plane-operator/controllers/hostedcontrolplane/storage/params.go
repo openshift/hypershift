@@ -5,7 +5,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -48,7 +48,7 @@ func NewParams(
 	params.DeploymentConfig.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
-	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	params.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	return &params

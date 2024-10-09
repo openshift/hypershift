@@ -23,7 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testingclock "k8s.io/utils/clock/testing"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -648,7 +648,7 @@ func TestTokenReconcile(t *testing.T) {
 						TLS: ignitionapi.TLS{
 							CertificateAuthorities: []ignitionapi.Resource{
 								{
-									Source: k8sutilspointer.String(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+									Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
 								},
 							},
 						},
@@ -656,27 +656,27 @@ func TestTokenReconcile(t *testing.T) {
 					Config: ignitionapi.IgnitionConfig{
 						Merge: []ignitionapi.Resource{
 							{
-								Source: k8sutilspointer.String(fmt.Sprintf("https://%s/ignition", tc.configGenerator.hostedCluster.Status.IgnitionEndpoint)),
+								Source: ptr.To(fmt.Sprintf("https://%s/ignition", tc.configGenerator.hostedCluster.Status.IgnitionEndpoint)),
 								HTTPHeaders: []ignitionapi.HTTPHeader{
 									{
 										Name:  "Authorization",
-										Value: k8sutilspointer.String(fmt.Sprintf("Bearer %s", encodedToken)),
+										Value: ptr.To(fmt.Sprintf("Bearer %s", encodedToken)),
 									},
 									{
 										Name:  "NodePool",
-										Value: k8sutilspointer.String(crclient.ObjectKeyFromObject(tc.configGenerator.nodePool).String()),
+										Value: ptr.To(crclient.ObjectKeyFromObject(tc.configGenerator.nodePool).String()),
 									},
 									{
 										Name:  "TargetConfigVersionHash",
-										Value: k8sutilspointer.String(token.Hash()),
+										Value: ptr.To(token.Hash()),
 									},
 								},
 							},
 						},
 					},
 					Proxy: ignitionapi.Proxy{
-						HTTPProxy:  k8sutilspointer.String(expectedProxyConfig.Spec.HTTPProxy),
-						HTTPSProxy: k8sutilspointer.String(expectedProxyConfig.Spec.HTTPSProxy),
+						HTTPProxy:  ptr.To(expectedProxyConfig.Spec.HTTPProxy),
+						HTTPSProxy: ptr.To(expectedProxyConfig.Spec.HTTPSProxy),
 						NoProxy: []ignitionapi.NoProxyItem{
 							".cluster.local", ".local", ".svc", "127.0.0.1", "localhost",
 						},

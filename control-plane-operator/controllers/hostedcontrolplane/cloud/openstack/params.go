@@ -6,7 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 type OpenStackParams struct {
@@ -19,7 +19,7 @@ func NewOpenStackParams(hcp *hyperv1.HostedControlPlane) *OpenStackParams {
 	}
 	p := &OpenStackParams{}
 
-	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), pointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		ccmContainer().Name: {
 			Requests: corev1.ResourceList{

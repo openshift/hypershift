@@ -3,7 +3,7 @@ package kas
 import (
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const portierisPort = 8000
@@ -60,6 +60,6 @@ func kasVolumePortierisCerts() *corev1.Volume {
 func buildKASVolumePortierisCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  v.Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }

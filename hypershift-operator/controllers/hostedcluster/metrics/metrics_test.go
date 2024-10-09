@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -36,22 +36,22 @@ var (
 
 func createMetricValue(metricName, metricDesc string, value float64) *dto.MetricFamily {
 	return &dto.MetricFamily{
-		Name: pointer.String(metricName),
-		Help: pointer.String(metricDesc),
+		Name: ptr.To(metricName),
+		Help: ptr.To(metricDesc),
 		Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 		Metric: []*dto.Metric{{
 			Label: []*dto.LabelPair{
 				{
-					Name: pointer.String("_id"), Value: pointer.String("id"),
+					Name: ptr.To("_id"), Value: ptr.To("id"),
 				},
 				{
-					Name: pointer.String("name"), Value: pointer.String("hc"),
+					Name: ptr.To("name"), Value: ptr.To("hc"),
 				},
 				{
-					Name: pointer.String("namespace"), Value: pointer.String("any"),
+					Name: ptr.To("namespace"), Value: ptr.To("any"),
 				},
 			},
-			Gauge: &dto.Gauge{Value: pointer.Float64(value)},
+			Gauge: &dto.Gauge{Value: ptr.To[float64](value)},
 		}},
 	}
 }
@@ -229,28 +229,28 @@ func TestReportInitialRollingOutDuration(t *testing.T) {
 func TestReportUpgradingDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64, previousVersion, newVersion string) *dto.MetricFamily {
 		return &dto.MetricFamily{
-			Name: pointer.String(UpgradingDurationMetricName),
-			Help: pointer.String(upgradingDurationMetricHelp),
+			Name: ptr.To(UpgradingDurationMetricName),
+			Help: ptr.To(upgradingDurationMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
 				Label: []*dto.LabelPair{
 					{
-						Name: pointer.String("_id"), Value: pointer.String("id"),
+						Name: ptr.To("_id"), Value: ptr.To("id"),
 					},
 					{
-						Name: pointer.String("name"), Value: pointer.String("hc"),
+						Name: ptr.To("name"), Value: ptr.To("hc"),
 					},
 					{
-						Name: pointer.String("namespace"), Value: pointer.String("any"),
+						Name: ptr.To("namespace"), Value: ptr.To("any"),
 					},
 					{
-						Name: pointer.String("new_version"), Value: pointer.String(newVersion),
+						Name: ptr.To("new_version"), Value: ptr.To(newVersion),
 					},
 					{
-						Name: pointer.String("previous_version"), Value: pointer.String(previousVersion),
+						Name: ptr.To("previous_version"), Value: ptr.To(previousVersion),
 					},
 				},
-				Gauge: &dto.Gauge{Value: pointer.Float64(expectedValue)},
+				Gauge: &dto.Gauge{Value: ptr.To[float64](expectedValue)},
 			}},
 		}
 	}
@@ -469,31 +469,31 @@ func TestReportProxy(t *testing.T) {
 		}
 
 		return &dto.MetricFamily{
-			Name: pointer.String(ProxyMetricName),
-			Help: pointer.String(proxyMetricHelp),
+			Name: ptr.To(ProxyMetricName),
+			Help: ptr.To(proxyMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
 				Label: []*dto.LabelPair{
 					{
-						Name: pointer.String("_id"), Value: pointer.String("id"),
+						Name: ptr.To("_id"), Value: ptr.To("id"),
 					},
 					{
-						Name: pointer.String("name"), Value: pointer.String("hc"),
+						Name: ptr.To("name"), Value: ptr.To("hc"),
 					},
 					{
-						Name: pointer.String("namespace"), Value: pointer.String("any"),
+						Name: ptr.To("namespace"), Value: ptr.To("any"),
 					},
 					{
-						Name: pointer.String("proxy_http"), Value: pointer.String(labelValue),
+						Name: ptr.To("proxy_http"), Value: ptr.To(labelValue),
 					},
 					{
-						Name: pointer.String("proxy_https"), Value: pointer.String(labelValue),
+						Name: ptr.To("proxy_https"), Value: ptr.To(labelValue),
 					},
 					{
-						Name: pointer.String("proxy_trusted_ca"), Value: pointer.String(labelValue),
+						Name: ptr.To("proxy_trusted_ca"), Value: ptr.To(labelValue),
 					},
 				},
-				Gauge: &dto.Gauge{Value: pointer.Float64(expectedValue)},
+				Gauge: &dto.Gauge{Value: ptr.To[float64](expectedValue)},
 			}},
 		}
 	}
@@ -768,18 +768,18 @@ func TestReportDeletingDuration(t *testing.T) {
 func TestReportEtcdManualInterventionRequired(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return &dto.MetricFamily{
-			Name: pointer.String(EtcdManualInterventionRequiredMetricName),
-			Help: pointer.String(etcdManualInterventionRequiredMetricHelp),
+			Name: ptr.To(EtcdManualInterventionRequiredMetricName),
+			Help: ptr.To(etcdManualInterventionRequiredMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
 				Label: []*dto.LabelPair{
-					{Name: pointer.String("_id"), Value: pointer.String("id")},
-					{Name: pointer.String("name"), Value: pointer.String("hc")},
-					{Name: pointer.String("namespace"), Value: pointer.String("any")},
-					{Name: pointer.String("rosa_environment"), Value: pointer.String("")},
-					{Name: pointer.String("rosa_id"), Value: pointer.String("")},
+					{Name: ptr.To("_id"), Value: ptr.To("id")},
+					{Name: ptr.To("name"), Value: ptr.To("hc")},
+					{Name: ptr.To("namespace"), Value: ptr.To("any")},
+					{Name: ptr.To("rosa_environment"), Value: ptr.To("")},
+					{Name: ptr.To("rosa_id"), Value: ptr.To("")},
 				},
-				Gauge: &dto.Gauge{Value: pointer.Float64(expectedValue)},
+				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
 			}},
 		}
 	}

@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -557,7 +557,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            ignitionserver.ServiceAccount("").Name,
-				TerminationGracePeriodSeconds: utilpointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",
@@ -570,7 +570,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  servingCertSecretName,
-								DefaultMode: utilpointer.Int32(0640),
+								DefaultMode: ptr.To[int32](0640),
 							},
 						},
 					},
@@ -725,7 +725,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 
@@ -779,7 +779,7 @@ haproxy -f /tmp/haproxy.conf
 				},
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: utilpointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				Containers: []corev1.Container{
 					{
 						Name:            "haproxy",
@@ -831,7 +831,7 @@ haproxy -f /tmp/haproxy.conf
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  ignitionserver.IgnitionServingCertSecret("").Name,
-								DefaultMode: utilpointer.Int32(0640),
+								DefaultMode: ptr.To[int32](0640),
 							},
 						},
 					},
@@ -857,7 +857,7 @@ haproxy -f /tmp/haproxy.conf
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 

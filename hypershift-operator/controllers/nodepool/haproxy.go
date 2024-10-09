@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -363,7 +363,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 					},
 				},
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser: pointer.Int64(config.DefaultSecurityContextUser),
+					RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -431,7 +431,7 @@ func generateKubernetesDefaultProxyPod(image string, listenAddr string, proxyAdd
 						"--apiserver-addr=" + apiserverAddr,
 					},
 					SecurityContext: &corev1.SecurityContext{
-						RunAsUser: pointer.Int64(config.DefaultSecurityContextUser),
+						RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -456,12 +456,12 @@ func fileFromBytes(path string, mode int, contents []byte) ignitionapi.File {
 	return ignitionapi.File{
 		Node: ignitionapi.Node{
 			Path:      path,
-			Overwrite: pointer.Bool(true),
+			Overwrite: ptr.To(true),
 		},
 		FileEmbedded1: ignitionapi.FileEmbedded1{
 			Mode: &mode,
 			Contents: ignitionapi.Resource{
-				Source: pointer.String(dataurl.EncodeBytes(contents)),
+				Source: ptr.To(dataurl.EncodeBytes(contents)),
 			},
 		},
 	}
@@ -472,7 +472,7 @@ func apiServerIPUnit() ignitionapi.Unit {
 	return ignitionapi.Unit{
 		Name:     "apiserver-ip.service",
 		Contents: &content,
-		Enabled:  pointer.Bool(true),
+		Enabled:  ptr.To(true),
 	}
 }
 

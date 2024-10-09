@@ -6,7 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -26,7 +26,7 @@ func TestGetAdvertiseAddress(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("192.168.1.1"),
+							AdvertiseAddress: ptr.To("192.168.1.1"),
 						},
 						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{
 							CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64"),

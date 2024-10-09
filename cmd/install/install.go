@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
@@ -582,8 +582,8 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 								Service: &apiextensionsv1.ServiceReference{
 									Namespace: operatorNamespace.Name,
 									Name:      operatorService.Name,
-									Port:      pointer.Int32(443),
-									Path:      pointer.String("/convert"),
+									Port:      ptr.To[int32](443),
+									Path:      ptr.To("/convert"),
 								},
 							},
 							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},

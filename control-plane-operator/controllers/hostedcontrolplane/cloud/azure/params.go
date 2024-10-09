@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 type AzureParams struct {
@@ -27,7 +27,7 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 	}
 	p.OwnerRef = config.ControllerOwnerRef(hcp)
 
-	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), pointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		ccmContainer().Name: {
 			Requests: corev1.ResourceList{

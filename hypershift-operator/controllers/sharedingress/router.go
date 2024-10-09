@@ -147,7 +147,7 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.
 	routerDeploymentConfig.SetMultizoneSpread(hcpRouterLabels(), false)
 
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: ptr.To(int32(2)),
+		Replicas: ptr.To[int32](2),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: hcpRouterLabels(),
 		},
@@ -290,5 +290,5 @@ func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, owner
 		}
 	}
 	ownerRef.ApplyTo(pdb)
-	pdb.Spec.MinAvailable = ptr.To(intstr.FromInt(1))
+	pdb.Spec.MinAvailable = ptr.To(intstr.FromInt32(1))
 }

@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -226,23 +226,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][0]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(2222),
+				Port:     ptr.To[int32](2222),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 		for _, t := range endpointSliceTransform {
@@ -265,23 +265,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv6,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][1]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(2222),
+				Port:     ptr.To[int32](2222),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 
@@ -305,23 +305,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][0]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(4444),
+				Port:     ptr.To[int32](4444),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 	}
@@ -344,23 +344,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv6,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][1]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(4444),
+				Port:     ptr.To[int32](4444),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 	}

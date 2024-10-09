@@ -105,7 +105,7 @@ func (k KubeVirtCacheTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePoo
 		}
 	}
 
-	nodePool.Spec.Replicas = ptr.To(int32(1))
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 
 	return nodePool, nil
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
@@ -146,7 +146,7 @@ kind: Config`
 			name: "private cluster uses .local address and custom apiserver port",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
-				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: ptr.To[int32](443)}
 				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
@@ -181,7 +181,7 @@ kind: Config`
 			name: "public and private cluster uses .local address and custom apiserver port",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
-				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: ptr.To[int32](443)}
 				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
@@ -223,7 +223,7 @@ kind: Config`
 			name: "public cluster uses address from kubeconfig and custom port",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Public
-				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: ptr.To[int32](443)}
 				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
 				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),

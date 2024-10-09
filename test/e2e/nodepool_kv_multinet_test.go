@@ -125,7 +125,7 @@ func (k KubeVirtMultinetTest) BuildNodePoolManifest(defaultNodepool hyperv1.Node
 			Name: k.infra.Namespace() + "/" + k.infra.NADName(),
 		}}
 	}
-	nodePool.Spec.Replicas = ptr.To(int32(1))
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 	return nodePool, nil
 }
 

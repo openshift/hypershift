@@ -17,7 +17,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -151,7 +151,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	if openStackPlatform.DisableExternalNetwork != nil {
 		openStackClusterSpec.DisableExternalNetwork = openStackPlatform.DisableExternalNetwork
 	}
-	openStackClusterSpec.DisableAPIServerFloatingIP = k8sutilspointer.BoolPtr(true)
+	openStackClusterSpec.DisableAPIServerFloatingIP = ptr.To(true)
 	openStackClusterSpec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{
 		AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
 	}
@@ -194,7 +194,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 	}
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32(1),
+		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
 				Volumes: []corev1.Volume{
@@ -361,32 +361,32 @@ func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroup
 		machineCIDRInboundRules := []capo.SecurityGroupRuleSpec{
 			{
 				Name:     "esp-ingress",
-				Protocol: k8sutilspointer.String("esp"),
+				Protocol: ptr.To("esp"),
 			},
 			{
 				Name:     "icmp-ingress",
-				Protocol: k8sutilspointer.String("icmp"),
+				Protocol: ptr.To("icmp"),
 			},
 			{
 				Name:         "router-ingress",
-				Protocol:     k8sutilspointer.String("tcp"),
-				PortRangeMin: k8sutilspointer.Int(1936),
-				PortRangeMax: k8sutilspointer.Int(1936),
+				Protocol:     ptr.To("tcp"),
+				PortRangeMin: ptr.To(1936),
+				PortRangeMax: ptr.To(1936),
 			},
 			{
 				Name:         "ssh-ingress",
-				Protocol:     k8sutilspointer.String("tcp"),
-				PortRangeMin: k8sutilspointer.Int(22),
-				PortRangeMax: k8sutilspointer.Int(22),
+				Protocol:     ptr.To("tcp"),
+				PortRangeMin: ptr.To(22),
+				PortRangeMax: ptr.To(22),
 			},
 			{
 				Name:     "vrrp-ingress",
-				Protocol: k8sutilspointer.String("vrrp"),
+				Protocol: ptr.To("vrrp"),
 			},
 		}
 
 		for i, rule := range machineCIDRInboundRules {
-			rule.RemoteIPPrefix = k8sutilspointer.String(machineCIDR)
+			rule.RemoteIPPrefix = ptr.To(machineCIDR)
 			machineCIDRInboundRules[i] = rule
 		}
 
@@ -397,64 +397,64 @@ func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroup
 	allIngressRules := []capo.SecurityGroupRuleSpec{
 		{
 			Name:         "http-ingress",
-			Protocol:     k8sutilspointer.String("tcp"),
-			PortRangeMin: k8sutilspointer.Int(80),
-			PortRangeMax: k8sutilspointer.Int(80),
+			Protocol:     ptr.To("tcp"),
+			PortRangeMin: ptr.To(80),
+			PortRangeMax: ptr.To(80),
 		},
 		{
 			Name:         "https-ingress",
-			Protocol:     k8sutilspointer.String("tcp"),
-			PortRangeMin: k8sutilspointer.Int(443),
-			PortRangeMax: k8sutilspointer.Int(443),
+			Protocol:     ptr.To("tcp"),
+			PortRangeMin: ptr.To(443),
+			PortRangeMax: ptr.To(443),
 		},
 		{
 			Name:         "geneve-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(6081),
-			PortRangeMax: k8sutilspointer.Int(6081),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(6081),
+			PortRangeMax: ptr.To(6081),
 		},
 		{
 			Name:         "ike-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(500),
-			PortRangeMax: k8sutilspointer.Int(500),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(500),
+			PortRangeMax: ptr.To(500),
 		},
 		{
 			Name:         "ike-nat-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(4500),
-			PortRangeMax: k8sutilspointer.Int(4500),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(4500),
+			PortRangeMax: ptr.To(4500),
 		},
 		{
 			Name:         "internal-ingress-tcp",
-			Protocol:     k8sutilspointer.String("tcp"),
-			PortRangeMin: k8sutilspointer.Int(9000),
-			PortRangeMax: k8sutilspointer.Int(9999),
+			Protocol:     ptr.To("tcp"),
+			PortRangeMin: ptr.To(9000),
+			PortRangeMax: ptr.To(9999),
 		},
 		{
 			Name:         "internal-ingress-udp",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(9000),
-			PortRangeMax: k8sutilspointer.Int(9999),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(9000),
+			PortRangeMax: ptr.To(9999),
 		},
 		{
 			Name:         "vxlan-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(4789),
-			PortRangeMax: k8sutilspointer.Int(4789),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(4789),
+			PortRangeMax: ptr.To(4789),
 		},
 	}
 	for i, rule := range allIngressRules {
-		rule.RemoteIPPrefix = k8sutilspointer.String("0.0.0.0/0")
+		rule.RemoteIPPrefix = ptr.To("0.0.0.0/0")
 		allIngressRules[i] = rule
 	}
 	ingressRules = append(ingressRules, allIngressRules...)
 
 	// Common attributes for all rules
 	for i, rule := range ingressRules {
-		rule.Description = k8sutilspointer.String(sgRuleDescription)
+		rule.Description = ptr.To(sgRuleDescription)
 		rule.Direction = "ingress"
-		rule.EtherType = k8sutilspointer.String("IPv4")
+		rule.EtherType = ptr.To("IPv4")
 		ingressRules[i] = rule
 	}
 

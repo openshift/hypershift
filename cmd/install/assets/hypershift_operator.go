@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	"github.com/google/uuid"
@@ -633,7 +632,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            []string{"init"},
 							SecurityContext: &corev1.SecurityContext{
-								RunAsUser:              k8sutilspointer.Int64(1000),
+								RunAsUser:              ptr.To[int64](1000),
 								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
 								Privileged:             &privileged,
 							},
@@ -651,7 +650,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 										"ALL",
 									},
 								},
-								RunAsUser: k8sutilspointer.Int64(1000),
+								RunAsUser: ptr.To[int64](1000),
 								SeccompProfile: &corev1.SeccompProfile{
 									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
@@ -741,7 +740,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{Name: o.OpenShiftTrustBundle.Name},
 					Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
-					Optional:             k8sutilspointer.Bool(true),
+					Optional:             ptr.To(true),
 				},
 			},
 		})

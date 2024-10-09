@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -248,7 +248,7 @@ func (qi *cachedBootImage) buildDVForCache(nodePool *hyperv1.NodePool, uid strin
 			},
 		},
 		Spec: v1beta1.DataVolumeSpec{
-			Preallocation: pointer.Bool(true),
+			Preallocation: ptr.To(true),
 		},
 	}
 

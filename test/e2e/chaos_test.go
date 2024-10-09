@@ -20,7 +20,6 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -118,7 +117,7 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 			wait.UntilWithContext(ctx, func(ctx context.Context) {
 				pod := randomPods(etcdPods.Items, 1)[0]
 				err := client.Delete(ctx, &pod, &crclient.DeleteOptions{
-					GracePeriodSeconds: pointer.Int64(0),
+					GracePeriodSeconds: ptr.To[int64](0),
 				})
 				if err != nil {
 					t.Errorf("failed to delete pod %s: %s", pod.Name, err)
@@ -201,7 +200,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 				timeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 				defer cancel()
 				err := client.Delete(timeout, pod, &crclient.DeleteOptions{
-					GracePeriodSeconds: pointer.Int64(0),
+					GracePeriodSeconds: ptr.To[int64](0),
 				})
 				if err != nil {
 					t.Errorf("failed to delete pod %s: %s", pod.Name, err)

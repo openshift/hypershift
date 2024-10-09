@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileControlPlanePKIOperatorDeployment(t *testing.T) {
@@ -31,7 +31,7 @@ func TestReconcileControlPlanePKIOperatorDeployment(t *testing.T) {
 			IssuerURL:    "https://www.example.com",
 			Networking: hypershiftv1beta1.ClusterNetworking{
 				APIServer: &hypershiftv1beta1.APIServerNetworking{
-					Port: pointer.Int32(1234),
+					Port: ptr.To[int32](1234),
 				},
 			},
 		},
