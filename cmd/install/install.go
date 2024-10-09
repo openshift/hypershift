@@ -107,6 +107,8 @@ type Options struct {
 	EnableCPOOverrides                        bool
 	AroHCPKeyVaultUsersClientID               string
 	TechPreviewNoUpgrade                      bool
+	RegistryOverrides                         string
+	RenderNamespace                           bool
 }
 
 func (o *Options) Validate() error {
@@ -166,6 +168,7 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) ApplyDefaults() {
+	o.RenderNamespace = true
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
@@ -241,6 +244,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableCPOOverrides, "enable-cpo-overrides", opts.EnableCPOOverrides, "If true, the HyperShift operator uses a set of static overrides for the CPO image given specific release versions")
 	cmd.PersistentFlags().StringVar(&opts.AroHCPKeyVaultUsersClientID, "aro-hcp-key-vault-users-client-id", opts.AroHCPKeyVaultUsersClientID, "The client ID of the managed identity which can access the Azure Key Vaults, in an AKS management cluster, to retrieve secrets and certificates.")
 	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
+	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -280,6 +284,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(NewRenderCommand(&opts))
+	cmd.AddCommand(NewHelmRenderCommand(&opts))
 
 	return cmd
 }
@@ -478,7 +483,9 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		Name:                       opts.Namespace,
 		EnableOCPClusterMonitoring: opts.PlatformMonitoring.IsEnabled(),
 	}.Build()
-	objects = append(objects, operatorNamespace)
+	if opts.RenderNamespace {
+		objects = append(objects, operatorNamespace)
+	}
 
 	// Setup RBAC resources
 	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
@@ -710,6 +717,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
+		RegistryOverrides:                       opts.RegistryOverrides,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
