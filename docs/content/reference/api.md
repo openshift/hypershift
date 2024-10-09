@@ -7411,7 +7411,9 @@ PlatformType
 </em>
 </td>
 <td>
-<p>Type specifies the platform name.</p>
+<p>Type is the type of infrastructure provider for the NodePool.
+It may be set to AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS (or &ldquo;OpenStack&rdquo; if the alpha &ldquo;OpenStack&rdquo; feature is enabled).
+Additional platforms may be defined in the future.</p>
 </td>
 </tr>
 <tr>
@@ -7506,7 +7508,8 @@ OpenStackNodePoolPlatform
 </td>
 <td>
 <em>(Optional)</em>
-<p>OpenStack specifies the configuration used when using OpenStack platform.</p>
+<p>OpenStack specifies the configuration used when using OpenStack platform.
+This field is alpha-level and is only honored when the Openstack feature is enabled.</p>
 </td>
 </tr>
 </tbody>
@@ -8306,7 +8309,9 @@ PlatformType
 </em>
 </td>
 <td>
-<p>Type is the type of infrastructure provider for the cluster.</p>
+<p>Type is the type of infrastructure provider for the cluster.
+It may be set to AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS (or &ldquo;OpenStack&rdquo; if the alpha &ldquo;OpenStack&rdquo; feature is enabled).
+Additional platforms may be defined in the future.</p>
 </td>
 </tr>
 <tr>
@@ -8403,7 +8408,8 @@ OpenStackPlatformSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>OpenStack specifies configuration for clusters running on OpenStack.</p>
+<p>OpenStack specifies configuration for clusters running on OpenStack.
+This field is alpha-level and is only honored when the Openstack feature is enabled.</p>
 </td>
 </tr>
 </tbody>

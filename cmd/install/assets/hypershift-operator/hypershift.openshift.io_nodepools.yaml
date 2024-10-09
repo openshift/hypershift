@@ -2214,8 +2214,9 @@ spec:
                     - rootVolume
                     type: object
                   openstack:
-                    description: OpenStack specifies the configuration used when using
-                      OpenStack platform.
+                    description: |-
+                      OpenStack specifies the configuration used when using OpenStack platform.
+                      This field is alpha-level and is only honored when the Openstack feature is enabled.
                     properties:
                       flavor:
                         description: Flavor is the OpenStack flavor to use for the
@@ -2341,19 +2342,32 @@ spec:
                         type: string
                     type: object
                   type:
-                    description: Type specifies the platform name.
-                    enum:
-                    - AWS
-                    - None
-                    - IBMCloud
-                    - Agent
-                    - KubeVirt
-                    - Azure
-                    - PowerVS
-                    - OpenStack
+                    allOf:
+                    - enum:
+                      - AWS
+                      - None
+                      - IBMCloud
+                      - Agent
+                      - KubeVirt
+                      - Azure
+                      - PowerVS
+                      - OpenStack
+                    - enum:
+                      - AWS
+                      - None
+                      - IBMCloud
+                      - Agent
+                      - KubeVirt
+                      - Azure
+                      - PowerVS
+                      - OpenStack
+                    description: |-
+                      Type is the type of infrastructure provider for the NodePool.
+                      It may be set to AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS (or "OpenStack" if the alpha "OpenStack" feature is enabled).
+                      Additional platforms may be defined in the future.
                     type: string
                     x-kubernetes-validations:
-                    - message: Type is immutable
+                    - message: Platform Type is immutable
                       rule: self == oldSelf
                 required:
                 - type

@@ -405,11 +405,13 @@ type NodePoolAutoScaling struct {
 // NodePoolPlatform specifies the underlying infrastructure provider for the
 // NodePool and is used to configure platform specific behavior.
 type NodePoolPlatform struct {
-	// Type specifies the platform name.
-	//
+	// Type is the type of infrastructure provider for the NodePool.
+	// It may be set to AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS (or "OpenStack" if the alpha "OpenStack" feature is enabled).
+	// Additional platforms may be defined in the future.
 	// +unionDiscriminator
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
-	// +immutable
+	// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS;OpenStack
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Platform Type is immutable"
 	Type PlatformType `json:"type"`
 
 	// AWS specifies the configuration used when operating on AWS.
@@ -438,7 +440,8 @@ type NodePoolPlatform struct {
 	PowerVS *PowerVSNodePoolPlatform `json:"powervs,omitempty"`
 
 	// OpenStack specifies the configuration used when using OpenStack platform.
-	//
+	// This field is alpha-level and is only honored when the Openstack feature is enabled.
+	// +featureGate=OpenStack
 	// +optional
 	OpenStack *OpenStackNodePoolPlatform `json:"openstack,omitempty"`
 }
@@ -917,20 +920,6 @@ type AgentNodePoolPlatform struct {
 	// be selected for a Machine.
 	// +optional
 	AgentLabelSelector *metav1.LabelSelector `json:"agentLabelSelector,omitempty"`
-}
-
-type OpenStackNodePoolPlatform struct {
-	// Flavor is the OpenStack flavor to use for the node instances.
-	//
-	// +kubebuilder:validation:Required
-	// +required
-	Flavor string `json:"flavor"`
-
-	// ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
-	// is chosen based on the NodePool release payload image.
-	//
-	// +optional
-	ImageName string `json:"imageName,omitempty"`
 }
 
 type AzureVMImageType string
