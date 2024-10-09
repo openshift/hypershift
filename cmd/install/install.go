@@ -104,8 +104,8 @@ type Options struct {
 	ManagedService                            string
 	EnableSizeTagging                         bool
 	EnableEtcdRecovery                        bool
-	RegistryOverrides						  string
-	RenderNamespace						      bool
+	RegistryOverrides                         string
+	RenderNamespace                           bool
 }
 
 func (o *Options) Validate() error {
@@ -688,7 +688,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ManagedService:                          opts.ManagedService,
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
-		RegistryOverrides:					     opts.RegistryOverrides,
+		RegistryOverrides:                       opts.RegistryOverrides,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,

@@ -5,32 +5,31 @@ import (
 	"os"
 	"strings"
 
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-
 var helmTemplateParams = TemplateParams{
-    HyperShiftImage:          ".Values.operator.image",
-    HyperShiftImageTag:       ".Values.operator.imageTag",
-    Namespace:                ".Release.Namespace",
-    OIDCS3Name:               ".Values.oidc.s3.name",
-    OIDCS3Region:             ".Values.oidc.s3.region",
-    OIDCS3CredsSecret:        ".Values.oidc.s3.credsSecret",
-    OIDCS3CredsSecretKey:     ".Values.oidc.s3.credsSecretKey",
-    AWSPrivateRegion:         ".Values.aws.private.region",
-    AWSPrivateCredsSecret:    ".Values.aws.private.credsSecret",
-    AWSPrivateCredsSecretKey: ".Values.aws.private.credsSecretKey",
-    ExternalDNSCredsSecret:   ".Values.externaldns.credsSecret",
-    ExternalDNSDomainFilter:  ".Values.externaldns.domainFilter",
-    ExternalDNSTxtOwnerID:    ".Values.externaldns.txtOwnerId",
-	ExternalDNSAzureWorkloadIdentity: ".Values.externaldns.azureWorkloadIdentity",
-	ExternalDNSImage:          ".Values.externaldns.image",
-	RegistryOverrides:		  "registryOverrides",
-	TemplateNamespace: false,
+	Namespace:                ".Release.Namespace",
+	HyperShiftImage:          ".Values.image",
+	OIDCS3Name:               ".Values.oidc.s3.name",
+	OIDCS3Region:             ".Values.oidc.s3.region",
+	OIDCS3CredsSecret:        ".Values.oidc.s3.credsSecret",
+	OIDCS3CredsSecretKey:     ".Values.oidc.s3.credsSecretKey",
+	AWSPrivateRegion:         ".Values.aws.private.region",
+	AWSPrivateCredsSecret:    ".Values.aws.private.credsSecret",
+	AWSPrivateCredsSecretKey: ".Values.aws.private.credsSecretKey",
+	ExternalDNSCredsSecret:   ".Values.externaldns.credsSecret",
+	ExternalDNSDomainFilter:  ".Values.externaldns.domainFilter",
+	ExternalDNSTxtOwnerID:    ".Values.externaldns.txtOwnerId",
+	ExternalDNSImage:         ".Values.externaldns.image",
+	RegistryOverrides:        ".Values.registryOverrides",
+	TemplateNamespace:        false,
 	TemplateParamWrapper: func(name string) string {
 		return fmt.Sprintf("{{ %s }}", name)
-    },
+	},
 }
 
 func NewHelmRenderCommand(opts *Options) *cobra.Command {
@@ -53,15 +52,87 @@ func NewHelmRenderCommand(opts *Options) *cobra.Command {
 		if opts.OutputFile == "" {
 			opts.OutputFile = "./chart"
 		}
-		WriteManifestsToDir(crds, fmt.Sprintf("%s/crds", opts.OutputFile))
-		WriteManifestsToDir(manifests, fmt.Sprintf("%s/templates", opts.OutputFile))
+		err = writeManifestsToDir(crds, fmt.Sprintf("%s/crds", opts.OutputFile))
+		if err != nil {
+			return err
+		}
+		err = writeManifestsToDir(manifests, fmt.Sprintf("%s/templates", opts.OutputFile))
+		if err != nil {
+			return err
+		}
+		err = WriteChartYaml(opts.OutputFile)
+		if err != nil {
+			return err
+		}
+		err = WriteValuesFile(opts.OutputFile)
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 
 	return cmd
 }
 
-func WriteManifestsToDir(manifests []crclient.Object, dir string) error {
+func WriteChartYaml(dir string) error {
+	data := map[string]interface{}{
+		"apiVersion":  "v2",
+		"name":        "hypershift-operator",
+		"description": "A Helm chart for the HyperShift Operator",
+		"type":        "application",
+		"version":     "0.1.0",
+		"appVersion":  version.GetRevision(),
+	}
+	return writeYamlFile(fmt.Sprintf("%s/Chart.yaml", dir), data)
+}
+
+func WriteValuesFile(dir string) error {
+	data := map[string]interface{}{
+		"image":             "",
+		"registryOverrides": "",
+		"oidc": map[string]interface{}{
+			"s3": map[string]interface{}{
+				"name":           "",
+				"region":         "",
+				"credsSecret":    "",
+				"credsSecretKey": "",
+			},
+		},
+		"aws": map[string]interface{}{
+			"private": map[string]interface{}{
+				"region":         "",
+				"credsSecret":    "",
+				"credsSecretKey": "",
+			},
+		},
+		"externaldns": map[string]interface{}{
+			"credsSecret":  "",
+			"domainFilter": "",
+			"txtOwnerId":   "",
+			"image":        "",
+		},
+	}
+	return writeYamlFile(fmt.Sprintf("%s/values.yaml", dir), data)
+}
+
+func writeYamlFile(path string, data map[string]interface{}) error {
+	yamlData, err := yaml.Marshal(data)
+	if err != nil {
+		return err
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.Write(yamlData)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeManifestsToDir(manifests []crclient.Object, dir string) error {
 	err := os.MkdirAll(dir, os.ModePerm)
 	if err != nil {
 		return err

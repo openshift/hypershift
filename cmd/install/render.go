@@ -1,30 +1,27 @@
 package install
 
 import (
-	"fmt"
-
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type TemplateParams struct {
-    HyperShiftImage          string
-    HyperShiftImageTag       string
-    Namespace                string
-    OIDCS3Name               string
-    OIDCS3Region             string
-    OIDCS3CredsSecret        string
-    OIDCS3CredsSecretKey     string
-    AWSPrivateRegion         string
-    AWSPrivateCredsSecret    string
-    AWSPrivateCredsSecretKey string
-    ExternalDNSCredsSecret   string
-    ExternalDNSDomainFilter  string
-    ExternalDNSTxtOwnerID    string
-	ExternalDNSAzureWorkloadIdentity string
-	ExternalDNSImage string
-	RegistryOverrides		 string
-	TemplateNamespace        bool
-	TemplateParamWrapper	 func(string) string
+	HyperShiftImage            string
+	Namespace                  string
+	HypershiftOperatorReplicas string
+	OIDCS3Name                 string
+	OIDCS3Region               string
+	OIDCS3CredsSecret          string
+	OIDCS3CredsSecretKey       string
+	AWSPrivateRegion           string
+	AWSPrivateCredsSecret      string
+	AWSPrivateCredsSecretKey   string
+	ExternalDNSCredsSecret     string
+	ExternalDNSDomainFilter    string
+	ExternalDNSTxtOwnerID      string
+	ExternalDNSImage           string
+	RegistryOverrides          string
+	TemplateNamespace          bool
+	TemplateParamWrapper       func(string) string
 }
 
 func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig TemplateParams) ([]crclient.Object, []crclient.Object, error) {
@@ -33,7 +30,7 @@ func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig Templ
 		return nil, nil, err
 	}
 
-	opts.HyperShiftImage = fmt.Sprintf("%s:%s", templateParamConfig.TemplateParamWrapper(templateParamConfig.HyperShiftImage), templateParamConfig.TemplateParamWrapper(templateParamConfig.HyperShiftImageTag))
+	opts.HyperShiftImage = templateParamConfig.TemplateParamWrapper(templateParamConfig.HyperShiftImage)
 
 	// namespace parameter
 	opts.Namespace = templateParamConfig.TemplateParamWrapper(templateParamConfig.Namespace)

@@ -9,6 +9,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -27,26 +28,25 @@ var (
 )
 
 var openshiftTemplateParams = TemplateParams{
-    HyperShiftImage:          "OPERATOR_IMG",
-    HyperShiftImageTag:       "IMAGE_TAG",
-    Namespace:                "NAMESPACE",
-    OIDCS3Name:               "OIDC_S3_NAME",
-    OIDCS3Region:             "OIDC_S3_REGION",
-    OIDCS3CredsSecret:        "OIDC_S3_CREDS_SECRET",
-    OIDCS3CredsSecretKey:     "OIDC_S3_CREDS_SECRET_KEY",
-    AWSPrivateRegion:         "AWS_PRIVATE_REGION",
-    AWSPrivateCredsSecret:    "AWS_PRIVATE_CREDS_SECRET",
-    AWSPrivateCredsSecretKey: "AWS_PRIVATE_CREDS_SECRET_KEY",
-    ExternalDNSCredsSecret:   "EXTERNAL_DNS_CREDS_SECRET",
-    ExternalDNSDomainFilter:  "EXTERNAL_DNS_DOMAIN_FILTER",
-    ExternalDNSTxtOwnerID:    "EXTERNAL_DNS_TXT_OWNER_ID",
-	ExternalDNSAzureWorkloadIdentity: "EXTERNAL_DNS_AZURE_WORKLOAD_IDENTITY",
-	ExternalDNSImage: "EXTERNAL_DNS_IMAGE",
-	RegistryOverrides:		  "REGISTRY_OVERRIDES",
-	TemplateNamespace: true,
+	HyperShiftImage:            "OPERATOR_IMG",
+	Namespace:                  "NAMESPACE",
+	HypershiftOperatorReplicas: "OPERATOR_REPLICAS",
+	OIDCS3Name:                 "OIDC_S3_NAME",
+	OIDCS3Region:               "OIDC_S3_REGION",
+	OIDCS3CredsSecret:          "OIDC_S3_CREDS_SECRET",
+	OIDCS3CredsSecretKey:       "OIDC_S3_CREDS_SECRET_KEY",
+	AWSPrivateRegion:           "AWS_PRIVATE_REGION",
+	AWSPrivateCredsSecret:      "AWS_PRIVATE_CREDS_SECRET",
+	AWSPrivateCredsSecretKey:   "AWS_PRIVATE_CREDS_SECRET_KEY",
+	ExternalDNSCredsSecret:     "EXTERNAL_DNS_CREDS_SECRET",
+	ExternalDNSDomainFilter:    "EXTERNAL_DNS_DOMAIN_FILTER",
+	ExternalDNSTxtOwnerID:      "EXTERNAL_DNS_TXT_OWNER_ID",
+	ExternalDNSImage:           "EXTERNAL_DNS_IMAGE",
+	RegistryOverrides:          "REGISTRY_OVERRIDES",
+	TemplateNamespace:          true,
 	TemplateParamWrapper: func(name string) string {
 		return fmt.Sprintf("${%s}", name)
-    },
+	},
 }
 
 func NewRenderCommand(opts *Options) *cobra.Command {
@@ -138,10 +138,12 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 	templateParameters := []map[string]string{}
 	templateParameters = append(
 		templateParameters,
-		map[string]string{"name": openshiftTemplateParams.HyperShiftImage, "value": version.HypershiftImageBase},
-		map[string]string{"name": openshiftTemplateParams.HyperShiftImageTag, "value": version.HypershiftImageTag},
+		map[string]string{"name": openshiftTemplateParams.HyperShiftImage, "value": fmt.Sprintf("%s:%s", version.HypershiftImageBase, version.HypershiftImageTag)},
+		map[string]string{"name": openshiftTemplateParams.HypershiftOperatorReplicas, "value": string(opts.HyperShiftOperatorReplicas)},
 		map[string]string{"name": openshiftTemplateParams.Namespace, "value": opts.Namespace},
 	)
+
+	// oidc S3 parameter
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		templateParameters = append(
 			templateParameters,
@@ -151,6 +153,8 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 			map[string]string{"name": openshiftTemplateParams.OIDCS3CredsSecretKey, "value": opts.OIDCStorageProviderS3CredentialsSecretKey},
 		)
 	}
+
+	// aws private credentials
 	if opts.AWSPrivateCredentialsSecret != "" {
 		templateParameters = append(
 			templateParameters,
@@ -160,6 +164,7 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 		)
 	}
 
+	// external DNS
 	if opts.ExternalDNSProvider != "" && opts.ExternalDNSDomainFilter != "" && opts.ExternalDNSCredentialsSecret != "" {
 		templateParameters = append(
 			templateParameters,
@@ -174,8 +179,18 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 		}
 	}
 
-	crds, manifests, err := hyperShiftOperatorTemplateManifest(opts, openshiftTemplateParams)
-	manifests = append(manifests, crds...)
+	// create manifests
+	crds, objects, err := hyperShiftOperatorTemplateManifest(opts, openshiftTemplateParams)
+	objects = append(objects, crds...)
+	if err != nil {
+		return nil, err
+	}
+
+	// patch those manifests, where the template parameter placeholder was not injectable with opts (e.g. type mistmatch)
+	patches := []ObjectPatch{
+		{Kind: "Deployment", Name: "operator", Path: []string{"spec", "replicas"}, Value: openshiftTemplateParams.TemplateParamWrapper(openshiftTemplateParams.HypershiftOperatorReplicas)},
+	}
+	patchedObjects, err := applyPatchesToObjects(objects, patches)
 	if err != nil {
 		return nil, err
 	}
@@ -188,11 +203,29 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 			"metadata": map[string]interface{}{
 				"name": "hypershift-operator-template",
 			},
-			"objects":    manifests,
+			"objects":    patchedObjects,
 			"parameters": templateParameters,
 		},
 	}
 	return template, nil
+}
+
+func applyPatchesToObjects(objects []crclient.Object, patches []ObjectPatch) ([]crclient.Object, error) {
+	patchedObjects := make([]crclient.Object, len(objects))
+	for i, obj := range objects {
+		content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+		if err != nil {
+			return nil, err
+		}
+		patchedObject := &unstructured.Unstructured{Object: content}
+		for _, p := range patches {
+			if p.CanBeAppliedTo(patchedObject) {
+				unstructured.SetNestedField(patchedObject.Object, p.Value, p.Path...)
+			}
+		}
+		patchedObjects[i] = patchedObject
+	}
+	return patchedObjects, nil
 }
 
 func render(objects []crclient.Object, format string, out io.Writer) error {

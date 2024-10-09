@@ -377,7 +377,7 @@ type HyperShiftOperatorDeployment struct {
 	ManagedService                          string
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
-	RegistryOverrides						string
+	RegistryOverrides                       string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
