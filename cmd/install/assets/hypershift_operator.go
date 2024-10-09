@@ -380,6 +380,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableEtcdRecovery                      bool
 	EnableCPOOverrides                      bool
 	TechPreviewNoUpgrade                    bool
+	RegistryOverrides                       string
 }
 
 // String returns a string containing all enabled feature gates, formatted as "key1=value1,key2=value2,...".
@@ -406,6 +407,9 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	}
 	if o.TechPreviewNoUpgrade {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", featureGateString()))
+	}
+	if o.RegistryOverrides != "" {
+		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
 	}
 
 	var volumeMounts []corev1.VolumeMount
