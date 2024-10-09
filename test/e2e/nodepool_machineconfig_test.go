@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
-
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -79,8 +77,6 @@ func (mc *NodePoolMachineconfigRolloutTest) BuildNodePoolManifest(defaultNodepoo
 }
 
 func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
-	g := NewWithT(t)
-
 	// MachineConfig Actions
 	ignitionConfig := ignitionapi.Config{
 		Ignition: ignitionapi.Ignition{
@@ -142,8 +138,8 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 	}
 
 	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
-	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
-
+	e2eutil.WaitForReadyNodesByNodePool(t, ctx, mc.hostedClusterClient, &nodePool, mc.hostedCluster.Spec.Platform.Type)
+	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mc.mgmtClient, mc.hostedClusterClient, mc.hostedCluster.Spec.Platform.Type, mc.hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mc.mgmtClient, mc.hostedCluster)
