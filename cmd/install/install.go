@@ -41,6 +41,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
@@ -237,6 +238,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCPOOverrides, "enable-cpo-overrides", opts.EnableCPOOverrides, "If true, the HyperShift operator uses a set of static overrides for the CPO image given specific release versions")
+	featuregate.MutableGates.AddFlag(cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()

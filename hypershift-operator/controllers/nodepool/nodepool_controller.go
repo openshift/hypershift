@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -197,6 +198,13 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.Update(ctx, nodePool); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to nodepool: %w", err)
 		}
+	}
+
+	// Use openshift markers https://github.com/openshift/api/blob/82e082220d910f489d35880174e2eb90e21f5589/example/v1/types_stable.go#L109-L111
+	// to generate different CRDs for different featureGates so validation would prevent the HC from being applied with a platfom that is not enabled.
+	if hcluster.Spec.Platform.Type == hyperv1.OpenStackPlatform && !featuregate.Gates.Enabled(featuregate.OpenStack) {
+		log.Info("OpenStack platform is not supported without enabling the feature gate")
+		return ctrl.Result{}, nil
 	}
 
 	// Initialize the patch helper

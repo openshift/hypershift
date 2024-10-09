@@ -8573,8 +8573,9 @@ spec:
                     - message: Kubevirt GenerateID is required once set
                       rule: '!has(oldSelf.generateID) || has(self.generateID)'
                   openstack:
-                    description: OpenStack specifies configuration for clusters running
-                      on OpenStack.
+                    description: |-
+                      OpenStack specifies configuration for clusters running on OpenStack.
+                      This field is alpha-level and is only honored when the Openstack feature is enabled.
                     properties:
                       disableExternalNetwork:
                         description: |-
@@ -9246,18 +9247,33 @@ spec:
                     - zone
                     type: object
                   type:
-                    description: Type is the type of infrastructure provider for the
-                      cluster.
-                    enum:
-                    - AWS
-                    - None
-                    - IBMCloud
-                    - Agent
-                    - KubeVirt
-                    - Azure
-                    - PowerVS
-                    - OpenStack
+                    allOf:
+                    - enum:
+                      - AWS
+                      - None
+                      - IBMCloud
+                      - Agent
+                      - KubeVirt
+                      - Azure
+                      - PowerVS
+                      - OpenStack
+                    - enum:
+                      - AWS
+                      - None
+                      - IBMCloud
+                      - Agent
+                      - KubeVirt
+                      - Azure
+                      - PowerVS
+                      - OpenStack
+                    description: |-
+                      Type is the type of infrastructure provider for the cluster.
+                      It may be set to AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS (or "OpenStack" if the alpha "OpenStack" feature is enabled).
+                      Additional platforms may be defined in the future.
                     type: string
+                    x-kubernetes-validations:
+                    - message: Platform Type is immutable
+                      rule: self == oldSelf
                 required:
                 - type
                 type: object

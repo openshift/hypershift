@@ -6,8 +6,10 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	feature "github.com/openshift/hypershift/hypershift-operator/featuregate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/component-base/featuregate"
 )
 
 func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
@@ -18,6 +20,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 		expectedVolumeMounts []corev1.VolumeMount
 		expectedVolumes      []corev1.Volume
 		expectedArgs         []string
+		hasFeatureGate       bool
 	}{
 		"empty oidc paramaters result in no volume mounts": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
@@ -304,14 +307,89 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
 			},
 		},
+		"feature gates result in appropriate arguments": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                               3,
+				PrivatePlatform:                        string(hyperv1.NonePlatform),
+				EnableDedicatedRequestServingIsolation: false,
+			},
+			expectedVolumeMounts: nil,
+			expectedVolumes:      nil,
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+				"--feature-gates=OpenStack=true",
+			},
+			hasFeatureGate: true,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			if test.hasFeatureGate {
+				if err := feature.Gates.(featuregate.MutableFeatureGate).Set(fmt.Sprintf("%s=%v", feature.OpenStack, true)); err != nil {
+					t.Fatalf("failed to set feature gate: %v", err)
+				}
+			}
 			deployment := test.inputBuildParameters.Build()
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(BeEquivalentTo(test.expectedArgs))
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
+			// Disable gates so it doesn't affect other tests. This test can't run test cases in parallel.
+			feature.Gates.(featuregate.MutableFeatureGate).SetFromMap(map[string]bool{
+				string(feature.OpenStack): false,
+			})
+		})
+	}
+}
+
+func TestFeatureGateString(t *testing.T) {
+	testCases := []struct {
+		name         string
+		featureGates *map[string]bool
+		expected     string
+	}{
+		{
+			name: "When no feature gate it should return empty string",
+		},
+		{
+			name: "When feature gate is enabled it should return the feature gate",
+			featureGates: &map[string]bool{
+				string(feature.OpenStack): true,
+			},
+			expected: "OpenStack=true",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			if tc.featureGates != nil {
+				feature.Gates.(featuregate.MutableFeatureGate).SetFromMap(*tc.featureGates)
+			}
+			got := featureGateString()
+			g.Expect(got).To(Equal(tc.expected))
+			// Disable gates so it doesn't affect other tests. This test can't run test cases in parallel.
+			feature.Gates.(featuregate.MutableFeatureGate).SetFromMap(map[string]bool{
+				string(feature.OpenStack): false,
+			})
 		})
 	}
 }

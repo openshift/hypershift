@@ -41,6 +41,7 @@ import (
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
+	featuregate "github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -147,6 +148,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
+	featuregate.MutableGates.AddFlag(cmd.Flags())
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())

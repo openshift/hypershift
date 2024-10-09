@@ -92,6 +92,7 @@ import (
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -308,7 +309,6 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling")
 
@@ -488,6 +488,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
 				return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 			}
+		}
+
+		// Use openshift markers https://github.com/openshift/api/blob/82e082220d910f489d35880174e2eb90e21f5589/example/v1/types_stable.go#L109-L111
+		// to generate different CRDs for different featureGates so validation would prevent the HC from being applied with a platfom that is not enabled.
+		if hcluster.Spec.Platform.Type == hyperv1.OpenStackPlatform && !featuregate.Gates.Enabled(featuregate.OpenStack) {
+			log.Info("OpenStack platform is not supported without enabling the feature gate")
+			return ctrl.Result{}, nil
 		}
 
 		// Once the deletion has occurred, we need to clean up cluster-wide resources
