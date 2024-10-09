@@ -931,6 +931,11 @@ type OpenStackNodePoolPlatform struct {
 	//
 	// +optional
 	ImageName string `json:"imageName,omitempty"`
+
+	// AdditionalPorts is a list of additional ports to create on the node instances.
+	//
+	// +optional
+	AdditionalPorts []PortOpts `json:"additionalPorts,omitempty"`
 }
 
 type AzureVMImageType string
