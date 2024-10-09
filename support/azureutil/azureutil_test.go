@@ -1,6 +1,7 @@
 package azureutil
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -135,6 +136,38 @@ func TestGetVnetNameAndResourceGroupFromVnetID(t *testing.T) {
 				g.Expect(vnetName).To(Equal(tc.expectedVnetName))
 				g.Expect(vnetRG).To(Equal(tc.expectedVnetRG))
 			}
+		})
+	}
+}
+
+func TestIsAroHCP(t *testing.T) {
+	testCases := []struct {
+		name          string
+		envVarValue   string
+		expectedValue bool
+	}{
+		{
+			name:          "Sets the managed service env var to hyperv1.AroHCP so the function should return true",
+			envVarValue:   hyperv1.AroHCP,
+			expectedValue: true,
+		},
+		{
+			name:          "Sets the managed service env var to nothing so the function should return false",
+			envVarValue:   "",
+			expectedValue: false,
+		},
+		{
+			name:          "Sets the managed service env var to 'asdf' so the function should return false",
+			envVarValue:   "asdf",
+			expectedValue: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			t.Setenv("MANAGED_SERVICE", tc.envVarValue)
+			isAroHcp := IsAroHCP()
+			g.Expect(isAroHcp).To(Equal(tc.expectedValue))
 		})
 	}
 }
