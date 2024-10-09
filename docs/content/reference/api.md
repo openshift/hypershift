@@ -2929,6 +2929,20 @@ configuration for the Azure cloud provider, aka Azure cloud controller manager (
 expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>dataPlaneMSIClientIDs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.DataPlaneManagedServiceIdentities">
+DataPlaneManagedServiceIdentities
+</a>
+</em>
+</td>
+<td>
+<p>dataPlaneMSIClientIDs contains the client IDs related to the managed identities needed for the following data
+plane components: image registry, CSI Disk, CSI File, ingress, and cloud network config controller.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
@@ -3799,6 +3813,84 @@ string
 <em>(Optional)</em>
 <p>PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
 available internally to the cluster exist.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###DataPlaneManagedServiceIdentities { #hypershift.openshift.io/v1beta1.DataPlaneManagedServiceIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>imageRegistryMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the image registry controller. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>diskMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the CSI Disk driver. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fileMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>fileMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the CSI File driver. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IngressMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated with
+the ingress controller. The managed identity is expected to be in AzurePlatformSpec.ResourceGroupName.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cloudNetworkConfigMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>cloudNetworkConfigMSIClientID is the client ID of a pre-existing managed identity ID of that will be associated
+with the cloud network config controller. The managed identity is expected to be in
+AzurePlatformSpec.ResourceGroupName.</p>
 </td>
 </tr>
 </tbody>

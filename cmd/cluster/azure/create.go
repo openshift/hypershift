@@ -25,6 +25,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const SATokenIssuerSecret = "sa-token-issuer-key"
+
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
 		Location:     "eastus",
@@ -47,6 +49,14 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The path to the private key for the service account token issuer")
+	flags.StringVar(&opts.ImageRegistryClientID, "ir-client-id", "", "The MSI client ID associated with the image-registry controller service-account on the HostedCluster.")
+	flags.StringVar(&opts.CSIDiskClientID, "csi-disk-client-id", "", "The MSI client ID associated with the CSI disk controller service-account on the HostedCluster.")
+	flags.StringVar(&opts.CSIFileClientID, "csi-file-client-id", "", "The MSI client ID associated with the CSI file controller service-account on the HostedCluster.")
+	flags.StringVar(&opts.IngressClientID, "ingress-client-id", "", "The MSI client ID associated with the ingress controller service-account on the HostedCluster.")
+	flags.StringVar(&opts.CloudNetworkConfigClientID, "cncc-client-id", "", "The MSI client ID associated with the cloud network configuration controller service-account on the HostedCluster.")
+
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -56,16 +66,23 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile        string
-	Location               string
-	EncryptionKeyID        string
-	AvailabilityZones      []string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
-	RHCOSImage             string
+	CredentialsFile                  string
+	Location                         string
+	EncryptionKeyID                  string
+	AvailabilityZones                []string
+	ResourceGroupName                string
+	VnetID                           string
+	NetworkSecurityGroupID           string
+	ResourceGroupTags                map[string]string
+	SubnetID                         string
+	RHCOSImage                       string
+	IssuerURL                        string
+	ServiceAccountTokenIssuerKeyPath string
+	CSIDiskClientID                  string
+	CSIFileClientID                  string
+	IngressClientID                  string
+	CloudNetworkConfigClientID       string
+	ImageRegistryClientID            string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -191,6 +208,14 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	cluster.Spec.InfraID = o.infra.InfraID
 
+	cluster.Spec.IssuerURL = o.IssuerURL
+
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		cluster.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
+			Name: SATokenIssuerSecret,
+		}
+	}
+
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type: hyperv1.AzurePlatform,
 		Azure: &hyperv1.AzurePlatformSpec{
@@ -201,6 +226,13 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			DataPlaneMSIClientIDs: &hyperv1.DataPlaneManagedServiceIdentities{
+				ImageRegistryMSIClientID:      o.ImageRegistryClientID,
+				DiskMSIClientID:               o.CSIDiskClientID,
+				FileMSIClientID:               o.CSIFileClientID,
+				IngressMSIClientID:            o.IngressClientID,
+				CloudNetworkConfigMSIClientID: o.CloudNetworkConfigClientID,
+			},
 		},
 	}
 
@@ -256,6 +288,19 @@ func credentialSecret(namespace, name string) *corev1.Secret {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name + "-cloud-credentials",
+			Namespace: namespace,
+		},
+	}
+}
+
+func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
 			Namespace: namespace,
 		},
 	}
@@ -347,6 +392,8 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 }
 
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
+	var objects []client.Object
+
 	secret := credentialSecret(o.namespace, o.name)
 	secret.Data = map[string][]byte{
 		"AZURE_SUBSCRIPTION_ID": []byte(o.creds.SubscriptionID),
@@ -354,7 +401,22 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 		"AZURE_CLIENT_ID":       []byte(o.creds.ClientID),
 		"AZURE_CLIENT_SECRET":   []byte(o.creds.ClientSecret),
 	}
-	return []client.Object{secret}, nil
+	objects = append(objects, secret)
+
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		privateKey, err := os.ReadFile(o.ServiceAccountTokenIssuerKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		saSecret := serviceAccountTokenIssuerSecret(o.namespace, SATokenIssuerSecret)
+		saSecret.Data = map[string][]byte{
+			"key": privateKey,
+		}
+		objects = append(objects, saSecret)
+	}
+
+	return objects, nil
 }
 
 var _ core.Platform = (*CreateOptions)(nil)
