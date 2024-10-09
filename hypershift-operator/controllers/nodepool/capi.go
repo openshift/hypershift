@@ -1281,6 +1281,11 @@ func (c *CAPI) listMachineTemplates() ([]client.Object, error) {
 		if err != nil {
 			return nil, err
 		}
+	case hyperv1.OpenStackPlatform:
+		gvk, err = apiutil.GVKForObject(&capiopenstack.OpenStackMachineTemplate{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		// need a default path that returns a value that does not cause the hypershift operator to crash
 		// if no explicit machineTemplate is defined safe to assume none exist
