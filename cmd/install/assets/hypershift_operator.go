@@ -939,6 +939,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 
 type HyperShiftOperatorClusterRole struct {
 	EnableCVOManagementClusterMetricsAccess bool
+	ManagedService                          string
 }
 
 func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
@@ -1195,6 +1196,18 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				APIGroups: []string{"metrics.k8s.io"},
 				Resources: []string{"pods"},
 				Verbs:     []string{"get"},
+			})
+	}
+
+	if o.ManagedService == hyperv1.AroHCP {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
+				Resources: []string{"secretproviderclasses"},
+				Verbs: []string{
+					"list",
+					"create",
+				},
 			})
 	}
 	return role
