@@ -377,6 +377,7 @@ type HyperShiftOperatorDeployment struct {
 	ManagedService                          string
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
+	RegistryOverrides						string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -389,6 +390,9 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
+	}
+	if o.RegistryOverrides != "" {
+		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
 	}
 
 	var volumeMounts []corev1.VolumeMount
