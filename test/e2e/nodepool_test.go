@@ -170,6 +170,14 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 			// create their own NodePools with the proper replicas
 			clusterOpts.NodePoolReplicas = 0
 
+			// On OpenStack, we need to create at least one replica of the default nodepool
+			// so we can create the Route53 record for the ingress router. If we don't do that,
+			// the HostedCluster conditions won't be met and the test will fail as some operators
+			// will be marked as degraded.
+			if globalOpts.Platform == hyperv1.OpenStackPlatform {
+				clusterOpts.NodePoolReplicas = 1
+			}
+
 			ctx, cancel := context.WithCancel(testContext)
 			defer cancel()
 			e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
