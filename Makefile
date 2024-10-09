@@ -21,6 +21,7 @@ PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
+GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-extldflags "-static"'
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
 OUT_DIR ?= bin
@@ -87,11 +88,11 @@ control-plane-pki-operator:
 
 .PHONY: hypershift
 hypershift:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
+	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hypershift .
 
 .PHONY: product-cli
 product-cli:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
+	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
