@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -43,9 +44,13 @@ type Params struct {
 	DeploymentConfig        config.DeploymentConfig
 	ProxyConfig             *configv1.ProxySpec
 	NoProxy                 string
+	azureClientID           string
+	azureTenantID           string
+	azureCertificateName    string
+	secretProviderClassName string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType, azureTenantID, secretProviderClassName string) Params {
 	p := Params{
 		IngressOperatorImage:    releaseImageProvider.GetImage("cluster-ingress-operator"),
 		IngressCanaryImage:      userReleaseImageProvider.GetImage("cluster-ingress-operator"),
@@ -56,6 +61,13 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Platform:                platform,
 	}
+	if azureutil.IsAroHCP() {
+		p.azureTenantID = azureTenantID
+		p.azureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ClientID
+		p.azureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName
+		p.secretProviderClassName = secretProviderClassName
+	}
+
 	if hcp.Spec.Configuration != nil {
 		p.ProxyConfig = hcp.Spec.Configuration.Proxy
 		p.NoProxy = proxy.DefaultNoProxy(hcp)
@@ -71,6 +83,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 }
 
 func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
+	// Initialize resource requests
 	ingressOpResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -198,6 +211,53 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 			}
 		},
 	)
+
+	// For ARO HCP deployments, we pass environment variables so we authenticate with Azure API through certificate
+	// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
+	// certificate related to the ARO_HCP_MI_CLIENT_ID and mount it as a volume in the ingress pod in the path,
+	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
+	if azureutil.IsAroHCP() {
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "ARO_HCP_MI_CLIENT_ID",
+				Value: params.azureClientID,
+			},
+			corev1.EnvVar{
+				Name:  "ARO_HCP_TENANT_ID",
+				Value: params.azureTenantID,
+			},
+			corev1.EnvVar{
+				Name:  "ARO_HCP_CLIENT_CERTIFICATE_PATH",
+				Value: "/mnt/certs/" + params.azureCertificateName,
+			})
+
+		if dep.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
+			dep.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
+		}
+		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "ingress-cert",
+				MountPath: "/mnt/certs",
+				ReadOnly:  true,
+			})
+
+		if dep.Spec.Template.Spec.Volumes == nil {
+			dep.Spec.Template.Spec.Volumes = []corev1.Volume{}
+		}
+		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "ingress-cert",
+				VolumeSource: corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{
+						Driver:   "secrets-store.csi.k8s.io",
+						ReadOnly: ptr.To(true),
+						VolumeAttributes: map[string]string{
+							"secretProviderClass": params.secretProviderClassName,
+						},
+					},
+				},
+			})
+	}
 
 	params.DeploymentConfig.ApplyTo(dep)
 }
