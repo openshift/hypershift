@@ -54,6 +54,7 @@ func DefaultOptions() *RawCreateOptions {
 		Arch:                           "amd64",
 		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
 		NetworkType:                    string(hyperv1.OVNKubernetes),
+		FeatureSet:                     string(configv1.Default),
 	}
 }
 
@@ -102,6 +103,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
+	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
 
 }
 
@@ -158,6 +160,7 @@ type RawCreateOptions struct {
 	PausedUntil                      string
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	OLMDisableDefaultSources         bool
+	FeatureSet                       string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -450,6 +453,25 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		prototype.Cluster.Spec.ImageContentSources = imageContentSources
 	}
 
+	if opts.FeatureSet != string(configv1.Default) {
+		switch opts.FeatureSet {
+		case string(configv1.TechPreviewNoUpgrade):
+			prototype.Cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
+				FeatureGateSelection: configv1.FeatureGateSelection{
+					FeatureSet: configv1.TechPreviewNoUpgrade,
+				},
+			}
+		case string(configv1.DevPreviewNoUpgrade):
+			prototype.Cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
+				FeatureGateSelection: configv1.FeatureGateSelection{
+					FeatureSet: configv1.DevPreviewNoUpgrade,
+				},
+			}
+		default:
+			return nil, fmt.Errorf("invalid feature set: %s", opts.FeatureSet)
+		}
+	}
+
 	return prototype, nil
 }
 
@@ -620,6 +642,17 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	case hyperv1.ArchitecturePPC64LE:
 	default:
 		return nil, fmt.Errorf("specified arch %q is not supported", opts.Arch)
+	}
+
+	// Validate feature set is "", TechPreviewNoUpgrade, or DevPreviewNoUpgrade
+	switch opts.FeatureSet {
+	case string(configv1.Default):
+	case string(configv1.TechPreviewNoUpgrade):
+	case string(configv1.DevPreviewNoUpgrade):
+	case string(configv1.CustomNoUpgrade):
+		return nil, fmt.Errorf("only a predefined feature set is supported by the feature-set flag")
+	default:
+		return nil, fmt.Errorf("specified feature set %q is not supported", opts.FeatureSet)
 	}
 
 	return &ValidatedCreateOptions{
