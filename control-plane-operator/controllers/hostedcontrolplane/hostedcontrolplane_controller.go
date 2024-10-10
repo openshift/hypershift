@@ -4945,7 +4945,7 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	})
 	if err != nil {
 		logger.Error(err, "Failed to describe vpc", "vpcID", vpcID)
-		return "", fmt.Errorf("failed to describe vpc %s, code %s", vpcID, awsErrorCode(err))
+		return "", fmt.Errorf("failed to describe vpc %s, code %s", vpcID, supportawsutil.AWSErrorCode(err))
 	}
 	if len(vpcResult.Vpcs) == 0 {
 		return "", fmt.Errorf("vpc %s not found", vpcID)
@@ -4963,7 +4963,7 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	// Search for an existing default worker security group and create one if not found
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
-		return "", fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
+		return "", fmt.Errorf("cannot list security groups, code: %s", supportawsutil.AWSErrorCode(err))
 	}
 	sgID := ""
 	var sg *ec2.SecurityGroup
@@ -5008,7 +5008,7 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			},
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
+			return "", fmt.Errorf("failed to create security group, code: %s", supportawsutil.AWSErrorCode(err))
 		}
 		sgID = awssdk.StringValue(createSGResult.GroupId)
 
@@ -5017,12 +5017,12 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			GroupIds: []*string{awssdk.String(sgID)},
 		}
 		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
-			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
+			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
 		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
 		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
-			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
+			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
 		sg = describeSGResult.SecurityGroups[0]
@@ -5034,8 +5034,8 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		IpPermissions: ingressPermissions,
 	})
 	if err != nil {
-		if awsErrorCode(err) != "InvalidPermission.Duplicate" {
-			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
+		if supportawsutil.AWSErrorCode(err) != "InvalidPermission.Duplicate" {
+			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
 		}
 		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
 	}
@@ -5049,14 +5049,14 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 		return "", nil
 	}
 
-	describeSGResult, err := r.ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(hcp.Spec.InfraID)})
+	// Get the security group to delete. If it no longer exists, then there's nothing to do
+	sg, err := supportawsutil.GetSecurityGroup(r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
 	if err != nil {
-		return "", fmt.Errorf("cannot list security groups: %w", err)
+		return "", err
 	}
-	if len(describeSGResult.SecurityGroups) == 0 {
+	if sg == nil {
 		return "", nil
 	}
-	sg := describeSGResult.SecurityGroups[0]
 
 	if len(sg.IpPermissions) > 0 {
 		if _, err = r.ec2Client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
@@ -5100,16 +5100,17 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 		return code, fmt.Errorf("failed to delete security group %s: %s", awssdk.StringValue(sg.GroupId), code)
 	}
 
-	return "", nil
-
-}
-
-func awsErrorCode(err error) string {
-	var awsErr awserr.Error
-	if errors.As(err, &awsErr) {
-		return awsErr.Code()
+	// Once the security group delete function has been invoked, attempt to get the security group again
+	// to ensure that it no longer exists. If it does still exist, then return an error so that we can retry
+	// the delete until it's no longer there.
+	sg, err = supportawsutil.GetSecurityGroup(r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
+	if err != nil {
+		return "", err
 	}
-	return ""
+	if sg != nil {
+		return "", fmt.Errorf("security group still exists, waiting on deletion")
+	}
+	return "", nil
 }
 
 func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
@@ -5168,7 +5169,7 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 			Type:               string(hyperv1.ValidAWSKMSConfig),
 			ObservedGeneration: hcp.Generation,
 			Status:             metav1.ConditionFalse,
-			Message:            fmt.Sprintf("failed to assume role web identity (%s), code: %s", roleArn, awsErrorCode(err)),
+			Message:            fmt.Sprintf("failed to assume role web identity (%s), code: %s", roleArn, supportawsutil.AWSErrorCode(err)),
 			Reason:             hyperv1.InvalidIAMRoleReason,
 		}
 		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
@@ -5194,7 +5195,7 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 			Type:               string(hyperv1.ValidAWSKMSConfig),
 			ObservedGeneration: hcp.Generation,
 			Status:             metav1.ConditionFalse,
-			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s), code: %s", kmsKeyArn, awsErrorCode(err)),
+			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s), code: %s", kmsKeyArn, supportawsutil.AWSErrorCode(err)),
 			Reason:             hyperv1.AWSErrorReason,
 		}
 	}

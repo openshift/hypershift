@@ -1,8 +1,11 @@
 package awsutil
 
 import (
+	"fmt"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 )
 
 func DefaultWorkerSGEgressRules() []*ec2.IpPermission {
@@ -21,6 +24,9 @@ func DefaultWorkerSGEgressRules() []*ec2.IpPermission {
 // DefaultWorkerSGIngressRules templates out the required inbound security group rules for the default worker security
 // group. This AWS security group is attached to worker node EC2 instances and the PrivateLink VPC Endpoint for the
 // Hosted Control Plane.
+// Sources:
+// - https://github.com/openshift/installer/blob/da42a4d4020f8c8d8140c0cdc45ee11932343f7d/pkg/asset/manifests/aws/cluster.go#L48-L122
+// - https://github.com/openshift/installer/blob/da42a4d4020f8c8d8140c0cdc45ee11932343f7d/upi/aws/cloudformation/03_cluster_security.yaml
 func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID string) []*ec2.IpPermission {
 	inboundRules := []*ec2.IpPermission{
 		{
@@ -29,8 +35,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("udp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("VXLAN Packets"),
 				},
 			},
 		},
@@ -40,8 +47,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("udp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("GENEVE Protocol"),
 				},
 			},
 		},
@@ -51,8 +59,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("udp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("IPSEC IKE Packets"),
 				},
 			},
 		},
@@ -62,8 +71,21 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("udp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("IPSEC NAT-T Packets"),
+				},
+			},
+		},
+		{
+			FromPort:   aws.Int64(-1),
+			ToPort:     aws.Int64(-1),
+			IpProtocol: aws.String("50"), // ESP Protocol
+			UserIdGroupPairs: []*ec2.UserIdGroupPair{
+				{
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("IPSEC ESP Packets"),
 				},
 			},
 		},
@@ -73,8 +95,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("tcp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("Internal cluster communication (TCP)"),
 				},
 			},
 		},
@@ -84,8 +107,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("udp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("Internal cluster communication (UDP)"),
 				},
 			},
 		},
@@ -95,8 +119,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("tcp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("Kubelet"),
 				},
 			},
 		},
@@ -106,8 +131,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("tcp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("Kubernetes services (TCP)"),
 				},
 			},
 		},
@@ -117,8 +143,9 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 			IpProtocol: aws.String("udp"),
 			UserIdGroupPairs: []*ec2.UserIdGroupPair{
 				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
+					GroupId:     aws.String(sgGroupID),
+					UserId:      aws.String(sgUserID),
+					Description: aws.String("Kubernetes services (UDP)"),
 				},
 			},
 		},
@@ -132,7 +159,8 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 				IpProtocol: aws.String("icmp"),
 				IpRanges: []*ec2.IpRange{
 					{
-						CidrIp: aws.String(cidr),
+						CidrIp:      aws.String(cidr),
+						Description: aws.String("ICMP"),
 					},
 				},
 				FromPort: aws.Int64(-1),
@@ -142,55 +170,12 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 				IpProtocol: aws.String("tcp"),
 				IpRanges: []*ec2.IpRange{
 					{
-						CidrIp: aws.String(cidr),
+						CidrIp:      aws.String(cidr),
+						Description: aws.String("SSH"),
 					},
 				},
 				FromPort: aws.Int64(22),
 				ToPort:   aws.Int64(22),
-			},
-			{
-				// This is for the private link endpoint.
-				IpProtocol: aws.String("tcp"),
-				IpRanges: []*ec2.IpRange{
-					{
-						CidrIp: aws.String(cidr),
-					},
-				},
-				FromPort: aws.Int64(6443),
-				ToPort:   aws.Int64(6443),
-			},
-			{
-				// This is for the private link endpoint.
-				IpProtocol: aws.String("tcp"),
-				IpRanges: []*ec2.IpRange{
-					{
-						CidrIp: aws.String(cidr),
-					},
-				},
-				FromPort: aws.Int64(443),
-				ToPort:   aws.Int64(443),
-			},
-			{
-				// This is for the private link endpoint.
-				IpProtocol: aws.String("udp"),
-				IpRanges: []*ec2.IpRange{
-					{
-						CidrIp: aws.String(cidr),
-					},
-				},
-				FromPort: aws.Int64(6443),
-				ToPort:   aws.Int64(6443),
-			},
-			{
-				// This is for the private link endpoint.
-				IpProtocol: aws.String("udp"),
-				IpRanges: []*ec2.IpRange{
-					{
-						CidrIp: aws.String(cidr),
-					},
-				},
-				FromPort: aws.Int64(443),
-				ToPort:   aws.Int64(443),
 			},
 		}
 
@@ -198,4 +183,47 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 	}
 
 	return inboundRules
+}
+
+func VPCEndpointSecurityGroupRules(machineCIDRs []string, port int64) []*ec2.IpPermission {
+	var inboundRules []*ec2.IpPermission
+	for _, cidr := range machineCIDRs {
+		machineCIDRInboundRules := []*ec2.IpPermission{
+			{
+				IpProtocol: aws.String("tcp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp:      aws.String(cidr),
+						Description: aws.String("Control plane service"),
+					},
+				},
+				FromPort: aws.Int64(port),
+				ToPort:   aws.Int64(port),
+			},
+		}
+		inboundRules = append(inboundRules, machineCIDRInboundRules...)
+	}
+	return inboundRules
+}
+
+func GetSecurityGroup(ec2Client ec2iface.EC2API, filter []*ec2.Filter) (*ec2.SecurityGroup, error) {
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: filter})
+	if err != nil {
+		return nil, fmt.Errorf("cannot list security groups: %w", err)
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil, nil
+	}
+	return describeSGResult.SecurityGroups[0], nil
+}
+
+func GetSecurityGroupById(ec2Client ec2iface.EC2API, id string) (*ec2.SecurityGroup, error) {
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{GroupIds: []*string{aws.String(id)}})
+	if err != nil {
+		return nil, fmt.Errorf("cannot get security group: %w", err)
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil, nil
+	}
+	return describeSGResult.SecurityGroups[0], nil
 }
