@@ -66,5 +66,4 @@ func TestHelmCommand(t *testing.T) {
 		t.Fatalf("values.yaml file %s does not exist", valuesPath)
 	}
 
-
 }

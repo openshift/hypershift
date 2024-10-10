@@ -283,12 +283,3 @@ func (p *ObjectPatch) CanBeAppliedTo(obj crclient.Object) bool {
 	}
 	return true
 }
-
-func getByKindAndName(objects []crclient.Object, kind, name string) (crclient.Object, error) {
-	for _, obj := range objects {
-		if obj.GetObjectKind().GroupVersionKind().Kind == kind && obj.GetName() == name {
-			return obj, nil
-		}
-	}
-	return nil, fmt.Errorf("object not found: kind=%s, name=%s", kind, name)
-}

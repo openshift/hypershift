@@ -161,7 +161,6 @@ func (o *Options) Validate() error {
 	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
 	}
-	// todo: validate opts.RegistryOverrides
 	return errors.NewAggregate(errs)
 }
 
