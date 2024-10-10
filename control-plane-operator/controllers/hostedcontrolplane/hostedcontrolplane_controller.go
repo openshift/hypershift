@@ -68,6 +68,7 @@ import (
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -120,6 +121,8 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+
+	IngressSecretProviderClassName = "aro-hcp-ingress"
 )
 
 type InfrastructureStatus struct {
@@ -3704,7 +3707,26 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 }
 
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
+	azureTenantID := ""
+
+	// Create SecretProviderClass when deploying on ARO HCP
+	if hyperazureutil.IsAroHcp() {
+		ingressSecretProviderClass := manifests.SecretProviderClassForAroHCP(IngressSecretProviderClassName, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName, hcp)
+		if _, err := createOrUpdate(ctx, r, ingressSecretProviderClass, func() error {
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingressoperator secret provider class: %w", err)
+		}
+
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		azureTenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+	}
+
+	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type, azureTenantID)
 
 	if _, exists := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
 		rootCA := manifests.RootCAConfigMap(hcp.Namespace)
