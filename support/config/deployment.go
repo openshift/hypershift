@@ -81,13 +81,20 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	} else {
 		deployment.Spec.Replicas = pointer.Int32(int32(c.Replicas))
 	}
-	// there are two standard cases currently with hypershift: HA mode where there are 3 replicas spread across
-	// zones and then non ha with one replica. When only 3 zones are available you need to be able to set maxUnavailable
-	// in order to progress the rollout. However, you do not want to set that in the single replica case because it will
-	// result in downtime.
+	// there are three standard cases currently with hypershift: HA mode where there are 3 replicas spread across
+	// zones, HA mode with 2 replicas, and then non ha with one replica. When only 3 zones are available you need
+	// to be able to set maxUnavailable in order to progress the rollout. However, you do not want to set that in
+	// the single replica case because it will result in downtime.
 	if c.Replicas > 1 {
-		maxSurge := intstr.FromInt(0)
-		maxUnavailable := intstr.FromInt(1)
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(0)
+		if val, ok := c.AdditionalLabels[hyperv1.RequestServingComponentLabel]; ok && val == "true" {
+			maxUnavailable = intstr.FromInt(1)
+		}
+		if c.Replicas > 2 {
+			maxSurge = intstr.FromInt(0)
+			maxUnavailable = intstr.FromInt(1)
+		}
 		if deployment.Spec.Strategy.RollingUpdate == nil {
 			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
 			deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
