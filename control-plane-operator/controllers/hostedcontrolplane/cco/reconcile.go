@@ -26,8 +26,8 @@ const (
 
 func selectorLabels() map[string]string {
 	return map[string]string{
-		"app":                         "cloud-credential-operator",
-		hyperv1.ControlPlaneComponent: "cloud-credential-operator",
+		"app":                              "cloud-credential-operator",
+		hyperv1.ControlPlaneComponentLabel: "cloud-credential-operator",
 	}
 }
 

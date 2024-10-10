@@ -108,8 +108,8 @@ func cvoLabels() map[string]string {
 	return map[string]string{
 		"app": "cluster-version-operator",
 		// value for compatibility with roks-toolkit clusters
-		"k8s-app":                     "cluster-version-operator",
-		hyperv1.ControlPlaneComponent: "cluster-version-operator",
+		"k8s-app":                          "cluster-version-operator",
+		hyperv1.ControlPlaneComponentLabel: "cluster-version-operator",
 	}
 }
 

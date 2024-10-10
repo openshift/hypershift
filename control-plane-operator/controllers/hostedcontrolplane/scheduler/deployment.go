@@ -36,8 +36,8 @@ var (
 	}
 	name   = "kube-scheduler"
 	labels = map[string]string{
-		"app":                         name,
-		hyperv1.ControlPlaneComponent: name,
+		"app":                              name,
+		hyperv1.ControlPlaneComponentLabel: name,
 	}
 
 	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,

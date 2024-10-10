@@ -181,8 +181,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	ignitionServerLabels := map[string]string{
-		"app":                         ignitionserver.ResourceName,
-		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		"app":                              ignitionserver.ResourceName,
+		hyperv1.ControlPlaneComponentLabel: ignitionserver.ResourceName,
 	}
 	configAPIImage := componentImages["cluster-config-api"]
 	if configAPIImage == "" {

@@ -391,9 +391,9 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		dep.Spec.Template.Labels = map[string]string{}
 	}
 	dep.Spec.Template.Labels = map[string]string{
-		"name":                        operatorName,
-		"app":                         operatorName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             operatorName,
+		"app":                              operatorName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 
 	var cnoEnv []corev1.EnvVar

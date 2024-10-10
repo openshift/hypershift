@@ -20,8 +20,8 @@ const (
 
 var (
 	oauthServerLabels = map[string]string{
-		"app":                         "oauth-openshift",
-		hyperv1.ControlPlaneComponent: "oauth-openshift",
+		"app":                              "oauth-openshift",
+		hyperv1.ControlPlaneComponentLabel: "oauth-openshift",
 	}
 )
 

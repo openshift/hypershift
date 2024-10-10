@@ -176,8 +176,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	ignitionServerLabels := map[string]string{
-		"app":                         ignitionserver.ResourceName,
-		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		"app":                              ignitionserver.ResourceName,
+		hyperv1.ControlPlaneComponentLabel: ignitionserver.ResourceName,
 		// Intentionally adding hcp label to preserve existing 4.9 and 4.10 reconciliation behavior.
 		"hypershift.openshift.io/hosted-control-plane": hcp.Namespace,
 	}

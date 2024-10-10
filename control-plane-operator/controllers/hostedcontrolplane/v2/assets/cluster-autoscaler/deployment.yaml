@@ -19,8 +19,6 @@ spec:
     metadata:
       labels:
         app: cluster-autoscaler
-        hypershift.openshift.io/control-plane-component: cluster-autoscaler
-        hypershift.openshift.io/need-management-kas-access: "true"
     spec:
       automountServiceAccountToken: true
       containers:
