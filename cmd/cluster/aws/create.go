@@ -43,6 +43,7 @@ type RawCreateOptions struct {
 	ProxyVPCEndpointServiceName string
 	SingleNATGateway            bool
 	MultiArch                   bool
+	VPCCIDR                     string
 	VPCOwnerCredentials         awsutil.AWSCredentialsOptions
 }
 
@@ -181,6 +182,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			*into = value
 		}
 	}
+
 	return output, nil
 }
 
@@ -378,6 +380,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
+	flags.StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC (mask must be 16)")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
@@ -433,6 +436,7 @@ func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOption
 		ProxyVPCEndpointServiceName: awsOpts.ProxyVPCEndpointServiceName,
 		SSHKeyFile:                  opts.SSHKeyFile,
 		SingleNATGateway:            awsOpts.SingleNATGateway,
+		VPCCIDR:                     awsOpts.VPCCIDR,
 		VPCOwnerCredentialOpts:      awsOpts.VPCOwnerCredentials,
 	}
 }
@@ -473,5 +477,8 @@ func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *
 		return err
 	}
 
+	if err := awsutil.ValidateVPCCIDR(awsOpts.VPCCIDR); err != nil {
+		return err
+	}
 	return nil
 }

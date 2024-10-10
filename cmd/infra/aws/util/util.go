@@ -3,6 +3,7 @@ package util
 import (
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"k8s.io/utils/ptr"
@@ -123,4 +124,18 @@ func NewConfig() *aws.Config {
 		MinThrottleDelay: 5 * time.Second,
 	}
 	return awsConfig
+}
+
+func ValidateVPCCIDR(in string) error {
+	if in == "" {
+		return nil
+	}
+	_, network, err := net.ParseCIDR(in)
+	if err != nil {
+		return fmt.Errorf("invalid CIDR (%s): %w", in, err)
+	}
+	if ones, _ := network.Mask.Size(); ones != 16 {
+		return fmt.Errorf("only /16 size VPC CIDR supported (%s)", in)
+	}
+	return nil
 }
