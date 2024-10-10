@@ -70,6 +70,7 @@ import (
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -110,6 +111,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 )
 
 const (
@@ -122,6 +124,8 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+
+	ImageRegistrySecretProviderClassName = "aro-hcp-image-registry"
 )
 
 type HostedControlPlaneReconciler struct {
@@ -4058,7 +4062,27 @@ func checkCatalogImageOverides(images ...string) (bool, error) {
 }
 
 func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := registryoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+	azureTenantID := ""
+	imageRegistrySecretProviderClass := &secretsstorev1.SecretProviderClass{}
+
+	// Create SecretProviderClass when deploying on ARO HCP
+	if hyperazureutil.IsAroHCP() {
+		imageRegistrySecretProviderClass = manifests.SecretProviderClassForAroHCP(ImageRegistrySecretProviderClassName, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName, hcp)
+		if _, err := createOrUpdate(ctx, r, imageRegistrySecretProviderClass, func() error {
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingressoperator secret provider class: %w", err)
+		}
+
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		azureTenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+	}
+
+	params := registryoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, azureTenantID, ImageRegistrySecretProviderClassName)
 
 	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
