@@ -91,6 +91,7 @@ import (
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -2411,6 +2412,12 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	version, err := semver.Parse(releaseInfo.Version())
 	if err != nil {
 		return "", err
+	}
+	if controlplaneoperatoroverrides.IsOverridesEnabled() {
+		overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
+		if overrideImage != "" {
+			return overrideImage, nil
+		}
 	}
 
 	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
