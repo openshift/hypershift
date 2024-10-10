@@ -455,10 +455,9 @@ func buildHCCVolumeRootCA(v *corev1.Volume) {
 }
 
 func buildHCCClusterSignerCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName:  manifests.CSRSignerCASecret("").Name,
-		DefaultMode: pointer.Int32(0640),
-	}
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.DefaultMode = pointer.Int32(0640)
+	v.ConfigMap.Name = manifests.KubeletClientCABundle("").Name
 }
 
 func IsExternalInfraKv(hcp *hyperv1.HostedControlPlane) bool {
