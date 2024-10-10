@@ -46,5 +46,7 @@ const (
 
 	EnableEtcdRecoveryEnvVar = "ENABLE_ETCD_RECOVERY"
 
+	CPOOverridesEnvVar = "ENABLE_CPO_OVERRIDES"
+
 	AuditWebhookService = "audit-webhook"
 )
