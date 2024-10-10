@@ -33,6 +33,12 @@ func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
 			ID: hcp.Spec.DNS.PrivateZoneID,
 		}
 	}
+	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
+		dns.Spec.Platform.Type = configv1.AWSPlatformType
+		dns.Spec.Platform.AWS = &configv1.AWSDNSSpec{
+			PrivateZoneIAMRole: hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN,
+		}
+	}
 }
 
 func BaseDomain(hcp *hyperv1.HostedControlPlane) string {

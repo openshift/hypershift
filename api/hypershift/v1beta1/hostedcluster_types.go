@@ -1345,6 +1345,34 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:default=false
 	// +optional
 	MultiArch bool `json:"multiArch"`
+
+	// SharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
+	// created in a different AWS account and is shared with the AWS account where the HostedCluster
+	// will be created.
+	//
+	// +optional
+	SharedVPC *AWSSharedVPC `json:"sharedVPC,omitempty"`
+}
+
+// AWSSharedVPC contains fields needed to create a HostedCluster using a VPC that has been
+// created and shared from a different AWS account than the AWS account where the cluster
+// is getting created.
+type AWSSharedVPC struct {
+
+	// RolesRef contains references to roles in the VPC owner account that enable a
+	// HostedCluster on a shared VPC.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	RolesRef AWSSharedVPCRolesRef `json:"rolesRef"`
+
+	// LocalZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
+	// associated with the HostedCluster's VPC and exists in the VPC owner account.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=32
+	// +required
+	LocalZoneID string `json:"localZoneID"`
 }
 
 type AWSRoleCredentials struct {
@@ -1748,6 +1776,119 @@ type AWSRolesRef struct {
 	// }
 	// +immutable
 	ControlPlaneOperatorARN string `json:"controlPlaneOperatorARN"`
+}
+
+// AWSSharedVPCRolesRef contains references to AWS IAM roles required for a shared VPC hosted cluster.
+// These roles must exist in the VPC owner's account.
+type AWSSharedVPCRolesRef struct {
+	// IngressARN is an ARN value referencing the role in the VPC owner account that allows the
+	// ingress operator in the cluster account to create and manage records in the private DNS
+	// hosted zone.
+	//
+	// The referenced role must have a trust relationship that allows it to be assumed by the
+	// ingress operator role in the VPC creator account.
+	// Example:
+	// {
+	// 	 "Version": "2012-10-17",
+	// 	 "Statement": [
+	// 	 	{
+	// 	 		"Sid": "Statement1",
+	// 	 		"Effect": "Allow",
+	// 	 		"Principal": {
+	// 	 			"AWS": "arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-openshift-ingress"
+	// 	 		},
+	// 	 		"Action": "sts:AssumeRole"
+	// 	 	}
+	// 	 ]
+	// }
+	//
+	// The following is an example of the policy document for this role.
+	// (Based on https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html#rosa-sharing-vpc-dns-and-roles_rosa-shared-vpc-config)
+	//
+	// {
+	// 	"Version": "2012-10-17",
+	// 	"Statement": [
+	// 		{
+	// 			"Effect": "Allow",
+	// 			"Action": [
+	// 				"route53:ListHostedZones",
+	// 				"route53:ListHostedZonesByName",
+	// 				"route53:ChangeTagsForResource",
+	// 				"route53:GetAccountLimit",
+	// 				"route53:GetChange",
+	// 				"route53:GetHostedZone",
+	// 				"route53:ListTagsForResource",
+	// 				"route53:UpdateHostedZoneComment",
+	// 				"tag:GetResources",
+	// 				"tag:UntagResources"
+	// 				"route53:ChangeResourceRecordSets",
+	// 				"route53:ListResourceRecordSets"
+	// 			],
+	// 			"Resource": "*"
+	// 		},
+	// 	]
+	// }
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern:=`^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$`
+	// +required
+	IngressARN string `json:"ingressARN"`
+
+	// ControlPlaneARN is an ARN value referencing the role in the VPC owner account that allows
+	// the control plane operator in the cluster account to create and manage a VPC endpoint, its
+	// corresponding Security Group, and DNS records in the hypershift local hosted zone.
+	//
+	// The referenced role must have a trust relationship that allows it to be assumed by the
+	// control plane operator role in the VPC creator account.
+	// Example:
+	// {
+	// 	 "Version": "2012-10-17",
+	// 	 "Statement": [
+	// 	 	{
+	// 	 		"Sid": "Statement1",
+	// 	 		"Effect": "Allow",
+	// 	 		"Principal": {
+	// 	 			"AWS": "arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-control-plane-operator"
+	// 	 		},
+	// 	 		"Action": "sts:AssumeRole"
+	// 	 	}
+	// 	 ]
+	// }
+	//
+	// The following is an example of the policy document for this role.
+	//
+	// {
+	// 	"Version": "2012-10-17",
+	// 	"Statement": [
+	// 		{
+	// 			"Effect": "Allow",
+	// 			"Action": [
+	// 				"ec2:CreateVpcEndpoint",
+	// 				"ec2:DescribeVpcEndpoints",
+	// 				"ec2:ModifyVpcEndpoint",
+	// 				"ec2:DeleteVpcEndpoints",
+	// 				"ec2:CreateTags",
+	// 				"route53:ListHostedZones",
+	// 				"ec2:CreateSecurityGroup",
+	// 				"ec2:AuthorizeSecurityGroupIngress",
+	// 				"ec2:AuthorizeSecurityGroupEgress",
+	// 				"ec2:DeleteSecurityGroup",
+	// 				"ec2:RevokeSecurityGroupIngress",
+	// 				"ec2:RevokeSecurityGroupEgress",
+	// 				"ec2:DescribeSecurityGroups",
+	// 				"ec2:DescribeVpcs",
+	// 				"route53:ChangeResourceRecordSets",
+	// 				"route53:ListResourceRecordSets"
+	// 			],
+	// 			"Resource": "*"
+	// 		}
+	// 	]
+	// }
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern:=`^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$`
+	// +required
+	ControlPlaneARN string `json:"controlPlaneARN"`
 }
 
 // AWSServiceEndpoint stores the configuration for services to

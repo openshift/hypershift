@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
@@ -189,6 +190,8 @@ type AWSEndpointServiceReconciler struct {
 	ec2Client     ec2iface.EC2API
 	route53Client route53iface.Route53API
 	upsert.CreateOrUpdateProvider
+	AssumeRoleARN *string
+	LocalZoneID   *string
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -207,6 +210,9 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
+	if r.AssumeRoleARN != nil {
+		awsSession.Config.WithCredentials(stscreds.NewCredentials(awsSession, *r.AssumeRoleARN))
+	}
 	awsConfig := aws.NewConfig()
 	r.ec2Client = ec2.New(awsSession, awsConfig)
 	route53Config := aws.NewConfig()
@@ -572,9 +578,14 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	}
 
 	zoneName := zoneName(hcp.Name)
-	zoneID, err := lookupZoneID(ctx, route53Client, zoneName)
-	if err != nil {
-		return err
+	var zoneID string
+	if r.LocalZoneID == nil {
+		zoneID, err = lookupZoneID(ctx, route53Client, zoneName)
+		if err != nil {
+			return err
+		}
+	} else {
+		zoneID = *r.LocalZoneID
 	}
 
 	var fqdns []string
