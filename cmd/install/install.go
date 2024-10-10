@@ -104,6 +104,8 @@ type Options struct {
 	ManagedService                            string
 	EnableSizeTagging                         bool
 	EnableEtcdRecovery                        bool
+	RegistryOverrides                         string
+	RenderNamespace                           bool
 }
 
 func (o *Options) Validate() error {
@@ -163,6 +165,7 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) ApplyDefaults() {
+	o.RenderNamespace = true
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
@@ -235,6 +238,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO-HCP, ROSA-HCP")
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
+	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -274,6 +278,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(NewRenderCommand(&opts))
+	cmd.AddCommand(NewHelmRenderCommand(&opts))
 
 	return cmd
 }
@@ -472,7 +477,9 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		Name:                       opts.Namespace,
 		EnableOCPClusterMonitoring: opts.PlatformMonitoring.IsEnabled(),
 	}.Build()
-	objects = append(objects, operatorNamespace)
+	if opts.RenderNamespace {
+		objects = append(objects, operatorNamespace)
+	}
 
 	// Setup RBAC resources
 	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
@@ -681,6 +688,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ManagedService:                          opts.ManagedService,
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
+		RegistryOverrides:                       opts.RegistryOverrides,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
