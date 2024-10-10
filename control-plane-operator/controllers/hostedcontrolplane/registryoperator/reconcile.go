@@ -13,9 +13,11 @@ import (
 	"k8s.io/utils/ptr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -24,12 +26,13 @@ import (
 )
 
 const (
-	operatorName         = "cluster-image-registry-operator"
-	workerNamespace      = "openshift-image-registry"
-	workerServiceAccount = "cluster-image-registry-operator"
-	metricsHostname      = "cluster-image-registry-operator"
-	tokenFile            = "token"
-	metricsPort          = 60000
+	operatorName          = "cluster-image-registry-operator"
+	workerNamespace       = "openshift-image-registry"
+	workerServiceAccount  = "cluster-image-registry-operator"
+	metricsHostname       = "cluster-image-registry-operator"
+	tokenFile             = "token"
+	metricsPort           = 60000
+	secretStoreVolumeName = "image-registry-cert"
 
 	startScriptTemplateStr = `#!/bin/bash
 set -euo pipefail
@@ -97,17 +100,20 @@ var (
 )
 
 type Params struct {
-	operatorImage    string
-	tokenMinterImage string
-	platform         hyperv1.PlatformType
-	issuerURL        string
-	releaseVersion   string
-	registryImage    string
-	prunerImage      string
-	deploymentConfig config.DeploymentConfig
+	operatorImage        string
+	tokenMinterImage     string
+	platform             hyperv1.PlatformType
+	issuerURL            string
+	releaseVersion       string
+	registryImage        string
+	prunerImage          string
+	deploymentConfig     config.DeploymentConfig
+	azureClientID        string
+	azureTenantID        string
+	azureCertificateName string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, azureTenantID string) Params {
 	params := Params{
 		operatorImage:    releaseImageProvider.GetImage("cluster-image-registry-operator"),
 		tokenMinterImage: releaseImageProvider.GetImage("token-minter"),
@@ -143,6 +149,13 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			},
 		},
 	}
+
+	if azureutil.IsAroHcp() {
+		params.azureTenantID = azureTenantID
+		params.azureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID
+		params.azureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName
+	}
+
 	params.deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -192,6 +205,52 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 				MountPath: "/var/run/secrets/openshift/serviceaccount",
 			},
 		)
+	}
+	// For ARO HCP deployments, we pass environment variables so we authenticate with Azure API through certificate
+	// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
+	// certificate related to the AZURE_CLIENT_ID and mount it as a volume in the ingress pod in the path,
+	// AZURE_CLIENT_CERTIFICATE_PATH.
+	if azureutil.IsAroHcp() {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AZURE_CLIENT_ID",
+				Value: params.azureClientID,
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_TENANT_ID",
+				Value: params.azureTenantID,
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_CLIENT_CERTIFICATE_PATH",
+				Value: "/mnt/certs/" + params.azureCertificateName,
+			})
+
+		if deployment.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
+		}
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      secretStoreVolumeName,
+				MountPath: "/mnt/certs",
+				ReadOnly:  true,
+			})
+
+		if deployment.Spec.Template.Spec.Volumes == nil {
+			deployment.Spec.Template.Spec.Volumes = []corev1.Volume{}
+		}
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: secretStoreVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{
+						Driver:   "secrets-store.csi.k8s.io",
+						ReadOnly: ptr.To(true),
+						VolumeAttributes: map[string]string{
+							"secretProviderClass": hostedcontrolplane.ImageRegistrySecretProviderClassName,
+						},
+					},
+				},
+			})
 	}
 
 	params.deploymentConfig.ApplyTo(deployment)
