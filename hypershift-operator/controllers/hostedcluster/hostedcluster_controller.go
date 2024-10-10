@@ -371,93 +371,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Bubble up ValidIdentityProvider condition from the hostedControlPlane.
-	// We set this condition even if the HC is being deleted. Otherwise, a hostedCluster with a conflicted identity provider
-	// would fail to complete deletion forever with no clear signal for consumers.
-	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		freshCondition := &metav1.Condition{
-			Type:               string(hyperv1.ValidAWSIdentityProvider),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcp != nil {
-			validIdentityProviderCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-			if validIdentityProviderCondition != nil {
-				freshCondition = validIdentityProviderCondition
-			}
-		}
-
-		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-
-		// Preserve previous status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
-		if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
-			freshCondition.Status = oldCondition.Status
-		}
-		if oldCondition == nil || oldCondition.Status != freshCondition.Status {
-			freshCondition.ObservedGeneration = hcluster.Generation
-			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-			// Persist status updates
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-			}
-		}
-	}
-
-	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
-	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
-	{
-		if hcp != nil && hcp.DeletionTimestamp != nil {
-			freshCondition := &metav1.Condition{
-				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				ObservedGeneration: hcluster.Generation,
-			}
-
-			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
-			if securityGroupDeletionCondition != nil {
-				freshCondition = securityGroupDeletionCondition
-			}
-
-			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
-			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
-				freshCondition.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-				// Persist status updates
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-				}
-			}
-		}
-	}
-
-	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
-	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
-	{
-		if hcp != nil && hcp.DeletionTimestamp != nil {
-			freshCondition := &metav1.Condition{
-				Type:               string(hyperv1.CloudResourcesDestroyed),
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				ObservedGeneration: hcluster.Generation,
-			}
-
-			cloudResourcesDestroyedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-			if cloudResourcesDestroyedCondition != nil {
-				freshCondition = cloudResourcesDestroyedCondition
-			}
-
-			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
-				freshCondition.ObservedGeneration = hcluster.Generation
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-				// Persist status updates
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-				}
-			}
-		}
+	err = r.reconcileMandatoryConditions(ctx, hcluster, hcp)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	var hcDestroyGracePeriod time.Duration
@@ -471,84 +387,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
-		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
-		// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration annotation.
-		// This annotation will create a new condition called HostedClusterDestroyed which in conjuntion with CloudResourcesDestroyed
-		// a SRE could determine if there are dangling objects once the HostedCluster is deleted. These cloud dangling objects will remain
-		// in AWS, and SRE will report them to the final user.
-		hostedClusterDestroyedCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed))
-		if hostedClusterDestroyedCondition == nil || hostedClusterDestroyedCondition.Status != metav1.ConditionTrue {
-			// Keep trying to delete until we know it's safe to finalize.
-			completed, err := r.delete(ctx, hcluster)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
-			}
-			if !completed {
-				log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
-				return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
-			}
-		}
-
-		// Once the deletion has occurred, we need to clean up cluster-wide resources
-		selector := client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{
-			controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
-			controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
-		})}
-		var crs rbacv1.ClusterRoleList
-		if err := r.List(ctx, &crs, selector); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to list cluster roles: %w", err)
-		}
-		if len(crs.Items) > 0 {
-			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRole{}, selector); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete cluster roles: %w", err)
-			}
-		}
-		var crbs rbacv1.ClusterRoleBindingList
-		if err := r.List(ctx, &crbs, selector); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to list cluster role bindings: %w", err)
-		}
-		if len(crbs.Items) > 0 {
-			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
-			}
-		}
-
-		if hcDestroyGracePeriod > 0 {
-			if hostedClusterDestroyedCondition == nil {
-				hostedClusterDestroyedCondition = &metav1.Condition{
-					Type:               string(hyperv1.HostedClusterDestroyed),
-					Status:             metav1.ConditionTrue,
-					Message:            fmt.Sprintf("Grace period set: %v", hcDestroyGracePeriod),
-					Reason:             hyperv1.WaitingForGracePeriodReason,
-					LastTransitionTime: metav1.NewTime(time.Now()),
-					ObservedGeneration: hcluster.Generation,
-				}
-
-				meta.SetStatusCondition(&hcluster.Status.Conditions, *hostedClusterDestroyedCondition)
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-				}
-				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
-				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod}, nil
-			}
-
-			if time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time) < hcDestroyGracePeriod {
-				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
-				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod - time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time)}, nil
-			}
-			log.Info("grace period finished", "gracePeriod", hcDestroyGracePeriod)
-		}
-
-		// Now we can remove the finalizer.
-		if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
-			controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
-			if err := r.Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
-			}
-		}
-
-		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, req, log, hcluster, hcDestroyGracePeriod)
 	}
 
 	// Part zero: fix up conversion
@@ -584,25 +423,233 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, r.Client.Update(ctx, hcluster)
 	}
 
-	// Part one: update status
-
-	// Set kubeconfig status
-	{
-		kubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeConfigSecret), kubeConfigSecret)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeconfig secret: %w", err)
-			}
-		} else {
-			hcluster.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
-		}
-	}
-
 	// Reconcile the ICSP/IDMS from the management cluster
 	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.RegistryOverrides)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+
+	// Part one: update status
+
+	res, err := r.reconcileStatus(ctx, log, hcluster, hcp, controlPlaneNamespace, releaseProvider,
+		registryClientImageMetadataProvider, releaseImage)
+	if res != nil || err != nil {
+		if res == nil {
+			return ctrl.Result{}, err
+		} else {
+			return *res, err
+		}
+	}
+
+	// Part two: reconcile the state of the world
+
+	return r.reconcileWorld(ctx, req, log, hcluster, hcp, controlPlaneNamespace, releaseProvider, registryClientImageMetadataProvider, releaseImage, createOrUpdate)
+}
+
+// reconcileMandatoryConditions sets all conditions that must be set even if the HC is being deleted.
+func (r *HostedClusterReconciler) reconcileMandatoryConditions(ctx context.Context, hcluster *hyperv1.HostedCluster,
+	hcp *hyperv1.HostedControlPlane) error {
+	// Bubble up ValidIdentityProvider condition from the hostedControlPlane. We set this condition even if the HC is
+	// being deleted. Otherwise, a hostedCluster with a conflicted identity provider would fail to complete deletion
+	// forever with no clear signal for consumers.
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		freshCondition := &metav1.Condition{
+			Type:               string(hyperv1.ValidAWSIdentityProvider),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			validIdentityProviderCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+			if validIdentityProviderCondition != nil {
+				freshCondition = validIdentityProviderCondition
+			}
+		}
+
+		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+
+		// Preserve previous status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
+		if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
+			freshCondition.Status = oldCondition.Status
+		}
+		if oldCondition == nil || oldCondition.Status != freshCondition.Status {
+			freshCondition.ObservedGeneration = hcluster.Generation
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+			// Persist status updates
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return fmt.Errorf("failed to update status: %w", err)
+			}
+		}
+	}
+
+	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
+	{
+		if hcp != nil && hcp.DeletionTimestamp != nil {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if securityGroupDeletionCondition != nil {
+				freshCondition = securityGroupDeletionCondition
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
+				freshCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+				// Persist status updates
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return fmt.Errorf("failed to update status: %w", err)
+				}
+			}
+		}
+	}
+
+	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
+	{
+		if hcp != nil && hcp.DeletionTimestamp != nil {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.CloudResourcesDestroyed),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			cloudResourcesDestroyedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+			if cloudResourcesDestroyedCondition != nil {
+				freshCondition = cloudResourcesDestroyedCondition
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
+				freshCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+				// Persist status updates
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return fmt.Errorf("failed to update status: %w", err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// reconcileDeletion performs a graceful deletion of the HostedCluster and its resources by setting a destroyed
+// condition, attempting to delete resources, retrying during the grace period and finally removing the finalizer.
+func (r *HostedClusterReconciler) reconcileDeletion(ctx context.Context, req ctrl.Request, log logr.Logger,
+	hcluster *hyperv1.HostedCluster, hcDestroyGracePeriod time.Duration) (ctrl.Result, error) {
+	// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
+	// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration
+	// annotation. This annotation will create a new condition called HostedClusterDestroyed which in conjuntion with
+	// CloudResourcesDestroyed a SRE could determine if there are dangling objects once the HostedCluster is deleted.
+	// These cloud dangling objects will remain in AWS, and SRE will report them to the final user.
+	hostedClusterDestroyedCondition := meta.FindStatusCondition(
+		hcluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed),
+	)
+	if hostedClusterDestroyedCondition == nil || hostedClusterDestroyedCondition.Status != metav1.ConditionTrue {
+		// Keep trying to delete until we know it's safe to finalize.
+		completed, err := r.delete(ctx, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
+		}
+		if !completed {
+			log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
+			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
+		}
+	}
+
+	// Once the deletion has occurred, we need to clean up cluster-wide resources
+	selector := client.MatchingLabelsSelector{
+		Selector: labels.SelectorFromSet(
+			labels.Set{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		),
+	}
+	var crs rbacv1.ClusterRoleList
+	if err := r.List(ctx, &crs, selector); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list cluster roles: %w", err)
+	}
+	if len(crs.Items) > 0 {
+		if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRole{}, selector); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete cluster roles: %w", err)
+		}
+	}
+	var crbs rbacv1.ClusterRoleBindingList
+	if err := r.List(ctx, &crbs, selector); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list cluster role bindings: %w", err)
+	}
+	if len(crbs.Items) > 0 {
+		if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
+		}
+	}
+
+	if hcDestroyGracePeriod > 0 {
+		if hostedClusterDestroyedCondition == nil {
+			hostedClusterDestroyedCondition = &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterDestroyed),
+				Status:             metav1.ConditionTrue,
+				Message:            fmt.Sprintf("Grace period set: %v", hcDestroyGracePeriod),
+				Reason:             hyperv1.WaitingForGracePeriodReason,
+				LastTransitionTime: metav1.NewTime(time.Now()),
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *hostedClusterDestroyedCondition)
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
+			log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
+			return ctrl.Result{RequeueAfter: hcDestroyGracePeriod}, nil
+		}
+
+		if time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time) < hcDestroyGracePeriod {
+			log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
+			return ctrl.Result{RequeueAfter: hcDestroyGracePeriod - time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time)}, nil
+		}
+		log.Info("grace period finished", "gracePeriod", hcDestroyGracePeriod)
+	}
+
+	// Now we can remove the finalizer.
+	if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
+		controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
+		if err := r.Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
+		}
+	}
+
+	log.Info("Deleted hostedcluster", "name", req.NamespacedName)
+	return ctrl.Result{}, nil
+}
+
+// reconcileStatus sets all different fields and conditions of the HostedClusterStatus. Returns an error or a result is
+// returned if the HostedCluster reconciliation should end with the returned result and/or error.
+func (r *HostedClusterReconciler) reconcileStatus(
+	ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
+	controlPlaneNamespace *corev1.Namespace, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
+	registryClientImageMetadataProvider hyperutil.ImageMetadataProvider, releaseImage *releaseinfo.ReleaseImage,
+) (*ctrl.Result, error) {
+	// Set kubeconfig status
+	kubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeConfigSecret), kubeConfigSecret)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to reconcile kubeconfig secret: %w", err)
+		}
+	} else {
+		hcluster.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
 	}
 
 	// Set kubeadminPassword status
@@ -615,7 +662,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
 			if err != nil {
 				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
+					return nil, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
 				}
 			} else {
 				hcluster.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: kubeadminPasswordSecret.Name}
@@ -637,12 +684,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if hcp != nil {
 		hcpCVOConditions = map[hyperv1.ConditionType]*metav1.Condition{
-			hyperv1.ClusterVersionSucceeding:       meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing)),
-			hyperv1.ClusterVersionProgressing:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionProgressing)),
-			hyperv1.ClusterVersionReleaseAccepted:  meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionReleaseAccepted)),
-			hyperv1.ClusterVersionRetrievedUpdates: meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionRetrievedUpdates)),
-			hyperv1.ClusterVersionUpgradeable:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable)),
-			hyperv1.ClusterVersionAvailable:        meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable)),
+			hyperv1.ClusterVersionSucceeding:       meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionFailing)),
+			hyperv1.ClusterVersionProgressing:      meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionProgressing)),
+			hyperv1.ClusterVersionReleaseAccepted:  meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionReleaseAccepted)),
+			hyperv1.ClusterVersionRetrievedUpdates: meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionRetrievedUpdates)),
+			hyperv1.ClusterVersionUpgradeable:      meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionUpgradeable)),
+			hyperv1.ClusterVersionAvailable:        meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ClusterVersionAvailable)),
 		}
 	}
 
@@ -701,7 +754,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			ObservedGeneration: hcluster.Generation,
 		}
 		if hcp != nil {
-			degradedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneDegraded))
+			degradedCondition := meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.HostedControlPlaneDegraded))
 			if degradedCondition != nil {
 				condition = degradedCondition
 				condition.Type = string(hyperv1.HostedClusterDegraded)
@@ -717,14 +771,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Copy the ValidKubeVirtInfraNetworkMTU condition from the HostedControlPlane
 	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		if hcp != nil {
-			validMtuCondCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidKubeVirtInfraNetworkMTU))
+			validMtuCondCreated := meta.FindStatusCondition(hcp.Status.Conditions,
+				string(hyperv1.ValidKubeVirtInfraNetworkMTU))
 			if validMtuCondCreated != nil {
 				validMtuCondCreated.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *validMtuCondCreated)
 			}
 		}
 		if err := r.syncKVLiveMigratableCondition(ctx, hcluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update condition: %w", err)
+			return nil, fmt.Errorf("failed to update condition: %w", err)
 		}
 	}
 
@@ -802,14 +857,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					Name:      hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name,
 				},
 			}
-			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(unmanagedEtcdTLSClientSecret), unmanagedEtcdTLSClientSecret); err != nil {
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(unmanagedEtcdTLSClientSecret),
+				unmanagedEtcdTLSClientSecret); err != nil {
 				if apierrors.IsNotFound(err) {
 					unmanagedEtcdTLSClientSecret = nil
 				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to get unmanaged etcd tls secret: %w", err)
+					return nil, fmt.Errorf("failed to get unmanaged etcd tls secret: %w", err)
 				}
 			}
-			meta.SetStatusCondition(&hcluster.Status.Conditions, computeUnmanagedEtcdAvailability(hcluster, unmanagedEtcdTLSClientSecret))
+			meta.SetStatusCondition(&hcluster.Status.Conditions,
+				computeUnmanagedEtcdAvailability(hcluster, unmanagedEtcdTLSClientSecret))
 		}
 	}
 
@@ -835,7 +892,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation] = "true"
 
 			if err := r.Patch(ctx, hcluster, client.MergeFromWithOptions(original)); err != nil {
-				return ctrl.Result{}, fmt.Errorf("cannot patch hosted cluster with has been available annotation: %w", err)
+				return nil, fmt.Errorf("cannot patch hosted cluster with has been available annotation: %w", err)
 			}
 		}
 	}
@@ -853,8 +910,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 		} else {
-			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
-			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
+			meta.SetStatusCondition(&hcluster.Status.Conditions,
+				computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
+			meta.SetStatusCondition(&hcluster.Status.Conditions,
+				computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
 		}
 	}
 
@@ -901,7 +960,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
 			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
-			return ctrl.Result{}, nil
+			return &ctrl.Result{}, nil
 		}
 		switch serviceStrategy.Type {
 		case hyperv1.Route:
@@ -909,9 +968,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
 			} else {
 				ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
-				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
+				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute),
+					ignitionServerRoute); err != nil {
 					if !apierrors.IsNotFound(err) {
-						return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
+						return nil, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
 					}
 				}
 				if ignitionServerRoute.Spec.Host != "" {
@@ -923,30 +983,32 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				// We don't return the error here as reconciling won't solve the input problem.
 				// An update event will trigger reconciliation.
 				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
-				return ctrl.Result{}, nil
+				return &ctrl.Result{}, nil
 			}
 			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
 			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
 				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to get ignition proxy service: %w", err)
+					return nil, fmt.Errorf("failed to get ignition proxy service: %w", err)
 				} else {
 					// ignition-server-proxy service not found, possible IBM platform or older CPO that doesn't create the service
 					ignitionService = ignitionserver.Service(controlPlaneNamespace.GetName())
-					if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+					if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService),
+						ignitionService); err != nil {
 						if !apierrors.IsNotFound(err) {
-							return ctrl.Result{}, fmt.Errorf("failed to get ignition service: %w", err)
+							return nil, fmt.Errorf("failed to get ignition service: %w", err)
 						}
 					}
 				}
 			}
 			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
-				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
+				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address,
+					ignitionService.Spec.Ports[0].NodePort)
 			}
 		default:
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
 			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
-			return ctrl.Result{}, nil
+			return &ctrl.Result{}, nil
 		}
 	}
 
@@ -983,7 +1045,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					Message: "Ignition server deployment not found",
 				}
 			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to get ignition server deployment: %w", err)
+				return nil, fmt.Errorf("failed to get ignition server deployment: %w", err)
 			}
 		} else {
 			// Assume the deployment is unavailable until proven otherwise.
@@ -1008,7 +1070,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+	meta.SetStatusCondition(&hcluster.Status.Conditions,
+		hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Set ValidReleaseImage condition
 	{
@@ -1042,7 +1105,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Set HostedCluster payload arch
-	payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, r.Client, hcluster, registryClientImageMetadataProvider)
+	payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, r.Client, hcluster,
+		registryClientImageMetadataProvider)
 	if err != nil {
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidReleaseImage),
@@ -1053,15 +1117,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		condition.Reason = hyperv1.PayloadArchNotFoundReason
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 
-		return ctrl.Result{}, err
+		return nil, err
 	}
 
 	hcluster.Status.PayloadArch = payloadArch
 
-	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-	}
 	// Set Progressing condition
 	{
 		condition := metav1.Condition{
@@ -1088,13 +1148,21 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 		if apierrors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
+			return &ctrl.Result{Requeue: true}, nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+		return nil, fmt.Errorf("failed to update status: %w", err)
 	}
+	return nil, nil
+}
 
-	// Part two: reconcile the state of the world
-
+func (r *HostedClusterReconciler) reconcileWorld(
+	ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster,
+	hcp *hyperv1.HostedControlPlane, controlPlaneNamespace *corev1.Namespace,
+	releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
+	registryClientImageMetadataProvider hyperutil.ImageMetadataProvider, releaseImage *releaseinfo.ReleaseImage,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) (ctrl.Result, error) {
+	var err error
 	// Ensure the cluster has a finalizer for cleanup and update right away.
 	if !controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
 		controllerutil.AddFinalizer(hcluster, HostedClusterFinalizer)
