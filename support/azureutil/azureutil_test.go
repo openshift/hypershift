@@ -1,10 +1,13 @@
 package azureutil
 
 import (
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"testing"
-
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
+	"reflect"
+	"testing"
 )
 
 func TestGetSubnetNameFromSubnetID(t *testing.T) {
@@ -168,6 +171,108 @@ func TestIsAroHCP(t *testing.T) {
 			t.Setenv("MANAGED_SERVICE", tc.envVarValue)
 			isAroHcp := IsAroHCP()
 			g.Expect(isAroHcp).To(Equal(tc.expectedValue))
+		})
+	}
+}
+
+func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
+	type args struct {
+		azureClientID        string
+		azureTenantID        string
+		azureCertificateName string
+	}
+	tests := []struct {
+		name string
+		args args
+		want []corev1.EnvVar
+	}{
+		{
+			name: "returns a slice of environment variables iwth the azure creds",
+			args: args{
+				azureClientID:        "my-client-id",
+				azureTenantID:        "my-tenant-id",
+				azureCertificateName: "my-certificate-name",
+			},
+			want: []corev1.EnvVar{
+				{
+					Name:  config.ManagedAzureClientIdEnvVarKey,
+					Value: "my-client-id",
+				},
+				{
+					Name:  config.ManagedAzureTenantIdEnvVarKey,
+					Value: "my-tenant-id",
+				},
+				{
+					Name:  config.ManagedAzureCertificatePathEnvVarKey,
+					Value: config.ManagedAzureCertificatePath + "my-certificate-name",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CreateEnvVarsForAzureManagedIdentity(tt.args.azureClientID, tt.args.azureTenantID, tt.args.azureCertificateName); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CreateEnvVarsForAzureManagedIdentity() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateVolumeMountForAzureSecretStoreProviderClass(t *testing.T) {
+	tests := []struct {
+		name                  string
+		secretStoreVolumeName string
+		want                  corev1.VolumeMount
+	}{
+		{
+			name:                  "return a volume mount for a secret store provider",
+			secretStoreVolumeName: "my-secret-store",
+			want: corev1.VolumeMount{
+				Name:      "my-secret-store",
+				MountPath: config.ManagedAzureCertificateMountPath,
+				ReadOnly:  true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CreateVolumeMountForAzureSecretStoreProviderClass(tt.secretStoreVolumeName); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CreateVolumeMountForAzureSecretStoreProviderClass() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateVolumeForAzureSecretStoreProviderClass(t *testing.T) {
+	tests := []struct {
+		name                    string
+		secretStoreVolumeName   string
+		secretProviderClassName string
+		want                    corev1.Volume
+	}{
+		{
+			name:                    "return a volume for a secret store provider",
+			secretStoreVolumeName:   "my-secret-store",
+			secretProviderClassName: "my-secret-provider-class",
+			want: corev1.Volume{
+				Name: "my-secret-store",
+				VolumeSource: corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{
+						Driver:   config.ManagedAzureSecretsStoreCSIDriver,
+						ReadOnly: ptr.To(true),
+						VolumeAttributes: map[string]string{
+							config.ManagedAzureSecretProviderClass: "my-secret-provider-class",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CreateVolumeForAzureSecretStoreProviderClass(tt.secretStoreVolumeName, tt.secretProviderClassName); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CreateVolumeForAzureSecretStoreProviderClass() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -43,6 +44,9 @@ type Params struct {
 	DeploymentConfig        config.DeploymentConfig
 	ProxyConfig             *configv1.ProxySpec
 	NoProxy                 string
+	AzureClientID           string
+	AzureTenantID           string
+	AzureCertificateName    string
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
@@ -56,6 +60,11 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Platform:                platform,
 	}
+	if azureutil.IsAroHCP() {
+		p.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ClientID
+		p.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName
+	}
+
 	if hcp.Spec.Configuration != nil {
 		p.ProxyConfig = hcp.Spec.Configuration.Proxy
 		p.NoProxy = proxy.DefaultNoProxy(hcp)
@@ -71,6 +80,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 }
 
 func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
+	// Initialize resource requests
 	ingressOpResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -198,6 +208,29 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 			}
 		},
 	)
+
+	// For managed Azure deployments, we pass environment variables so we authenticate with Azure API through certificate
+	// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
+	// certificate related to the ARO_HCP_MI_CLIENT_ID and mount it as a volume in the ingress pod in the path,
+	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
+	if azureutil.IsAroHCP() {
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName)...)
+
+		if dep.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
+			dep.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
+		}
+		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts,
+			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureIngressSecretStoreVolumeName),
+		)
+
+		if dep.Spec.Template.Spec.Volumes == nil {
+			dep.Spec.Template.Spec.Volumes = []corev1.Volume{}
+		}
+		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
+			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureIngressSecretStoreVolumeName, config.ManagedAzureIngressSecretStoreProviderClassName),
+		)
+	}
 
 	params.DeploymentConfig.ApplyTo(dep)
 }
