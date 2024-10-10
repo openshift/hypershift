@@ -25,6 +25,7 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		hyperv1.ReconciliationSucceeded:              metav1.ConditionTrue,
 		hyperv1.ValidHostedControlPlaneConfiguration: metav1.ConditionTrue,
 		hyperv1.ValidReleaseImage:                    metav1.ConditionTrue,
+		hyperv1.ValidIDPConfiguration:                metav1.ConditionTrue,
 		hyperv1.PlatformCredentialsFound:             metav1.ConditionTrue,
 
 		hyperv1.HostedClusterProgressing:  metav1.ConditionFalse,
