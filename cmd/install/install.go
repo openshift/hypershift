@@ -165,6 +165,7 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) ApplyDefaults() {
+	o.RenderNamespace = true
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
