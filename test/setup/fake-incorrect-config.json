@@ -1,0 +1,36 @@
+  {
+    "name": "azure-disk",
+    "clientID": "123-123-123-123",
+    "certName": "azure-disk"
+  },
+  {
+    "name": "azure-file",
+    "clientID": "123-123-123-1234",
+    "certName": "azure-file"
+  },
+  {
+    "name": "capz",
+     "clientID": "123-123-123-1235",
+    "certName": "capz"
+  },
+  {
+    "name": "cloud-provider",
+     "clientID": "123-123-123-1236",
+    "certName": "cloud-provider"
+  },
+  {
+    "name": "cncc",
+     "clientID": "123-123-123-1237",
+    "certName": "cncc"
+  },
+  {
+    "name": "control-plane",
+     "clientID": "123-123-123-1238",
+    "certName": "control-plane"
+  },
+  {
+    "name": "ingress",
+     "clientID": "123-123-123-1239",
+    "certName": "ingress"
+  }
+]
