@@ -58,6 +58,10 @@ func NewNTOPerformanceProfileTest(ctx context.Context, mgmtClient crclient.Clien
 
 func (mc *NTOPerformanceProfileTest) Setup(t *testing.T) {
 	t.Log("Starting test NTOPerformanceProfileTest")
+
+	if globalOpts.Platform == hyperv1.OpenStackPlatform {
+		t.Skip("test is being skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
+	}
 }
 
 func (mc *NTOPerformanceProfileTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
