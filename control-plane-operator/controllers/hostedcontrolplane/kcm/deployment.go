@@ -361,7 +361,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--cluster-signing-duration=17520h",
 		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),
 		fmt.Sprintf("--tls-private-key-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
-		"--node-monitor-grace-period=50s",
+		"--node-monitor-grace-period=55s",
 	}...)
 	for _, f := range p.FeatureGates() {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", f))
