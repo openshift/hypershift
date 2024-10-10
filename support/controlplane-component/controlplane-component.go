@@ -19,9 +19,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 type NamedComponent interface {
@@ -70,6 +72,10 @@ type controlPlaneWorkload struct {
 	name         string
 	workloadType workloadType
 
+	// list of component names that this component depends on.
+	// reconcilation will be blocked until all dependencies are available.
+	dependencies []string
+
 	adapt func(cpContext ControlPlaneContext, obj client.Object) error
 
 	// adapters for Secret, ConfigMap, Service, ServiceMonitor, etc.
@@ -102,6 +108,33 @@ func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
 		}
 	}
 
+	unavailableDependencies, err := c.checkDependencies(cpContext)
+	if err != nil {
+		return fmt.Errorf("failed checking for dependencies availability: %v", err)
+	}
+	var reconcilationError error
+	if len(unavailableDependencies) == 0 {
+		// reconcile only when all dependencies are available, and don't return error immediatly so it can be included in the status condition first.
+		reconcilationError = c.update(cpContext)
+	}
+
+	component := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      c.Name(),
+			Namespace: cpContext.HCP.Namespace,
+		},
+	}
+
+	if _, err := controllerutil.CreateOrPatch(cpContext, cpContext.Client, component, func() error {
+		return c.reconcileComponentStatus(cpContext, component, unavailableDependencies, reconcilationError)
+	}); err != nil {
+		return err
+	}
+	return reconcilationError
+}
+
+// reconcile implements ControlPlaneComponent.
+func (c *controlPlaneWorkload) update(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
@@ -111,7 +144,7 @@ func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
 			return adapter.reconcile(cpContext, c.Name(), manifestName)
 		}
 
-		obj, err := assets.LoadManifest(c.name, manifestName, nil)
+		obj, _, err := assets.LoadManifest(c.name, manifestName)
 		if err != nil {
 			return err
 		}
@@ -159,6 +192,8 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 		workloadObj = sts
 		oldWorkloadObj = &appsv1.StatefulSet{}
 	}
+	// make sure that the Deployment/Statefulset name matches the component name.
+	workloadObj.SetName(c.Name())
 	workloadObj.SetNamespace(cpContext.HCP.Namespace)
 
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(workloadObj), oldWorkloadObj); err != nil {
@@ -265,10 +300,11 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 		deploymentConfig.Scheduling.PriorityClass = cpContext.HCP.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 
+	deploymentConfig.AdditionalLabels = map[string]string{
+		hyperv1.ControlPlaneComponentLabel: c.Name(),
+	}
 	if c.NeedsManagementKASAccess() {
-		deploymentConfig.AdditionalLabels = map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		}
+		deploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
 
 	var replicas *int

@@ -38,7 +38,7 @@ func TestReconcileOpenShiftRouteControllerManagerConfig(t *testing.T) {
 	}
 
 	configMap := &corev1.ConfigMap{}
-	_, err := assets.LoadManifest(ComponentName, "config.yaml", configMap)
+	_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", configMap)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

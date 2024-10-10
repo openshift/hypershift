@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -217,11 +216,8 @@ func TestReconcileExisting(t *testing.T) {
 		Context:                  context.Background(),
 		Client:                   client,
 		CreateOrUpdateProviderV2: upsert.NewV2(false),
-		ReleaseImageProvider: imageprovider.NewFromImages(map[string]string{
-			ImageStreamAutoscalerImage:       "test-image",
-			util.AvailabilityProberImageName: "availbility-prober-image",
-		}),
-		HCP: hcp,
+		ReleaseImageProvider:     testutil.FakeImageProvider(),
+		HCP:                      hcp,
 	}
 
 	compoent := NewComponent()

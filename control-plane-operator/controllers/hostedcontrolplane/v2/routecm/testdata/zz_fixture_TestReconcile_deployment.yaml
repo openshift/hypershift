@@ -20,7 +20,6 @@ spec:
   selector:
     matchLabels:
       app: openshift-route-controller-manager
-      hypershift.openshift.io/control-plane-component: openshift-route-controller-manager
   strategy:
     rollingUpdate:
       maxSurge: 0
@@ -81,7 +80,7 @@ spec:
               fieldPath: metadata.name
         - name: POD_NAMESPACE
           value: openshift-route-controller-manager
-        image: test-image
+        image: route-controller-manager
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3

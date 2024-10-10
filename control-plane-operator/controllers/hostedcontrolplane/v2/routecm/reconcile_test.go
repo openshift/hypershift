@@ -6,7 +6,6 @@ import (
 
 	v1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
@@ -45,10 +44,8 @@ func TestReconcile(t *testing.T) {
 		Context:                  context.Background(),
 		Client:                   client,
 		CreateOrUpdateProviderV2: upsert.NewV2(false),
-		ReleaseImageProvider: imageprovider.NewFromImages(map[string]string{
-			"route-controller-manager": "test-image",
-		}),
-		HCP: hcp,
+		ReleaseImageProvider:     testutil.FakeImageProvider(),
+		HCP:                      hcp,
 	}
 
 	compoent := NewComponent()

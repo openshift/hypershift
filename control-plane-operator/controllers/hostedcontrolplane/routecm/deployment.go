@@ -37,8 +37,8 @@ var (
 
 func openShiftRouteControllerManagerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-route-controller-manager",
-		hyperv1.ControlPlaneComponent: "openshift-route-controller-manager",
+		"app":                              "openshift-route-controller-manager",
+		hyperv1.ControlPlaneComponentLabel: "openshift-route-controller-manager",
 	}
 }
 

@@ -66,8 +66,8 @@ var (
 
 func oauthLabels() map[string]string {
 	return map[string]string{
-		"app":                         "oauth-openshift",
-		hyperv1.ControlPlaneComponent: "oauth-openshift",
+		"app":                              "oauth-openshift",
+		hyperv1.ControlPlaneComponentLabel: "oauth-openshift",
 	}
 }
 

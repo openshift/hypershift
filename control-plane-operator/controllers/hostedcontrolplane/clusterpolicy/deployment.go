@@ -27,8 +27,8 @@ var (
 		},
 	}
 	clusterPolicyControllerLabels = map[string]string{
-		"app":                         "cluster-policy-controller",
-		hyperv1.ControlPlaneComponent: "cluster-policy-controller",
+		"app":                              "cluster-policy-controller",
+		hyperv1.ControlPlaneComponentLabel: "cluster-policy-controller",
 	}
 )
 
