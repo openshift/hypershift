@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -31,6 +32,24 @@ func ReconcileOperatorDeployment(
 		case "cluster-storage-operator":
 			deployment.Spec.Template.Spec.Containers[i].Image = params.StorageOperatorImage
 			params.ImageReplacer.replaceEnvVars(deployment.Spec.Template.Spec.Containers[i].Env)
+
+			// For managed Azure, we need to supply a couple of environment variables for CSO to pass on to the CSI controllers for disk and file.
+			// CSO passes those on to the CSI deployment here - https://github.com/openshift/cluster-storage-operator/pull/517/files.
+			// CSI then mounts the Secrets Provider Class here - https://github.com/openshift/csi-operator/pull/309/files.
+			if azureutil.IsAroHCP() {
+				if deployment.Spec.Template.Spec.Containers[i].Env == nil {
+					deployment.Spec.Template.Spec.Containers[i].Env = make([]corev1.EnvVar, 0)
+				}
+				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env,
+					corev1.EnvVar{
+						Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_DISK",
+						Value: params.AzureDiskSecretProviderClassName,
+					},
+					corev1.EnvVar{
+						Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_FILE",
+						Value: params.AzureFileSecretProviderClassName,
+					})
+			}
 		}
 	}
 

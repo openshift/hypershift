@@ -4969,6 +4969,25 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
+	if hyperazureutil.IsAroHCP() {
+		// Reconcile SecretProviderClasses
+		azureDiskSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureDiskCSISecretStoreProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureDiskSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure Disk Secret Provider Class: %w", err)
+		}
+
+		azureFileSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureFileCSISecretStoreProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureFileSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureFileSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure File Secret Provider Class: %w", err)
+		}
+	}
+
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
