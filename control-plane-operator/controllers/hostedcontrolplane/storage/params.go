@@ -33,10 +33,10 @@ func NewParams(
 	ir.setOperatorImageReferences(releaseImageProvider, userReleaseImageProvider)
 
 	params := Params{
-		OwnerRef:                         config.OwnerRefFrom(hcp),
-		StorageOperatorImage:             releaseImageProvider.GetImage(storageOperatorImageName),
-		AvailabilityProberImage:          releaseImageProvider.GetImage(util.AvailabilityProberImageName),
-		ImageReplacer:                    ir,
+		OwnerRef:                config.OwnerRefFrom(hcp),
+		StorageOperatorImage:    releaseImageProvider.GetImage(storageOperatorImageName),
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		ImageReplacer:           ir,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		AdditionalLabels: map[string]string{

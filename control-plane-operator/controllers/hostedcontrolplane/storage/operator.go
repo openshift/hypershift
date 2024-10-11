@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,11 +44,11 @@ func ReconcileOperatorDeployment(
 				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env,
 					corev1.EnvVar{
 						Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_DISK",
-						Value: params.AzureDiskSecretProviderClassName,
+						Value: config.ManagedAzureDiskCSISecretStoreProviderClassName,
 					},
 					corev1.EnvVar{
 						Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_FILE",
-						Value: params.AzureFileSecretProviderClassName,
+						Value: config.ManagedAzureFileCSISecretStoreProviderClassName,
 					})
 			}
 		}
