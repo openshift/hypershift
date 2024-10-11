@@ -38,6 +38,7 @@ import (
 	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
 	"github.com/openshift/hypershift/cmd/version"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -645,6 +646,11 @@ func (o *options) DefaultPowerVSOptions() powervs.RawCreateOptions {
 // Complete is intended to be called after flags have been bound and sets
 // up additional contextual defaulting.
 func (o *options) Complete() error {
+
+	if shouldTestCPOOverride() {
+		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases()
+	}
+
 	if len(o.LatestReleaseImage) == 0 {
 		defaultVersion, err := version.LookupDefaultOCPVersion("")
 		if err != nil {
@@ -744,4 +750,8 @@ func (s *stringMapVar) Set(value string) error {
 	}
 	map[string]string(*s)[split[0]] = split[1]
 	return nil
+}
+
+func shouldTestCPOOverride() bool {
+	return os.Getenv("TEST_CPO_OVERRIDE") == "1"
 }

@@ -377,6 +377,7 @@ type HyperShiftOperatorDeployment struct {
 	ManagedService                          string
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
+	EnableCPOOverrides                      bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -489,6 +490,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	if o.EnableEtcdRecovery {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  config.EnableEtcdRecoveryEnvVar,
+			Value: "1",
+		})
+	}
+
+	if o.EnableCPOOverrides {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  config.CPOOverridesEnvVar,
 			Value: "1",
 		})
 	}

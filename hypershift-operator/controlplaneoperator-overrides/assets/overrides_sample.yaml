@@ -1,0 +1,8 @@
+overrides:
+- version: 4.16.17
+  cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1a50894aafa6b750bf890ef147a20699ff5b807e586d15506426a8a615580797
+- version: 4.16.18
+  cpoImage: quay.io/hypershift/hypershift-cpo:patch
+testing:
+  latest: quay.io/openshift-release-dev/ocp-release:4.16.17-x86_64
+  previous: quay.io/openshift-release-dev/ocp-release:4.16.16-x86_64
