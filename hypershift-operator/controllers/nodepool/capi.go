@@ -428,6 +428,13 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		},
 	}
 
+	// The CAPI provider for OpenStack uses the FailureDomain field to set the availability zone.
+	if c.nodePool.Spec.Platform.Type == hyperv1.OpenStackPlatform && c.nodePool.Spec.Platform.OpenStack != nil {
+		if c.nodePool.Spec.Platform.OpenStack.AvailabilityZone != "" {
+			machineDeployment.Spec.Template.Spec.FailureDomain = ptr.To(c.nodePool.Spec.Platform.OpenStack.AvailabilityZone)
+		}
+	}
+
 	// After a MachineDeployment is created we propagate label/taints directly into Machines.
 	// This is to avoid a NodePool label/taints to trigger a rolling upgrade.
 	// TODO(Alberto): drop this an rely on core in-place propagation once CAPI 1.4.0 https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
