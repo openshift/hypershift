@@ -8,19 +8,18 @@ import (
 	"strconv"
 	"text/template"
 
-	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/rhobsmonitoring"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/blang/semver"
-	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
+
+	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -29,6 +28,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -113,6 +115,9 @@ type Params struct {
 	DeploymentConfig        config.DeploymentConfig
 	IsPrivate               bool
 	DefaultIngressDomain    string
+	AzureClientID           string
+	AzureTenantID           string
+	AzureCertificateName    string
 }
 
 func init() {
@@ -159,6 +164,11 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		DefaultIngressDomain:    defaultIngressDomain,
 		CAConfigMap:             caConfigMap,
 		CAConfigMapKey:          caConfigMapKey,
+	}
+
+	if azureutil.IsAroHCP() {
+		p.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ClientID
+		p.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CertificateName
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
@@ -606,6 +616,20 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: ptr.To[int32](0640)}}},
 		{Name: "client-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 		{Name: "ca-bundle", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.RootCASecret("").Name, DefaultMode: ptr.To[int32](0640)}}},
+	}
+
+	// For ARO HCP deployments, we pass the env variable for the SecretProviderClass for the Secrets Store CSI driver
+	// to use on the CNCC deployment.
+	if azureutil.IsAroHCP() {
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName)...)
+
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "ARO_HCP_SECRET_PROVIDER_CLASS",
+				Value: config.ManagedAzureNetworkSecretStoreProviderClassName,
+			},
+		)
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)
