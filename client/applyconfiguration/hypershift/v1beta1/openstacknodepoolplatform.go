@@ -20,8 +20,9 @@ package v1beta1
 // OpenStackNodePoolPlatformApplyConfiguration represents an declarative configuration of the OpenStackNodePoolPlatform type for use
 // with apply.
 type OpenStackNodePoolPlatformApplyConfiguration struct {
-	Flavor    *string `json:"flavor,omitempty"`
-	ImageName *string `json:"imageName,omitempty"`
+	Flavor           *string `json:"flavor,omitempty"`
+	ImageName        *string `json:"imageName,omitempty"`
+	AvailabilityZone *string `json:"availabilityZone,omitempty"`
 }
 
 // OpenStackNodePoolPlatformApplyConfiguration constructs an declarative configuration of the OpenStackNodePoolPlatform type for use with
@@ -43,5 +44,13 @@ func (b *OpenStackNodePoolPlatformApplyConfiguration) WithFlavor(value string) *
 // If called multiple times, the ImageName field is set to the value of the last call.
 func (b *OpenStackNodePoolPlatformApplyConfiguration) WithImageName(value string) *OpenStackNodePoolPlatformApplyConfiguration {
 	b.ImageName = &value
+	return b
+}
+
+// WithAvailabilityZone sets the AvailabilityZone field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AvailabilityZone field is set to the value of the last call.
+func (b *OpenStackNodePoolPlatformApplyConfiguration) WithAvailabilityZone(value string) *OpenStackNodePoolPlatformApplyConfiguration {
+	b.AvailabilityZone = &value
 	return b
 }
