@@ -2993,6 +2993,17 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				Verbs:         []string{"use"},
 			})
 	}
+	if azureutil.IsAroHCP() {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
+				Resources: []string{"secretproviderclasses"},
+				Verbs: []string{
+					"list",
+					"create",
+				},
+			})
+	}
 
 	return nil
 }

@@ -3,12 +3,13 @@ package azureutil
 import (
 	"context"
 	"fmt"
-	"k8s.io/utils/ptr"
+	"os"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -216,4 +217,9 @@ func VerifyResourceGroupLocationsMatch(ctx context.Context, hc *hyperv1.HostedCl
 	}
 
 	return nil
+}
+
+// IsAroHCP returns true if the managed service environment variable is set to ARO-HCP
+func IsAroHCP() bool {
+	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
 }

@@ -829,6 +829,7 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 
 	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
 		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
+		ManagedService:                          opts.ManagedService,
 	}.Build()
 	objects = append(objects, operatorClusterRole)
 

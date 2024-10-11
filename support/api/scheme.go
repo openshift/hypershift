@@ -41,6 +41,7 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1beta1"
+	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 )
 
 var (
@@ -106,4 +107,5 @@ func init() {
 	machinev1beta1.AddToScheme(Scheme)
 	capiopenstackv1alpha1.AddToScheme(Scheme)
 	capiopenstackv1beta1.AddToScheme(Scheme)
+	secretsstorev1.AddToScheme(Scheme)
 }
