@@ -71,6 +71,7 @@ import (
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -123,6 +124,9 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+
+	azureFileSecretProviderClassName = "aro-hcp-file"
+	azureDiskSecretProviderClassName = "aro-hcp-disk"
 )
 
 var (
@@ -4884,7 +4888,23 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, azureDiskSecretProviderClassName, azureFileSecretProviderClassName)
+
+	if hyperazureutil.IsAroHCP() {
+		azureDiskSecretProviderClass := manifests.SecretProviderClassForAroHCP(azureDiskSecretProviderClassName, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName, hcp)
+		if _, err := createOrUpdate(ctx, r, azureDiskSecretProviderClass, func() error {
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure Disk Secret Provider Class: %w", err)
+		}
+
+		azureFileSecretProviderClass := manifests.SecretProviderClassForAroHCP(azureFileSecretProviderClassName, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName, hcp)
+		if _, err := createOrUpdate(ctx, r, azureFileSecretProviderClass, func() error {
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure File Secret Provider Class: %w", err)
+		}
+	}
 
 	deployment := manifests.ClusterStorageOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
