@@ -109,6 +109,14 @@ func TestNodePool(t *testing.T) {
 						name: "TestNTOPerformanceProfile",
 						test: NewNTOPerformanceProfileTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
+					{
+						name: "TestNodePoolPrevReleaseN1",
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.n1MinorReleaseImage, clusterOpts),
+					},
+					{
+						name: "TestNodePoolPrevReleaseN2",
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.n2MinorReleaseImage, clusterOpts),
+					},
 				}
 			},
 		},
