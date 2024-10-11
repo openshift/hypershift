@@ -3619,6 +3619,24 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, hasRouteCap bool, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
+	// Create SecretProviderClass when deploying on ARO HCP
+	if hyperazureutil.IsAroHCP() {
+		cnccSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureNetworkSecretStoreProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, cnccSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cnccSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingressoperator secret provider class: %w", err)
+		}
+
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		p.AzureTenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+	}
+
 	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
 		return cno.ReconcileServiceAccount(sa, p.OwnerRef)
