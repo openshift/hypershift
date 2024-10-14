@@ -34,8 +34,8 @@ var (
 
 func konnectivityAgentLabels() map[string]string {
 	return map[string]string{
-		"app":                         konnectivityAgentName,
-		hyperv1.ControlPlaneComponent: konnectivityAgentName,
+		"app":                              konnectivityAgentName,
+		hyperv1.ControlPlaneComponentLabel: konnectivityAgentName,
 	}
 }
 

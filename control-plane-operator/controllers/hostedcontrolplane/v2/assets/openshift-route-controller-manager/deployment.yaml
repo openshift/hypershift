@@ -10,7 +10,6 @@ spec:
   selector:
     matchLabels:
       app: openshift-route-controller-manager
-      hypershift.openshift.io/control-plane-component: openshift-route-controller-manager
   strategy:
     rollingUpdate:
       maxSurge: 0
@@ -20,7 +19,6 @@ spec:
     metadata:
       labels:
         app: openshift-route-controller-manager
-        hypershift.openshift.io/control-plane-component: openshift-route-controller-manager
     spec:
       automountServiceAccountToken: false
       containers:

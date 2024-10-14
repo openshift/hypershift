@@ -104,6 +104,8 @@ hypershift-api: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	rm -rf cmd/install/assets/hypershift-operator/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
+# TODO: remove when we complete the switch to the new CPO approach.
+	mv cmd/install/assets/hypershift-operator/hypershift.openshift.io_controlplanecomponents.yaml support/controlplane-component/crds
 
 .PHONY: cluster-api
 cluster-api: $(CONTROLLER_GEN)

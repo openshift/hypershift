@@ -234,6 +234,8 @@ func preserveOriginalMetadata(original, mutated crclient.Object) {
 
 	finalizers := sets.New(original.GetFinalizers()...).Insert(mutated.GetFinalizers()...)
 	mutated.SetFinalizers(sets.List(finalizers))
+
+	mutated.SetResourceVersion(original.GetResourceVersion())
 }
 
 // Below defaulting funcs. Their code is based on upstream code that is unfortunatelly

@@ -30,7 +30,7 @@ var (
 )
 
 func catalogLabels() map[string]string {
-	return map[string]string{"app": "catalog-operator", hyperv1.ControlPlaneComponent: "catalog-operator"}
+	return map[string]string{"app": "catalog-operator", hyperv1.ControlPlaneComponentLabel: "catalog-operator"}
 }
 
 func ReconcileCertifiedOperatorsService(svc *corev1.Service, ownerRef config.OwnerRef) error {

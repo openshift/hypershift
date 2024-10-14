@@ -47,4 +47,3 @@ spec:
   selector:
     matchLabels:
       app: openshift-route-controller-manager
-      hypershift.openshift.io/control-plane-component: openshift-route-controller-manager

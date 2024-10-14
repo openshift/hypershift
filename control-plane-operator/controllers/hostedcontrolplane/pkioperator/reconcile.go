@@ -38,9 +38,9 @@ func ReconcileDeployment(
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"name":                        "control-plane-pki-operator",
-					"app":                         "control-plane-pki-operator",
-					hyperv1.ControlPlaneComponent: "control-plane-pki-operator",
+					"name":                             "control-plane-pki-operator",
+					"app":                              "control-plane-pki-operator",
+					hyperv1.ControlPlaneComponentLabel: "control-plane-pki-operator",
 				},
 			},
 			Spec: corev1.PodSpec{

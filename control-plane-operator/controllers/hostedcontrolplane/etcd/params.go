@@ -64,7 +64,7 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imagepr
 	if p.DeploymentConfig.AdditionalLabels == nil {
 		p.DeploymentConfig.AdditionalLabels = make(map[string]string)
 	}
-	p.DeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponent] = "etcd"
+	p.DeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponentLabel] = "etcd"
 	p.DeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
 	if hcp.Annotations[hyperv1.EtcdPriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.EtcdPriorityClass]

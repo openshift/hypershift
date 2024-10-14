@@ -135,8 +135,8 @@ const (
 	// AWSCredentialsFileSecretKey defines the Kubernetes secret key name that contains
 	// the customer AWS credentials in the unmanaged authentication strategy for AWS KMS secret encryption
 	AWSCredentialsFileSecretKey = "credentials"
-	// ControlPlaneComponent identifies a resource as belonging to a hosted control plane.
-	ControlPlaneComponent = "hypershift.openshift.io/control-plane-component"
+	// ControlPlaneComponentLabel identifies a resource as belonging to a hosted control plane.
+	ControlPlaneComponentLabel = "hypershift.openshift.io/control-plane-component"
 
 	// OperatorComponent identifies a component as belonging to the operator.
 	OperatorComponent = "hypershift.openshift.io/operator-component"

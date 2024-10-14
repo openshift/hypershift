@@ -176,7 +176,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
 
 	kubeAPIServerPodList := &corev1.PodList{}
-	if err := c.List(ctx, kubeAPIServerPodList, client.InNamespace(cpNamespace), client.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponent: "kube-apiserver"}); err != nil {
+	if err := c.List(ctx, kubeAPIServerPodList, client.InNamespace(cpNamespace), client.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponentLabel: "kube-apiserver"}); err != nil {
 		return fmt.Errorf("failed to list kube-apiserver pods in control plane namespace: %w", err)
 	}
 	var podToForward *corev1.Pod
@@ -342,6 +342,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiv1.Machine{},
 		&capiv1.MachineSet{},
 		&hyperv1.HostedControlPlane{},
+		&hyperv1.ControlPlaneComponent{},
 		&capiaws.AWSMachine{},
 		&capiaws.AWSMachineTemplate{},
 		&capiaws.AWSCluster{},

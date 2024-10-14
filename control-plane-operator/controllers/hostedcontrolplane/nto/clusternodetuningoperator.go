@@ -69,8 +69,8 @@ func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service, owner
 	ownerRef.ApplyTo(svc)
 
 	svc.Labels = map[string]string{
-		"name":                        metricsServiceName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             metricsServiceName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
@@ -90,8 +90,8 @@ func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service, owner
 func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, clusterID string, metricsSet metrics.MetricsSet, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sm)
 	sm.Spec.Selector.MatchLabels = map[string]string{
-		"name":                        metricsServiceName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             metricsServiceName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{sm.Namespace},
@@ -206,9 +206,9 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		dep.Spec.Template.Labels = map[string]string{}
 	}
 	dep.Spec.Template.Labels = map[string]string{
-		"name":                        operatorName,
-		"app":                         operatorName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             operatorName,
+		"app":                              operatorName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 
 	ntoArgs := []string{

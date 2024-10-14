@@ -62,9 +62,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		"target.workload.openshift.io/management": `{"effect": "PreferredDuringScheduling"}`,
 	}
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
-		"name":                        "dns-operator",
-		"app":                         "dns-operator",
-		hyperv1.ControlPlaneComponent: "dns-operator",
+		"name":                             "dns-operator",
+		"app":                              "dns-operator",
+		hyperv1.ControlPlaneComponentLabel: "dns-operator",
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {

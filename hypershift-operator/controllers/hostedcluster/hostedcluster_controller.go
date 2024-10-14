@@ -97,6 +97,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	componentcrd "github.com/openshift/hypershift/support/controlplane-component/crds"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
@@ -2216,6 +2217,12 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		}
 	}
 
+	if _, exist := hcluster.Annotations[hyperv1.ControlPlaneOperatorV2Annotation]; exist {
+		if err := componentcrd.InstallCRDs(ctx, r.Client); err != nil {
+			return fmt.Errorf("failed to install controlplanecomponent CRDs: %w", err)
+		}
+	}
+
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
@@ -2514,9 +2521,9 @@ func reconcileControlPlaneOperatorDeployment(
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"name":                        "control-plane-operator",
-					"app":                         "control-plane-operator",
-					hyperv1.ControlPlaneComponent: "control-plane-operator",
+					"name":                             "control-plane-operator",
+					"app":                              "control-plane-operator",
+					hyperv1.ControlPlaneComponentLabel: "control-plane-operator",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -3132,9 +3139,9 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hcp *hyperv1.HostedC
 
 func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProviderDeploymentSpec *appsv1.DeploymentSpec, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, setDefaultSecurityContext bool) error {
 	selectorLabels := map[string]string{
-		"control-plane":               "capi-provider-controller-manager",
-		"app":                         "capi-provider-controller-manager",
-		hyperv1.ControlPlaneComponent: "capi-provider-controller-manager",
+		"control-plane":                    "capi-provider-controller-manager",
+		"app":                              "capi-provider-controller-manager",
+		hyperv1.ControlPlaneComponentLabel: "capi-provider-controller-manager",
 	}
 	// Before this change we did
 	// 		Selector: &metav1.LabelSelector{
@@ -3194,9 +3201,9 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
 	defaultMode := int32(0640)
 	selectorLabels := map[string]string{
-		"name":                        "cluster-api",
-		"app":                         "cluster-api",
-		hyperv1.ControlPlaneComponent: "cluster-api",
+		"name":                             "cluster-api",
+		"app":                              "cluster-api",
+		hyperv1.ControlPlaneComponentLabel: "cluster-api",
 	}
 
 	// Before this change we did
