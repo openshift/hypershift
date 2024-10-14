@@ -145,25 +145,6 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	var source corev1.Secret
 
-	// Sync user cloud-credentials secret
-	name := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Azure.Credentials.Name}
-	if err := c.Get(ctx, name, &source); err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", name, err)
-	}
-
-	userCloudCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: name.Name}}
-	if _, err := createOrUpdate(ctx, c, userCloudCreds, func() error {
-		if userCloudCreds.Data == nil {
-			userCloudCreds.Data = map[string][]byte{}
-		}
-		for k, v := range source.Data {
-			userCloudCreds.Data[k] = v
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
 	// Sync Azure Client Secret in its own secret for since CAPZ needs it in a specific key value
 	// https://capz.sigs.k8s.io/topics/multitenancy#manual-service-principal-identity
 	azureClientSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "azure-client-secret", Namespace: controlPlaneNamespace}}
@@ -181,16 +162,21 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		return err
 	}
 
+	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Azure.Credentials.Name}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+		return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+	}
+
 	// Sync CNCC secret
 	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
 	secretData := map[string][]byte{
-		"azure_client_id":       userCloudCreds.Data["AZURE_CLIENT_ID"],
-		"azure_client_secret":   userCloudCreds.Data["AZURE_CLIENT_SECRET"],
-		"azure_region":          []byte(hcluster.Spec.Platform.Azure.Location),
-		"azure_resource_prefix": []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
-		"azure_resourcegroup":   []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),
-		"azure_subscription_id": userCloudCreds.Data["AZURE_SUBSCRIPTION_ID"],
-		"azure_tenant_id":       userCloudCreds.Data["AZURE_TENANT_ID"],
+		"azure_client_id":               []byte(hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ClientID),
+		"azure_client_certificate_path": []byte(hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CertificateName),
+		"azure_region":                  []byte(hcluster.Spec.Platform.Azure.Location),
+		"azure_resource_prefix":         []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
+		"azure_resourcegroup":           []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),
+		"azure_subscription_id":         []byte(hcluster.Spec.Platform.Azure.SubscriptionID),
+		"azure_tenant_id":               credentialsSecret.Data["AZURE_TENANT_ID"],
 	}
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
 		cloudNetworkConfigCreds.Data = secretData
