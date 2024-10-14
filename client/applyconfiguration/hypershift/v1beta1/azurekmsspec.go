@@ -20,8 +20,9 @@ package v1beta1
 // AzureKMSSpecApplyConfiguration represents an declarative configuration of the AzureKMSSpec type for use
 // with apply.
 type AzureKMSSpecApplyConfiguration struct {
-	ActiveKey *AzureKMSKeyApplyConfiguration `json:"activeKey,omitempty"`
-	BackupKey *AzureKMSKeyApplyConfiguration `json:"backupKey,omitempty"`
+	ActiveKey *AzureKMSKeyApplyConfiguration     `json:"activeKey,omitempty"`
+	BackupKey *AzureKMSKeyApplyConfiguration     `json:"backupKey,omitempty"`
+	KMS       *ManagedIdentityApplyConfiguration `json:"kms,omitempty"`
 }
 
 // AzureKMSSpecApplyConfiguration constructs an declarative configuration of the AzureKMSSpec type for use with
@@ -43,5 +44,13 @@ func (b *AzureKMSSpecApplyConfiguration) WithActiveKey(value *AzureKMSKeyApplyCo
 // If called multiple times, the BackupKey field is set to the value of the last call.
 func (b *AzureKMSSpecApplyConfiguration) WithBackupKey(value *AzureKMSKeyApplyConfiguration) *AzureKMSSpecApplyConfiguration {
 	b.BackupKey = value
+	return b
+}
+
+// WithKMS sets the KMS field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KMS field is set to the value of the last call.
+func (b *AzureKMSSpecApplyConfiguration) WithKMS(value *ManagedIdentityApplyConfiguration) *AzureKMSSpecApplyConfiguration {
+	b.KMS = value
 	return b
 }

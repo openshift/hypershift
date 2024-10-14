@@ -31,6 +31,7 @@ func TestCreateCluster(t *testing.T) {
 		ClientID:       "fakeClientID",
 		ClientSecret:   "fakeClientSecret",
 		TenantID:       "fakeTenantID",
+		Certificate:    "fakeCertificate",
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal creds: %v", err)
