@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -31,6 +32,21 @@ func ReconcileOperatorDeployment(
 		case "cluster-storage-operator":
 			deployment.Spec.Template.Spec.Containers[i].Image = params.StorageOperatorImage
 			params.ImageReplacer.replaceEnvVars(deployment.Spec.Template.Spec.Containers[i].Env)
+
+			if azureutil.IsAroHCP() {
+				if deployment.Spec.Template.Spec.Containers[i].Env == nil {
+					deployment.Spec.Template.Spec.Containers[i].Env = make([]corev1.EnvVar, 0)
+				}
+				deployment.Spec.Template.Spec.Containers[i].Env = append(deployment.Spec.Template.Spec.Containers[i].Env,
+					corev1.EnvVar{
+						Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_DISK",
+						Value: params.AzureDiskSecretProviderClassName,
+					},
+					corev1.EnvVar{
+						Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_FILE",
+						Value: params.AzureFileSecretProviderClassName,
+					})
+			}
 		}
 	}
 

@@ -52,6 +52,36 @@ spec:
       credentials:
         name: example-cloud-credentials
       location: fakeLocation
+      managedIdentities:
+        controlPlane:
+          cloudProvider:
+            certificateName: ""
+            clientID: ""
+          clusterAPIAzure:
+            certificateName: ""
+            clientID: ""
+          controlPlane:
+            certificateName: ""
+            clientID: ""
+          disk:
+            certificateName: ""
+            clientID: ""
+          file:
+            certificateName: ""
+            clientID: ""
+          imageRegistry:
+            certificateName: ""
+            clientID: ""
+          ingress:
+            certificateName: ""
+            clientID: ""
+          network:
+            certificateName: ""
+            clientID: ""
+      managementKeyVault:
+        authorizedClientID: ""
+        name: ""
+        tenantID: ""
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID

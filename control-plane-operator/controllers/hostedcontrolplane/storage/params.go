@@ -17,7 +17,9 @@ type Params struct {
 	StorageOperatorImage string
 	ImageReplacer        *environmentReplacer
 
-	AvailabilityProberImage string
+	AvailabilityProberImage          string
+	AzureDiskSecretProviderClassName string
+	AzureFileSecretProviderClassName string
 	config.DeploymentConfig
 }
 
@@ -26,17 +28,20 @@ func NewParams(
 	version string,
 	releaseImageProvider imageprovider.ReleaseImageProvider,
 	userReleaseImageProvider imageprovider.ReleaseImageProvider,
-	setDefaultSecurityContext bool) *Params {
+	setDefaultSecurityContext bool,
+	azureDiskSecretProviderClassName, azureFileSecretProviderClassName string) *Params {
 
 	ir := newEnvironmentReplacer()
 	ir.setVersions(version)
 	ir.setOperatorImageReferences(releaseImageProvider, userReleaseImageProvider)
 
 	params := Params{
-		OwnerRef:                config.OwnerRefFrom(hcp),
-		StorageOperatorImage:    releaseImageProvider.GetImage(storageOperatorImageName),
-		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
-		ImageReplacer:           ir,
+		OwnerRef:                         config.OwnerRefFrom(hcp),
+		StorageOperatorImage:             releaseImageProvider.GetImage(storageOperatorImageName),
+		AvailabilityProberImage:          releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		ImageReplacer:                    ir,
+		AzureDiskSecretProviderClassName: azureDiskSecretProviderClassName,
+		AzureFileSecretProviderClassName: azureFileSecretProviderClassName,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		AdditionalLabels: map[string]string{
