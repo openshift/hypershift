@@ -3903,6 +3903,12 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
+	// Signal CAPI Cluster resource for deletion early so child objects make decisions based on this. E.g. exlude drain and wait for volumes.
+	_, err = hyperutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.CAPICluster(controlPlaneNamespace, hc.Spec.InfraID))
+	if err != nil {
+		return false, err
+	}
+
 	// There are scenarios where CAPI might not be operational e.g None Platform.
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
