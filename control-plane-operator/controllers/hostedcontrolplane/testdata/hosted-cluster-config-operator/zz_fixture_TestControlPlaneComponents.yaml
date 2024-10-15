@@ -1,0 +1,187 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: hosted-cluster-config-operator
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: hosted-cluster-config-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        hypershift.openshift.io/release-image: ""
+      creationTimestamp: null
+      labels:
+        app: hosted-cluster-config-operator
+        hypershift.openshift.io/control-plane-component: hosted-cluster-config-operator
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
+      containers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - hosted-cluster-config-operator
+        - --initial-ca-file=/etc/kubernetes/root-ca/ca.crt
+        - --cluster-signer-ca-file=/etc/kubernetes/cluster-signer-ca/ca.crt
+        - --target-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --namespace
+        - $(POD_NAMESPACE)
+        - --platform-type
+        - ""
+        - --enable-ci-debug-output=false
+        - --hosted-control-plane=hcp
+        - --konnectivity-address=
+        - --konnectivity-port=0
+        - --oauth-address=
+        - --oauth-port=0
+        - --registry-overrides
+        - =
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: OPENSHIFT_RELEASE_VERSION
+          value: "4.18"
+        - name: KUBERNETES_VERSION
+          value: "1.30"
+        - name: OPERATE_ON_RELEASE_IMAGE
+        - name: OPENSHIFT_IMG_OVERRIDES
+          value: =
+        image: hosted-cluster-config-operator
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: 6060
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: hosted-cluster-config-operator
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 6060
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 60m
+            memory: 80Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/cluster-signer-ca
+          name: cluster-signer-ca
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/root-ca
+          name: root-ca
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:6443/readyz
+        - --kubeconfig=/var/kubeconfig/kubeconfig
+        - --required-api=imageregistry.operator.openshift.io,v1,Config
+        - --required-api=config.openshift.io,v1,Infrastructure
+        - --required-api=config.openshift.io,v1,DNS
+        - --required-api=config.openshift.io,v1,Ingress
+        - --required-api=config.openshift.io,v1,Network
+        - --required-api=config.openshift.io,v1,Proxy
+        - --required-api=config.openshift.io,v1,Build
+        - --required-api=config.openshift.io,v1,Image
+        - --required-api=config.openshift.io,v1,Project
+        - --required-api=config.openshift.io,v1,ClusterVersion
+        - --required-api=config.openshift.io,v1,FeatureGate
+        - --required-api=config.openshift.io,v1,ClusterOperator
+        - --required-api=config.openshift.io,v1,OperatorHub
+        - --required-api=operator.openshift.io,v1,Network
+        - --required-api=operator.openshift.io,v1,CloudCredential
+        - --required-api=operator.openshift.io,v1,IngressController
+        image: availability-prober
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+        volumeMounts:
+        - mountPath: /var/kubeconfig
+          name: kubeconfig
+      priorityClassName: hypershift-control-plane
+      schedulerName: default-scheduler
+      serviceAccount: hosted-cluster-config-operator
+      serviceAccountName: hosted-cluster-config-operator
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: hcco-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca
+      - configMap:
+          defaultMode: 416
+          name: kubelet-client-ca
+        name: cluster-signer-ca
+status: {}

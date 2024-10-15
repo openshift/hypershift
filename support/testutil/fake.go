@@ -11,6 +11,13 @@ func FakeImageProvider() imageprovider.ReleaseImageProvider {
 type fakeImageProvider struct {
 }
 
+// ComponentVersions implements imageprovider.ReleaseImageProvider.
+func (f *fakeImageProvider) ComponentVersions() (map[string]string, error) {
+	return map[string]string{
+		"kubernetes": "1.30",
+	}, nil
+}
+
 // Version implements imageprovider.ReleaseImageProvider.
 func (f *fakeImageProvider) Version() string {
 	return "4.18"
