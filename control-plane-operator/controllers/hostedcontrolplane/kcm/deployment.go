@@ -59,8 +59,8 @@ var (
 
 func kcmLabels() map[string]string {
 	return map[string]string{
-		"app":                         "kube-controller-manager",
-		hyperv1.ControlPlaneComponent: "kube-controller-manager",
+		"app":                              "kube-controller-manager",
+		hyperv1.ControlPlaneComponentLabel: "kube-controller-manager",
 	}
 }
 

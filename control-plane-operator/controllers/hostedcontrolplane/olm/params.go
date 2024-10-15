@@ -9,8 +9,8 @@ import (
 )
 
 var packageServerLabels = map[string]string{
-	"app":                         "packageserver",
-	hyperv1.ControlPlaneComponent: "packageserver",
+	"app":                              "packageserver",
+	hyperv1.ControlPlaneComponentLabel: "packageserver",
 }
 
 type OperatorLifecycleManagerParams struct {

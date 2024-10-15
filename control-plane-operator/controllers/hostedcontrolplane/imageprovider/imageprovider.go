@@ -6,6 +6,7 @@ import "github.com/openshift/hypershift/support/releaseinfo"
 type ReleaseImageProvider interface {
 	GetImage(key string) string
 	ImageExist(key string) (string, bool)
+	Version() string
 }
 
 type SimpleReleaseImageProvider struct {
@@ -46,4 +47,8 @@ func (p *SimpleReleaseImageProvider) GetMissingImages() []string {
 func (p *SimpleReleaseImageProvider) ImageExist(key string) (string, bool) {
 	img, exist := p.componentsImages[key]
 	return img, exist
+}
+
+func (p *SimpleReleaseImageProvider) Version() string {
+	return p.ReleaseImage.Version()
 }

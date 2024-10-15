@@ -77,8 +77,8 @@ var (
 
 func openShiftAPIServerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-apiserver",
-		hyperv1.ControlPlaneComponent: "openshift-apiserver",
+		"app":                              "openshift-apiserver",
+		hyperv1.ControlPlaneComponentLabel: "openshift-apiserver",
 	}
 }
 

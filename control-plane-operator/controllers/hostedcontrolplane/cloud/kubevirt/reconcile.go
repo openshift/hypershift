@@ -230,7 +230,7 @@ func ccmLabels() map[string]string {
 
 func additionalLabels() map[string]string {
 	return map[string]string{
-		hyperv1.ControlPlaneComponent:       "cloud-controller-manager",
+		hyperv1.ControlPlaneComponentLabel:  "cloud-controller-manager",
 		config.NeedManagementKASAccessLabel: "true",
 	}
 }

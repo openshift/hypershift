@@ -55,8 +55,8 @@ func TestSetReleaseImageAnnotation(t *testing.T) {
 
 func TestSetMultizoneSpreadRequired(t *testing.T) {
 	labels := map[string]string{
-		"app":                         "etcd",
-		hyperv1.ControlPlaneComponent: "etcd",
+		"app":                              "etcd",
+		hyperv1.ControlPlaneComponentLabel: "etcd",
 	}
 	cfg := &DeploymentConfig{}
 	cfg.SetMultizoneSpread(labels, true)
@@ -79,8 +79,8 @@ func TestSetMultizoneSpreadRequired(t *testing.T) {
 
 func TestSetMultizoneSpreadPreferred(t *testing.T) {
 	labels := map[string]string{
-		"app":                         "etcd",
-		hyperv1.ControlPlaneComponent: "etcd",
+		"app":                              "etcd",
+		hyperv1.ControlPlaneComponentLabel: "etcd",
 	}
 	cfg := &DeploymentConfig{}
 	cfg.SetMultizoneSpread(labels, false)
@@ -260,8 +260,8 @@ func TestSetLocation(t *testing.T) {
 		Replicas: 2,
 	}
 	labels := map[string]string{
-		"app":                         "test",
-		hyperv1.ControlPlaneComponent: "test",
+		"app":                              "test",
+		hyperv1.ControlPlaneComponentLabel: "test",
 	}
 
 	g := NewGomegaWithT(t)

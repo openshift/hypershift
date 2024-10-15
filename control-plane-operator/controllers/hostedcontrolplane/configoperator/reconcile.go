@@ -261,8 +261,8 @@ var (
 		},
 	}
 	hccLabels = map[string]string{
-		"app":                         hostedClusterConfigOperatorName,
-		hyperv1.ControlPlaneComponent: hostedClusterConfigOperatorName,
+		"app":                              hostedClusterConfigOperatorName,
+		hyperv1.ControlPlaneComponentLabel: hostedClusterConfigOperatorName,
 	}
 )
 

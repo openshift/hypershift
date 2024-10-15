@@ -1575,19 +1575,6 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 	}
 }
 
-var _ imageprovider.ReleaseImageProvider = &fakeImageProvider{}
-
-type fakeImageProvider struct {
-}
-
-func (f *fakeImageProvider) GetImage(key string) string {
-	return key
-}
-
-func (f *fakeImageProvider) ImageExist(key string) (string, bool) {
-	return key, true
-}
-
 // TestControlPlaneComponents is a generic test which generates a fixture for each registered component's deployment/statefulset.
 // This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
 func TestControlPlaneComponents(t *testing.T) {
@@ -1607,7 +1594,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			Context:                  context.Background(),
 			Client:                   fakeClient,
 			CreateOrUpdateProviderV2: upsert.NewV2(false),
-			ReleaseImageProvider:     &fakeImageProvider{},
+			ReleaseImageProvider:     testutil.FakeImageProvider(),
 			HCP:                      hcp,
 			SkipPredicate:            true,
 		}
@@ -1642,6 +1629,25 @@ func TestControlPlaneComponents(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
+
+		var controlPaneComponentList hyperv1.ControlPlaneComponentList
+		if err := fakeClient.List(context.Background(), &controlPaneComponentList); err != nil {
+			t.Fatalf("failed to list controlPaneComponents: %v", err)
+		}
+
+		if len(controlPaneComponentList.Items) == 0 {
+			t.Fatalf("expected ControlPlaneComponent to exist for component %s", component.Name())
+		}
+		componentResource := controlPaneComponentList.Items[0]
+		// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
+		componentResource.Status.Conditions[0].LastTransitionTime = metav1.Time{}
+		componentResource.Status.Conditions[1].LastTransitionTime = metav1.Time{}
+
+		yaml, err = util.SerializeResource(&componentResource, api.Scheme)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix("_component"))
 	}
 
 }

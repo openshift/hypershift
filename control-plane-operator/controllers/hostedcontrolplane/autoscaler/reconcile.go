@@ -89,8 +89,8 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	}
 
 	labels := map[string]string{
-		"app":                         autoscalerName,
-		hyperv1.ControlPlaneComponent: autoscalerName,
+		"app":                              autoscalerName,
+		hyperv1.ControlPlaneComponentLabel: autoscalerName,
 	}
 	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
 	// otherwise changing would prevent an upgrade from happening.

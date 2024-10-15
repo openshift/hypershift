@@ -3526,6 +3526,57 @@ or invalid channel has been specified.</p>
 </tr>
 </tbody>
 </table>
+###ComponentResource { #hypershift.openshift.io/v1beta1.ComponentResource }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentStatus">ControlPlaneComponentStatus</a>)
+</p>
+<p>
+<p>ComponentResource defines a resource reconciled by a ControlPlaneComponent.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kind</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kind is the name of the resource schema.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>group</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>group is the API group for this resource type.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of this resource.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ConditionType { #hypershift.openshift.io/v1beta1.ConditionType }
 <p>
 </p>
@@ -3587,6 +3638,12 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;ClusterVersionUpgradeable&#34;</p></td>
 <td><p>ClusterVersionUpgradeable indicates the Upgradeable condition in the
 underlying cluster&rsquo;s ClusterVersion.</p>
+</td>
+</tr><tr><td><p>&#34;Available&#34;</p></td>
+<td><p>ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.</p>
+</td>
+</tr><tr><td><p>&#34;Progressing&#34;</p></td>
+<td><p>ControlPlaneComponentProgressing indicates whether the ControlPlaneComponent is progressing.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
@@ -3733,6 +3790,129 @@ A failure here is unlikely to resolve without the changing user input.</p>
 and reports missing images if any.</p>
 </td>
 </tr></tbody>
+</table>
+###ControlPlaneComponent { #hypershift.openshift.io/v1beta1.ControlPlaneComponent }
+<p>
+<p>ControlPlaneComponent specifies the state of a ControlPlane Component</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentSpec">
+ControlPlaneComponentSpec
+</a>
+</em>
+</td>
+<td>
+<br/>
+<br/>
+<table>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentStatus">
+ControlPlaneComponentStatus
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneComponentSpec { #hypershift.openshift.io/v1beta1.ControlPlaneComponentSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponent">ControlPlaneComponent</a>)
+</p>
+<p>
+<p>ControlPlaneComponentSpec defines the desired state of ControlPlaneComponent</p>
+</p>
+###ControlPlaneComponentStatus { #hypershift.openshift.io/v1beta1.ControlPlaneComponentStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponent">ControlPlaneComponent</a>)
+</p>
+<p>
+<p>ControlPlaneComponentStatus defines the observed state of ControlPlaneComponent</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>version</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>version reports the current version of this component.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentResource">
+[]ComponentResource
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resources is a list of the resources reconciled by this component.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Conditions contains details for the current state of the ControlPlane Component.
+If there is an error, then the Available condition will be false.</p>
+<p>Current condition types are: &ldquo;Available&rdquo;</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>

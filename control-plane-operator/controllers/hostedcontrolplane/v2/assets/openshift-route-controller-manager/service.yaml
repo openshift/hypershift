@@ -3,7 +3,6 @@ kind: Service
 metadata:
   labels:
     app: openshift-route-controller-manager
-    hypershift.openshift.io/control-plane-component: openshift-route-controller-manager
   name: openshift-route-controller-manager
   namespace: HCP_NAMESPACE
 spec:
@@ -18,5 +17,4 @@ spec:
     targetPort: https
   selector:
     app: openshift-route-controller-manager
-    hypershift.openshift.io/control-plane-component: openshift-route-controller-manager
   type: ClusterIP

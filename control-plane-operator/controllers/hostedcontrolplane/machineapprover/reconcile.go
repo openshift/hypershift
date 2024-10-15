@@ -111,8 +111,8 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 	}
 
 	labels := map[string]string{
-		"app":                         "machine-approver",
-		hyperv1.ControlPlaneComponent: "machine-approver",
+		"app":                              "machine-approver",
+		hyperv1.ControlPlaneComponentLabel: "machine-approver",
 	}
 	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
 	// otherwise changing would prevent an upgrade from happening.
