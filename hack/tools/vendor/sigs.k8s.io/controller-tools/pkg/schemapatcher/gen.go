@@ -369,6 +369,11 @@ func crdsFromDirectory(ctx *genall.GenerationContext, dir string) (map[schema.Gr
 			return nil, fmt.Errorf("load %q: apiVersion %q not supported", filepath.Join(dir, fileInfo.Name()), typeMeta.APIVersion)
 		}
 
+		// this is a patch that allows us to skip manifests to support things like TechPreviewNoUpgrade manifests.
+		if !mayHandleFile(fileInfo.Name(), rawContent) {
+			continue
+		}
+
 		// collect the group-kind and versions from the actual structured form
 		var actualCRD crdIsh
 		if err := kyaml.Unmarshal(rawContent, &actualCRD); err != nil {
