@@ -242,10 +242,9 @@ nav:
         - 'Watching the Data Plane': labs/Dual/watching/watching-dp.md
 - 'Recipes':
   - recipes/index.md
-  - 'Agent':
-    - 'Expose Data Plane Ingress via MetalLB': recipes/agent/exposing-dataplane-with-metallb.md
-  - 'None':
-    - 'Expose Data Plane Ingress via MetalLB': recipes/none/exposing-dataplane-with-metallb.md
+  - 'Common':
+    - 'Expose Data Plane Ingress via MetalLB': recipes/common/exposing-dataplane-with-metallb.md
+    - 'Replace the default CRI-O runtime': recipes/common/replace-crio-runtime.md
 - 'Reference':
   - reference/index.md
   - reference/goals-and-design-invariants.md
@@ -266,6 +265,9 @@ nav:
       - '4.11': reference/manifests/ibmcloud/4.11.md
       - '4.12': reference/manifests/ibmcloud/4.12.md
       - '4.13': reference/manifests/ibmcloud/4.13.md
+  - 'Openshift behaviour deviations':
+    - reference/ocp-behaviour-deviations/index.md
+    - 'Upgrade 4.17 > 4.18': reference/ocp-behaviour-deviations/upgrade-4.17-4.18.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md
