@@ -1,0 +1,39 @@
+{
+    "apiVersion": "config.openshift.io/v1",
+    "kind": "FeatureGate",
+    "metadata": {
+        "annotations": {
+            "include.release.openshift.io/ibm-cloud-managed": "false-except-for-the-config-operator"
+        },
+        "creationTimestamp": null,
+        "name": "cluster"
+    },
+    "spec": {
+      "featureSet": ""
+    },
+    "status": {
+        "featureGates": [
+            {
+                "disabled": [
+                    {
+                        "name": "OpenStack"
+                    }
+                ],
+                "enabled": [
+                    # We enable all OCP feature gates only so the CRD contains the fields.
+                    # Each HostedCluster can configure their specific feature gate CR at creation time via spec.configuration.
+                    {
+                        "name": "ExternalOIDC"
+                    },
+                    {
+                        "name": "DynamicResourceAllocation"
+                    },
+                    {
+                        "name": "NetworkDiagnosticsConfig"
+                    }
+                ],
+                "version": ""
+            }
+        ]
+    }
+}

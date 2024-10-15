@@ -222,8 +222,7 @@ type NodePoolStatus struct {
 }
 
 // NodePoolList contains a list of NodePools.
-//
-// +kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type NodePoolList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -410,6 +409,8 @@ type NodePoolPlatform struct {
 	// +unionDiscriminator
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
 	// +immutable
+	// +openshift:validation:FeatureGateAwareEnum:featureGate="",enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None
+	// +openshift:validation:FeatureGateAwareEnum:featureGate=OpenStack,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack
 	Type PlatformType `json:"type"`
 
 	// AWS specifies the configuration used when operating on AWS.
@@ -438,8 +439,8 @@ type NodePoolPlatform struct {
 	PowerVS *PowerVSNodePoolPlatform `json:"powervs,omitempty"`
 
 	// OpenStack specifies the configuration used when using OpenStack platform.
-	//
 	// +optional
+	// +openshift:enable:FeatureGate=OpenStack
 	OpenStack *OpenStackNodePoolPlatform `json:"openstack,omitempty"`
 }
 

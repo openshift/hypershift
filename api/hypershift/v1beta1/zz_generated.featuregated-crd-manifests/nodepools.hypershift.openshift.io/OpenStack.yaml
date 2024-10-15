@@ -1,0 +1,1279 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    feature-gate.release.openshift.io/OpenStack: "true"
+  name: nodepools.hypershift.openshift.io
+spec:
+  group: hypershift.openshift.io
+  names:
+    kind: NodePool
+    listKind: NodePoolList
+    plural: nodepools
+    shortNames:
+    - np
+    - nps
+    singular: nodepool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Cluster
+      jsonPath: .spec.clusterName
+      name: Cluster
+      type: string
+    - description: Desired Nodes
+      jsonPath: .spec.replicas
+      name: Desired Nodes
+      type: integer
+    - description: Available Nodes
+      jsonPath: .status.replicas
+      name: Current Nodes
+      type: integer
+    - description: Autoscaling Enabled
+      jsonPath: .status.conditions[?(@.type=="AutoscalingEnabled")].status
+      name: Autoscaling
+      type: string
+    - description: Node Autorepair Enabled
+      jsonPath: .status.conditions[?(@.type=="AutorepairEnabled")].status
+      name: Autorepair
+      type: string
+    - description: Current version
+      jsonPath: .status.version
+      name: Version
+      type: string
+    - description: UpdatingVersion in progress
+      jsonPath: .status.conditions[?(@.type=="UpdatingVersion")].status
+      name: UpdatingVersion
+      type: string
+    - description: UpdatingConfig in progress
+      jsonPath: .status.conditions[?(@.type=="UpdatingConfig")].status
+      name: UpdatingConfig
+      type: string
+    - description: Message
+      jsonPath: .status.conditions[?(@.type=="Ready")].message
+      name: Message
+      type: string
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          NodePool is a scalable set of worker nodes attached to a HostedCluster.
+          NodePool machine architectures are uniform within a given pool, and are
+          independent of the control plane’s underlying machine architecture.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec is the desired behavior of the NodePool.
+            properties:
+              arch:
+                default: amd64
+                description: "Arch is the preferred processor architecture for the
+                  NodePool (currently only supported on AWS)\nNOTE: This is set as
+                  optional to prevent validation from failing due to a limitation
+                  on client side validation with open API machinery:\n\thttps://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215"
+                enum:
+                - arm64
+                - amd64
+                - ppc64le
+                type: string
+                x-kubernetes-validations:
+                - message: Arch is immutable
+                  rule: self == oldSelf
+              autoScaling:
+                description: Autoscaling specifies auto-scaling behavior for the NodePool.
+                properties:
+                  max:
+                    description: Max is the maximum number of nodes allowed in the
+                      pool. Must be >= 1.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  min:
+                    description: Min is the minimum number of nodes to maintain in
+                      the pool. Must be >= 1.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                required:
+                - max
+                - min
+                type: object
+                x-kubernetes-validations:
+                - message: max must be equal or greater than min
+                  rule: self.max >= self.min
+              clusterName:
+                description: |
+                  ClusterName is the name of the HostedCluster this NodePool belongs to.
+                type: string
+                x-kubernetes-validations:
+                - message: ClusterName is immutable
+                  rule: self == oldSelf
+              config:
+                description: |-
+                  Config is a list of references to ConfigMaps containing serialized
+                  MachineConfig resources to be injected into the ignition configurations of
+                  nodes in the NodePool. The MachineConfig API schema is defined here:
+
+                  https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
+
+                  Each ConfigMap must have a single key named "config" whose value is the YML
+                  with one or more serialized machineconfiguration.openshift.io resources:
+                  KubeletConfig
+                  ContainerRuntimeConfig
+                  MachineConfig
+                  ClusterImagePolicy
+                  ImageContentSourcePolicy
+                  or
+                  ImageDigestMirrorSet
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
+              management:
+                description: |-
+                  Management specifies behavior for managing nodes in the pool, such as
+                  upgrade strategies and auto-repair behaviors.
+                properties:
+                  autoRepair:
+                    default: false
+                    description: |-
+                      AutoRepair specifies whether health checks should be enabled for machines
+                      in the NodePool. The default is false.
+                    type: boolean
+                  inPlace:
+                    description: InPlace is the configuration for in-place upgrades.
+                    properties:
+                      maxUnavailable:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          MaxUnavailable is the maximum number of nodes that can be unavailable
+                          during the update.
+
+                          Value can be an absolute number (ex: 5) or a percentage of desired nodes
+                          (ex: 10%).
+
+                          Absolute number is calculated from percentage by rounding down.
+
+                          Defaults to 1.
+
+                          Example: when this is set to 30%, a max of 30% of the nodes can be made
+                          unschedulable/unavailable immediately when the update starts. Once a set
+                          of nodes is updated, more nodes can be made unschedulable for update,
+                          ensuring that the total number of nodes schedulable at all times during
+                          the update is at least 70% of desired nodes.
+                        x-kubernetes-int-or-string: true
+                    type: object
+                  replace:
+                    default:
+                      rollingUpdate:
+                        maxSurge: 1
+                        maxUnavailable: 0
+                      strategy: RollingUpdate
+                    description: Replace is the configuration for rolling upgrades.
+                    properties:
+                      rollingUpdate:
+                        description: |-
+                          RollingUpdate specifies a rolling update strategy which upgrades nodes by
+                          creating new nodes and deleting the old ones.
+                        properties:
+                          maxSurge:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              MaxSurge is the maximum number of nodes that can be provisioned above the
+                              desired number of nodes.
+
+                              Value can be an absolute number (ex: 5) or a percentage of desired nodes
+                              (ex: 10%).
+
+                              Absolute number is calculated from percentage by rounding up.
+
+                              This can not be 0 if MaxUnavailable is 0.
+
+                              Defaults to 1.
+
+                              Example: when this is set to 30%, new nodes can be provisioned immediately
+                              when the rolling update starts, such that the total number of old and new
+                              nodes do not exceed 130% of desired nodes. Once old nodes have been
+                              deleted, new nodes can be provisioned, ensuring that total number of nodes
+                              running at any time during the update is at most 130% of desired nodes.
+                            x-kubernetes-int-or-string: true
+                          maxUnavailable:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              MaxUnavailable is the maximum number of nodes that can be unavailable
+                              during the update.
+
+                              Value can be an absolute number (ex: 5) or a percentage of desired nodes
+                              (ex: 10%).
+
+                              Absolute number is calculated from percentage by rounding down.
+
+                              This can not be 0 if MaxSurge is 0.
+
+                              Defaults to 0.
+
+                              Example: when this is set to 30%, old nodes can be deleted down to 70% of
+                              desired nodes immediately when the rolling update starts. Once new nodes
+                              are ready, more old nodes be deleted, followed by provisioning new nodes,
+                              ensuring that the total number of nodes available at all times during the
+                              update is at least 70% of desired nodes.
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      strategy:
+                        description: Strategy is the node replacement strategy for
+                          nodes in the pool.
+                        enum:
+                        - RollingUpdate
+                        - OnDelete
+                        type: string
+                    type: object
+                  upgradeType:
+                    description: UpgradeType specifies the type of strategy for handling
+                      upgrades.
+                    enum:
+                    - Replace
+                    - InPlace
+                    type: string
+                    x-kubernetes-validations:
+                    - message: UpgradeType is immutable
+                      rule: self == oldSelf
+                required:
+                - upgradeType
+                type: object
+              nodeDrainTimeout:
+                description: |-
+                  NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
+                  The default value is 0, meaning that the node can be drained without any time limitations.
+                  NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
+                  the purpose of the change. In future we plan to propagate this field in-place.
+                  https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+                type: string
+              nodeLabels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  NodeLabels propagates a list of labels to Nodes, only once on creation.
+                  Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+                type: object
+              nodeVolumeDetachTimeout:
+                description: |-
+                  NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+                  The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+                  After the timeout, the detachment of volumes that haven't been detached yet is skipped.
+                  Today changing this field will trigger a recreate rolling update, which kind of defeats
+                  the purpose of the change. In future we plan to propagate this field in-place.
+                  https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+                type: string
+              pausedUntil:
+                description: |-
+                  PausedUntil is a field that can be used to pause reconciliation on a resource.
+                  Either a date can be provided in RFC3339 format or a boolean. If a date is
+                  provided: reconciliation is paused on the resource until that date. If the boolean true is
+                  provided: reconciliation is paused on the resource until the field is removed.
+                type: string
+              platform:
+                description: |-
+                  Platform specifies the underlying infrastructure provider for the NodePool
+                  and is used to configure platform specific behavior.
+                properties:
+                  agent:
+                    description: Agent specifies the configuration used when using
+                      Agent platform.
+                    properties:
+                      agentLabelSelector:
+                        description: |-
+                          AgentLabelSelector contains labels that must be set on an Agent in order to
+                          be selected for a Machine.
+                        properties:
+                          matchExpressions:
+                            description: matchExpressions is a list of label selector
+                              requirements. The requirements are ANDed.
+                            items:
+                              description: |-
+                                A label selector requirement is a selector that contains values, a key, and an operator that
+                                relates the key and values.
+                              properties:
+                                key:
+                                  description: key is the label key that the selector
+                                    applies to.
+                                  type: string
+                                operator:
+                                  description: |-
+                                    operator represents a key's relationship to a set of values.
+                                    Valid operators are In, NotIn, Exists and DoesNotExist.
+                                  type: string
+                                values:
+                                  description: |-
+                                    values is an array of string values. If the operator is In or NotIn,
+                                    the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                    the values array must be empty. This array is replaced during a strategic
+                                    merge patch.
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              required:
+                              - key
+                              - operator
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          matchLabels:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                              map is equivalent to an element of matchExpressions, whose key field is "key", the
+                              operator is "In", and the values array contains only "value". The requirements are ANDed.
+                            type: object
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
+                  aws:
+                    description: AWS specifies the configuration used when operating
+                      on AWS.
+                    properties:
+                      ami:
+                        description: |-
+                          AMI is the image id to use for node instances. If unspecified, the default
+                          is chosen based on the NodePool release payload image.
+                        type: string
+                      instanceProfile:
+                        description: InstanceProfile is the AWS EC2 instance profile,
+                          which is a container for an IAM role that the EC2 instance
+                          uses.
+                        type: string
+                      instanceType:
+                        description: InstanceType is an ec2 instance type for node
+                          instances (e.g. m5.large).
+                        type: string
+                      placement:
+                        description: placement specifies the placement options for
+                          the EC2 instances.
+                        properties:
+                          tenancy:
+                            description: |-
+                              Tenancy indicates if instance should run on shared or single-tenant hardware.
+
+                              Possible values:
+                              default: NodePool instances run on shared hardware.
+                              dedicated: Each NodePool instance runs on single-tenant hardware.
+                              host: NodePool instances run on user's pre-allocated dedicated hosts.
+                            enum:
+                            - default
+                            - dedicated
+                            - host
+                            type: string
+                        type: object
+                      resourceTags:
+                        description: |-
+                          ResourceTags is an optional list of additional tags to apply to AWS node
+                          instances.
+
+                          These will be merged with HostedCluster scoped tags, and HostedCluster tags
+                          take precedence in case of conflicts.
+
+                          See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
+                          information on tagging AWS resources. AWS supports a maximum of 50 tags per
+                          resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
+                          for the user.
+                        items:
+                          description: AWSResourceTag is a tag to apply to AWS resources
+                            created for the cluster.
+                          properties:
+                            key:
+                              description: Key is the key of the tag.
+                              maxLength: 128
+                              minLength: 1
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                            value:
+                              description: |-
+                                Value is the value of the tag.
+
+                                Some AWS service do not support empty values. Since tags are added to
+                                resources in many services, the length of the tag value must meet the
+                                requirements of all services.
+                              maxLength: 256
+                              minLength: 1
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                          required:
+                          - key
+                          - value
+                          type: object
+                        maxItems: 25
+                        type: array
+                      rootVolume:
+                        description: RootVolume specifies configuration for the root
+                          volume of node instances.
+                        properties:
+                          encrypted:
+                            description: Encrypted is whether the volume should be
+                              encrypted or not.
+                            type: boolean
+                            x-kubernetes-validations:
+                            - message: Encrypted is immutable
+                              rule: self == oldSelf
+                          encryptionKey:
+                            description: |-
+                              EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
+                              If Encrypted is set and this is omitted, the default AWS key will be used.
+                              The key must already exist and be accessible by the controller.
+                            type: string
+                          iops:
+                            description: |-
+                              IOPS is the number of IOPS requested for the disk. This is only valid
+                              for type io1.
+                            format: int64
+                            type: integer
+                          size:
+                            description: |-
+                              Size specifies size (in Gi) of the storage device.
+
+                              Must be greater than the image snapshot size or 8 (whichever is greater).
+                            format: int64
+                            minimum: 8
+                            type: integer
+                          type:
+                            description: Type is the type of the volume.
+                            type: string
+                        required:
+                        - size
+                        - type
+                        type: object
+                      securityGroups:
+                        description: |-
+                          SecurityGroups is an optional set of security groups to associate with node
+                          instances.
+                        items:
+                          description: |-
+                            AWSResourceReference is a reference to a specific AWS resource by ID or filters.
+                            Only one of ID or Filters may be specified. Specifying more than one will result in
+                            a validation error.
+                          properties:
+                            filters:
+                              description: |-
+                                Filters is a set of key/value pairs used to identify a resource
+                                They are applied according to the rules defined by the AWS API:
+                                https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html
+                              items:
+                                description: Filter is a filter used to identify an
+                                  AWS resource
+                                properties:
+                                  name:
+                                    description: Name of the filter. Filter names
+                                      are case-sensitive.
+                                    type: string
+                                  values:
+                                    description: Values includes one or more filter
+                                      values. Filter values are case-sensitive.
+                                    items:
+                                      type: string
+                                    type: array
+                                required:
+                                - name
+                                - values
+                                type: object
+                              type: array
+                            id:
+                              description: ID of resource
+                              type: string
+                          type: object
+                        type: array
+                      subnet:
+                        description: Subnet is the subnet to use for node instances.
+                        properties:
+                          filters:
+                            description: |-
+                              Filters is a set of key/value pairs used to identify a resource
+                              They are applied according to the rules defined by the AWS API:
+                              https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html
+                            items:
+                              description: Filter is a filter used to identify an
+                                AWS resource
+                              properties:
+                                name:
+                                  description: Name of the filter. Filter names are
+                                    case-sensitive.
+                                  type: string
+                                values:
+                                  description: Values includes one or more filter
+                                    values. Filter values are case-sensitive.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - name
+                              - values
+                              type: object
+                            type: array
+                          id:
+                            description: ID of resource
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: subnet is invalid, a valid subnet id or filters
+                            must be set, but not both
+                          rule: 'has(self.id) && self.id.startsWith(''subnet-'') ?
+                            !has(self.filters) : size(self.filters) > 0'
+                    required:
+                    - instanceType
+                    - subnet
+                    type: object
+                  azure:
+                    properties:
+                      availabilityZone:
+                        description: |-
+                          AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+                          for clusters in a location that does not support AvailabilityZone.
+                        type: string
+                      diagnostics:
+                        description: |-
+                          Diagnostics specifies the diagnostics settings for a virtual machine.
+                          If not specified, then Boot diagnostics will be disabled.
+                        properties:
+                          storageAccountType:
+                            default: Disabled
+                            description: |-
+                              StorageAccountType determines if the storage account for storing the diagnostics data
+                              should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+                            enum:
+                            - Managed
+                            - UserManaged
+                            - Disabled
+                            type: string
+                          storageAccountURI:
+                            description: |-
+                              StorageAccountURI is the URI of the user-managed storage account.
+                              The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                              but may differ if you are using Azure DNS zone endpoints.
+                              You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+                              endpoints tab in the Azure console or with the CLI by issuing
+                              `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+                            format: uri
+                            maxLength: 1024
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: storageAccountURI is required when storageAccountType
+                            is UserManaged
+                          rule: 'self.storageAccountType == ''UserManaged'' ? has(self.storageAccountURI)
+                            : true'
+                      diskEncryptionSetID:
+                        description: |-
+                          DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
+                          needs to exist in the same subscription id listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.SubscriptionID.
+                          DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+                          listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.
+                        type: string
+                      diskSizeGB:
+                        default: 30
+                        description: |-
+                          DiskSizeGB is the size in GB to assign to the OS disk
+                          CAPZ default is 30GB, https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599
+                        format: int32
+                        minimum: 16
+                        type: integer
+                      diskStorageAccountType:
+                        default: Premium_LRS
+                        description: |-
+                          DiskStorageAccountType is the disk storage account type to use. Valid values are:
+                          * Standard_LRS: HDD
+                          * StandardSSD_LRS: Standard SSD
+                          * Premium_LRS: Premium SDD
+                          * UltraSSD_LRS: Ultra SDD
+
+                          Defaults to Premium_LRS. For more details, visit the Azure documentation:
+                          https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison
+                        enum:
+                        - Standard_LRS
+                        - StandardSSD_LRS
+                        - Premium_LRS
+                        - UltraSSD_LRS
+                        type: string
+                      enableEphemeralOSDisk:
+                        description: EnableEphemeralOSDisk is a flag when set to true,
+                          will enable ephemeral OS disk.
+                        type: boolean
+                      encryptionAtHost:
+                        default: Enabled
+                        description: |-
+                          encryptionAtHost enables encryption at host on virtual machines. According to Microsoft documentation, this
+                          means data stored on the VM host is encrypted at rest and flows encrypted to the Storage service. See
+                          https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-host-based-encryption-portal?tabs=azure-powershell
+                          for more information.
+                        enum:
+                        - Enabled
+                        - Disabled
+                        type: string
+                      image:
+                        description: |-
+                          ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
+                          is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
+                          The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
+                          Hosted Cluster specification respectively, HostedCluster.Spec.Platform.Azure.SubscriptionID and
+                          HostedCluster.Spec.Platform.Azure.ResourceGroupName.
+                        properties:
+                          azureImageType:
+                            description: |-
+                              Type is the type of image data that will be provided to the Azure VM. This can be either "ImageID" or
+                              "AzureMarketplace".
+                            enum:
+                            - ImageID
+                            - AzureMarketplace
+                            type: string
+                          azureMarketplace:
+                            description: AzureMarketplace contains the Azure Marketplace
+                              image info to use to boot the Azure VMs from.
+                            properties:
+                              offer:
+                                description: Offer specifies the name of a group of
+                                  related images created by the publisher.
+                                minLength: 1
+                                type: string
+                              publisher:
+                                description: Publisher is the name of the organization
+                                  that created the image
+                                maxLength: 50
+                                minLength: 3
+                                pattern: ^[a-z0-9][a-z0-9-_]{2,49}$
+                                type: string
+                              sku:
+                                description: |-
+                                  SKU specifies an instance of an offer, such as a major release of a distribution.
+                                  For example, 18.04-LTS, 2019-Datacenter
+                                minLength: 1
+                                pattern: ^[a-z0-9-_]+$
+                                type: string
+                              version:
+                                description: |-
+                                  Version specifies the version of an image sku. The allowed formats are Major.Minor.Build or 'latest'. Major,
+                                  Minor, and Build are decimal numbers. Specify 'latest' to use the latest version of an image available at
+                                  deployment time. Even if you use 'latest', the VM image will not automatically update after deploy time even if a
+                                  new version becomes available.
+                                maxLength: 32
+                                minLength: 1
+                                pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+                                type: string
+                            required:
+                            - offer
+                            - publisher
+                            - sku
+                            - version
+                            type: object
+                          imageID:
+                            description: ImageID is the Azure resource ID of a VHD
+                              image to use to boot the Azure VMs from.
+                            type: string
+                        required:
+                        - azureImageType
+                        type: object
+                      machineIdentityID:
+                        description: |-
+                          MachineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. This
+                          field is expected to exist under the same resource group as HostedCluster.Spec.Platform.Azure.ResourceGroupName. This
+                          user assigned identity is expected to have the Contributor role assigned to it and scoped to the resource group
+                          under HostedCluster.Spec.Platform.Azure.ResourceGroupName.
+
+                          If this field is not supplied, the Service Principal credentials will be written to a file on the disk of each VM
+                          in order to be accessible by the cloud provider; the aforementioned credentials provided are the same ones as
+                          HostedCluster.Spec.Platform.Azure.Credentials. However, this is less secure than using a managed identity.
+                        type: string
+                      subnetID:
+                        description: |-
+                          SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+                          different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
+                          exist in the same HostedCluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
+                          HostedCluster.Spec.Platform.Azure.SubscriptionID.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: SubnetID is immutable
+                          rule: self == oldSelf
+                      vmsize:
+                        description: VMSize is the Azure VM instance type to use for
+                          the nodes being created in the nodepool.
+                        type: string
+                    required:
+                    - image
+                    - subnetID
+                    - vmsize
+                    type: object
+                  ibmcloud:
+                    description: IBMCloud defines IBMCloud specific settings for components
+                    properties:
+                      providerType:
+                        description: ProviderType is a specific supported infrastructure
+                          provider within IBM Cloud.
+                        type: string
+                    type: object
+                  kubevirt:
+                    description: Kubevirt specifies the configuration used when operating
+                      on KubeVirt platform.
+                    properties:
+                      additionalNetworks:
+                        description: AdditionalNetworks specify the extra networks
+                          attached to the nodes
+                        items:
+                          description: |-
+                            KubevirtNetwork specifies the configuration for a virtual machine
+                            network interface
+                          properties:
+                            name:
+                              description: |-
+                                Name specify the network attached to the nodes
+                                it is a value with the format "[namespace]/[name]" to reference the
+                                multus network attachment definition
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                      attachDefaultNetwork:
+                        default: true
+                        description: |-
+                          AttachDefaultNetwork specify if the default pod network should be attached to the nodes
+                          this can only be set to false if AdditionalNetworks are configured
+                        type: boolean
+                      compute:
+                        default:
+                          cores: 2
+                          memory: 8Gi
+                        description: Compute contains values representing the virtual
+                          hardware requested for the VM
+                        properties:
+                          cores:
+                            default: 2
+                            description: Cores represents how many cores the guest
+                              VM should have
+                            format: int32
+                            type: integer
+                          memory:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 8Gi
+                            description: Memory represents how much guest memory the
+                              VM should have
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          qosClass:
+                            default: Burstable
+                            description: |-
+                              QosClass If set to "Guaranteed", requests the scheduler to place the VirtualMachineInstance on a node with
+                              limit memory and CPU, equal to be the requested values, to set the VMI as a Guaranteed QoS Class;
+                              See here for more details:
+                              https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances
+                            enum:
+                            - Burstable
+                            - Guaranteed
+                            type: string
+                        type: object
+                      hostDevices:
+                        description: |-
+                          KubevirtHostDevices specifies the host devices (e.g. GPU devices) to be passed
+                          from the management cluster, to the nodepool nodes
+                        items:
+                          properties:
+                            count:
+                              default: 1
+                              description: |-
+                                Count is the number of instances the specified host device will be attached to each of the
+                                NodePool's nodes. Default is 1.
+                              minimum: 1
+                              type: integer
+                            deviceName:
+                              description: |-
+                                DeviceName is the name of the host device that is desired to be utilized in the HostedCluster's NodePool
+                                The device can be any supported PCI device, including GPU, either as a passthrough or a vGPU slice.
+                              type: string
+                          required:
+                          - deviceName
+                          type: object
+                        type: array
+                      networkInterfaceMultiqueue:
+                        default: Enable
+                        description: |-
+                          NetworkInterfaceMultiQueue If set to "Enable", virtual network interfaces configured with a virtio bus will also
+                          enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
+                          factors of the VirtualMachineInstance, like the number of guest CPUs.
+                        enum:
+                        - Enable
+                        - Disable
+                        type: string
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          NodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
+                          Selector which must match a node's labels for the VM to be scheduled on that node. More info:
+                          https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
+                        type: object
+                      rootVolume:
+                        default:
+                          persistent:
+                            size: 32Gi
+                          type: Persistent
+                        description: RootVolume represents values associated with
+                          the VM volume that will host rhcos
+                        properties:
+                          cacheStrategy:
+                            description: CacheStrategy defines the boot image caching
+                              strategy. Default - no caching
+                            properties:
+                              type:
+                                default: None
+                                description: Type is the type of the caching strategy
+                                enum:
+                                - None
+                                - PVC
+                                type: string
+                            required:
+                            - type
+                            type: object
+                          diskImage:
+                            description: Image represents what rhcos image to use
+                              for the node pool
+                            properties:
+                              containerDiskImage:
+                                description: ContainerDiskImage is a string representing
+                                  the container image that holds the root disk
+                                type: string
+                            type: object
+                          persistent:
+                            description: |-
+                              Persistent volume type means the VM's storage is backed by a PVC
+                              VMs that use persistent volumes can survive disruption events like restart and eviction
+                              This is the default type used when no storage type is defined.
+                            properties:
+                              accessModes:
+                                description: |-
+                                  AccessModes is an array that contains the desired Access Modes the root volume should have.
+                                  More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes
+                                items:
+                                  enum:
+                                  - ReadWriteOnce
+                                  - ReadWriteMany
+                                  - ReadOnly
+                                  - ReadWriteOncePod
+                                  type: string
+                                type: array
+                              size:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                default: 32Gi
+                                description: Size is the size of the persistent storage
+                                  volume
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              storageClass:
+                                description: StorageClass is the storageClass used
+                                  for the underlying PVC that hosts the volume
+                                type: string
+                              volumeMode:
+                                description: |-
+                                  VolumeMode defines what type of volume is required by the claim.
+                                  Value of Filesystem is implied when not included in claim spec.
+                                enum:
+                                - Filesystem
+                                - Block
+                                type: string
+                            type: object
+                          type:
+                            default: Persistent
+                            description: Type represents the type of storage to associate
+                              with the kubevirt VMs.
+                            enum:
+                            - Persistent
+                            type: string
+                        type: object
+                    required:
+                    - rootVolume
+                    type: object
+                  openstack:
+                    description: OpenStack specifies the configuration used when using
+                      OpenStack platform.
+                    properties:
+                      flavor:
+                        description: Flavor is the OpenStack flavor to use for the
+                          node instances.
+                        type: string
+                      imageName:
+                        description: |-
+                          ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
+                          is chosen based on the NodePool release payload image.
+                        type: string
+                    required:
+                    - flavor
+                    type: object
+                  powervs:
+                    description: PowerVS specifies the configuration used when using
+                      IBMCloud PowerVS platform.
+                    properties:
+                      image:
+                        description: |-
+                          Image used for deploying the nodes. If unspecified, the default
+                          is chosen based on the NodePool release payload image.
+                        properties:
+                          id:
+                            description: ID of resource
+                            type: string
+                          name:
+                            description: Name of resource
+                            type: string
+                        type: object
+                      imageDeletePolicy:
+                        default: delete
+                        description: |-
+                          ImageDeletePolicy is policy for the image deletion.
+
+                          delete: delete the image from the infrastructure.
+                          retain: delete the image from the openshift but retain in the infrastructure.
+
+                          The default is delete
+                        enum:
+                        - delete
+                        - retain
+                        type: string
+                      memoryGiB:
+                        default: 32
+                        description: |-
+                          MemoryGiB is the size of a virtual machine's memory, in GiB.
+                          maximum value for the MemoryGiB depends on the selected SystemType.
+                          when SystemType is set to e880 maximum MemoryGiB value is 7463 GiB.
+                          when SystemType is set to e980 maximum MemoryGiB value is 15307 GiB.
+                          when SystemType is set to s922 maximum MemoryGiB value is 942 GiB.
+                          The minimum memory is 32 GiB.
+
+                          When omitted, this means the user has no opinion and the platform is left to choose a reasonable
+                          default. The current default is 32.
+                        format: int32
+                        type: integer
+                      processorType:
+                        default: shared
+                        description: |-
+                          ProcessorType is the VM instance processor type.
+                          It must be set to one of the following values: Dedicated, Capped or Shared.
+
+                          Dedicated: resources are allocated for a specific client, The hypervisor makes a 1:1 binding of a partition’s processor to a physical processor core.
+                          Shared: Shared among other clients.
+                          Capped: Shared, but resources do not expand beyond those that are requested, the amount of CPU time is Capped to the value specified for the entitlement.
+
+                          if the processorType is selected as Dedicated, then Processors value cannot be fractional.
+                          When omitted, this means that the user has no opinion and the platform is left to choose a
+                          reasonable default. The current default is shared.
+                        enum:
+                        - dedicated
+                        - shared
+                        - capped
+                        type: string
+                      processors:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        default: "0.5"
+                        description: |-
+                          Processors is the number of virtual processors in a virtual machine.
+                          when the processorType is selected as Dedicated the processors value cannot be fractional.
+                          maximum value for the Processors depends on the selected SystemType.
+                          when SystemType is set to e880 or e980 maximum Processors value is 143.
+                          when SystemType is set to s922 maximum Processors value is 15.
+                          minimum value for Processors depends on the selected ProcessorType.
+                          when ProcessorType is set as Shared or Capped, The minimum processors is 0.5.
+                          when ProcessorType is set as Dedicated, The minimum processors is 1.
+                          When omitted, this means that the user has no opinion and the platform is left to choose a
+                          reasonable default. The default is set based on the selected ProcessorType.
+                          when ProcessorType selected as Dedicated, the default is set to 1.
+                          when ProcessorType selected as Shared or Capped, the default is set to 0.5.
+                        x-kubernetes-int-or-string: true
+                      storageType:
+                        default: tier1
+                        description: |-
+                          StorageType for the image and nodes, this will be ignored if Image is specified.
+                          The storage tiers in PowerVS are based on I/O operations per second (IOPS).
+                          It means that the performance of your storage volumes is limited to the maximum number of IOPS based on volume size and storage tier.
+                          Although, the exact numbers might change over time, the Tier 3 storage is currently set to 3 IOPS/GB, and the Tier 1 storage is currently set to 10 IOPS/GB.
+
+                          The default is tier1
+                        enum:
+                        - tier1
+                        - tier3
+                        type: string
+                      systemType:
+                        default: s922
+                        description: |-
+                          SystemType is the System type used to host the instance.
+                          systemType determines the number of cores and memory that is available.
+                          Few of the supported SystemTypes are s922,e880,e980.
+                          e880 systemType available only in Dallas Datacenters.
+                          e980 systemType available in Datacenters except Dallas and Washington.
+                          When omitted, this means that the user has no opinion and the platform is left to choose a
+                          reasonable default. The current default is s922 which is generally available.
+                        type: string
+                    type: object
+                  type:
+                    description: Type specifies the platform name.
+                    enum:
+                    - AWS
+                    - Azure
+                    - IBMCloud
+                    - KubeVirt
+                    - Agent
+                    - PowerVS
+                    - None
+                    - OpenStack
+                    type: string
+                    x-kubernetes-validations:
+                    - message: Type is immutable
+                      rule: self == oldSelf
+                required:
+                - type
+                type: object
+              release:
+                description: |-
+                  Release specifies the OCP release used for the NodePool. This informs the
+                  ignition configuration for machines, as well as other platform specific
+                  machine properties (e.g. an AMI on the AWS platform).
+                properties:
+                  image:
+                    description: Image is the image pullspec of an OCP release payload
+                      image.
+                    pattern: ^(\w+\S+)$
+                    type: string
+                required:
+                - image
+                type: object
+              replicas:
+                description: |-
+                  Replicas is the desired number of nodes the pool should maintain. If
+                  unset, the default value is 0.
+                format: int32
+                type: integer
+              taints:
+                description: Taints if specified, propagates a list of taints to Nodes,
+                  only once on creation.
+                items:
+                  description: |-
+                    Taint is as v1 Core but without TimeAdded.
+                    https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053
+                  properties:
+                    effect:
+                      description: |-
+                        Required. The effect of the taint on pods
+                        that do not tolerate the taint.
+                        Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                      type: string
+                    key:
+                      description: Required. The taint key to be applied to a node.
+                      type: string
+                    value:
+                      description: The taint value corresponding to the taint key.
+                      pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                      type: string
+                  required:
+                  - effect
+                  - key
+                  type: object
+                type: array
+              tuningConfig:
+                description: |-
+                  TuningConfig is a list of references to ConfigMaps containing serialized
+                  Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
+                  nodes in the NodePool. The Tuned API is defined here:
+
+                  https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go
+
+                  The PerformanceProfile API is defined here:
+                  https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2
+
+                  Each ConfigMap must have a single key named "tuning" whose value is the
+                  JSON or YAML of a serialized Tuned or PerformanceProfile.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
+            required:
+            - clusterName
+            - management
+            - platform
+            - release
+            type: object
+            x-kubernetes-validations:
+            - message: Arch is required once set
+              rule: '!has(oldSelf.arch) || has(self.arch)'
+            - message: Setting Arch to arm64 is only supported for AWS and Azure
+              rule: self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure)
+            - message: Both replicas or autoScaling should not be set
+              rule: '!has(self.replicas) || !has(self.autoScaling)'
+          status:
+            description: Status is the latest observed status of the NodePool.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represents the latest available observations of the node pool's
+                  current state.
+                items:
+                  description: |-
+                    We define our own condition type since metav1.Condition has validation
+                    for Reason that might be broken by what we bubble up from CAPI.
+                    NodePoolCondition defines an observation of NodePool resource operational state.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        Last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed. If that is not known, then using the time when
+                        the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        A human readable message indicating details about the transition.
+                        This field may be empty.
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        The reason for the condition's last transition in CamelCase.
+                        The specific API may choose whether or not this field is considered a guaranteed API.
+                        This field may not be empty.
+                      type: string
+                    severity:
+                      description: |-
+                        Severity provides an explicit classification of Reason code, so the users or machines can immediately
+                        understand the current situation and act accordingly.
+                        The Severity field MUST be set only when Status=False.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: |-
+                        Type of condition in CamelCase or in foo.example.com/CamelCase.
+                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
+                        can be useful (see .node.status.conditions), the ability to deconflict is important.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+              platform:
+                description: Platform hols the specific statuses
+                properties:
+                  kubeVirt:
+                    description: KubeVirt contains the KubeVirt platform statuses
+                    properties:
+                      cacheName:
+                        description: CacheName holds the name of the cache DataVolume,
+                          if exists
+                        type: string
+                      credentials:
+                        description: |-
+                          Credentials shows the client credentials used when creating KubeVirt virtual machines.
+                          This filed is only exists when the KubeVirt virtual machines are being placed
+                          on a cluster separate from the one hosting the Hosted Control Plane components.
+
+                          The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+                          the same cluster and namespace as the Hosted Control Plane.
+                        properties:
+                          infraKubeConfigSecret:
+                            description: |-
+                              InfraKubeConfigSecret is a reference to a secret that contains the kubeconfig for the external infra cluster
+                              that will be used to host the KubeVirt virtual machines for this cluster.
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                            x-kubernetes-validations:
+                            - message: infraKubeConfigSecret is immutable
+                              rule: self == oldSelf
+                          infraNamespace:
+                            description: |-
+                              InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
+                              virtual machines. This namespace must already exist before creating the HostedCluster and the kubeconfig
+                              referenced in the InfraKubeConfigSecret must have access to manage the required resources within this
+                              namespace.
+                            type: string
+                            x-kubernetes-validations:
+                            - message: infraNamespace is immutable
+                              rule: self == oldSelf
+                        required:
+                        - infraKubeConfigSecret
+                        - infraNamespace
+                        type: object
+                    type: object
+                type: object
+              replicas:
+                description: Replicas is the latest observed number of nodes in the
+                  pool.
+                format: int32
+                type: integer
+              version:
+                description: |-
+                  Version is the semantic version of the latest applied release specified by
+                  the NodePool.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
