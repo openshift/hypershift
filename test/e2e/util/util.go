@@ -1727,6 +1727,11 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 				continue
 			}
 
+			// SRO is being removed in 4.18, not worth correcting the tolerations on back releases
+			if pod.Labels["name"] == "shared-resource-csi-driver-operator" {
+				continue
+			}
+
 			// aws-ebs-csi-driver-operator tolerations are set through CSO and are different from the ones in the DC
 			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
 				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations))
@@ -1825,6 +1830,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			"packageserver",
 			"csi-snapshot-webhook",
 			"csi-snapshot-controller",
+			"shared-resource-csi-driver-operator",
 		)
 
 		if hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {

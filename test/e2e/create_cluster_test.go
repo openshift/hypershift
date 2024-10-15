@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/assets"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -67,6 +68,9 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.AWSPlatform.Zones = zones
 		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 		clusterOpts.NodePoolReplicas = 1
+	}
+	if !e2eutil.IsLessThan(e2eutil.Version418) {
+		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
