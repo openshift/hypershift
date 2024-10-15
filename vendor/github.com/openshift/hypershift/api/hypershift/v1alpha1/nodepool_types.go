@@ -234,8 +234,7 @@ type NodePoolStatus struct {
 }
 
 // NodePoolList contains a list of NodePools.
-//
-// +kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type NodePoolList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

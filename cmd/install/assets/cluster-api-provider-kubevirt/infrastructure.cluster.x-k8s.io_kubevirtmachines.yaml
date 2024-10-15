@@ -66,7 +66,6 @@ spec:
                       the event) or if no container name is specified "spec.containers[2]" (container with
                       index 2 in this pod). This syntax is chosen only to have some well-defined way of
                       referencing a part of an object.
-                      TODO: this design is not final and this field is subject to change in the future.
                     type: string
                   kind:
                     description: |-
@@ -701,10 +700,8 @@ spec:
                                             Claims lists the names of resources, defined in spec.resourceClaims,
                                             that are used by this container.
 
-
                                             This is an alpha field and requires enabling the
                                             DynamicResourceAllocation feature gate.
-
 
                                             This field is immutable. It can only be set for containers.
                                           items:
@@ -2646,7 +2643,6 @@ spec:
                                                 Interface model.
                                                 One of: e1000, e1000e, ne2k_pci, pcnet, rtl8139, virtio.
                                                 Defaults to virtio.
-                                                TODO:(ihar) switch to enums once opengen-api supports them. See: https://github.com/kubernetes/kube-openapi/issues/51
                                               type: string
                                             name:
                                               description: |-
@@ -3364,7 +3360,6 @@ spec:
                                     description: |-
                                       TCPSocket specifies an action involving a TCP port.
                                       TCP hooks not yet supported
-                                      TODO: implement a realistic TCP lifecycle hook
                                     properties:
                                       host:
                                         description: 'Optional: Host name to connect
@@ -3564,7 +3559,6 @@ spec:
                                     description: |-
                                       TCPSocket specifies an action involving a TCP port.
                                       TCP hooks not yet supported
-                                      TODO: implement a realistic TCP lifecycle hook
                                     properties:
                                       host:
                                         description: 'Optional: Host name to connect
@@ -3724,7 +3718,6 @@ spec:
                                         Keys that don't exist in the incoming pod labels will
                                         be ignored. A null or empty list means only match against labelSelector.
 
-
                                         This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
                                       items:
                                         type: string
@@ -3764,7 +3757,6 @@ spec:
                                         Valid values are integers greater than 0.
                                         When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
 
-
                                         For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
                                         labelSelector spread as 2/2/2:
                                         | zone1 | zone2 | zone3 |
@@ -3782,7 +3774,6 @@ spec:
                                         - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
                                         - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
 
-
                                         If this value is nil, the behavior is equivalent to the Honor policy.
                                         This is a beta-level feature default enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
                                       type: string
@@ -3793,7 +3784,6 @@ spec:
                                         - Honor: nodes without taints, along with tainted nodes for which the incoming pod
                                         has a toleration, are included.
                                         - Ignore: node taints are ignored. All nodes are included.
-
 
                                         If this value is nil, the behavior is equivalent to the Ignore policy.
                                         This is a beta-level feature default enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
@@ -3876,9 +3866,7 @@ spec:
                                                 This field is effectively required, but due to backwards compatibility is
                                                 allowed to be empty. Instances of this type with an empty value here are
                                                 almost certainly wrong.
-                                                TODO: Add other useful fields. apiVersion, kind, uid?
                                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                               type: string
                                           type: object
                                           x-kubernetes-map-type: atomic
@@ -3894,9 +3882,7 @@ spec:
                                                 This field is effectively required, but due to backwards compatibility is
                                                 allowed to be empty. Instances of this type with an empty value here are
                                                 almost certainly wrong.
-                                                TODO: Add other useful fields. apiVersion, kind, uid?
                                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                               type: string
                                           type: object
                                           x-kubernetes-map-type: atomic
@@ -3936,9 +3922,7 @@ spec:
                                                 This field is effectively required, but due to backwards compatibility is
                                                 allowed to be empty. Instances of this type with an empty value here are
                                                 almost certainly wrong.
-                                                TODO: Add other useful fields. apiVersion, kind, uid?
                                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                               type: string
                                           type: object
                                           x-kubernetes-map-type: atomic
@@ -3953,9 +3937,7 @@ spec:
                                                 This field is effectively required, but due to backwards compatibility is
                                                 allowed to be empty. Instances of this type with an empty value here are
                                                 almost certainly wrong.
-                                                TODO: Add other useful fields. apiVersion, kind, uid?
                                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                               type: string
                                           type: object
                                           x-kubernetes-map-type: atomic
@@ -3981,9 +3963,7 @@ spec:
                                             This field is effectively required, but due to backwards compatibility is
                                             allowed to be empty. Instances of this type with an empty value here are
                                             almost certainly wrong.
-                                            TODO: Add other useful fields. apiVersion, kind, uid?
                                             More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                            TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                           type: string
                                         optional:
                                           description: Specify whether the ConfigMap
@@ -4307,9 +4287,7 @@ spec:
                                                 This field is effectively required, but due to backwards compatibility is
                                                 allowed to be empty. Instances of this type with an empty value here are
                                                 almost certainly wrong.
-                                                TODO: Add other useful fields. apiVersion, kind, uid?
                                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                               type: string
                                           type: object
                                           x-kubernetes-map-type: atomic
@@ -4326,9 +4304,7 @@ spec:
                                                 This field is effectively required, but due to backwards compatibility is
                                                 allowed to be empty. Instances of this type with an empty value here are
                                                 almost certainly wrong.
-                                                TODO: Add other useful fields. apiVersion, kind, uid?
                                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                               type: string
                                           type: object
                                           x-kubernetes-map-type: atomic
@@ -4418,7 +4394,6 @@ spec:
                   reconciling the Machine and will contain a more verbose string suitable
                   for logging and human consumption.
 
-
                   This field should not be set for transitive errors that a controller
                   faces that are expected to be fixed automatically over
                   time (like service outages), but instead indicate that something is
@@ -4427,7 +4402,6 @@ spec:
                   of terminal errors would be invalid combinations of settings in the
                   spec, values that are unsupported by the controller, or the
                   responsible controller itself being critically misconfigured.
-
 
                   Any transient errors that occur during the reconciliation of Machines
                   can be added as events to the Machine object and/or logged in the
@@ -4439,7 +4413,6 @@ spec:
                   reconciling the Machine and will contain a succinct value suitable
                   for machine interpretation.
 
-
                   This field should not be set for transitive errors that a controller
                   faces that are expected to be fixed automatically over
                   time (like service outages), but instead indicate that something is
@@ -4448,7 +4421,6 @@ spec:
                   of terminal errors would be invalid combinations of settings in the
                   spec, values that are unsupported by the controller, or the
                   responsible controller itself being critically misconfigured.
-
 
                   Any transient errors that occur during the reconciliation of Machines
                   can be added as events to the Machine object and/or logged in the

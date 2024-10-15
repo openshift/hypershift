@@ -75,7 +75,6 @@ spec:
                       a label query over a set of resources. The result of matchLabels and
                       matchExpressions are ANDed.
 
-
                       A nil or empty selector indicates that AzureCluster cannot use this
                       AzureClusterIdentity from any namespace.
                     properties:

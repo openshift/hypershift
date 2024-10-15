@@ -78,6 +78,7 @@ type ControlPlaneComponentStatus struct {
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 // +kubebuilder:printcolumn:name="ProgressingMessage",type="string",priority=1,JSONPath=".status.conditions[?(@.type==\"Progressing\")].message",description="ProgressingMessage"
 // ControlPlaneComponent specifies the state of a ControlPlane Component
+// +openshift:enable:FeatureGate=ControlPlaneV2
 type ControlPlaneComponent struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -86,7 +87,7 @@ type ControlPlaneComponent struct {
 	Status ControlPlaneComponentStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // ControlPlaneComponentList contains a list of ControlPlaneComponent
 type ControlPlaneComponentList struct {
 	metav1.TypeMeta `json:",inline"`

@@ -2213,8 +2213,8 @@ type HostedCluster struct {
 	Status HostedClusterStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
 // HostedClusterList contains a list of HostedCluster
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type HostedClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

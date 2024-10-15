@@ -126,7 +126,6 @@ spec:
                       the event) or if no container name is specified "spec.containers[2]" (container with
                       index 2 in this pod). This syntax is chosen only to have some well-defined way of
                       referencing a part of an object.
-                      TODO: this design is not final and this field is subject to change in the future.
                     type: string
                   kind:
                     description: |-
@@ -172,7 +171,6 @@ spec:
                       the event) or if no container name is specified "spec.containers[2]" (container with
                       index 2 in this pod). This syntax is chosen only to have some well-defined way of
                       referencing a part of an object.
-                      TODO: this design is not final and this field is subject to change in the future.
                     type: string
                   kind:
                     description: |-
@@ -228,13 +226,10 @@ spec:
                             description: |-
                               Enable controls if a MachineHealthCheck should be created for the target machines.
 
-
                               If false: No MachineHealthCheck will be created.
-
 
                               If not set(default): A MachineHealthCheck will be created if it is defined here or
                                in the associated ClusterClass. If no MachineHealthCheck is defined then none will be created.
-
 
                               If true: A MachineHealthCheck is guaranteed to be created. Cluster validation will
                               block if `enable` is true and no MachineHealthCheck definition is available.
@@ -258,7 +253,6 @@ spec:
                               RemediationTemplate is a reference to a remediation template
                               provided by an infrastructure provider.
 
-
                               This field is completely optional, when filled, the MachineHealthCheck controller
                               creates a new object from the template referenced and hands off remediation of the machine to
                               a controller that lives outside of Cluster API.
@@ -275,7 +269,6 @@ spec:
                                   the event) or if no container name is specified "spec.containers[2]" (container with
                                   index 2 in this pod). This syntax is chosen only to have some well-defined way of
                                   referencing a part of an object.
-                                  TODO: this design is not final and this field is subject to change in the future.
                                 type: string
                               kind:
                                 description: |-
@@ -396,7 +389,6 @@ spec:
                       RolloutAfter performs a rollout of the entire cluster one component at a time,
                       control plane first and then machine deployments.
 
-
                       Deprecated: This field has no function and is going to be removed in the next apiVersion.
                     format: date-time
                     type: string
@@ -471,13 +463,10 @@ spec:
                                   description: |-
                                     Enable controls if a MachineHealthCheck should be created for the target machines.
 
-
                                     If false: No MachineHealthCheck will be created.
-
 
                                     If not set(default): A MachineHealthCheck will be created if it is defined here or
                                      in the associated ClusterClass. If no MachineHealthCheck is defined then none will be created.
-
 
                                     If true: A MachineHealthCheck is guaranteed to be created. Cluster validation will
                                     block if `enable` is true and no MachineHealthCheck definition is available.
@@ -501,7 +490,6 @@ spec:
                                     RemediationTemplate is a reference to a remediation template
                                     provided by an infrastructure provider.
 
-
                                     This field is completely optional, when filled, the MachineHealthCheck controller
                                     creates a new object from the template referenced and hands off remediation of the machine to
                                     a controller that lives outside of Cluster API.
@@ -518,7 +506,6 @@ spec:
                                         the event) or if no container name is specified "spec.containers[2]" (container with
                                         index 2 in this pod). This syntax is chosen only to have some well-defined way of
                                         referencing a part of an object.
-                                        TODO: this design is not final and this field is subject to change in the future.
                                       type: string
                                     kind:
                                       description: |-

@@ -151,12 +151,10 @@ spec:
                             description: |-
                               CrossZoneLoadBalancing enables the classic ELB cross availability zone balancing.
 
-
                               With cross-zone load balancing, each load balancer node for your Classic Load Balancer
                               distributes requests evenly across the registered instances in all enabled Availability Zones.
                               If cross-zone load balancing is disabled, each load balancer node distributes requests evenly across
                               the registered instances in its Availability Zone only.
-
 
                               Defaults to false.
                             type: boolean
@@ -666,12 +664,10 @@ spec:
                             description: |-
                               CrossZoneLoadBalancing enables the classic ELB cross availability zone balancing.
 
-
                               With cross-zone load balancing, each load balancer node for your Classic Load Balancer
                               distributes requests evenly across the registered instances in all enabled Availability Zones.
                               If cross-zone load balancing is disabled, each load balancer node distributes requests evenly across
                               the registered instances in its Availability Zone only.
-
 
                               Defaults to false.
                             type: boolean
@@ -1028,7 +1024,6 @@ spec:
                                     ID defines a unique identifier to reference this resource.
                                     If you're bringing your subnet, set the AWS subnet-id here, it must start with `subnet-`.
 
-
                                     When the VPC is managed by CAPA, and you'd like the provider to create a subnet for you,
                                     the id can be set to any placeholder value that does not start with `subnet-`;
                                     upon creation, the subnet AWS identifier will be populated in the `ResourceID` field and
@@ -1062,7 +1057,6 @@ spec:
                                     ParentZoneName is the zone name where the current subnet's zone is tied when
                                     the zone is a Local Zone.
 
-
                                     The subnets in Local Zone or Wavelength Zone locations consume the ParentZoneName
                                     to select the correct private route table to egress traffic to the internet.
                                   type: string
@@ -1085,29 +1079,22 @@ spec:
                                   description: |-
                                     ZoneType defines the type of the zone where the subnet is created.
 
-
                                     The valid values are availability-zone, local-zone, and wavelength-zone.
-
 
                                     Subnet with zone type availability-zone (regular) is always selected to create cluster
                                     resources, like Load Balancers, NAT Gateways, Contol Plane nodes, etc.
 
-
                                     Subnet with zone type local-zone or wavelength-zone is not eligible to automatically create
                                     regular cluster resources.
-
 
                                     The public subnet in availability-zone or local-zone is associated with regular public
                                     route table with default route entry to a Internet Gateway.
 
-
                                     The public subnet in wavelength-zone is associated with a carrier public
                                     route table with default route entry to a Carrier Gateway.
 
-
                                     The private subnet in the availability-zone is associated with a private route table with
                                     the default route entry to a NAT Gateway created in that zone.
-
 
                                     The private subnet in the local-zone or wavelength-zone is associated with a private route table with
                                     the default route entry re-using the NAT Gateway in the Region (preferred from the
@@ -1167,11 +1154,9 @@ spec:
                                   EmptyRoutesDefaultVPCSecurityGroup specifies whether the default VPC security group ingress
                                   and egress rules should be removed.
 
-
                                   By default, when creating a VPC, AWS creates a security group called `default` with ingress and egress
                                   rules that allow traffic from anywhere. The group could be used as a potential surface attack and
                                   it's generally suggested that the group rules are removed or modified appropriately.
-
 
                                   NOTE: This only applies when the VPC is managed by the Cluster API AWS controller.
                                 type: boolean
@@ -1305,10 +1290,8 @@ spec:
                             description: |-
                               PresignedURLDuration defines the duration for which presigned URLs are valid.
 
-
                               This is used to generate presigned URLs for S3 Bucket objects, which are used by
                               control-plane and worker nodes to fetch bootstrap data.
-
 
                               When enabled, the IAM instance profiles specified are not used.
                             type: string
@@ -1318,7 +1301,6 @@ spec:
                       secondaryControlPlaneLoadBalancer:
                         description: |-
                           SecondaryControlPlaneLoadBalancer is an additional load balancer that can be used for the control plane.
-
 
                           An example use case is to have a separate internal load balancer for internal traffic,
                           and a separate external load balancer for external traffic.
@@ -1421,12 +1403,10 @@ spec:
                             description: |-
                               CrossZoneLoadBalancing enables the classic ELB cross availability zone balancing.
 
-
                               With cross-zone load balancing, each load balancer node for your Classic Load Balancer
                               distributes requests evenly across the registered instances in all enabled Availability Zones.
                               If cross-zone load balancing is disabled, each load balancer node distributes requests evenly across
                               the registered instances in its Availability Zone only.
-
 
                               Defaults to false.
                             type: boolean
