@@ -1405,7 +1405,6 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 
 func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
 	t.Helper()
-	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	defaultIngressRouterService := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1415,7 +1414,7 @@ func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclien
 	}
 
 	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		getErr := guestClient.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressRouterService), defaultIngressRouterService)
+		getErr := client.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressRouterService), defaultIngressRouterService)
 		if apierrors.IsNotFound(getErr) {
 			return false, nil
 		}
@@ -1503,12 +1502,17 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	g := NewWithT(t)
 
-	if hostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform && clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
-		createIngressRoute53Record(t, ctx, client, hostedCluster, clusterOpts)
-	}
-
 	// Sanity check the cluster by waiting for the nodes to report ready
 	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	// Create Ingress Route53 Record for OpenStack clusters when AWS credentials are provided
+	if hostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform && clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
+		if clusterOpts.NodePoolReplicas > 0 {
+			createIngressRoute53Record(t, ctx, guestClient, hostedCluster, clusterOpts)
+		} else {
+			t.Logf("Skipping creating Ingress Route53 Record for HostedCluster %s as there are no worker nodes", hostedCluster.Name)
+		}
+	}
 
 	// Wait for Nodes to be Ready
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
