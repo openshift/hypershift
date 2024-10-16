@@ -13,9 +13,10 @@ import (
 )
 
 type ClusterPolicyControllerParams struct {
-	Image                   string                  `json:"image"`
-	APIServer               *configv1.APIServerSpec `json:"apiServer"`
-	AvailabilityProberImage string                  `json:"availabilityProberImage"`
+	FeatureGate             *configv1.FeatureGateSpec `json:"featureGate"`
+	Image                   string                    `json:"image"`
+	APIServer               *configv1.APIServerSpec   `json:"apiServer"`
+	AvailabilityProberImage string                    `json:"availabilityProberImage"`
 
 	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
 	config.OwnerRef  `json:",inline"`
@@ -28,6 +29,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseIm
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
+		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
@@ -63,6 +65,16 @@ func (p *ClusterPolicyControllerParams) MinTLSVersion() string {
 		return config.MinTLSVersion(p.APIServer.TLSSecurityProfile)
 	} else {
 		return config.MinTLSVersion(nil)
+	}
+}
+
+func (p *ClusterPolicyControllerParams) FeatureGates() []string {
+	if p.FeatureGate != nil {
+		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
+	} else {
+		return config.FeatureGates(&configv1.FeatureGateSelection{
+			FeatureSet: configv1.Default,
+		})
 	}
 }
 

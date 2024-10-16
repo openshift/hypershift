@@ -3540,7 +3540,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 
 	config := manifests.ClusterPolicyControllerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, config, func() error {
-		return clusterpolicy.ReconcileClusterPolicyControllerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites())
+		return clusterpolicy.ReconcileClusterPolicyControllerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites(), p.FeatureGates())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster policy controller config: %w", err)
 	}
