@@ -3,6 +3,7 @@ package clusterpolicy
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -45,7 +46,11 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseIm
 		params.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, clusterPolicyControllerLabels, nil)
+	replicas := pointer.Int(2)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		replicas = pointer.Int(1)
+	}
+	params.DeploymentConfig.SetDefaults(hcp, clusterPolicyControllerLabels, replicas)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)
