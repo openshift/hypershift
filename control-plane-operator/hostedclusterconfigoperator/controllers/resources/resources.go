@@ -2393,6 +2393,7 @@ func (r *reconciler) isClusterVersionUpdated(ctx context.Context, version string
 }
 
 func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+	log := ctrl.LoggerFrom(ctx)
 	var errs []error
 
 	snapshotController := manifests.CSISnapshotController()
@@ -2401,7 +2402,10 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile CSISnapshotController : %w", err))
+	} else {
+		log.Info("reconciled CSISnapshotController")
 	}
+
 
 	storageCR := manifests.Storage()
 	if _, err := r.CreateOrUpdate(ctx, r.client, storageCR, func() error {
@@ -2409,7 +2413,10 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile Storage : %w", err))
+	} else {
+		log.Info("reconciled Storage")
 	}
+
 
 	var driverNames []operatorv1.CSIDriverName
 	switch hcp.Spec.Platform.Type {
@@ -2426,6 +2433,8 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile ClusterCSIDriver %s: %w", driver.Name, err))
+		} else {
+			log.Info("reconciled ClusterCSIDriver %s", "name", driver.Name)
 		}
 	}
 	return errs
