@@ -135,6 +135,8 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
 	flag.Var(&globalOpts.configurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
 	flag.Var(&globalOpts.configurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
+	flag.StringVar(&globalOpts.n1MinorReleaseImage, "e2e.n1-minor-release-image", "", "The n-1 minor OCP release image relative to the latest")
+	flag.StringVar(&globalOpts.n2MinorReleaseImage, "e2e.n2-minor-release-image", "", "The n-2 minor OCP release image relative to the latest")
 
 	flag.Parse()
 
@@ -394,6 +396,8 @@ func dumpTestMetrics(log logr.Logger, artifactDir string) {
 type options struct {
 	LatestReleaseImage   string
 	PreviousReleaseImage string
+	n2MinorReleaseImage  string
+	n1MinorReleaseImage  string
 	IsRunningInCI        bool
 	ArtifactDir          string
 
