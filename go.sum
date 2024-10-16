@@ -1194,8 +1194,8 @@ github.com/opencontainers/runc v1.1.14 h1:rgSuzbmgz5DUJjeSnw337TxDbRuqjs6iqQck/2
 github.com/opencontainers/runc v1.1.14/go.mod h1:E4C2z+7BxR7GHXp0hAY53mek+x49X1LjPNeMTfRGvOA=
 github.com/opencontainers/selinux v1.11.0 h1:+5Zbo97w3Lbmb3PeqQtpmTkMwsW5nRI3YaLpt7tQ7oU=
 github.com/opencontainers/selinux v1.11.0/go.mod h1:E5dMC3VPuVvVHDYmi78qvhJp8+M586T4DlDRYpFkyec=
-github.com/openshift/api v0.0.0-20240524162738-d899f8877d22 h1:AW8KUN4k7qR2egrCCe3x95URHQ3N188+a/b0qpRyAHg=
-github.com/openshift/api v0.0.0-20240524162738-d899f8877d22/go.mod h1:7Hm1kLJGxWT6eysOpD2zUztdn+w91eiERn6KtI5o9aw=
+github.com/openshift/api v0.0.0-20240930154731-d67159445fc4 h1:me9LFRvXcAbJ+YP7n0I6C47448VefursRnb+qxoA5Hw=
+github.com/openshift/api v0.0.0-20240930154731-d67159445fc4/go.mod h1:OOh6Qopf21pSzqNVCB5gomomBXb8o5sGKZxG2KNpaXM=
 github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8 h1:HGfbllzRcrJBSiwzNjBCs7sExLUxC5/1evnvlNGB0Cg=
 github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8/go.mod h1:+VvvaMSTUhOt+rBq7NwRLSNxq06hTeRCBqm0j0PQEq8=
 github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e h1:X0et0+WqSmnW0CS//XdLFLvJvzt8TFJzfFE1XJ2rXNg=
