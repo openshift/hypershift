@@ -18,7 +18,6 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=clusterversions,scope=Cluster
-// +kubebuilder:validation:XValidation:rule="has(self.spec.capabilities) && has(self.spec.capabilities.additionalEnabledCapabilities) && self.spec.capabilities.baselineCapabilitySet == 'None' && 'baremetal' in self.spec.capabilities.additionalEnabledCapabilities ? 'MachineAPI' in self.spec.capabilities.additionalEnabledCapabilities || (has(self.status) && has(self.status.capabilities) && has(self.status.capabilities.enabledCapabilities) && 'MachineAPI' in self.status.capabilities.enabledCapabilities) : true",message="the `baremetal` capability requires the `MachineAPI` capability, which is neither explicitly or implicitly enabled in this cluster, please enable the `MachineAPI` capability"
 // +kubebuilder:validation:XValidation:rule="has(self.spec.capabilities) && has(self.spec.capabilities.additionalEnabledCapabilities) && self.spec.capabilities.baselineCapabilitySet == 'None' && 'marketplace' in self.spec.capabilities.additionalEnabledCapabilities ? 'OperatorLifecycleManager' in self.spec.capabilities.additionalEnabledCapabilities || (has(self.status) && has(self.status.capabilities) && has(self.status.capabilities.enabledCapabilities) && 'OperatorLifecycleManager' in self.status.capabilities.enabledCapabilities) : true",message="the `marketplace` capability requires the `OperatorLifecycleManager` capability, which is neither explicitly or implicitly enabled in this cluster, please enable the `OperatorLifecycleManager` capability"
 // +kubebuilder:printcolumn:name=Version,JSONPath=.status.history[?(@.state=="Completed")].version,type=string
 // +kubebuilder:printcolumn:name=Available,JSONPath=.status.conditions[?(@.type=="Available")].status,type=string
@@ -429,7 +428,7 @@ var KnownClusterVersionCapabilities = []ClusterVersionCapability{
 }
 
 // ClusterVersionCapabilitySet defines sets of cluster version capabilities.
-// +kubebuilder:validation:Enum=None;v4.11;v4.12;v4.13;v4.14;v4.15;v4.16;vCurrent
+// +kubebuilder:validation:Enum=None;v4.11;v4.12;v4.13;v4.14;v4.15;v4.16;v4.17;vCurrent
 type ClusterVersionCapabilitySet string
 
 const (
@@ -472,6 +471,12 @@ const (
 	// OpenShift.  This list will remain the same no matter which
 	// version of OpenShift is installed.
 	ClusterVersionCapabilitySet4_16 ClusterVersionCapabilitySet = "v4.16"
+
+	// ClusterVersionCapabilitySet4_17 is the recommended set of
+	// optional capabilities to enable for the 4.17 version of
+	// OpenShift.  This list will remain the same no matter which
+	// version of OpenShift is installed.
+	ClusterVersionCapabilitySet4_17 ClusterVersionCapabilitySet = "v4.17"
 
 	// ClusterVersionCapabilitySetCurrent is the recommended set
 	// of optional capabilities to enable for the cluster's
@@ -540,6 +545,24 @@ var ClusterVersionCapabilitySets = map[ClusterVersionCapabilitySet][]ClusterVers
 		ClusterVersionCapabilityCloudCredential,
 	},
 	ClusterVersionCapabilitySet4_16: {
+		ClusterVersionCapabilityBaremetal,
+		ClusterVersionCapabilityConsole,
+		ClusterVersionCapabilityInsights,
+		ClusterVersionCapabilityMarketplace,
+		ClusterVersionCapabilityStorage,
+		ClusterVersionCapabilityOpenShiftSamples,
+		ClusterVersionCapabilityCSISnapshot,
+		ClusterVersionCapabilityNodeTuning,
+		ClusterVersionCapabilityMachineAPI,
+		ClusterVersionCapabilityBuild,
+		ClusterVersionCapabilityDeploymentConfig,
+		ClusterVersionCapabilityImageRegistry,
+		ClusterVersionCapabilityOperatorLifecycleManager,
+		ClusterVersionCapabilityCloudCredential,
+		ClusterVersionCapabilityIngress,
+		ClusterVersionCapabilityCloudControllerManager,
+	},
+	ClusterVersionCapabilitySet4_17: {
 		ClusterVersionCapabilityBaremetal,
 		ClusterVersionCapabilityConsole,
 		ClusterVersionCapabilityInsights,
