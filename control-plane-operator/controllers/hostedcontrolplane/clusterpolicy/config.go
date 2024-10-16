@@ -22,7 +22,7 @@ const (
 	bindPort  = 10357
 )
 
-func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string) error {
+func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string, featureGates []string) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -33,7 +33,7 @@ func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef confi
 			return fmt.Errorf("unable to decode existing cluster policy controller configuration: %w", err)
 		}
 	}
-	if err := reconcileConfig(config, minTLSVersion, cipherSuites); err != nil {
+	if err := reconcileConfig(config, minTLSVersion, cipherSuites, featureGates); err != nil {
 		return err
 	}
 	buf := &bytes.Buffer{}
@@ -44,7 +44,7 @@ func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef confi
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string, featureGates []string) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(cpcContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -67,5 +67,8 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLS
 			CipherSuites:  cipherSuites,
 		},
 	}
+
+	cfg.FeatureGates = featureGates
+
 	return nil
 }
