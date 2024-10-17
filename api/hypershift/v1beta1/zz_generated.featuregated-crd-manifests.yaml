@@ -97,6 +97,7 @@ hostedclusters.hypershift.openshift.io:
   FeatureGates:
   - DynamicResourceAllocation
   - ExternalOIDC
+  - ImageStreamImportMode
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
@@ -148,6 +149,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   FeatureGates:
   - DynamicResourceAllocation
   - ExternalOIDC
+  - ImageStreamImportMode
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""

@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.15.0
+    controller-gen.kubebuilder.io/version: v0.16.4
   name: machinepools.cluster.x-k8s.io
 spec:
   group: cluster.x-k8s.io
@@ -87,7 +87,6 @@ spec:
                   be ready.
                   Defaults to 0 (machine instance will be considered available as soon as it
                   is ready)
-                  NOTE: No logic is implemented for this field and it currently has no behaviour.
                 format: int32
                 type: integer
               providerIDList:
