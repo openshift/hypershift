@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hosted-cluster-config-operator
+  namespace: HCP_NAMESPACE
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hosted-cluster-config-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: hosted-cluster-config-operator
+    spec:
+      containers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - hosted-cluster-config-operator
+        - --initial-ca-file=/etc/kubernetes/root-ca/ca.crt
+        - --cluster-signer-ca-file=/etc/kubernetes/cluster-signer-ca/ca.crt
+        - --target-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --namespace
+        - $(POD_NAMESPACE)
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: hosted-cluster-config-operator
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: 6060
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: hosted-cluster-config-operator
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 6060
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 60m
+            memory: 80Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/cluster-signer-ca
+          name: cluster-signer-ca
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/root-ca
+          name: root-ca
+      schedulerName: default-scheduler
+      serviceAccount: hosted-cluster-config-operator
+      serviceAccountName: hosted-cluster-config-operator
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: hcco-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca
+      - configMap:
+          defaultMode: 420
+          name: kubelet-client-ca
+        name: cluster-signer-ca

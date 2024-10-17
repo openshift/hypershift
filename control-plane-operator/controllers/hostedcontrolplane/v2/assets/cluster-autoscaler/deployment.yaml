@@ -81,22 +81,12 @@ spec:
         volumeMounts:
         - mountPath: /mnt/kubeconfig
           name: kubeconfig
-      priorityClassName: hypershift-control-plane
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
       serviceAccount: cluster-autoscaler
       serviceAccountName: cluster-autoscaler
       terminationGracePeriodSeconds: 10
-      tolerations:
-      - effect: NoSchedule
-        key: hypershift.openshift.io/control-plane
-        operator: Equal
-        value: "true"
-      - effect: NoSchedule
-        key: hypershift.openshift.io/cluster
-        operator: Equal
-        value: e2e-clusters-9vwbx-example-wzssw
       volumes:
       - name: kubeconfig
         secret:
@@ -104,4 +94,4 @@ spec:
           items:
           - key: value
             path: target-kubeconfig
-          secretName: example-wzssw-kubeconfig
+          secretName: <cluster_name>-kubeconfig

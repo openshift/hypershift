@@ -43,6 +43,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -64,6 +65,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
+	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -122,42 +124,6 @@ const (
 	hcpNotReadyRequeueInterval = 15 * time.Second
 )
 
-type InfrastructureStatus struct {
-	APIHost                 string
-	APIPort                 int32
-	OAuthEnabled            bool
-	OAuthHost               string
-	OAuthPort               int32
-	KonnectivityHost        string
-	KonnectivityPort        int32
-	OpenShiftAPIHost        string
-	OauthAPIServerHost      string
-	PackageServerAPIAddress string
-	Message                 string
-	InternalHCPRouterHost   string
-	NeedInternalRouter      bool
-	ExternalHCPRouterHost   string
-	NeedExternalRouter      bool
-}
-
-func (s InfrastructureStatus) IsReady() bool {
-	isReady := len(s.APIHost) > 0 &&
-		len(s.KonnectivityHost) > 0 &&
-		s.APIPort > 0 &&
-		s.KonnectivityPort > 0
-
-	if s.OAuthEnabled {
-		isReady = isReady && len(s.OAuthHost) > 0 && s.OAuthPort > 0
-	}
-	if s.NeedInternalRouter {
-		isReady = isReady && len(s.InternalHCPRouterHost) > 0
-	}
-	if s.NeedExternalRouter {
-		isReady = isReady && len(s.ExternalHCPRouterHost) > 0
-	}
-	return isReady
-}
-
 type HostedControlPlaneReconciler struct {
 	client.Client
 
@@ -183,7 +149,7 @@ type HostedControlPlaneReconciler struct {
 	SREConfigHash                           string
 	ec2Client                               ec2iface.EC2API
 	awsSession                              *session.Session
-	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
+	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
 
 	IsCPOV2 bool
@@ -223,6 +189,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 	r.components = append(r.components,
 		autoscalerv2.NewComponent(),
 		routecmv2.NewComponent(),
+		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 	)
 }
 
@@ -933,13 +900,15 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 					Client:                    r.Client,
 					HCP:                       hostedControlPlane,
 					CreateOrUpdateProviderV2:  upsert.NewV2(r.EnableCIDebugOutput),
+					InfraStatus:               infraStatus,
 					ReleaseImageProvider:      releaseImageProvider,
 					UserReleaseImageProvider:  userReleaseImageProvider,
 					SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 					MetricsSet:                r.MetricsSet,
+					EnableCIDebugOutput:       r.EnableCIDebugOutput,
 				}
 				for _, c := range r.components {
-					r.Log.Info("Reconciling component", "name", c.Name())
+					r.Log.Info("Reconciling component", "component_name", c.Name())
 					if err := c.Reconcile(cpContext); err != nil {
 						errs = append(errs, err)
 					}
@@ -999,7 +968,7 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 	return true
 }
 
-func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus InfrastructureStatus) error {
+func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus infra.InfrastructureStatus) error {
 	// Reconcile default service account
 	r.Log.Info("Reconciling default service account")
 	if err := r.reconcileDefaultServiceAccount(ctx, hostedControlPlane, createOrUpdate); err != nil {
@@ -1215,10 +1184,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
 	}
 
-	// Reconcile hosted cluster config operator
-	r.Log.Info("Reconciling Hosted Cluster Config Operator")
-	if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists); err != nil {
-		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
+	if !r.IsCPOV2 {
+		// Reconcile hosted cluster config operator
+		r.Log.Info("Reconciling Hosted Cluster Config Operator")
+		if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists); err != nil {
+			return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
+		}
 	}
 
 	// Reconcile cloud controller manager
@@ -1868,9 +1839,9 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructure(ctx context.Conte
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) defaultReconcileInfrastructureStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
+func (r *HostedControlPlaneReconciler) defaultReconcileInfrastructureStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 	var (
-		infraStatus InfrastructureStatus
+		infraStatus infra.InfrastructureStatus
 		errs        []error
 		err         error
 		msg         string
@@ -2145,7 +2116,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Co
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.KonnectivityHost)
 
 	// Root CA
@@ -2853,7 +2824,7 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 	return err
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
 	r.Log.Info("Reconciling Konnectivity")
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImageProvider, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, r.SetDefaultSecurityContext)
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
@@ -4434,7 +4405,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlanePKIOperator(ctx cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
+func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
 	versions, err := releaseImageProvider.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)

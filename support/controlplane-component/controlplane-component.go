@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
@@ -43,7 +44,9 @@ type ControlPlaneContext struct {
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
 
+	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
+	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
 
 	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
@@ -267,6 +270,7 @@ func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneC
 
 func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32, existingResources map[string]corev1.ResourceRequirements) (*config.DeploymentConfig, error) {
 	podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(c.NeedsManagementKASAccess())
+	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, podTemplateSpec.Spec.Containers); err != nil {
 		return nil, err
@@ -358,6 +362,18 @@ func (c *controlPlaneWorkload) applyWatchedResourcesAnnotation(cpContext Control
 	}
 	podTemplate.Annotations["component.hypershift.openshift.io/config-hash"] = strings.Join(hashedData, "")
 	return nil
+}
+
+func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
+	for _, volume := range podSpec.Volumes {
+		if volume.ConfigMap != nil {
+			volume.ConfigMap.DefaultMode = ptr.To[int32](420)
+		}
+
+		if volume.Secret != nil {
+			volume.Secret.DefaultMode = ptr.To[int32](416)
+		}
+	}
 }
 
 func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, containers []corev1.Container) error {

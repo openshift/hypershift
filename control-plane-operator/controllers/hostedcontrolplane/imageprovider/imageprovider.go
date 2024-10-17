@@ -7,7 +7,10 @@ type ReleaseImageProvider interface {
 	GetImage(key string) string
 	ImageExist(key string) (string, bool)
 	Version() string
+	ComponentVersions() (map[string]string, error)
 }
+
+var _ ReleaseImageProvider = &SimpleReleaseImageProvider{}
 
 type SimpleReleaseImageProvider struct {
 	missingImages    []string
@@ -47,8 +50,4 @@ func (p *SimpleReleaseImageProvider) GetMissingImages() []string {
 func (p *SimpleReleaseImageProvider) ImageExist(key string) (string, bool) {
 	img, exist := p.componentsImages[key]
 	return img, exist
-}
-
-func (p *SimpleReleaseImageProvider) Version() string {
-	return p.ReleaseImage.Version()
 }
