@@ -95,6 +95,7 @@ hostedclusters.hypershift.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - AROHCPManagedIdentities
   - DynamicResourceAllocation
   - ExternalOIDC
   - NetworkDiagnosticsConfig
@@ -146,6 +147,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   Capability: ""
   Category: cluster-api
   FeatureGates:
+  - AROHCPManagedIdentities
   - DynamicResourceAllocation
   - ExternalOIDC
   - NetworkDiagnosticsConfig

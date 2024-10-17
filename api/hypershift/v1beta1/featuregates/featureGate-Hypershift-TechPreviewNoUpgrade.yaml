@@ -17,6 +17,9 @@
                 "disabled": [],
                 "enabled": [
                     {
+                      "name": "AROHCPManagedIdentities"
+                    },
+                    {
                         "name": "ExternalOIDC"
                     },
                     {
