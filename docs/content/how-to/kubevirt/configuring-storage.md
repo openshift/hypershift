@@ -182,6 +182,33 @@ snapshot of volumes that use storage class `guest-sca`
    proper mapping is configured before attempting to create a snapshot in the
    guest cluster.
 
+## KubeVirt CSI Storage Security and Isolation
+
+While KubeVirt CSI is extending storage capabilities of the underlying
+infrastructure cluster to guest HCP clusters, the csi driver is doing so in a
+controlled way. This ensures each guest cluster's storage is both isolated
+from other guest clusters, and that the guest cluster can't access arbitrary
+storage volumes on the infrastructure cluster that are not associated with the
+guest cluster.
+
+This isolation is achieved through a depth of security enforcements
+
+1. Direct API access to the infrastructure cluster is never given directly to
+the HCP guest cluster worker nodes. This means the guest cluster does not have
+a means to provision storage on the infrastructure cluster except through the
+controlled KubeVirt CSI interface.
+2. The KubeVirt CSI cluster controller runs in a pod in the HCP namespace, and
+is not accessible from within the guest cluster. This component ensures PVCs on
+the infrastructure cluster can only be passed into the guest cluster if those
+PVCs are associated with the guest cluster.
+3. By default, the RBAC provided to the KubeVirt CSI cluster controller limits
+PVC access only to the HCP namespace. This prevents the possibility of cross
+namespace storage access by any KubeVirt CSI component.
+
+These security enforcements ensure safe and isolated multitenant access to
+shared infrastructure storage classes are possible for multiple HCP KubeVirt
+guest clusters.
+
 ## KubeVirt VM Root Volume Configuration
 
 The storage class used to host the KubeVirt Virtual Machine root volumes can be
