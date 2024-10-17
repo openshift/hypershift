@@ -1,0 +1,6 @@
+[build]
+publish = "site"
+base = "docs/"
+command = """
+MKDOCS_BIN=$(find /opt/buildhome/.local/ -name mkdocs -type f) && ${MKDOCS_BIN} build -d site
+"""
