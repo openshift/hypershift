@@ -351,9 +351,16 @@ func reconcileCustomTenantStorageClass(sc *storagev1.StorageClass, infraSCName s
 }
 
 func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
-	sc.Annotations = map[string]string{
-		"storageclass.kubernetes.io/is-default-class": "true",
+	if sc.Annotations == nil {
+		sc.Annotations = map[string]string{}
 	}
+
+	// Only set the default storage class when the annotation doesn't exist.
+	// Otherwise, we should allow people to set is-default-class=false if they wish to
+	if _, exists := sc.Annotations["storageclass.kubernetes.io/is-default-class"]; !exists {
+		sc.Annotations["storageclass.kubernetes.io/is-default-class"] = "true"
+	}
+
 	sc.Provisioner = "csi.kubevirt.io"
 	sc.Parameters = map[string]string{
 		"bus": "scsi",
