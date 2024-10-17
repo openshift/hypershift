@@ -254,7 +254,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 					Cache: map[string]*releaseinfo.ReleaseImage{},
 				},
 			},
-			RegistryOverrides: o.registryOverrides,
+			RegistryOverrides: nil,
 		},
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
