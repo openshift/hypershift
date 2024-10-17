@@ -90,6 +90,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 		maxUnavailable := intstr.FromInt(1)
 		if deployment.Spec.Strategy.RollingUpdate == nil {
 			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
+			deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 		}
 		deployment.Spec.Strategy.RollingUpdate.MaxSurge = &maxSurge
 		deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &maxUnavailable
