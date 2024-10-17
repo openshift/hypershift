@@ -32,29 +32,30 @@ const capiLabel = "cluster.x-k8s.io/v1beta1"
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
 // generation, but for now we're just post-processing at runtime here.
 var capiResources = map[string]string{
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":                      "v1beta2",
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":                      "v1beta2",
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml":              "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsclusters.yaml":          "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsimages.yaml":            "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachines.yaml":          "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachinetemplates.yaml":  "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":              "v1beta2",
-	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":                           "v1beta1",
-	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtclusters.yaml":            "v1alpha1",
-	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachines.yaml":            "v1alpha1",
-	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachinetemplates.yaml":    "v1alpha1",
-	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentclusters.yaml":         "v1beta1",
-	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachinetemplates.yaml": "v1beta1",
-	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachines.yaml":         "v1beta1",
-	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azureclusters.yaml":                  "v1beta1",
-	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachines.yaml":                  "v1beta1",
-	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml":          "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclustertemplates.yaml":  "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusters.yaml":          "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachines.yaml":          "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachinetemplates.yaml":  "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackfloatingippools.yaml":   "v1alpha1",
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":                        "v1beta2",
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":                        "v1beta2",
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml":                "v1beta2",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsclusters.yaml":            "v1beta2",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsimages.yaml":              "v1beta2",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachines.yaml":            "v1beta2",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachinetemplates.yaml":    "v1beta2",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":                "v1beta2",
+	"hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-Default.crd.yaml":              "v1beta1",
+	"hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-TechPreviewNoUpgrade.crd.yaml": "v1beta1",
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtclusters.yaml":              "v1alpha1",
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachines.yaml":              "v1alpha1",
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachinetemplates.yaml":      "v1alpha1",
+	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentclusters.yaml":           "v1beta1",
+	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachinetemplates.yaml":   "v1beta1",
+	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachines.yaml":           "v1beta1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azureclusters.yaml":                    "v1beta1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachines.yaml":                    "v1beta1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml":            "v1beta1",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclustertemplates.yaml":    "v1beta1",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusters.yaml":            "v1beta1",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachines.yaml":            "v1beta1",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachinetemplates.yaml":    "v1beta1",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackfloatingippools.yaml":     "v1alpha1",
 }
 
 func getContents(fs embed.FS, file string) []byte {
@@ -75,7 +76,7 @@ func getContents(fs embed.FS, file string) []byte {
 }
 
 // CustomResourceDefinitions returns all existing CRDs as controller-runtime objects
-func CustomResourceDefinitions(include func(path string) bool, transform func(*apiextensionsv1.CustomResourceDefinition)) []crclient.Object {
+func CustomResourceDefinitions(include func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool, transform func(*apiextensionsv1.CustomResourceDefinition)) []crclient.Object {
 	var allCrds []crclient.Object
 	err := fs.WalkDir(crds, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -84,8 +85,9 @@ func CustomResourceDefinitions(include func(path string) bool, transform func(*a
 		if filepath.Ext(path) != ".yaml" {
 			return nil
 		}
-		if include(path) {
-			crd := getCustomResourceDefinition(crds, path)
+		crd := getCustomResourceDefinition(crds, path)
+		if include(path, crd) {
+
 			if transform != nil {
 				transform(crd)
 			}

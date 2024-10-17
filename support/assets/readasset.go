@@ -71,9 +71,9 @@ func MustRoleBinding(reader AssetReader, fileName string) *rbacv1.RoleBinding {
 	return roleBinding
 }
 
-func MustHostedCluster(reader AssetReader, fileName string) *hyperv1.HostedCluster {
+func ShouldHostedCluster(reader AssetReader, fileName string) *hyperv1.HostedCluster {
 	hostedCluster := &hyperv1.HostedCluster{}
-	deserializeResource(reader, fileName, hostedCluster)
+	tolerantDeserializeResource(reader, fileName, hostedCluster)
 	return hostedCluster
 }
 
@@ -84,6 +84,17 @@ func deserializeResource(reader AssetReader, fileName string, obj runtime.Object
 		panic(fmt.Sprintf("cannot determine gvk of resource in %s: %v", fileName, err))
 	}
 	if _, _, err = api.YamlSerializer.Decode(data, &gvks[0], obj); err != nil {
+		panic(fmt.Sprintf("cannot decode resource in %s: %v", fileName, err))
+	}
+}
+
+func tolerantDeserializeResource(reader AssetReader, fileName string, obj runtime.Object) {
+	data := MustAsset(reader, fileName)
+	gvks, _, err := api.Scheme.ObjectKinds(obj)
+	if err != nil || len(gvks) == 0 {
+		panic(fmt.Sprintf("cannot determine gvk of resource in %s: %v", fileName, err))
+	}
+	if _, _, err = api.TolerantYAMLSerializer.Decode(data, &gvks[0], obj); err != nil {
 		panic(fmt.Sprintf("cannot decode resource in %s: %v", fileName, err))
 	}
 }

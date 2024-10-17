@@ -1,0 +1,68 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: openstack-platform
+  namespace: default
+spec:
+  autoscaling: {}
+  configuration: {}
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: agarcial.hypershift.devcluster.openshift.com
+    privateZoneID: ID
+    publicZoneID: ID
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+          storageClassName: gp3-csi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: infraID
+  infrastructureAvailabilityPolicy: SingleReplica
+  issuerURL: https://issuerURL.com
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    machineNetwork:
+    - cidr: 10.0.0.0/16
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    type: OpenStack
+  pullSecret:
+    name: secret
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: key-management-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.agarcial.hypershift.devcluster.openshift.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: OAuthServer.agarcial.hypershift.devcluster.openshift.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: Konnectivity.agarcial.hypershift.devcluster.openshift.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: ignition.agarcial.hypershift.devcluster.openshift.com
+  sshKey:
+    name: sshKey

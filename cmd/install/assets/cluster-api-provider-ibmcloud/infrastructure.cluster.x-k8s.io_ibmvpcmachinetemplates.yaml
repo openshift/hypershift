@@ -121,8 +121,7 @@ spec:
                         type: object
                       profile:
                         description: "Profile indicates the flavor of instance. Example:
-                          bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps\nTODO: add a
-                          reference link of profile"
+                          bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps"
                         type: string
                       providerID:
                         description: ProviderID is the unique identifier as specified
@@ -141,9 +140,8 @@ spec:
                           type: string
                         type: array
                       zone:
-                        description: |-
-                          Zone is the place where the instance should be created. Example: us-south-3
-                          TODO: Actually zone is transparent to user. The field user can access is location. Example: Dallas 2
+                        description: 'Zone is the place where the instance should
+                          be created. Example: us-south-3'
                         type: string
                     required:
                     - zone
@@ -267,8 +265,7 @@ spec:
                         type: object
                       profile:
                         description: "Profile indicates the flavor of instance. Example:
-                          bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps\nTODO: add a
-                          reference link of profile"
+                          bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps"
                         type: string
                       providerID:
                         description: ProviderID is the unique identifier as specified
@@ -295,9 +292,8 @@ spec:
                           type: object
                         type: array
                       zone:
-                        description: |-
-                          Zone is the place where the instance should be created. Example: us-south-3
-                          TODO: Actually zone is transparent to user. The field user can access is location. Example: Dallas 2
+                        description: 'Zone is the place where the instance should
+                          be created. Example: us-south-3'
                         type: string
                     required:
                     - image

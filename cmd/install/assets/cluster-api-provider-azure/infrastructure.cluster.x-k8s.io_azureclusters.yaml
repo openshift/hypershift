@@ -93,7 +93,6 @@ spec:
                   - PublicCloud: "AzurePublicCloud"
                   - USGovernmentCloud: "AzureUSGovernmentCloud"
 
-
                   Note that values other than the default must also be accompanied by corresponding changes to the
                   aso-controller-settings Secret to configure ASO to refer to the non-Public cloud. ASO currently does
                   not support referring to multiple different clouds in a single installation. The following fields must
@@ -102,9 +101,7 @@ spec:
                   - AZURE_RESOURCE_MANAGER_ENDPOINT
                   - AZURE_RESOURCE_MANAGER_AUDIENCE
 
-
                   See the [ASO docs] for more details.
-
 
                   [ASO docs]: https://azure.github.io/azure-service-operator/guide/aso-controller-settings-options/
                 type: string
@@ -622,7 +619,6 @@ spec:
                       the event) or if no container name is specified "spec.containers[2]" (container with
                       index 2 in this pod). This syntax is chosen only to have some well-defined way of
                       referencing a part of an object.
-                      TODO: this design is not final and this field is subject to change in the future.
                     type: string
                   kind:
                     description: |-

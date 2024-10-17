@@ -25,7 +25,7 @@ func TestCreateClusterAPIUX(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	t.Run("AzureShouldOnlyAllowServicesWithRouteAndHostname", func(t *testing.T) {
+	t.Run("HostedCluster creation", func(t *testing.T) {
 		g := NewWithT(t)
 		client, err := e2eutil.GetClient()
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
@@ -36,14 +36,19 @@ func TestCreateClusterAPIUX(t *testing.T) {
 			expectedErrorSubstring string
 		}{
 			{
-				name:                   "AzureExpectServicesRouteHostname",
+				name:                   "Azure requires services publishing strategy with route and hostname",
 				file:                   "azure-services-ignition-route-not-hostname.yaml",
 				expectedErrorSubstring: "Azure platform requires Ignition Route service with a hostname to be defined",
+			},
+			{
+				name:                   "HostedCluster should fail if OpenStack value is set as platform type and no TechPreviewNoUpgrade",
+				file:                   "openstack-platform-enum.yaml",
+				expectedErrorSubstring: "spec.platform.type: Unsupported value: \"OpenStack\"",
 			},
 		}
 
 		for _, tc := range testCases {
-			hc := assets.MustHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
+			hc := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
 			defer client.Delete(ctx, hc)
 			err = client.Create(ctx, hc)
 			g.Expect(err).To(HaveOccurred())

@@ -105,6 +105,7 @@ type Options struct {
 	EnableSizeTagging                         bool
 	EnableEtcdRecovery                        bool
 	EnableCPOOverrides                        bool
+	TechPreviewNoUpgrade                      bool
 }
 
 func (o *Options) Validate() error {
@@ -237,6 +238,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCPOOverrides, "enable-cpo-overrides", opts.EnableCPOOverrides, "If true, the HyperShift operator uses a set of static overrides for the CPO image given specific release versions")
+	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -563,11 +565,31 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 	var crds []crclient.Object
 	crds = append(
 		crds, assets.CustomResourceDefinitions(
-			func(path string) bool {
+			func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
 				if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
 					return false
 				}
+
+				// If the feature generated CRD has any featureSet version then it has the format nodepool-<featureSet>.
+				if strings.Contains(path, "zz_generated.crd-manifests") {
+					if opts.TechPreviewNoUpgrade {
+						// Skip all featureSets but TechPreviewNoUpgrade.
+						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
+							if featureSet != "TechPreviewNoUpgrade" {
+								return false
+							}
+						}
+					} else {
+						// Skip all featureSets but Default.
+						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
+							if featureSet != "Default" {
+								return false
+							}
+						}
+					}
+				}
 				return true
+
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
 				if crd.Spec.Group == "hypershift.openshift.io" {
 					if !opts.EnableConversionWebhook {
@@ -684,6 +706,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
+		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,

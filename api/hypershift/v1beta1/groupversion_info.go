@@ -4,7 +4,6 @@
 package v1beta1
 
 import (
-	"github.com/openshift/hypershift/api/hypershift"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -12,7 +11,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects
-	GroupVersion = schema.GroupVersion{Group: hypershift.GroupName, Version: "v1beta1"}
+	GroupVersion = schema.GroupVersion{Group: "hypershift.openshift.io", Version: "v1beta1"}
 
 	SchemeGroupVersion = GroupVersion
 

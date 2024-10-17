@@ -851,8 +851,6 @@ const (
 )
 
 // PlatformType is a specific supported infrastructure provider.
-//
-// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS;OpenStack
 type PlatformType string
 
 const (
@@ -901,7 +899,10 @@ type PlatformSpec struct {
 	// Type is the type of infrastructure provider for the cluster.
 	//
 	// +unionDiscriminator
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
 	// +immutable
+	// +openshift:validation:FeatureGateAwareEnum:featureGate="",enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None
+	// +openshift:validation:FeatureGateAwareEnum:featureGate=OpenStack,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack
 	Type PlatformType `json:"type"`
 
 	// AWS specifies configuration for clusters running on Amazon Web Services.
@@ -936,9 +937,8 @@ type PlatformSpec struct {
 	Kubevirt *KubevirtPlatformSpec `json:"kubevirt,omitempty"`
 
 	// OpenStack specifies configuration for clusters running on OpenStack.
-	//
 	// +optional
-	// +immutable
+	// +openshift:enable:FeatureGate=OpenStack
 	OpenStack *OpenStackPlatformSpec `json:"openstack,omitempty"`
 }
 
@@ -2953,7 +2953,7 @@ type HostedCluster struct {
 	Status HostedClusterStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // HostedClusterList contains a list of HostedCluster
 type HostedClusterList struct {
 	metav1.TypeMeta `json:",inline"`
