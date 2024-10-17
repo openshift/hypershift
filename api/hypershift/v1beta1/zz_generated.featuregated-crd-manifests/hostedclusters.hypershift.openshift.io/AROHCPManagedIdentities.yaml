@@ -2,26 +2,54 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/: "true"
-  name: hostedcontrolplanes.hypershift.openshift.io
+    feature-gate.release.openshift.io/AROHCPManagedIdentities: "true"
+  name: hostedclusters.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
   names:
-    categories:
-    - cluster-api
-    kind: HostedControlPlane
-    listKind: HostedControlPlaneList
-    plural: hostedcontrolplanes
+    kind: HostedCluster
+    listKind: HostedClusterList
+    plural: hostedclusters
     shortNames:
-    - hcp
-    - hcps
-    singular: hostedcontrolplane
+    - hc
+    - hcs
+    singular: hostedcluster
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - description: Version
+      jsonPath: .status.version.history[?(@.state=="Completed")].version
+      name: Version
+      type: string
+    - description: KubeConfig Secret
+      jsonPath: .status.kubeconfig.name
+      name: KubeConfig
+      type: string
+    - description: Progress
+      jsonPath: .status.version.history[?(@.state!="")].state
+      name: Progress
+      type: string
+    - description: Available
+      jsonPath: .status.conditions[?(@.type=="Available")].status
+      name: Available
+      type: string
+    - description: Progressing
+      jsonPath: .status.conditions[?(@.type=="Progressing")].status
+      name: Progressing
+      type: string
+    - description: Message
+      jsonPath: .status.conditions[?(@.type=="Available")].message
+      name: Message
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
-        description: HostedControlPlane defines the desired state of HostedControlPlane
+        description: |-
+          HostedCluster is the primary representation of a HyperShift cluster and encapsulates
+          the control plane and common data plane configuration. Creating a HostedCluster
+          results in a fully functional OpenShift control plane with no attached nodes.
+          To support workloads (e.g. pods), a HostedCluster may have one or more associated
+          NodePool resources.
         properties:
           apiVersion:
             description: |-
@@ -41,11 +69,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
+            description: Spec is the desired behavior of the HostedCluster.
             properties:
               additionalTrustBundle:
-                description: AdditionalTrustBundle references a ConfigMap containing
-                  a PEM-encoded X.509 certificate bundle
+                description: |-
+                  AdditionalTrustBundle is a reference to a ConfigMap containing a
+                  PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
                 properties:
                   name:
                     default: ""
@@ -60,12 +89,12 @@ spec:
                 x-kubernetes-map-type: atomic
               auditWebhook:
                 description: |-
-                  AuditWebhook contains metadata for configuring an audit webhook
-                  endpoint for a cluster to process cluster audit events. It references
-                  a secret that contains the webhook information for the audit webhook endpoint.
-                  It is a secret because if the endpoint has MTLS the kubeconfig will contain client
-                  keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored
-                  in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
+                  AuditWebhook contains metadata for configuring an audit webhook endpoint
+                  for a cluster to process cluster audit events. It references a secret that
+                  contains the webhook information for the audit webhook endpoint. It is a
+                  secret because if the endpoint has mTLS the kubeconfig will contain client
+                  keys. The kubeconfig needs to be stored in the secret with a secret key
+                  name that corresponds to the constant AuditWebhookKubeconfigKey.
                 properties:
                   name:
                     default: ""
@@ -124,15 +153,22 @@ spec:
                 type: string
               clusterID:
                 description: |-
-                  ClusterID is the unique id that identifies the cluster externally.
-                  Making it optional here allows us to keep compatibility with previous
-                  versions of the control-plane-operator that have no knowledge of this
-                  field.
+                  ClusterID uniquely identifies this cluster. This is expected to be
+                  an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
+                  hexadecimal values).
+                  As with a Kubernetes metadata.uid, this ID uniquely identifies this
+                  cluster in space and time.
+                  This value identifies the cluster in metrics pushed to telemetry and
+                  metrics produced by the control plane operators. If a value is not
+                  specified, an ID is generated. After initial creation, the value is
+                  immutable.
+                pattern: '[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}'
                 type: string
               configuration:
                 description: |-
-                  Configuration embeds resources that correspond to the openshift configuration API:
-                  https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
+                  Configuration specifies configuration for individual OCP components in the
+                  cluster, represented as embedded resources that correspond to the openshift
+                  configuration API.
                 properties:
                   apiServer:
                     description: |-
@@ -555,10 +591,6 @@ spec:
                           type identifies the cluster managed, user facing authentication mode in use.
                           Specifically, it manages the component that responds to login attempts.
                           The default is IntegratedOAuth.
-                        enum:
-                        - ""
-                        - None
-                        - IntegratedOAuth
                         type: string
                       webhookTokenAuthenticator:
                         description: |-
@@ -1981,23 +2013,31 @@ spec:
                         type: string
                     type: object
                 type: object
-              controlPlaneReleaseImage:
+              controlPlaneRelease:
                 description: |-
-                  ControlPlaneReleaseImage specifies the desired OCP release payload for
+                  ControlPlaneRelease specifies the desired OCP release payload for
                   control plane components running on the management cluster.
-                  If not defined, ReleaseImage is used
-                type: string
+                  Updating this field will trigger a rollout of the control plane. The
+                  behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+                  and InfrastructureAvailabilityPolicy.
+                  If not defined, Release is used
+                properties:
+                  image:
+                    description: Image is the image pullspec of an OCP release payload
+                      image.
+                    pattern: ^(\w+\S+)$
+                    type: string
+                required:
+                - image
+                type: object
               controllerAvailabilityPolicy:
-                default: SingleReplica
+                default: HighlyAvailable
                 description: |-
                   ControllerAvailabilityPolicy specifies the availability policy applied to
-                  critical control plane components. The default value is SingleReplica.
+                  critical control plane components. The default value is HighlyAvailable.
                 type: string
-                x-kubernetes-validations:
-                - message: ControllerAvailabilityPolicy is immutable
-                  rule: self == oldSelf
               dns:
-                description: DNSSpec specifies the DNS configuration in the cluster.
+                description: DNS specifies DNS configuration for the cluster.
                 properties:
                   baseDomain:
                     description: BaseDomain is the base domain of the cluster.
@@ -2021,9 +2061,17 @@ spec:
                 - baseDomain
                 type: object
               etcd:
+                default:
+                  managed:
+                    storage:
+                      persistentVolume:
+                        size: 8Gi
+                      type: PersistentVolume
+                  managementType: Managed
                 description: |-
-                  Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
-                  use to store data.
+                  Etcd specifies configuration for the control plane etcd cluster. The
+                  default ManagementType is Managed. Once set, the ManagementType cannot be
+                  changed.
                 properties:
                   managed:
                     description: Managed specifies the behavior of an etcd cluster
@@ -2139,12 +2187,15 @@ spec:
                 - managementType
                 type: object
               fips:
-                description: FIPS specifies if the nodes for the cluster will be running
-                  in FIPS mode
+                description: |-
+                  FIPS indicates whether this cluster's nodes will be running in FIPS mode.
+                  If set to true, the control plane's ignition server will be configured to
+                  expect that nodes joining the cluster will be FIPS-enabled.
                 type: boolean
               imageContentSources:
-                description: ImageContentSources lists sources/repositories for the
-                  release-image content.
+                description: |-
+                  ImageContentSources specifies image mirrors that can be used by cluster
+                  nodes to pull content.
                 items:
                   description: |-
                     ImageContentSource specifies image mirrors that can be used by cluster nodes
@@ -2168,6 +2219,10 @@ spec:
                   type: object
                 type: array
               infraID:
+                description: |-
+                  InfraID is a globally unique identifier for the cluster. This identifier
+                  will be used to associate various cloud resources with the HostedCluster
+                  and its associated NodePools.
                 type: string
               infrastructureAvailabilityPolicy:
                 default: SingleReplica
@@ -2177,28 +2232,22 @@ spec:
                   SingleReplica.
                 type: string
               issuerURL:
+                default: https://kubernetes.default.svc
                 description: |-
                   IssuerURL is an OIDC issuer URL which is used as the issuer in all
                   ServiceAccount tokens generated by the control plane API server. The
                   default value is kubernetes.default.svc, which only works for in-cluster
                   validation.
+                format: uri
                 type: string
-              kubeconfig:
-                description: KubeConfig specifies the name and key for the kubeconfig
-                  secret
-                properties:
-                  key:
-                    type: string
-                  name:
-                    type: string
-                required:
-                - key
-                - name
-                type: object
               networking:
-                description: |-
-                  Networking specifies network configuration for the cluster.
-                  Temporarily optional for backward compatibility, required in future releases.
+                default:
+                  clusterNetwork:
+                  - cidr: 10.132.0.0/14
+                  networkType: OVNKubernetes
+                  serviceNetwork:
+                  - cidr: 172.31.0.0/16
+                description: Networking specifies network configuration for the cluster.
                 properties:
                   apiServer:
                     description: |-
@@ -2320,6 +2369,9 @@ spec:
                 - management
                 - guest
                 type: string
+                x-kubernetes-validations:
+                - message: OLMCatalogPlacement is immutable
+                  rule: self == oldSelf
               pausedUntil:
                 description: |-
                   PausedUntil is a field that can be used to pause reconciliation on a resource.
@@ -2329,7 +2381,7 @@ spec:
                 type: string
               platform:
                 description: |-
-                  PlatformSpec specifies the underlying infrastructure provider for the cluster
+                  Platform specifies the underlying infrastructure provider for the cluster
                   and is used to configure platform specific behavior.
                 properties:
                   agent:
@@ -2802,6 +2854,239 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      managedIdentities:
+                        description: |-
+                          managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+                          authenticate with Azure's API.
+                        properties:
+                          controlPlane:
+                            description: |-
+                              controlPlane contains the client IDs of all the managed identities on the HCP control plane needing to
+                              authenticate with Azure's API.
+                            properties:
+                              cloudProvider:
+                                description: |-
+                                  cloudProvider is a pre-existing managed identity associated with the azure cloud provider, aka cloud controller
+                                  manager.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                              controlPlaneOperator:
+                                description: controlPlaneOperator is a pre-existing
+                                  managed identity associated with the control plane
+                                  operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                              disk:
+                                description: diskClientID is a pre-existing managed
+                                  identity associated with the azure-disk-controller.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                              file:
+                                description: fileClientID is a pre-existing managed
+                                  identity associated with the azure-disk-controller.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                              imageRegistry:
+                                description: imageRegistry is a pre-existing managed
+                                  identity associated with the cluster-image-registry-operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                              ingress:
+                                description: ingress is a pre-existing managed identity
+                                  associated with the cluster-ingress-operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                              managedIdentitiesKeyVault:
+                                description: |-
+                                  managedIdentitiesKeyVault contains information on the management cluster's managed identities Azure Key Vault.
+                                  This Key Vault is where the managed identities certificates are stored. These certificates are pulled out of the
+                                  Key Vault by the Secrets Store CSI driver and mounted into a volume on control plane pods requiring
+                                  authentication with Azure API.
+
+                                  More information on how the Secrets Store CSI driver works to do this can be found here:
+                                  https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver.
+                                properties:
+                                  name:
+                                    description: name is the name of the Azure Key
+                                      Vault on the management cluster.
+                                    type: string
+                                  tenantID:
+                                    description: tenantID is the tenant ID of the
+                                      Azure Key Vault on the management cluster.
+                                    type: string
+                                required:
+                                - name
+                                - tenantID
+                                type: object
+                              network:
+                                description: network is a pre-existing managed identity
+                                  associated with the cluster-network-operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                              nodePoolManagement:
+                                description: nodePoolManagement is a pre-existing
+                                  managed identity associated with the operator managing
+                                  the NodePools.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                    type: string
+                                  clientID:
+                                    description: clientID is the client ID of a managed
+                                      identity.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                required:
+                                - certificateName
+                                - clientID
+                                type: object
+                            required:
+                            - cloudProvider
+                            - controlPlaneOperator
+                            - disk
+                            - file
+                            - imageRegistry
+                            - ingress
+                            - managedIdentitiesKeyVault
+                            - network
+                            - nodePoolManagement
+                            type: object
+                        required:
+                        - controlPlane
+                        type: object
                       resourceGroup:
                         default: default
                         description: |-
@@ -2862,6 +3147,7 @@ spec:
                     required:
                     - credentials
                     - location
+                    - managedIdentities
                     - resourceGroup
                     - securityGroupID
                     - subnetID
@@ -3235,14 +3521,6 @@ spec:
                   type:
                     description: Type is the type of infrastructure provider for the
                       cluster.
-                    enum:
-                    - AWS
-                    - Azure
-                    - IBMCloud
-                    - KubeVirt
-                    - Agent
-                    - PowerVS
-                    - None
                     type: string
                     x-kubernetes-validations:
                     - message: Type is immutable
@@ -3252,8 +3530,9 @@ spec:
                 type: object
               pullSecret:
                 description: |-
-                  LocalObjectReference contains enough information to let you locate the
-                  referenced object inside the same namespace.
+                  PullSecret references a pull secret to be injected into the container
+                  runtime of all cluster nodes. The secret must have a key named
+                  ".dockerconfigjson" whose value is the pull secret JSON.
                 properties:
                   name:
                     default: ""
@@ -3266,14 +3545,26 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              releaseImage:
-                description: ReleaseImage is the release image applied to the hosted
-                  control plane.
-                type: string
+              release:
+                description: |-
+                  Release specifies the desired OCP release payload for the hosted cluster.
+
+                  Updating this field will trigger a rollout of the control plane. The
+                  behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+                  and InfrastructureAvailabilityPolicy.
+                properties:
+                  image:
+                    description: Image is the image pullspec of an OCP release payload
+                      image.
+                    pattern: ^(\w+\S+)$
+                    type: string
+                required:
+                - image
+                type: object
               secretEncryption:
                 description: |-
-                  SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
-                  cluster when applicable.
+                  SecretEncryption specifies a Kubernetes secret encryption strategy for the
+                  control plane.
                 properties:
                   aescbc:
                     description: AESCBC defines metadata about the AESCBC secret encryption
@@ -3430,8 +3721,31 @@ spec:
                             - keyVaultName
                             - keyVersion
                             type: object
+                          kms:
+                            description: kms is a pre-existing managed identity used
+                              to authenticate with Azure KMS.
+                            properties:
+                              certificateName:
+                                description: |-
+                                  certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                  reside in an Azure Key Vault on the management cluster.
+                                type: string
+                              clientID:
+                                description: clientID is the client ID of a managed
+                                  identity.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                            required:
+                            - certificateName
+                            - clientID
+                            type: object
                         required:
                         - activeKey
+                        - kms
                         type: object
                       ibmcloud:
                         description: IBMCloud defines metadata for the IBM Cloud KMS
@@ -3548,7 +3862,8 @@ spec:
                   ServiceAccountSigningKey is a reference to a secret containing the private key
                   used by the service account token issuer. The secret is expected to contain
                   a single key named "key". If not specified, a service account signing key will
-                  be generated automatically for the cluster.
+                  be generated automatically for the cluster. When specifying a service account
+                  signing key, a IssuerURL must also be specified.
                 properties:
                   name:
                     default: ""
@@ -3563,8 +3878,11 @@ spec:
                 x-kubernetes-map-type: atomic
               services:
                 description: |-
-                  Services defines metadata about how control plane services are published
-                  in the management cluster.
+                  Services specifies how individual control plane services are published from
+                  the hosting cluster of the control plane.
+
+                  If a given service is not present in this list, it will be exposed publicly
+                  by default.
                 items:
                   description: |-
                     ServicePublishingStrategyMapping specifies how individual control plane
@@ -3639,8 +3957,9 @@ spec:
                 type: array
               sshKey:
                 description: |-
-                  LocalObjectReference contains enough information to let you locate the
-                  referenced object inside the same namespace.
+                  SSHKey references an SSH key to be injected into all cluster node sshd
+                  servers. The secret must have a single key "id_rsa.pub" whose value is the
+                  public part of an SSH key.
                 properties:
                   name:
                     default: ""
@@ -3699,23 +4018,45 @@ spec:
                   By default it will use the appropriate update service for the cluster and region.
                 type: string
             required:
-            - dns
-            - etcd
-            - infraID
-            - issuerURL
+            - networking
             - platform
             - pullSecret
-            - releaseImage
+            - release
             - services
             - sshKey
             type: object
+            x-kubernetes-validations:
+            - message: Services is immutable. Changes might result in unpredictable
+                and disruptive behavior.
+              rule: 'self.platform.type != "IBMCloud" ? self.services == oldSelf.services
+                : true'
+            - message: Azure platform requires APIServer Route service with a hostname
+                to be defined
+              rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
+                == "APIServer" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname
+                != "") : true'
+            - message: Azure platform requires OAuthServer Route service with a hostname
+                to be defined
+              rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
+                == "OAuthServer" && s.servicePublishingStrategy.type == "Route" &&
+                s.servicePublishingStrategy.route.hostname != "") : true'
+            - message: Azure platform requires Konnectivity Route service with a hostname
+                to be defined
+              rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
+                == "Konnectivity" && s.servicePublishingStrategy.type == "Route" &&
+                s.servicePublishingStrategy.route.hostname != "") : true'
+            - message: Azure platform requires Ignition Route service with a hostname
+                to be defined
+              rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
+                == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname
+                != "") : true'
           status:
-            description: HostedControlPlaneStatus defines the observed state of HostedControlPlane
+            description: Status is the latest observed status of the HostedCluster.
             properties:
               conditions:
                 description: |-
-                  Condition contains details for one aspect of the current state of the HostedControlPlane.
-                  Current condition types are: "Available"
+                  Conditions represents the latest available observations of a control
+                  plane's current state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -3777,7 +4118,7 @@ spec:
               controlPlaneEndpoint:
                 description: |-
                   ControlPlaneEndpoint contains the endpoint information by which
-                  external clients can access the control plane.  This is populated
+                  external clients can access the control plane. This is populated
                   after the infrastructure is ready.
                 properties:
                   host:
@@ -3791,39 +4132,15 @@ spec:
                 - host
                 - port
                 type: object
-              externalManagedControlPlane:
-                default: true
+              ignitionEndpoint:
                 description: |-
-                  ExternalManagedControlPlane indicates to cluster-api that the control plane
-                  is managed by an external service.
-                  https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
-                type: boolean
-              initialized:
-                default: false
-                description: |-
-                  Initialized denotes whether or not the control plane has
-                  provided a kubeadm-config.
-                  Once this condition is marked true, its value is never changed. See the Ready condition for an indication of
-                  the current readiness of the cluster's control plane.
-                  This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L238-L252
-                type: boolean
-              kubeConfig:
-                description: |-
-                  KubeConfig is a reference to the secret containing the default kubeconfig
-                  for this control plane.
-                properties:
-                  key:
-                    type: string
-                  name:
-                    type: string
-                required:
-                - key
-                - name
-                type: object
+                  IgnitionEndpoint is the endpoint injected in the ign config userdata.
+                  It exposes the config for instances to become kubernetes nodes.
+                type: string
               kubeadminPassword:
                 description: |-
-                  KubeadminPassword is a reference to the secret containing the initial kubeadmin password
-                  for the guest cluster.
+                  KubeadminPassword is a reference to the secret that contains the initial
+                  kubeadmin user password for the guest cluster.
                 properties:
                   name:
                     default: ""
@@ -3836,23 +4153,39 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              lastReleaseImageTransitionTime:
+              kubeconfig:
                 description: |-
-                  lastReleaseImageTransitionTime is the time of the last update to the current
-                  releaseImage property.
-
-                  Deprecated: Use versionStatus.history[0].startedTime instead.
-                format: date-time
-                type: string
-              nodeCount:
-                description: NodeCount tracks the number of nodes in the HostedControlPlane.
-                type: integer
+                  KubeConfig is a reference to the secret containing the default kubeconfig
+                  for the cluster.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               oauthCallbackURLTemplate:
                 description: |-
                   OAuthCallbackURLTemplate contains a template for the URL to use as a callback
                   for identity providers. The [identity-provider-name] placeholder must be replaced
                   with the name of an identity provider defined on the HostedCluster.
                   This is populated after the infrastructure is ready.
+                type: string
+              payloadArch:
+                description: |-
+                  payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
+                  Multi, ARM64, AMD64, S390X, or PPC64LE.
+                enum:
+                - Multi
+                - ARM64
+                - AMD64
+                - PPC64LE
+                - S390X
                 type: string
               platform:
                 description: Platform contains platform-specific status of the HostedCluster
@@ -3869,30 +4202,10 @@ spec:
                         type: string
                     type: object
                 type: object
-              ready:
-                default: false
-                description: |-
-                  Ready denotes that the HostedControlPlane API Server is ready to
-                  receive requests
-                  This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230
-                type: boolean
-              releaseImage:
-                description: |-
-                  ReleaseImage is the release image applied to the hosted control plane.
-
-                  Deprecated: Use versionStatus.desired.image instead.
-                type: string
               version:
                 description: |-
-                  Version is the semantic version of the release applied by
-                  the hosted control plane operator
-
-                  Deprecated: Use versionStatus.desired.version instead.
-                type: string
-              versionStatus:
-                description: |-
-                  versionStatus is the status of the release version applied by the
-                  hosted control plane operator.
+                  Version is the status of the release version applied to the
+                  HostedCluster.
                 properties:
                   availableUpdates:
                     description: |-
@@ -4263,9 +4576,6 @@ spec:
                 - desired
                 - observedGeneration
                 type: object
-            required:
-            - initialized
-            - ready
             type: object
         type: object
     served: true
