@@ -152,7 +152,7 @@ func (h *HCCO) AdaptDeployment(cpContext component.ControlPlaneContext, deployme
 		v.VolumeSource.ConfigMap.Name = manifests.KubeletClientCABundle("").Name
 	})
 
-	if isExternalInfraKv(hcp) {
+	if isExternalInfraKubevirt(hcp) {
 		// injects the kubevirt credentials secret volume, volume mount path, and appends cli arg.
 		util.DeploymentAddKubevirtInfraCredentials(deployment)
 	}
@@ -160,7 +160,7 @@ func (h *HCCO) AdaptDeployment(cpContext component.ControlPlaneContext, deployme
 	return nil
 }
 
-func isExternalInfraKv(hcp *hyperv1.HostedControlPlane) bool {
+func isExternalInfraKubevirt(hcp *hyperv1.HostedControlPlane) bool {
 	if hcp.Spec.Platform.Kubevirt != nil &&
 		hcp.Spec.Platform.Kubevirt.Credentials != nil &&
 		hcp.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret != nil &&

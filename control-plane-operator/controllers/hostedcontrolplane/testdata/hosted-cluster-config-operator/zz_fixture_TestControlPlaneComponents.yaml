@@ -181,7 +181,7 @@ spec:
           name: root-ca
         name: root-ca
       - configMap:
-          defaultMode: 416
+          defaultMode: 420
           name: kubelet-client-ca
         name: cluster-signer-ca
 status: {}

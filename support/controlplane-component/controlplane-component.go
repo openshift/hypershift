@@ -270,6 +270,7 @@ func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneC
 
 func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32, existingResources map[string]corev1.ResourceRequirements) (*config.DeploymentConfig, error) {
 	podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(c.NeedsManagementKASAccess())
+	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, podTemplateSpec.Spec.Containers); err != nil {
 		return nil, err
@@ -361,6 +362,18 @@ func (c *controlPlaneWorkload) applyWatchedResourcesAnnotation(cpContext Control
 	}
 	podTemplate.Annotations["component.hypershift.openshift.io/config-hash"] = strings.Join(hashedData, "")
 	return nil
+}
+
+func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
+	for _, volume := range podSpec.Volumes {
+		if volume.ConfigMap != nil {
+			volume.ConfigMap.DefaultMode = ptr.To[int32](420)
+		}
+
+		if volume.Secret != nil {
+			volume.Secret.DefaultMode = ptr.To[int32](416)
+		}
+	}
 }
 
 func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, containers []corev1.Container) error {
