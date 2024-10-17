@@ -136,7 +136,7 @@ func (r *DedicatedServingComponentScheduler) SetupWithManager(mgr ctrl.Manager, 
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}, builder.WithPredicates(util.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).Named("DedicatedServingComponentScheduler")
 	return builder.Complete(r)
@@ -330,7 +330,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) SetupWithManager(ctx contex
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).
 		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.filterNodeEvents)).

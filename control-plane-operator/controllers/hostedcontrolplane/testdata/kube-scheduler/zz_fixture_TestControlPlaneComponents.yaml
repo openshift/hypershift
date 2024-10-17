@@ -87,6 +87,7 @@ spec:
         - -v=2
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --feature-gates=ValidatingAdmissionPolicy=true
         - --feature-gates=SetEIPForNLBIngressController=true
         - --feature-gates=OpenShiftPodSecurityAdmission=true
         - --feature-gates=BuildCSIVolumes=true
@@ -94,6 +95,7 @@ spec:
         - --feature-gates=PrivateHostedZoneAWS=true
         - --feature-gates=GCPLabelsTags=true
         - --feature-gates=AlibabaPlatform=true
+        - --feature-gates=CloudDualStackNodeIPs=true
         - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=AdminNetworkPolicy=true
         - --feature-gates=NetworkLiveMigration=true
@@ -102,6 +104,8 @@ spec:
         - --feature-gates=VSphereControlPlaneMachineSet=true
         - --feature-gates=ManagedBootImages=true
         - --feature-gates=ManagedBootImagesAWS=true
+        - --feature-gates=DisableKubeletCloudCredentialProviders=true
+        - --feature-gates=KMSv1=true
         - --feature-gates=ExternalOIDC=true
         - --feature-gates=BareMetalLoadBalancer=true
         - --feature-gates=NodeDisruptionPolicy=true
@@ -111,16 +115,17 @@ spec:
         - --feature-gates=MultiArchInstallGCP=true
         - --feature-gates=IngressControllerLBSubnetsAWS=true
         - --feature-gates=AWSEFSDriverVolumeMetrics=true
-        - --feature-gates=ValidatingAdmissionPolicy=true
-        - --feature-gates=CloudDualStackNodeIPs=true
-        - --feature-gates=DisableKubeletCloudCredentialProviders=true
-        - --feature-gates=KMSv1=true
         - --feature-gates=ConsolePluginContentSecurityPolicy=false
+        - --feature-gates=ServiceAccountTokenNodeBinding=false
         - --feature-gates=GatewayAPI=false
         - --feature-gates=CSIDriverSharedResource=false
+        - --feature-gates=NodeSwap=false
         - --feature-gates=MachineAPIProviderOpenStack=false
         - --feature-gates=InsightsConfigAPI=false
         - --feature-gates=InsightsRuntimeExtractor=false
+        - --feature-gates=DynamicResourceAllocation=false
+        - --feature-gates=MaxUnavailableStatefulSet=false
+        - --feature-gates=EventedPLEG=false
         - --feature-gates=SigstoreImageVerification=false
         - --feature-gates=VSphereMultiVCenters=false
         - --feature-gates=RouteExternalCertificate=false
@@ -142,6 +147,9 @@ spec:
         - --feature-gates=SignatureStores=false
         - --feature-gates=PinnedImages=false
         - --feature-gates=UpgradeStatus=false
+        - --feature-gates=TranslateStreamCloseWebsocketRequests=false
+        - --feature-gates=VolumeAttributesClass=false
+        - --feature-gates=VolumeGroupSnapshot=false
         - --feature-gates=Example=false
         - --feature-gates=PlatformOperators=false
         - --feature-gates=NewOLM=false
@@ -154,20 +162,12 @@ spec:
         - --feature-gates=ClusterMonitoringConfig=false
         - --feature-gates=MultiArchInstallAzure=false
         - --feature-gates=ImageStreamImportMode=false
-        - --feature-gates=VSphereMultiNetworks=false
-        - --feature-gates=IngressControllerDynamicConfigurationManager=false
-        - --feature-gates=MinimumKubeletVersion=false
-        - --feature-gates=ServiceAccountTokenNodeBinding=false
-        - --feature-gates=NodeSwap=false
-        - --feature-gates=DynamicResourceAllocation=false
-        - --feature-gates=MaxUnavailableStatefulSet=false
-        - --feature-gates=EventedPLEG=false
-        - --feature-gates=TranslateStreamCloseWebsocketRequests=false
-        - --feature-gates=VolumeAttributesClass=false
-        - --feature-gates=VolumeGroupSnapshot=false
         - --feature-gates=UserNamespacesSupport=false
         - --feature-gates=UserNamespacesPodSecurityStandards=false
         - --feature-gates=ProcMountType=false
+        - --feature-gates=VSphereMultiNetworks=false
+        - --feature-gates=IngressControllerDynamicConfigurationManager=false
+        - --feature-gates=MinimumKubeletVersion=false
         command:
         - hyperkube
         - kube-scheduler

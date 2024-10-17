@@ -516,7 +516,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			Scheme:     "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: "cluster-version-operator",
+					ServerName: ptr.To("cluster-version-operator"),
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{

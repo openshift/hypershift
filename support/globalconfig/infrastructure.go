@@ -53,10 +53,17 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 
 	switch platformType {
 	case hyperv1.AWSPlatform:
-		infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
-		infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{
-			Region: hcp.Spec.Platform.AWS.Region,
+		if infra.Spec.PlatformSpec.AWS == nil {
+			infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
 		}
+		if infra.Status.PlatformStatus.AWS == nil {
+			infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{
+				CloudLoadBalancerConfig: &configv1.CloudLoadBalancerConfig{
+					DNSType: configv1.PlatformDefaultDNSType,
+				},
+			}
+		}
+		infra.Status.PlatformStatus.AWS.Region = hcp.Spec.Platform.AWS.Region
 		tags := []configv1.AWSResourceTag{}
 		for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
 			// This breaks the AWS CSI driver as it ends up being used there as an extra tag

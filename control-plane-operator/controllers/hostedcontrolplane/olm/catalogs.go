@@ -20,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	"github.com/blang/semver"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -240,7 +241,7 @@ func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, own
 			Scheme:     "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: "catalog-operator-metrics",
+					ServerName: ptr.To("catalog-operator-metrics"),
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{

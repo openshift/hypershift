@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -238,9 +239,9 @@ func reconcileUWMConfigContent(cm *corev1.ConfigMap, relabelConfig *monv1.Relabe
 		QueueConfig: &monv1.QueueConfig{
 			Capacity:          30000,
 			MaxSamplesPerSend: 10000,
-			BatchSendDeadline: "1m",
-			MinBackoff:        "1s",
-			MaxBackoff:        "256s",
+			BatchSendDeadline: ptr.To(monv1.Duration("1m")),
+			MinBackoff:        ptr.To(monv1.Duration("1s")),
+			MaxBackoff:        ptr.To(monv1.Duration("256s")),
 		},
 	}
 	if relabelConfig != nil {

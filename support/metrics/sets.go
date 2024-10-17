@@ -42,18 +42,17 @@ var (
 
 type MetricsSetConfig struct {
 	// Kube/OpenShift components
-	Etcd                            []*prometheusoperatorv1.RelabelConfig `json:"etcd,omitempty"`
-	KubeAPIServer                   []*prometheusoperatorv1.RelabelConfig `json:"kubeAPIServer,omitempty"`
-	KubeControllerManager           []*prometheusoperatorv1.RelabelConfig `json:"kubeControllerManager,omitempty"`
-	OpenShiftAPIServer              []*prometheusoperatorv1.RelabelConfig `json:"openshiftAPIServer,omitempty"`
-	OpenShiftControllerManager      []*prometheusoperatorv1.RelabelConfig `json:"openshiftControllerManager,omitempty"`
-	OpenShiftRouteControllerManager []*prometheusoperatorv1.RelabelConfig `json:"openshiftRouteControllerManager,omitempty"`
-	CVO                             []*prometheusoperatorv1.RelabelConfig `json:"cvo,omitempty"`
-	CCO                             []*prometheusoperatorv1.RelabelConfig `json:"cco,omitempty"`
-	OLM                             []*prometheusoperatorv1.RelabelConfig `json:"olm,omitempty"`
-	CatalogOperator                 []*prometheusoperatorv1.RelabelConfig `json:"catalogOperator,omitempty"`
-	RegistryOperator                []*prometheusoperatorv1.RelabelConfig `json:"registryOperator,omitempty"`
-	NodeTuningOperator              []*prometheusoperatorv1.RelabelConfig `json:"nodeTuningOperator,omitempty"`
+	Etcd                            []prometheusoperatorv1.RelabelConfig `json:"etcd,omitempty"`
+	KubeAPIServer                   []prometheusoperatorv1.RelabelConfig `json:"kubeAPIServer,omitempty"`
+	KubeControllerManager           []prometheusoperatorv1.RelabelConfig `json:"kubeControllerManager,omitempty"`
+	OpenShiftAPIServer              []prometheusoperatorv1.RelabelConfig `json:"openshiftAPIServer,omitempty"`
+	OpenShiftControllerManager      []prometheusoperatorv1.RelabelConfig `json:"openshiftControllerManager,omitempty"`
+	OpenShiftRouteControllerManager []prometheusoperatorv1.RelabelConfig `json:"openshiftRouteControllerManager,omitempty"`
+	CVO                             []prometheusoperatorv1.RelabelConfig `json:"cvo,omitempty"`
+	OLM                             []prometheusoperatorv1.RelabelConfig `json:"olm,omitempty"`
+	CatalogOperator                 []prometheusoperatorv1.RelabelConfig `json:"catalogOperator,omitempty"`
+	RegistryOperator                []prometheusoperatorv1.RelabelConfig `json:"registryOperator,omitempty"`
+	NodeTuningOperator              []prometheusoperatorv1.RelabelConfig `json:"nodeTuningOperator,omitempty"`
 
 	// HyperShift components
 	ControlPlaneOperator        []*prometheusoperatorv1.RelabelConfig `json:"controlPlaneOperator,omitempty"`
@@ -112,10 +111,10 @@ func (s *MetricsSet) Type() string {
 	return "metricsSet"
 }
 
-func CVORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func CVORelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "(cluster_version|cluster_version_available_updates|cluster_operator_up|cluster_operator_conditions|cluster_version_payload|cluster_installer)",
@@ -125,7 +124,7 @@ func CVORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.CVO
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|server).*",
@@ -135,10 +134,10 @@ func CVORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	}
 }
 
-func EtcdRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func EtcdRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "(etcd_disk_wal_fsync_duration_seconds_bucket|etcd_mvcc_db_total_size_in_bytes|etcd_network_peer_round_trip_time_seconds_bucket|etcd_mvcc_db_total_size_in_use_in_bytes|etcd_disk_backend_commit_duration_seconds_bucket|etcd_server_leader_changes_seen_total)",
@@ -153,10 +152,10 @@ func EtcdRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	}
 }
 
-func KASRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func KASRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "(apiserver_storage_objects|apiserver_request_total|apiserver_current_inflight_requests)",
@@ -166,7 +165,7 @@ func KASRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.KubeAPIServer
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|server).*",
@@ -226,10 +225,10 @@ func KASRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	}
 }
 
-func KCMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func KCMRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "pv_collector_total_pv_count",
@@ -239,7 +238,7 @@ func KCMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.KubeControllerManager
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|request|server).*",
@@ -259,10 +258,10 @@ func KCMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	}
 }
 
-func NTORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func NTORelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "nto_profile_calculated_total",
@@ -278,10 +277,10 @@ func NTORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	}
 }
 
-func OpenShiftAPIServerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func OpenShiftAPIServerRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "(apiserver_storage_objects|apiserver_request_total|apiserver_current_inflight_requests)",
@@ -291,7 +290,7 @@ func OpenShiftAPIServerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Re
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.OpenShiftAPIServer
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|server).*",
@@ -316,10 +315,10 @@ func OpenShiftAPIServerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Re
 	}
 }
 
-func OpenShiftControllerManagerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func OpenShiftControllerManagerRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "openshift_build_status_phase_total",
@@ -329,7 +328,7 @@ func OpenShiftControllerManagerRelabelConfigs(set MetricsSet) []*prometheusopera
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.OpenShiftControllerManager
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|request|server).*",
@@ -339,10 +338,10 @@ func OpenShiftControllerManagerRelabelConfigs(set MetricsSet) []*prometheusopera
 	}
 }
 
-func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "(.*)",
@@ -352,7 +351,7 @@ func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheus
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.OpenShiftRouteControllerManager
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|request|server).*",
@@ -362,10 +361,10 @@ func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheus
 	}
 }
 
-func OLMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func OLMRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "(csv_succeeded|csv_abnormal)",
@@ -375,7 +374,7 @@ func OLMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.OLM
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|server).*",
@@ -385,10 +384,10 @@ func OLMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	}
 }
 
-func CatalogOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func CatalogOperatorRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
 				Regex:        "(subscription_sync_total|olm_resolution_duration_seconds)",
@@ -398,7 +397,7 @@ func CatalogOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Relab
 	case MetricsSetSRE:
 		return sreMetricsSetConfig.CatalogOperator
 	default:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|server).*",
@@ -408,20 +407,20 @@ func CatalogOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Relab
 	}
 }
 
-func HostedClusterConfigOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func HostedClusterConfigOperatorRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	// For now, no filtering will occur for the HCCO
 	return nil
 }
 
-func ControlPlaneOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func ControlPlaneOperatorRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	// For now, no filtering will occur for the CPO
 	return nil
 }
 
-func RegistryOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func RegistryOperatorRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
+		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
 				Regex:        "(.*)",

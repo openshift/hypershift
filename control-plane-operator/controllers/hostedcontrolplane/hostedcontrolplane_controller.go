@@ -194,7 +194,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedControlPlane{}).
 		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 		})
 	for _, handler := range r.eventHandlers(mgr.GetScheme(), mgr.GetRESTMapper()) {
 		b.Watches(handler.obj, handler.handler)
