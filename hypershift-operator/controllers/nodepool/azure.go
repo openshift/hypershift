@@ -93,7 +93,7 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 		if nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountType == "UserManaged" {
 			azureMachineTemplate.Template.Spec.Diagnostics.Boot.UserManaged = &capiazure.UserManagedBootDiagnostics{
-				StorageAccountURI: nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountURI,
+				StorageAccountURI: nodePool.Spec.Platform.Azure.Diagnostics.UserManaged.StorageAccountURI,
 			}
 		}
 	}
