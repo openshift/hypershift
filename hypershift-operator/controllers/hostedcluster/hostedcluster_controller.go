@@ -2721,6 +2721,15 @@ func reconcileControlPlaneOperatorDeployment(
 		)
 	}
 
+	aroHCPKVMIClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
+	if ok {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+				Value: aroHCPKVMIClientID,
+			})
+	}
+
 	mainContainer = hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
 	proxy.SetEnvVars(&mainContainer.Env)
 

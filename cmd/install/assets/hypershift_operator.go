@@ -379,6 +379,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
 	EnableCPOOverrides                      bool
+	AROHCPKeyVaultUsersClientID             string
 	TechPreviewNoUpgrade                    bool
 }
 
@@ -493,6 +494,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  "MANAGED_SERVICE",
 			Value: o.ManagedService,
+		})
+	}
+
+	if len(o.AROHCPKeyVaultUsersClientID) > 0 {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+			Value: o.AROHCPKeyVaultUsersClientID,
 		})
 	}
 
