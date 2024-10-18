@@ -41,6 +41,35 @@ spec:
       credentials:
         name: bryans-cluster-cloud-credentials
       location: fakeLocation
+      managedIdentities:
+        controlPlane:
+          cloudProvider:
+            certificateName: ""
+            clientID: ""
+          controlPlaneOperator:
+            certificateName: ""
+            clientID: ""
+          disk:
+            certificateName: ""
+            clientID: ""
+          file:
+            certificateName: ""
+            clientID: ""
+          imageRegistry:
+            certificateName: ""
+            clientID: ""
+          ingress:
+            certificateName: ""
+            clientID: ""
+          managedIdentitiesKeyVault:
+            name: ""
+            tenantID: ""
+          network:
+            certificateName: ""
+            clientID: ""
+          nodePoolManagement:
+            certificateName: ""
+            clientID: ""
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
