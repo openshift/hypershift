@@ -25,8 +25,8 @@ hcp create cluster kubevirt \
 --pull-secret $PULL_SECRET \
 --memory $MEM \
 --cores $CPU \
-–additional-network name:my-namespace/network1 \
-–additional-network name:my-namespace/network2
+--additional-network name:my-namespace/network1 \
+--additional-network name:my-namespace/network2
 ```
 
 In this example, the KubeVirt VMs will have interfaces attached to the networks
