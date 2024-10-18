@@ -309,7 +309,7 @@ spec:
             - name: name
               value: buildah
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:6428c90d3c6905c4bc2657c6f30b0b5980dcc68882eb354f7e76a07f40546783
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:bea650d780f4ca447239a90678251f22eae42004c45bf068fc456d53cec5bb2d
             - name: kind
               value: task
           resolver: bundles
@@ -346,7 +346,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:a67a21f8cf1e573acbf51f733e7da2114a380f6a3ec986ede8f56fad3a2e6ceb
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:41d4bbfce65dda1566d63a49f893cd3475e0f2fc087e9058ca7272c616b196ae
             - name: kind
               value: task
           resolver: bundles
@@ -383,7 +383,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:a67a21f8cf1e573acbf51f733e7da2114a380f6a3ec986ede8f56fad3a2e6ceb
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:41d4bbfce65dda1566d63a49f893cd3475e0f2fc087e9058ca7272c616b196ae
             - name: kind
               value: task
           resolver: bundles
@@ -421,7 +421,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:a67a21f8cf1e573acbf51f733e7da2114a380f6a3ec986ede8f56fad3a2e6ceb
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:41d4bbfce65dda1566d63a49f893cd3475e0f2fc087e9058ca7272c616b196ae
             - name: kind
               value: task
           resolver: bundles
