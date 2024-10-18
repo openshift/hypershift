@@ -59,10 +59,64 @@ type IBMVPCClusterSpec struct {
 // VPCLoadBalancerSpec defines the desired state of an VPC load balancer.
 type VPCLoadBalancerSpec struct {
 	// Name sets the name of the VPC load balancer.
+	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=63
 	// +kubebuilder:validation:Pattern=`^([a-z]|[a-z][-a-z0-9]*[a-z0-9])$`
 	// +optional
 	Name string `json:"name,omitempty"`
+
+	// id of the loadbalancer
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength:=64
+	// +kubebuilder:validation:Pattern=`^[-0-9a-z_]+$`
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// public indicates that load balancer is public or private
+	// +kubebuilder:default=true
+	// +optional
+	Public *bool `json:"public,omitempty"`
+
+	// AdditionalListeners sets the additional listeners for the control plane load balancer.
+	// +listType=map
+	// +listMapKey=port
+	// +optional
+	AdditionalListeners []AdditionalListenerSpec `json:"additionalListeners,omitempty"`
+}
+
+// AdditionalListenerSpec defines the desired state of an
+// additional listener on an VPC load balancer.
+type AdditionalListenerSpec struct {
+	// Port sets the port for the additional listener.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int64 `json:"port"`
+}
+
+// VPCSecurityGroupStatus defines a vpc security group resource status with its id and respective rule's ids.
+type VPCSecurityGroupStatus struct {
+	// id represents the id of the resource.
+	ID *string `json:"id,omitempty"`
+	// rules contains the id of rules created under the security group
+	RuleIDs []*string `json:"ruleIDs,omitempty"`
+	// +kubebuilder:default=false
+	// controllerCreated indicates whether the resource is created by the controller.
+	ControllerCreated *bool `json:"controllerCreated,omitempty"`
+}
+
+// VPCLoadBalancerStatus defines the status VPC load balancer.
+type VPCLoadBalancerStatus struct {
+	// id of VPC load balancer.
+	// +optional
+	ID *string `json:"id,omitempty"`
+	// State is the status of the load balancer.
+	State VPCLoadBalancerState `json:"state,omitempty"`
+	// hostname is the hostname of load balancer.
+	// +optional
+	Hostname *string `json:"hostname,omitempty"`
+	// +kubebuilder:default=false
+	// controllerCreated indicates whether the resource is created by the controller.
+	ControllerCreated *bool `json:"controllerCreated,omitempty"`
 }
 
 // IBMVPCClusterStatus defines the observed state of IBMVPCCluster.
