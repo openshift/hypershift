@@ -5,9 +5,7 @@ import (
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-
 	"github.com/go-logr/logr"
-
 	"sigs.k8s.io/yaml"
 )
 
