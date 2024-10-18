@@ -40,7 +40,7 @@ func NewHelmRenderCommand(opts *Options) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.Flags().StringVar(&opts.OutputFile, "output-dir", "", "File to write the rendered manifests to. Writes to STDOUT if not specified.")
+	cmd.Flags().StringVar(&opts.OutputFile, "output-dir", "", "Directory to write the rendered helm chart to")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
