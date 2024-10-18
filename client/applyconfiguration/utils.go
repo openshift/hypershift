@@ -232,6 +232,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.VolumeApplyConfiguration{}
 
 		// Group=hypershift.openshift.io, Version=v1beta1
+	case v1beta1.SchemeGroupVersion.WithKind("AddressPair"):
+		return &hypershiftv1beta1.AddressPairApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AESCBCSpec"):
 		return &hypershiftv1beta1.AESCBCSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AgentNodePoolPlatform"):
@@ -412,6 +414,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.PlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlatformStatus"):
 		return &hypershiftv1beta1.PlatformStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("PortOpts"):
+		return &hypershiftv1beta1.PortOptsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PowerVSNodePoolPlatform"):
 		return &hypershiftv1beta1.PowerVSNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PowerVSPlatformSpec"):
@@ -424,6 +428,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ReleaseApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ReplaceUpgrade"):
 		return &hypershiftv1beta1.ReplaceUpgradeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ResolvedPortSpecFields"):
+		return &hypershiftv1beta1.ResolvedPortSpecFieldsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RollingUpdate"):
 		return &hypershiftv1beta1.RollingUpdateApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RoutePublishingStrategy"):

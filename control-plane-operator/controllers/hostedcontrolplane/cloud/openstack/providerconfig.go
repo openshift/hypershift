@@ -1,6 +1,8 @@
 package openstack
 
 import (
+	"strings"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -19,11 +21,11 @@ const (
 // ReconcileCloudConfigSecret reconciles the cloud config secret.
 // For some controllers (e.g. Manila CSI, CNCC, etc), the cloud config needs to be stored in a secret.
 // In the hosted cluster config operator, we create the secrets needed by these controllers.
-func ReconcileCloudConfigSecret(externalNetworkID *string, secret *corev1.Secret, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigSecret(externalNetworkID *string, secret *corev1.Secret, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
 		secret.Data[CABundleKey] = caCertData
 	}
@@ -34,11 +36,11 @@ func ReconcileCloudConfigSecret(externalNetworkID *string, secret *corev1.Secret
 
 // ReconcileCloudConfigConfigMap reconciles the cloud config configmap.
 // In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
-func ReconcileCloudConfigConfigMap(externalNetworkID *string, cm *corev1.ConfigMap, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigConfigMap(externalNetworkID *string, cm *corev1.ConfigMap, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
 		cm.Data[CABundleKey] = string(caCertData)
 	}
@@ -48,7 +50,7 @@ func ReconcileCloudConfigConfigMap(externalNetworkID *string, cm *corev1.ConfigM
 }
 
 // getCloudConfig returns the cloud config.
-func getCloudConfig(externalNetworkID *string, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) string {
+func getCloudConfig(externalNetworkID *string, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) string {
 	config := string(credentialsSecret.Data[CredentialsFile])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
@@ -61,8 +63,19 @@ func getCloudConfig(externalNetworkID *string, cloudName string, credentialsSecr
 	if externalNetworkID != nil && *externalNetworkID != "" {
 		config += "floating-network-id = " + *externalNetworkID + "\n"
 	}
+	config += "\n[Networking]\n"
+	config += "address-sort-order = " + machineNetworksToList(machineNetwork) + "\n"
 
 	return config
+}
+
+// machineNetworksToList converts a list of MachineNetworkEntry to a comma separated list of CIDRs.
+func machineNetworksToList(machineNetwork []hyperv1.MachineNetworkEntry) string {
+	cidrs := []string{}
+	for _, mn := range machineNetwork {
+		cidrs = append(cidrs, mn.CIDR.String())
+	}
+	return strings.Join(cidrs, ",")
 }
 
 // ReconcileTrustedCA reconciles as expected by Nodes Kubelet.
