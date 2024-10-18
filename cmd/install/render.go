@@ -5,23 +5,24 @@ import (
 )
 
 type TemplateParams struct {
-	HyperShiftImage            string
-	Namespace                  string
-	HypershiftOperatorReplicas string
-	OIDCS3Name                 string
-	OIDCS3Region               string
-	OIDCS3CredsSecret          string
-	OIDCS3CredsSecretKey       string
-	AWSPrivateRegion           string
-	AWSPrivateCredsSecret      string
-	AWSPrivateCredsSecretKey   string
-	ExternalDNSCredsSecret     string
-	ExternalDNSDomainFilter    string
-	ExternalDNSTxtOwnerID      string
-	ExternalDNSImage           string
-	RegistryOverrides          string
-	TemplateNamespace          bool
-	TemplateParamWrapper       func(string) string
+	HyperShiftImage             string
+	Namespace                   string
+	HypershiftOperatorReplicas  string
+	OIDCS3Name                  string
+	OIDCS3Region                string
+	OIDCS3CredsSecret           string
+	OIDCS3CredsSecretKey        string
+	AWSPrivateRegion            string
+	AWSPrivateCredsSecret       string
+	AWSPrivateCredsSecretKey    string
+	ExternalDNSCredsSecret      string
+	ExternalDNSDomainFilter     string
+	ExternalDNSTxtOwnerID       string
+	ExternalDNSImage            string
+	RegistryOverrides           string
+	AROHCPKeyVaultUsersClientID string
+	TemplateNamespace           bool
+	TemplateParamWrapper        func(string) string
 }
 
 func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig TemplateParams) ([]crclient.Object, []crclient.Object, error) {
@@ -60,6 +61,9 @@ func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig Templ
 
 	// registry overrides
 	opts.RegistryOverrides = templateParamConfig.TemplateParamWrapper(templateParamConfig.RegistryOverrides)
+
+	// azure key vault client id
+	opts.AroHCPKeyVaultUsersClientID = templateParamConfig.TemplateParamWrapper(templateParamConfig.AROHCPKeyVaultUsersClientID)
 
 	// create manifests
 	opts.RenderNamespace = templateParamConfig.TemplateNamespace

@@ -12,21 +12,22 @@ import (
 )
 
 var helmTemplateParams = TemplateParams{
-	Namespace:                ".Release.Namespace",
-	HyperShiftImage:          ".Values.image",
-	OIDCS3Name:               ".Values.oidc.s3.name",
-	OIDCS3Region:             ".Values.oidc.s3.region",
-	OIDCS3CredsSecret:        ".Values.oidc.s3.credsSecret",
-	OIDCS3CredsSecretKey:     ".Values.oidc.s3.credsSecretKey",
-	AWSPrivateRegion:         ".Values.aws.private.region",
-	AWSPrivateCredsSecret:    ".Values.aws.private.credsSecret",
-	AWSPrivateCredsSecretKey: ".Values.aws.private.credsSecretKey",
-	ExternalDNSCredsSecret:   ".Values.externaldns.credsSecret",
-	ExternalDNSDomainFilter:  ".Values.externaldns.domainFilter",
-	ExternalDNSTxtOwnerID:    ".Values.externaldns.txtOwnerId",
-	ExternalDNSImage:         ".Values.externaldns.image",
-	RegistryOverrides:        ".Values.registryOverrides",
-	TemplateNamespace:        false,
+	Namespace:                   ".Release.Namespace",
+	HyperShiftImage:             ".Values.image",
+	OIDCS3Name:                  ".Values.oidc.s3.name",
+	OIDCS3Region:                ".Values.oidc.s3.region",
+	OIDCS3CredsSecret:           ".Values.oidc.s3.credsSecret",
+	OIDCS3CredsSecretKey:        ".Values.oidc.s3.credsSecretKey",
+	AWSPrivateRegion:            ".Values.aws.private.region",
+	AWSPrivateCredsSecret:       ".Values.aws.private.credsSecret",
+	AWSPrivateCredsSecretKey:    ".Values.aws.private.credsSecretKey",
+	ExternalDNSCredsSecret:      ".Values.externaldns.credsSecret",
+	ExternalDNSDomainFilter:     ".Values.externaldns.domainFilter",
+	ExternalDNSTxtOwnerID:       ".Values.externaldns.txtOwnerId",
+	ExternalDNSImage:            ".Values.externaldns.image",
+	RegistryOverrides:           ".Values.registryOverrides",
+	AROHCPKeyVaultUsersClientID: ".Values.azure.keyVault.clientId",
+	TemplateNamespace:           false,
 	TemplateParamWrapper: func(name string) string {
 		return fmt.Sprintf("{{ %s }}", name)
 	},
@@ -90,6 +91,11 @@ func WriteValuesFile(dir string) error {
 	data := map[string]interface{}{
 		"image":             "",
 		"registryOverrides": "",
+		"azure": map[string]interface{}{
+			"keyVault": map[string]interface{}{
+				"clientId": "",
+			},
+		},
 		"oidc": map[string]interface{}{
 			"s3": map[string]interface{}{
 				"name":           "",
@@ -104,12 +110,6 @@ func WriteValuesFile(dir string) error {
 				"credsSecret":    "",
 				"credsSecretKey": "",
 			},
-		},
-		"externaldns": map[string]interface{}{
-			"credsSecret":  "",
-			"domainFilter": "",
-			"txtOwnerId":   "",
-			"image":        "",
 		},
 	}
 	return writeYamlFile(fmt.Sprintf("%s/values.yaml", dir), data)
