@@ -49,4 +49,9 @@ const (
 	CPOOverridesEnvVar = "ENABLE_CPO_OVERRIDES"
 
 	AuditWebhookService = "audit-webhook"
+
+	// AROHCPKeyVaultManagedIdentityClientID captures the client ID of the managed identity created on an ARO HCP
+	// management cluster. This managed identity is used to pull secrets and certificates out of Azure Key Vaults in the
+	// management cluster's resource group in Azure.
+	AROHCPKeyVaultManagedIdentityClientID = "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
 )

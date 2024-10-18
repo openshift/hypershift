@@ -105,6 +105,7 @@ type Options struct {
 	EnableSizeTagging                         bool
 	EnableEtcdRecovery                        bool
 	EnableCPOOverrides                        bool
+	AroHCPKeyVaultUsersClientID               string
 	TechPreviewNoUpgrade                      bool
 }
 
@@ -238,6 +239,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCPOOverrides, "enable-cpo-overrides", opts.EnableCPOOverrides, "If true, the HyperShift operator uses a set of static overrides for the CPO image given specific release versions")
+	cmd.PersistentFlags().StringVar(&opts.AroHCPKeyVaultUsersClientID, "aro-hcp-key-vault-users-client-id", opts.AroHCPKeyVaultUsersClientID, "The client ID of the managed identity which can access the Azure Key Vaults, in an AKS management cluster, to retrieve secrets and certificates.")
 	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -706,6 +708,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
+		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
