@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -122,6 +123,11 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+)
+
+var (
+	olmCatalogImagesOnce sync.Once
+	catalogImages        map[string]string
 )
 
 type HostedControlPlaneReconciler struct {
@@ -3824,11 +3830,28 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 			isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
 
+			pullSecret := common.PullSecret(hcp.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+				return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
+			}
+
+			var getCatalogImagesErr error
+			olmCatalogImagesOnce.Do(func() {
+				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], registryclient.GetListDigest)
+				if err != nil {
+					getCatalogImagesErr = err
+					return
+				}
+			})
+			if getCatalogImagesErr != nil {
+				return fmt.Errorf("failed to get catalog images: %w", getCatalogImagesErr)
+			}
+
 			if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
 				catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
 				if !overrideImages {
 					if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
+						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides, catalogImages)
 					}); err != nil {
 						return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 					}
@@ -3839,12 +3862,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				}
 			} else {
 				if !overrideImages {
-					pullSecret := common.PullSecret(hcp.Namespace)
-					if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-						return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
-					}
-
-					for name, catalog := range olm.CatalogToImage {
+					for name, catalog := range catalogImages {
 						imageRef, err := reference.Parse(catalog)
 						if err != nil {
 							return fmt.Errorf("failed to parse catalog image %s: %w", catalog, err)
@@ -3894,10 +3912,16 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				}
 			}
 
+			olmManagerImage := ""
+			exists := false
+			if olmManagerImage, exists = releaseImageProvider.ImageExist("operator-lifecycle-manager"); !exists {
+				return fmt.Errorf("failed to get olm image from release image provider")
+			}
+
 			olmDeployments := olm.OLMDeployments(p, hcp.Namespace)
 			for _, dep := range olmDeployments {
 				if _, err := createOrUpdate(ctx, r, dep.Manifest, func() error {
-					return dep.Reconciler(dep.Manifest, p.OwnerRef, p.DeploymentConfig, dep.Image)
+					return dep.Reconciler(dep.Manifest, p.OwnerRef, p.DeploymentConfig, dep.Image, olmManagerImage)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile %s deployment with image %s: %w", dep.Name, dep.Image, err)
 				}
