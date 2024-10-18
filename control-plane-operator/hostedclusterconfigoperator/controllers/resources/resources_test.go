@@ -3,6 +3,9 @@ package resources
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	supportutil "github.com/openshift/hypershift/support/util"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"math/rand"
 	"testing"
 	"time"
@@ -1087,6 +1090,76 @@ func TestReconcileKASEndpoints(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
 			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
+		})
+	}
+}
+
+func TestReconcileKubeletConfig(t *testing.T) {
+	hcpNamespace := "hostedcontrolplane-namespace"
+	hcNamespace := "openshift-config-managed"
+	npName := "nodepool-test"
+	kubeletConfig1 := `
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    metadata:
+      name: set-max-pods
+    spec:
+      kubeletConfig:
+        maxPods: 100
+`
+	testCases := []struct {
+		name                      string
+		hostedControlPlaneObjects []client.Object
+		hostedClusterObjects      []client.Object
+	}{
+		{
+			name: "copy kubelet config from control plane NS",
+			hostedControlPlaneObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							nodepool.KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						"config": kubeletConfig1,
+					},
+				},
+			},
+			hostedClusterObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcNamespace,
+						Labels: map[string]string{
+							nodepool.KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						"config": kubeletConfig1,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cpFakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlaneObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			r := &reconciler{
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				client:                 fakeClient,
+				cpClient:               cpFakeClient,
+			}
+			g.Expect(r.reconcileKubeletConfig(context.TODO())).To(Succeed())
+			for _, obj := range tc.hostedClusterObjects {
+				g.Expect(r.client.Get(context.TODO(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+
+			}
 		})
 	}
 }
