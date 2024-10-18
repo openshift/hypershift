@@ -757,6 +757,35 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 	})
 }
 
+// EnsureNodesRuntime ensures that all nodes in the NodePool have the expected runtime handlers.
+// This is only supported on 4.18+ when the default runtime is changed to crun.
+func EnsureNodesRuntime(t *testing.T, ctx context.Context, c crclient.Client, nodepool *hyperv1.NodePool) {
+	AtLeast(t, Version418)
+	g := NewWithT(t)
+
+	nodeList := &corev1.NodeList{}
+	err := c.List(ctx, nodeList)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to list nodes")
+
+	validHandlers := map[string]bool{
+		"runc": false,
+		"crun": false,
+	}
+	for _, node := range nodeList.Items {
+		if node.Status.RuntimeHandlers != nil {
+			for _, handler := range node.Status.RuntimeHandlers {
+				if _, ok := validHandlers[handler.Name]; ok {
+					validHandlers[handler.Name] = true
+				}
+			}
+
+			for handler, present := range validHandlers {
+				g.Expect(present).To(BeTrue(), "node %s is missing runtime handler %s", node.Name, handler)
+			}
+		}
+	}
+}
+
 func getComponentName(pod *corev1.Pod) string {
 	if pod.Labels["app"] != "" {
 		return pod.Labels["app"]
