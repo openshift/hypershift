@@ -109,6 +109,8 @@ spec:
           value: quay.io/openshift/origin-csi-livenessprobe:latest
         - name: AZURE_FILE_DRIVER_CONTROL_PLANE_IMAGE
           value: quay.io/openshift/origin-azure-file-csi-driver-operator:latest
+        - name: KUBE_RBAC_PROXY_CONTROL_PLANE_IMAGE
+          value: quay.io/openshift/origin-kube-rbac-proxy:latest
         - name: TOOLS_IMAGE
           value: quay.io/openshift/origin-tools:latest
         image: quay.io/openshift/origin-cluster-storage-operator:latest
