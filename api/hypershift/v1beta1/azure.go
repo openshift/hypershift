@@ -298,7 +298,111 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:Required
 	// +immutable
 	// +required
-	SecurityGroupID string `json:"securityGroupID,omitempty"`
+	SecurityGroupID string `json:"securityGroupID"`
+
+	// managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+	// authenticate with Azure's API.
+	//
+	// +kubebuilder:validation:Required
+	// +openshift:enable:FeatureGate=AROHCPManagedIdentities
+	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
+}
+
+// ManagedAzureKeyVault is an Azure Key Vault on the management cluster.
+type ManagedAzureKeyVault struct {
+	// name is the name of the Azure Key Vault on the management cluster.
+	//
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// tenantID is the tenant ID of the Azure Key Vault on the management cluster.
+	//
+	// +kubebuilder:validation:Required
+	TenantID string `json:"tenantID"`
+}
+
+// AzureResourceManagedIdentities contains the managed identities needed for HCP control plane and data plane components
+// that authenticate with Azure's API.
+type AzureResourceManagedIdentities struct {
+	// controlPlane contains the client IDs of all the managed identities on the HCP control plane needing to
+	// authenticate with Azure's API.
+	//
+	// +kubebuilder:validation:Required
+	ControlPlane ControlPlaneManagedIdentities `json:"controlPlane"`
+
+	// Future placeholder - DataPlaneMIs * DataPlaneManagedIdentities
+}
+
+// ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
+// used, by an HCP component, to authenticate with the Azure API.
+type ManagedIdentity struct {
+	// clientID is the client ID of a managed identity.
+	//
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:Required
+	ClientID string `json:"clientID"`
+
+	// certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+	// reside in an Azure Key Vault on the management cluster.
+	//
+	// +kubebuilder:validation:Required
+	CertificateName string `json:"certificateName"`
+}
+
+// ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
+// Azure's API.
+type ControlPlaneManagedIdentities struct {
+	// managedIdentitiesKeyVault contains information on the management cluster's managed identities Azure Key Vault.
+	// This Key Vault is where the managed identities certificates are stored. These certificates are pulled out of the
+	// Key Vault by the Secrets Store CSI driver and mounted into a volume on control plane pods requiring
+	// authentication with Azure API.
+	//
+	// More information on how the Secrets Store CSI driver works to do this can be found here:
+	// https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver.
+	//
+	// +kubebuilder:validation:Required
+	ManagedIdentitiesKeyVault ManagedAzureKeyVault `json:"managedIdentitiesKeyVault"`
+
+	// cloudProvider is a pre-existing managed identity associated with the azure cloud provider, aka cloud controller
+	// manager.
+	//
+	// +kubebuilder:validation:Required
+	CloudProvider ManagedIdentity `json:"cloudProvider"`
+
+	// nodePoolManagement is a pre-existing managed identity associated with the operator managing the NodePools.
+	//
+	// +kubebuilder:validation:Required
+	NodePoolManagement ManagedIdentity `json:"nodePoolManagement"`
+
+	// controlPlaneOperator is a pre-existing managed identity associated with the control plane operator.
+	//
+	// +kubebuilder:validation:Required
+	ControlPlaneOperator ManagedIdentity `json:"controlPlaneOperator"`
+
+	// imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
+	//
+	// +kubebuilder:validation:Required
+	ImageRegistry ManagedIdentity `json:"imageRegistry"`
+
+	// ingress is a pre-existing managed identity associated with the cluster-ingress-operator.
+	//
+	// +kubebuilder:validation:Required
+	Ingress ManagedIdentity `json:"ingress"`
+
+	// network is a pre-existing managed identity associated with the cluster-network-operator.
+	//
+	// +kubebuilder:validation:Required
+	Network ManagedIdentity `json:"network"`
+
+	// diskClientID is a pre-existing managed identity associated with the azure-disk-controller.
+	//
+	// +kubebuilder:validation:Required
+	Disk ManagedIdentity `json:"disk"`
+
+	// fileClientID is a pre-existing managed identity associated with the azure-disk-controller.
+	//
+	// +kubebuilder:validation:Required
+	File ManagedIdentity `json:"file"`
 }
 
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
@@ -311,6 +415,12 @@ type AzureKMSSpec struct {
 	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
 	// +optional
 	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
+
+	// kms is a pre-existing managed identity used to authenticate with Azure KMS.
+	//
+	// +kubebuilder:validation:Required
+	// +openshift:enable:FeatureGate=AROHCPManagedIdentities
+	KMS ManagedIdentity `json:"kms"`
 }
 
 type AzureKMSKey struct {
