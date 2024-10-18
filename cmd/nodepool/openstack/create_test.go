@@ -30,6 +30,17 @@ func TestRawOpenStackPlatformCreateOptions_Validate(t *testing.T) {
 			},
 			expectedError: "image name is required",
 		},
+		{
+			name: "should pass when AZ is provided",
+			input: RawOpenStackPlatformCreateOptions{
+				OpenStackPlatformOptions: &OpenStackPlatformOptions{
+					Flavor:         "flavor",
+					ImageName:      "rhcos",
+					AvailabityZone: "az",
+				},
+			},
+			expectedError: "",
+		},
 	} {
 		var errString string
 		if _, err := test.input.Validate(); err != nil {
