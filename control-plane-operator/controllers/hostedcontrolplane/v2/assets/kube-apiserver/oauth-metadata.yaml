@@ -1,0 +1,31 @@
+apiVersion: v1
+data:
+  oauthMetadata.json: |
+    {
+    "issuer": "",
+    "authorization_endpoint": "",
+    "token_endpoint": "",
+      "scopes_supported": [
+        "user:check-access",
+        "user:full",
+        "user:info",
+        "user:list-projects",
+        "user:list-scoped-projects"
+      ],
+      "response_types_supported": [
+        "code",
+        "token"
+      ],
+      "grant_types_supported": [
+        "authorization_code",
+        "implicit"
+      ],
+      "code_challenge_methods_supported": [
+        "plain",
+        "S256"
+      ]
+    }
+kind: ConfigMap
+metadata:
+  name: oauth-metadata
+  namespace: HCP_NAMESPACE

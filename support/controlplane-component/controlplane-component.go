@@ -299,9 +299,18 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
 		Resources:                 existingResources,
 	}
-	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	if cpContext.HCP.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
-		deploymentConfig.Scheduling.PriorityClass = cpContext.HCP.Annotations[hyperv1.ControlPlanePriorityClass]
+
+	// TODO: should all request serving omponents get APICriticalPriorityClass?
+	if c.IsRequestServing() {
+		deploymentConfig.Scheduling.PriorityClass = config.APICriticalPriorityClass
+		if priorityClass := cpContext.HCP.Annotations[hyperv1.APICriticalPriorityClass]; priorityClass != "" {
+			deploymentConfig.Scheduling.PriorityClass = priorityClass
+		}
+	} else {
+		deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+		if priorityClass := cpContext.HCP.Annotations[hyperv1.ControlPlanePriorityClass]; priorityClass != "" {
+			deploymentConfig.Scheduling.PriorityClass = priorityClass
+		}
 	}
 
 	deploymentConfig.AdditionalLabels = map[string]string{
@@ -384,8 +393,6 @@ func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageP
 		key := container.Image
 		if payloadImage, exist := imageProvider.ImageExist(key); exist {
 			containers[i].Image = payloadImage
-		} else {
-			return fmt.Errorf("image doesn't exist for container %s with image key %s", container.Name, key)
 		}
 	}
 
