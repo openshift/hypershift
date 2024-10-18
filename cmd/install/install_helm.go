@@ -40,7 +40,7 @@ func NewHelmRenderCommand(opts *Options) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.Flags().StringVar(&opts.OutputFile, "output-dir", "", "Directory to write the rendered helm chart to")
+	cmd.Flags().StringVar(&opts.OutputFile, "output-dir", "./chart", "Directory to write the rendered helm chart to")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -50,9 +50,6 @@ func NewHelmRenderCommand(opts *Options) *cobra.Command {
 			return err
 		}
 
-		if opts.OutputFile == "" {
-			opts.OutputFile = "./chart"
-		}
 		err = writeManifestsToDir(crds, fmt.Sprintf("%s/crds", opts.OutputFile))
 		if err != nil {
 			return err
