@@ -930,8 +930,6 @@ github.com/robfig/cron
 # github.com/russross/blackfriday/v2 v2.1.0
 ## explicit
 github.com/russross/blackfriday/v2
-# github.com/shopspring/decimal v1.4.0
-## explicit; go 1.10
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
@@ -2033,8 +2031,6 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/cluster-bootstrap v0.30.2
-## explicit; go 1.22.0
 # k8s.io/component-base v0.30.2
 ## explicit; go 1.22.0
 k8s.io/component-base/cli
