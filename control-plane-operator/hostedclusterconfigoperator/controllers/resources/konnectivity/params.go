@@ -56,6 +56,24 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			SuccessThreshold:    1,
 		},
 	}
+
+	p.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		konnectivityAgentContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "readyz",
+				},
+			},
+			InitialDelaySeconds: 120,
+			TimeoutSeconds:      30,
+			PeriodSeconds:       60,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+	}
+
 	// check apiserver-network-proxy image in ocp payload and use it
 	if _, ok := images["apiserver-network-proxy"]; ok {
 		p.Image = images["apiserver-network-proxy"]
