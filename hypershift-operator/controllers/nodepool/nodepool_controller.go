@@ -389,7 +389,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if performanceProfileConfig == "" {
 		// at this point in time, we no longer know the name of the ConfigMap in the HCP NS
 		// so, we remove it by listing by a label unique to PerformanceProfile
-		if err := deleteConfigByLabel(ctx, r.Client, map[string]string{PerformanceProfileConfigMapLabel: "true"}); err != nil {
+		if err := deleteConfigByLabel(ctx, r.Client, map[string]string{
+			PerformanceProfileConfigMapLabel: "true",
+			hyperv1.NodePoolLabel:            nodePool.Name,
+		}, controlPlaneNamespace); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete performanceprofileConfig ConfigMap: %w", err)
 		}
 		if err := r.SetPerformanceProfileConditions(ctx, log, nodePool, controlPlaneNamespace, true); err != nil {
@@ -1429,10 +1432,11 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	return globalConfigBytes.String(), nil
 }
 
-func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string) error {
+func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string, controlPlaneNamespace string) error {
 	cmList := &corev1.ConfigMapList{}
 	if err := c.List(ctx, cmList, &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(lbl),
+		Namespace:     controlPlaneNamespace,
 	}); err != nil {
 		return err
 	}
