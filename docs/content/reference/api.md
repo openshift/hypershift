@@ -8473,6 +8473,23 @@ string
 is chosen based on the NodePool release payload image.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>availabilityZone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>availabilityZone is the nova availability zone in which the provider will create the VM.
+If not specified, the VM will be created in the default availability zone specified in the nova configuration.
+Availability zone names must NOT contain : since it is used by admin users to specify hosts where instances
+are launched in server creation. Also, it must not contain spaces otherwise it will lead to node that belongs
+to this availability zone register failure, see kubernetes/cloud-provider-openstack#1379 for further information.
+The maximum length of availability zone name is 63 as per labels limits.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###OpenStackPlatformSpec { #hypershift.openshift.io/v1beta1.OpenStackPlatformSpec }
