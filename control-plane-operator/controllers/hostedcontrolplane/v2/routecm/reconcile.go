@@ -26,12 +26,12 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		WithManifestAdapter(
 			"service.yaml",
-			component.WithPredicate(component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices)),
+			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),
 		).
 		WithManifestAdapter(
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(adaptServiceMonitor),
-			component.WithPredicate(component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices)),
+			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),
 		).
 		WatchResource(&corev1.ConfigMap{}, ConfigMapName).
 		Build()
