@@ -1,4 +1,4 @@
-package params
+package util
 
 import (
 	"errors"
@@ -58,6 +58,8 @@ func Supported(obj interface{}) string {
 		case structField.Type == reflect.TypeOf(&resource.Quantity{}):
 			t = structField.Type.Elem().String()
 		case structField.Type.Kind() == reflect.Slice && structField.Type.Elem().Kind() == reflect.String:
+			t = structField.Type.String()
+		case structField.Type.Kind() == reflect.Bool:
 			t = structField.Type.String()
 		default:
 			panic(fmt.Errorf("unsupported struct field \"%s\" with kind \"%s\"", structField.Name, structField.Type.Kind()))
@@ -156,6 +158,12 @@ func apply(paramsMap map[string]string, obj interface{}) error {
 				return fmt.Errorf("failed to parse param \"%s\": %w", k, err)
 			}
 			field.Set(reflect.ValueOf(&quantity))
+		case field.Kind() == reflect.Bool:
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return fmt.Errorf("failed to parse param \"%s\": %w", k, err)
+			}
+			field.SetBool(b)
 		default:
 			panic(fmt.Errorf("unsupported struct field \"%s\" with kind \"%s\"", structField.Name, field.Kind()))
 		}
