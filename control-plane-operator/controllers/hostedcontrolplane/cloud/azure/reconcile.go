@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -45,6 +46,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 	}
 
 	addVolumes(deployment)
+
+	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+		azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName),
+	)
+
+	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+		azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName, config.ManagedAzureCloudProviderSecretProviderClassName),
+	)
 
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	p.DeploymentConfig.ApplyTo(deployment)
