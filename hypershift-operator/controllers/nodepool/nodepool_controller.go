@@ -1422,14 +1422,23 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 
 	// Serialize proxy and image into a single string to use in the token secret hash.
 	globalConfigBytes := bytes.NewBuffer(nil)
+
 	enc := json.NewEncoder(globalConfigBytes)
 	if err := enc.Encode(proxy); err != nil {
 		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
 	}
+
 	if err := enc.Encode(image); err != nil {
 		return "", fmt.Errorf("failed to encode image global config: %w", err)
 	}
-	return globalConfigBytes.String(), nil
+
+	// This PR https://github.com/openshift/api/pull/1928 introduced a string field which has no omitempty tag.
+	// This results in our mashaling transparently changing. This produces a different configuration Hash.
+	// This PR drops the field when empty from the mashaled string to keep backward compatibility.
+	// Implementing this at the marshal operation level might result in undesired impact as we might potentially modify other fields and ordering is not deterministic
+	str := globalConfigBytes.String()
+	str = strings.ReplaceAll(str, ",\"imageStreamImportMode\":\"\"", "")
+	return str, nil
 }
 
 func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string, controlPlaneNamespace string) error {

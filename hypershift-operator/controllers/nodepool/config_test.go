@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
@@ -108,6 +109,17 @@ spec:
   kernelType: ""
   osImageURL: ""
 `
+	globalConfig := hyperv1.ClusterConfiguration{
+		Authentication: &configv1.AuthenticationSpec{},
+		Image:          &configv1.ImageSpec{},
+		Proxy:          &configv1.ProxySpec{},
+	}
+	// Validating against this ensure that if marshaling of the config APIs ever produces a different output
+	// because new fields are added, this test will fail.
+	expectedGlobalConfigString := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+`
+
 	hostedCluster := &hyperv1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -118,23 +130,34 @@ spec:
 			PullSecret: corev1.LocalObjectReference{
 				Name: "pull-secret",
 			},
+			Configuration: &globalConfig,
 		},
 	}
 
 	testCases := []struct {
-		name                 string
-		nodePool             *hyperv1.NodePool
-		releaseImage         *releaseinfo.ReleaseImage
-		hostedCluster        *hyperv1.HostedCluster
-		config               []crclient.Object
-		expectedMCORawConfig string
-		client               bool
-		error                error
+		name                       string
+		nodePool                   *hyperv1.NodePool
+		releaseImage               *releaseinfo.ReleaseImage
+		hostedCluster              *hyperv1.HostedCluster
+		config                     []crclient.Object
+		expectedMCORawConfig       string
+		client                     bool
+		expectedHash               string
+		expectedHashWithoutVersion string
+		error                      error
 	}{
 		{
-			name:          "When all input is given it should not return an error",
-			nodePool:      &hyperv1.NodePool{},
-			releaseImage:  &releaseinfo.ReleaseImage{},
+			name:                       "When all input is given it should not return an error",
+			expectedHash:               "e1d8d58e",
+			expectedHashWithoutVersion: "0db5756d",
+			nodePool:                   &hyperv1.NodePool{},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "latest",
+					},
+				},
+			},
 			hostedCluster: hostedCluster,
 			client:        true,
 			error:         nil,
@@ -156,7 +179,9 @@ spec:
 			error:         fmt.Errorf("release image can't be nil"),
 		},
 		{
-			name: "When nodepool has configs it should populate mcoRawConfig ",
+			name:                       "When nodepool has configs it should populate mcoRawConfig ",
+			expectedHash:               "801aff6a",
+			expectedHashWithoutVersion: "fef02451",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -181,10 +206,16 @@ spec:
 				},
 			},
 			expectedMCORawConfig: machineConfigDefaulted,
-			releaseImage:         &releaseinfo.ReleaseImage{},
-			hostedCluster:        hostedCluster,
-			client:               true,
-			error:                nil,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "latest",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
 		},
 		{
 			name: "When nodepool has invalid config it should fail ",
@@ -207,7 +238,9 @@ spec:
 			error:                fmt.Errorf("configmaps \"does-not-exist\" not found"),
 		},
 		{
-			name: "When additionalTrustBundle is specified it should be included in rolloutConfig",
+			name:                       "When additionalTrustBundle is specified it should be included in rolloutConfig",
+			expectedHash:               "dc74976e",
+			expectedHashWithoutVersion: "71375893",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -232,9 +265,15 @@ spec:
 				},
 			},
 			expectedMCORawConfig: machineConfigDefaulted,
-			releaseImage:         &releaseinfo.ReleaseImage{},
-			client:               true,
-			error:                nil,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "latest",
+					},
+				},
+			},
+			client: true,
+			error:  nil,
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -279,6 +318,15 @@ spec:
 			if tc.hostedCluster.Spec.AdditionalTrustBundle != nil {
 				g.Expect(cg.additionalTrustBundleName).To(Equal("additional-trust-bundle"))
 			}
+
+			if tc.hostedCluster.Spec.Configuration != nil {
+				if diff := cmp.Diff(cg.globalConfig, expectedGlobalConfigString); diff != "" {
+					t.Errorf("actual config differs from expected: %s", diff)
+				}
+			}
+
+			g.Expect(cg.Hash()).To(Equal(tc.expectedHash))
+			g.Expect(cg.HashWithoutVersion()).To(Equal(tc.expectedHashWithoutVersion))
 		})
 	}
 }
