@@ -64,7 +64,7 @@ The following manifest sets `crun` as the default runtime.
     - Use this command to patch the NodePool resource by adding the newly created ConfigMap as a MachineConfig change
 
     ```bash
-    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=add -p='{"spec": {"config": [{"name": "mcp-crun-default"}]}}'
+    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=json -p='[{"op": "add", "path": "/spec/config", "value": [{"name": "mcp-crun-default"}]}]'
     ```
 
 === "**HCP High Performance Workloads (CRUN)**"
@@ -130,7 +130,7 @@ The following manifest sets `crun` as the default runtime.
     - Patch the NodePool resource with the newly created ConfigMap
 
     ```bash
-    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=add -p='{"spec": {"config": [{"name": "mcp-crun-hp-default"}]}}'
+    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=json -p='[{"op": "add", "path": "/spec/config", "value": [{"name": "mcp-crun-hp-default"}]}]'
     ```
 
 ## Switching from `crun` to `runc`
@@ -193,7 +193,7 @@ The following manifest sets `runc` as the default runtime.
     - Patch the NodePool resource with the newly created ConfigMap
 
     ```bash
-    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=add -p='{"spec": {"config": [{"name": "mcp-runc-default"}]}}'
+    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=json -p='[{"op": "add", "path": "/spec/config", "value": [{"name": "mcp-runc-default"}]}]'
     ```
 
 === "**HCP High Performance Workloads (RUNC)**"
@@ -257,5 +257,5 @@ The following manifest sets `runc` as the default runtime.
     - Patch the NodePool resource with the newly created ConfigMap
 
     ```bash
-    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=add -p='{"spec": {"config": [{"name": "mcp-runc-hp-default"}]}}'
+    oc patch -n <hostedcluster_namespace> nodepool <nodepool_name> --type=json -p='[{"op": "add", "path": "/spec/config", "value": [{"name": "mcp-runc-hp-default"}]}]'
     ```
