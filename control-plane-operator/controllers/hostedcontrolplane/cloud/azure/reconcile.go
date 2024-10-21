@@ -14,7 +14,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
+
+const secretStoreVolumeName = "cloud-provider-cert"
 
 func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
@@ -45,6 +48,26 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 	}
 
 	addVolumes(deployment)
+
+	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+		corev1.VolumeMount{
+			Name:      secretStoreVolumeName,
+			MountPath: "/mnt/certs",
+			ReadOnly:  true,
+		})
+
+	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: secretStoreVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			CSI: &corev1.CSIVolumeSource{
+				Driver:   "secrets-store.csi.k8s.io",
+				ReadOnly: ptr.To(true),
+				VolumeAttributes: map[string]string{
+					"secretProviderClass": p.SecretProviderClassName,
+				},
+			},
+		},
+	})
 
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	p.DeploymentConfig.ApplyTo(deployment)

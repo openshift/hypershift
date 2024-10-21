@@ -42,10 +42,11 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 		return err
 	}
 
-	cfg.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	cfg.AADClientSecret = string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
+	cfg.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ClientID
+	cfg.AADClientCertPath = "/mnt/certs/" + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName
 	cfg.UseManagedIdentityExtension = false
 	cfg.UseInstanceMetadata = false
+
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
@@ -103,12 +104,14 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 // Now the source is https://github.com/kubernetes-sigs/cloud-provider-azure/blob/e5d670328a51e31787fc949ddf41a3efcd90d651/examples/out-of-tree/cloud-controller-manager.yaml#L232
 // https://github.com/kubernetes-sigs/cloud-provider-azure/tree/e5d670328a51e31787fc949ddf41a3efcd90d651/pkg/provider/config
 type AzureConfig struct {
-	Cloud                        string `json:"cloud"`
-	TenantID                     string `json:"tenantId"`
-	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
-	SubscriptionID               string `json:"subscriptionId"`
-	AADClientID                  string `json:"aadClientId"`
+	Cloud                       string `json:"cloud"`
+	TenantID                    string `json:"tenantId"`
+	UseManagedIdentityExtension bool   `json:"useManagedIdentityExtension"`
+	SubscriptionID              string `json:"subscriptionId"`
+	AADClientID                 string `json:"aadClientId"`
+	// TODO HOSTEDCP-1542 - Bryan - drop client secret once we have WorkloadIdentity working
 	AADClientSecret              string `json:"aadClientSecret"`
+	AADClientCertPath            string `json:"aadClientCertPath"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`

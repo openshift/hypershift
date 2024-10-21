@@ -125,6 +125,8 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+
+	AzureCloudProviderSecretProviderClassName = "managed-azure-cloud-provider"
 )
 
 var (
@@ -4671,6 +4673,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
 	case hyperv1.AzurePlatform:
+		// Reconcile CCM ServiceAccount
 		ownerRef := config.OwnerRefFrom(hcp)
 		sa := azure.CCMServiceAccount(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, sa, func() error {
@@ -4679,7 +4682,27 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return fmt.Errorf("failed to reconcile %s cloud provider service account: %w", hcp.Spec.Platform.Type, err)
 		}
 
-		p := azure.NewAzureParams(hcp)
+		// Reconcile SecretProviderClass
+		azureCloudProviderSecretProviderClass := manifests.ManagedAzureKeyVaultSecretProviderClass(
+			AzureCloudProviderSecretProviderClassName,
+			hcp.Namespace,
+			hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
+			hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
+			hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName)
+		if _, err := createOrUpdate(ctx, r, azureCloudProviderSecretProviderClass, func() error {
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure cloud provider secret provider class: %w", err)
+		}
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		azureTenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		// Reconcile the CCM Deployment
+		p := azure.NewAzureParams(hcp, azureTenantID, AzureCloudProviderSecretProviderClassName)
 		deployment := azure.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
 			return azure.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider)
