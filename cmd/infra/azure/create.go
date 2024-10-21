@@ -429,7 +429,7 @@ func buildCreateServicePrincipalCommand(subscriptionID, managedResourceGroupName
 		scopes = fmt.Sprintf("%s %s", scopes, nsgRG)
 		scopes = fmt.Sprintf("%s %s", scopes, vnetRG)
 	case ingress:
-		scopes = fmt.Sprintf("%s %s", scopes, vnetRG, dnsZoneRG)
+		scopes = fmt.Sprintf("%s %s %s", scopes, vnetRG, dnsZoneRG)
 	case nodePoolMgmt:
 		scopes = fmt.Sprintf("%s %s", scopes, vnetRG)
 	}

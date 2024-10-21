@@ -4793,6 +4793,10 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
 	case hyperv1.AzurePlatform:
+		// Set up the params
+		p := azure.NewAzureParams(hcp)
+
+		// Reconcile CCM ServiceAccount
 		ownerRef := config.OwnerRefFrom(hcp)
 		sa := azure.CCMServiceAccount(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, sa, func() error {
@@ -4801,7 +4805,23 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return fmt.Errorf("failed to reconcile %s cloud provider service account: %w", hcp.Spec.Platform.Type, err)
 		}
 
-		p := azure.NewAzureParams(hcp)
+		// Reconcile SecretProviderClass
+		azureCloudProviderSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureCloudProviderSecretProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureCloudProviderSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureCloudProviderSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure cloud provider secret provider class: %w", err)
+		}
+
+		// Retrieve the credentials secret to get the tenant ID
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+		p.TenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		// Reconcile the CCM Deployment
 		deployment := azure.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
 			return azure.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider)

@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/openshift/hypershift/support/config"
+	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
+
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
@@ -45,6 +49,11 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 	}
 
 	secret.Data[configKey] = serializedConfig
+	return nil
+}
+
+func adaptSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
+	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName)
 	return nil
 }
 
@@ -93,8 +102,8 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 	}
 
 	if withCredentials {
-		azureConfig.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-		azureConfig.AADClientSecret = string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
+		azureConfig.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ClientID
+		azureConfig.AADClientCertPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName
 	}
 
 	return azureConfig, nil
@@ -106,12 +115,14 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 // Now the source is https://github.com/kubernetes-sigs/cloud-provider-azure/blob/e5d670328a51e31787fc949ddf41a3efcd90d651/examples/out-of-tree/cloud-controller-manager.yaml#L232
 // https://github.com/kubernetes-sigs/cloud-provider-azure/tree/e5d670328a51e31787fc949ddf41a3efcd90d651/pkg/provider/config
 type AzureConfig struct {
-	Cloud                        string `json:"cloud"`
-	TenantID                     string `json:"tenantId"`
-	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
-	SubscriptionID               string `json:"subscriptionId"`
-	AADClientID                  string `json:"aadClientId"`
+	Cloud                       string `json:"cloud"`
+	TenantID                    string `json:"tenantId"`
+	UseManagedIdentityExtension bool   `json:"useManagedIdentityExtension"`
+	SubscriptionID              string `json:"subscriptionId"`
+	AADClientID                 string `json:"aadClientId"`
+	// TODO HOSTEDCP-1542 - Bryan - drop client secret once we have WorkloadIdentity working
 	AADClientSecret              string `json:"aadClientSecret"`
+	AADClientCertPath            string `json:"aadClientCertPath"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`

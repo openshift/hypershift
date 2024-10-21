@@ -22,6 +22,9 @@ status:
   - group: ""
     kind: Secret
     name: azure-cloud-config
+  - group: secrets-store.csi.x-k8s.io
+    kind: SecretProviderClass
+    name: managed-azure-cloud-provider
   - group: ""
     kind: ConfigMap
     name: azure-cloud-config

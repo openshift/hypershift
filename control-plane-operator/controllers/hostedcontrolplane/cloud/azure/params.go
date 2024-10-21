@@ -11,10 +11,12 @@ import (
 )
 
 type AzureParams struct {
-	ClusterID        string                  `json:"clusterID"`
-	ClusterNetwork   string                  `json:"clusterNetwork"`
-	OwnerRef         *metav1.OwnerReference  `json:"ownerRef"`
-	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
+	ClusterID               string                  `json:"clusterID"`
+	ClusterNetwork          string                  `json:"clusterNetwork"`
+	OwnerRef                *metav1.OwnerReference  `json:"ownerRef"`
+	DeploymentConfig        config.DeploymentConfig `json:"deploymentConfig"`
+	TenantID                string                  `json:"tenantID"`
+	SecretProviderClassName string                  `json:"secretProviderClassName"`
 }
 
 func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
@@ -26,6 +28,7 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 		ClusterNetwork: hcp.Spec.Networking.ClusterNetwork[0].CIDR.String(),
 	}
 	p.OwnerRef = config.ControllerOwnerRef(hcp)
+	p.SecretProviderClassName = config.ManagedAzureCloudProviderSecretProviderClassName
 
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		ccmContainer().Name: {
