@@ -132,6 +132,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ManagementClusterNamespace, "e2e.management-cluster-namespace", "", "Namespace of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementClusterName, "e2e.management-cluster-name", "", "Name of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.BoolVar(&globalOpts.DisablePKIReconciliation, "e2e.disable-pki-reconciliation", false, "If set, TestUpgradeControlPlane will upgrade the control plane without reconciling the pki components")
+	flag.BoolVar(&globalOpts.DisableTearDown, "e2e.disable-teardown", false, "If set, the test suite will not tear down the cluster after the tests are run")
 	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
 	flag.Var(&globalOpts.configurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
 	flag.Var(&globalOpts.configurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
@@ -428,6 +429,8 @@ type options struct {
 	// If set, the UpgradeControlPlane test will upgrade control plane without
 	// reconciling PKI.
 	DisablePKIReconciliation bool
+
+	DisableTearDown bool
 }
 
 type configurableClusterOptions struct {
