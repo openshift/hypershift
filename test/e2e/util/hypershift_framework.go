@@ -69,7 +69,7 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 	}
 }
 
-func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
+func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte, disableTearDown bool) {
 	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
 
 	// create a hypershift cluster for the test
@@ -88,13 +88,18 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 			h.Errorf(string(debug.Stack()))
 		}
 
-		h.teardown(hostedCluster, opts, artifactDir, false)
-		h.postTeardown(hostedCluster, opts)
+		if !disableTearDown {
+			h.Logf("skipping teardown, disabled")
+			h.teardown(hostedCluster, opts, artifactDir, false)
+			h.postTeardown(hostedCluster, opts)
+		}
 	}()
 
-	// fail safe to guarantee teardown() is always executed.
-	// defer funcs will be skipped if any subtest panics
-	h.Cleanup(func() { h.teardown(hostedCluster, opts, artifactDir, true) })
+	if !disableTearDown {
+		// fail safe to guarantee teardown() is always executed.
+		// defer funcs will be skipped if any subtest panics
+		h.Cleanup(func() { h.teardown(hostedCluster, opts, artifactDir, true) })
+	}
 
 	// validate cluster is operational
 	h.before(hostedCluster, opts, platform)

@@ -104,7 +104,7 @@ func TestCreateCluster(t *testing.T) {
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 	}).
-		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 // TestCreateClusterV2 tests the new CPO implementation, which is currently hidden behind an annotation.
@@ -158,7 +158,7 @@ func TestCreateClusterV2(t *testing.T) {
 
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 func TestCreateClusterRequestServingIsolation(t *testing.T) {
@@ -196,7 +196,7 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 		e2eutil.EnsureAllReqServingPodsLandOnReqServingNodes(t, ctx, guestClient)
 		e2eutil.EnsureOnlyRequestServingPodsOnRequestServingNodes(t, ctx, guestClient)
 		e2eutil.EnsureNoHCPPodsLandOnDefaultNode(t, ctx, guestClient, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 func TestCreateClusterCustomConfig(t *testing.T) {
@@ -227,7 +227,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
@@ -247,7 +247,7 @@ func TestNoneCreateCluster(t *testing.T) {
 
 		// etcd restarts for me once always and apiserver two times before running stable
 		// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 // TestCreateClusterProxy implements a test that creates a cluster behind a proxy with the code under test.
@@ -264,7 +264,7 @@ func TestCreateClusterProxy(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 
 	e2eutil.NewHypershiftTest(t, ctx, nil).
-		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 func TestCreateClusterPrivate(t *testing.T) {
@@ -301,7 +301,7 @@ func testCreateClusterPrivate(t *testing.T, enableExternalDNS bool) {
 		t.Run("SwitchFromPrivateToPublic", testSwitchFromPrivateToPublic(ctx, mgtClient, hostedCluster, &clusterOpts, expectGuestKubeconfHostChange))
 		// publicAndPrivate -> Private
 		t.Run("SwitchFromPublicToPrivate", testSwitchFromPublicToPrivate(ctx, mgtClient, hostedCluster, &clusterOpts))
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *e2eutil.PlatformAgnosticOptions, expectGuestKubeconfHostChange bool) func(t *testing.T) {

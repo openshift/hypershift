@@ -105,7 +105,7 @@ func TestOLM(t *testing.T) {
 
 		t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(ctx, guestClient, redhatOperatorsCatalogSourceName))
 		t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(ctx, guestClient, guestClusterCatalogSourceName))
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey, globalOpts.DisableTearDown)
 }
 
 // testOperatorInstallationFromSource ensures that an operator can be installed from a catalogSource in the openshift-marketplace namespace.
