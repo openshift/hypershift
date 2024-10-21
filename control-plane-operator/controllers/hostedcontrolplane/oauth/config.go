@@ -51,13 +51,9 @@ func ReconcileOAuthServerConfig(ctx context.Context, cm *corev1.ConfigMap, owner
 }
 
 func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace string, params *OAuthConfigParams) (*osinv1.OsinServerConfig, error) {
-	var identityProviders []osinv1.IdentityProvider
-	identityProviders, _, err := ConvertIdentityProviders(ctx, params.IdentityProviders, params.OauthConfigOverrides, client, namespace)
-	if err != nil {
-		// Eat the error here, since we don't want to fail the deployment if the identity providers are invalid
-		// A condition will be set on the HC to indicate the error
-		return nil, nil
-	}
+	// Ignore the error here since we don't want to fail the deployment if the identity providers are invalid
+	// A condition will be set on the HC to indicate the error
+	identityProviders, _, _ := ConvertIdentityProviders(ctx, params.IdentityProviders, params.OauthConfigOverrides, client, namespace)
 
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(oauthContainerMain().Name, volume)
