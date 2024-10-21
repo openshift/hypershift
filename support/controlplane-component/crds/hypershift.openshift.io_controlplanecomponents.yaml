@@ -159,8 +159,6 @@ spec:
               version:
                 description: version reports the current version of this component.
                 type: string
-            required:
-            - version
             type: object
         type: object
     served: true
