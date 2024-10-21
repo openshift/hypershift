@@ -3,14 +3,15 @@ package azure
 import (
 	"context"
 	"fmt"
-	"github.com/go-logr/logr"
+	"os/exec"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,7 @@ type DestroyInfraOptions struct {
 	CredentialsFile   string
 	Credentials       *util.AzureCreds
 	ResourceGroupName string
+	ControlPlaneMIs   hyperv1.AzureResourceManagedIdentities
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -91,7 +93,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	}
 
 	for _, rg := range resourceGroups {
-		fmt.Printf("Deleting resource group: %s\n", rg)
+		logger.Info("Deleting resource group: " + rg)
 		destroyFuture, err = resourceGroupClient.BeginDelete(ctx, rg, nil)
 		if err != nil {
 			return fmt.Errorf("failed to start deletion for resource group %s: %w", rg, err)
@@ -102,6 +104,13 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		}
 	}
 
+	// Destroy created service principals
+	logger.Info("Destroying service principals")
+	err = destroyServicePrincipals(o)
+	if err != nil {
+		logger.Error(err, "Failed to destroy service principals")
+	}
+
 	return nil
 }
 
@@ -110,4 +119,52 @@ func (o *DestroyInfraOptions) GetResourceGroupName() string {
 		return o.ResourceGroupName
 	}
 	return o.Name + "-" + o.InfraID
+}
+
+func destroyServicePrincipals(o *DestroyInfraOptions) error {
+	clientID := o.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+	clientID = o.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+	clientID = o.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+	clientID = o.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+	clientID = o.ControlPlaneMIs.ControlPlane.Network.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+	clientID = o.ControlPlaneMIs.ControlPlane.Ingress.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+	clientID = o.ControlPlaneMIs.ControlPlane.Disk.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+	clientID = o.ControlPlaneMIs.ControlPlane.File.ClientID
+	if err := destroyServicePrincipal(clientID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func destroyServicePrincipal(clientID string) error {
+	cmdStr := `az ad app delete --id ` + clientID
+	cmd := exec.Command("sh", "-c", cmdStr)
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to delete service principal, %s: %w", clientID, err)
+	}
+
+	return nil
 }

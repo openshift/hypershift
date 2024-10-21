@@ -60,6 +60,7 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	if hostedCluster != nil {
 		o.InfraID = hostedCluster.Spec.InfraID
 		o.AzurePlatform.Location = hostedCluster.Spec.Platform.Azure.Location
+		o.AzurePlatform.ControlPlaneMIs = hostedCluster.Spec.Platform.Azure.ManagedIdentities
 	}
 
 	var inputErrors []error
@@ -104,5 +105,6 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		InfraID:           o.InfraID,
 		CredentialsFile:   o.AzurePlatform.CredentialsFile,
 		ResourceGroupName: o.AzurePlatform.ResourceGroupName,
+		ControlPlaneMIs:   o.AzurePlatform.ControlPlaneMIs,
 	}).Run(ctx, o.Log)
 }
