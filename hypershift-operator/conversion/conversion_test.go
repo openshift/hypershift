@@ -386,6 +386,12 @@ func fixHostedControlPlaneAfterFuzz(in runtime.Object) {
 		hc.Spec.Platform.Azure = nil
 	}
 
+	// There was no formal support for Azure on alpha so we shouldn't fuzz
+	// the beta object and expect it to equal the alpha version.
+	if hc.Spec.SecretEncryption != nil && hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.Azure != nil {
+		hc.Spec.SecretEncryption.KMS.Azure = nil
+	}
+
 	if hc.Spec.Platform.AWS != nil {
 		hc.Spec.Platform.AWS.SharedVPC = nil
 	}
@@ -407,6 +413,12 @@ func fixHosterClusterAfterFuzz(in runtime.Object) {
 	// the beta object and expect it to equal the alpha version.
 	if hc.Spec.Platform.Azure != nil {
 		hc.Spec.Platform.Azure = nil
+	}
+
+	// There was no formal support for Azure on alpha so we shouldn't fuzz
+	// the beta object and expect it to equal the alpha version.
+	if hc.Spec.SecretEncryption != nil && hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.Azure != nil {
+		hc.Spec.SecretEncryption.KMS.Azure = nil
 	}
 
 	hc.Status.PayloadArch = ""

@@ -16,6 +16,9 @@
             {
                 "disabled": [
                     {
+                      "name": "AROHCPManagedIdentities"
+                    },
+                    {
                         "name": "OpenStack"
                     }
                 ],
