@@ -1,9 +1,7 @@
 package nodepool
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/netip"
 	"regexp"
@@ -20,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1407,38 +1404,6 @@ func aggregateMachineMessages(msgs []string) string {
 	}
 
 	return builder.String()
-}
-
-func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
-	// 1. - Reconcile conditions according to current state of the world.
-	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
-
-	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
-	// It is included directly by the ignition server.  However, we need to detect the change
-	// here to trigger a nodepool update.
-	image := globalconfig.ImageConfig()
-	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
-
-	// Serialize proxy and image into a single string to use in the token secret hash.
-	globalConfigBytes := bytes.NewBuffer(nil)
-
-	enc := json.NewEncoder(globalConfigBytes)
-	if err := enc.Encode(proxy); err != nil {
-		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
-	}
-
-	if err := enc.Encode(image); err != nil {
-		return "", fmt.Errorf("failed to encode image global config: %w", err)
-	}
-
-	// This PR https://github.com/openshift/api/pull/1928 introduced a string field which has no omitempty tag.
-	// This results in our mashaling transparently changing. This produces a different configuration Hash.
-	// This PR drops the field when empty from the mashaled string to keep backward compatibility.
-	// Implementing this at the marshal operation level might result in undesired impact as we might potentially modify other fields and ordering is not deterministic
-	str := globalConfigBytes.String()
-	str = strings.ReplaceAll(str, ",\"imageStreamImportMode\":\"\"", "")
-	return str, nil
 }
 
 func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string, controlPlaneNamespace string) error {

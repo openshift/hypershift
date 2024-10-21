@@ -1735,3 +1735,76 @@ spec:
 		})
 	}
 }
+
+func TestGlobalConfigString(t *testing.T) {
+	expectedGlobalConfigStringWhenEmpty := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+`
+	expectedGlobalConfigStringWithValues := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"httpProxy":"proxy","noProxy":"noProxy","trustedCA":{"name":""}},"status":{"httpProxy":"proxy","noProxy":".cluster.local,.local,.svc,127.0.0.1,localhost,noProxy"}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"externalRegistryHostnames":["external registry"],"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+`
+
+	testCases := []struct {
+		name           string
+		globalConfig   *hyperv1.ClusterConfiguration
+		expectedOutput string
+	}{
+		// Expected behaviour for backward compatibility for empty values is:
+		// return serialized string with empty values for AdditionalTrustedCA and RegistrySources and drop everything else even if it doesn't have a omitempty tag in the API.
+		{
+			name:           "When Empty GlobalConfig it should return serialized string honouring backward compatibility expectation (see code comment)",
+			globalConfig:   &hyperv1.ClusterConfiguration{},
+			expectedOutput: expectedGlobalConfigStringWhenEmpty,
+		},
+		{
+			name: "When GlobalConfig is set with empty structs it should return serialized string honouring backward compatibility expectation (see code comment)",
+			globalConfig: &hyperv1.ClusterConfiguration{
+				APIServer:      &configv1.APIServerSpec{},
+				Authentication: &configv1.AuthenticationSpec{},
+				FeatureGate:    &configv1.FeatureGateSpec{},
+				Image:          &configv1.ImageSpec{},
+				Proxy:          &configv1.ProxySpec{},
+			},
+			expectedOutput: expectedGlobalConfigStringWhenEmpty,
+		},
+		{
+			name: "When GlobalConfig is set with some values GlobalConfig it should keep them and it should honour backward compatibility expectation (see code comment)",
+			globalConfig: &hyperv1.ClusterConfiguration{
+				APIServer:      &configv1.APIServerSpec{},
+				Authentication: &configv1.AuthenticationSpec{},
+				FeatureGate:    &configv1.FeatureGateSpec{},
+				Image: &configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{},
+					ExternalRegistryHostnames:  []string{"external registry"},
+					AdditionalTrustedCA:        configv1.ConfigMapNameReference{},
+					RegistrySources:            configv1.RegistrySources{},
+				},
+				Proxy: &configv1.ProxySpec{
+					HTTPProxy:          "proxy",
+					HTTPSProxy:         "",
+					NoProxy:            "noProxy",
+					ReadinessEndpoints: []string{},
+					TrustedCA:          configv1.ConfigMapNameReference{},
+				},
+			},
+			expectedOutput: expectedGlobalConfigStringWithValues,
+		},
+	}
+
+	for _, tc := range testCases {
+		hcluster := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: tc.globalConfig,
+			},
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			output, err := globalConfigString(hcluster)
+			g.Expect(err).ToNot(HaveOccurred())
+			if diff := cmp.Diff(output, tc.expectedOutput); diff != "" {
+				t.Errorf("actual config differs from expected: %s", diff)
+			}
+		})
+	}
+}
