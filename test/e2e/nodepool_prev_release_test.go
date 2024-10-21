@@ -8,6 +8,8 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+	"strings"
 	"testing"
 )
 
@@ -35,16 +37,17 @@ func (npPrevTest *NodePoolPrevReleaseCreateTest) Setup(t *testing.T) {
 }
 
 func (npPrevTest *NodePoolPrevReleaseCreateTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+	releaseSha := npPrevTest.release[strings.Index(npPrevTest.release, ":")+1 : strings.Index(npPrevTest.release, ":")+8]
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      npPrevTest.hostedCluster.Name + "-" + npPrevTest.release,
+			Name:      npPrevTest.hostedCluster.Name + "-" + releaseSha,
 			Namespace: npPrevTest.hostedCluster.Namespace,
 		},
 	}
 
 	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 	defaultNodepool.Spec.Release.Image = npPrevTest.release
-	nodePool.Spec.Replicas = &oneReplicas
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 
 	return nodePool, nil
 }
