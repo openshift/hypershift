@@ -14,6 +14,6 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *KubeAPIS
 	}
 
 	p.OwnerRef.ApplyTo(pdb)
-	util.ReconcilePodDisruptionBudget(pdb, p.Availability)
+	util.ReconcilePodDisruptionBudget(pdb)
 	return nil
 }
