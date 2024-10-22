@@ -9,7 +9,7 @@ import (
 type OLMDeployment struct {
 	Name       string
 	Manifest   *appsv1.Deployment
-	Reconciler func(*appsv1.Deployment, config.OwnerRef, config.DeploymentConfig, string) error
+	Reconciler func(*appsv1.Deployment, config.OwnerRef, config.DeploymentConfig, string, string) error
 	Image      string
 }
 
