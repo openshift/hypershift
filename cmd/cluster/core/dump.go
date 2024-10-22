@@ -342,7 +342,6 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiv1.Machine{},
 		&capiv1.MachineSet{},
 		&hyperv1.HostedControlPlane{},
-		&hyperv1.ControlPlaneComponent{},
 		&capiaws.AWSMachine{},
 		&capiaws.AWSMachineTemplate{},
 		&capiaws.AWSCluster{},
@@ -363,11 +362,20 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&networkingv1.NetworkPolicy{},
 	)
 
+	// These resources are not required to exist since they
+	// are live behind a feature gate. Therefore, we'll
+	// check whether they are registered in the management
+	// cluster before dumping them.
+	featureGatedResources := []client.Object{
+		&hyperv1.ControlPlaneComponent{},
+	}
+
 	// The management cluster may not be an OpenShift cluster.
 	// Only dump registered OpenShift GVKs to avoid errors.
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	kubeDiscoveryClient := kubeClient.Discovery()
-	for _, resource := range ocpResources {
+	optionalResources := append(featureGatedResources, ocpResources...)
+	for _, resource := range optionalResources {
 		gvk, err := c.GroupVersionKindFor(resource)
 		if err != nil {
 			return err
