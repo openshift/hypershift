@@ -323,40 +323,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
 	}
 
-	mirroredConfigs, err := BuildMirrorConfigs(ctx, configGenerator)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to build mirror configs: %w", err)
+	if err := r.ntoReconcile(ctx, nodePool, configGenerator, controlPlaneNamespace); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile NTO: %w", err)
 	}
-	if err := r.reconcileMirroredConfigs(ctx, log, mirroredConfigs, controlPlaneNamespace, nodePool); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to mirror configs: %w", err)
-	}
-
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.AsExpectedReason,
-		ObservedGeneration: nodePool.Generation,
-	})
-
-	// Validate tuningConfig input.
-	tunedConfig, performanceProfileConfig, performanceProfileConfigMapName, err := r.getTuningConfig(ctx, nodePool)
-	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidTuningConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            err.Error(),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return ctrl.Result{}, fmt.Errorf("failed to get tuningConfig: %w", err)
-	}
-
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidTuningConfigConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.AsExpectedReason,
-		ObservedGeneration: nodePool.Generation,
-	})
 
 	// If reconciliation is paused we return before modifying any state
 	capi, err := newCAPI(token, infraID)
@@ -369,47 +338,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		log.Info("Reconciliation paused", "pausedUntil", *nodePool.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
-	}
-
-	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
-	if tunedConfig == "" {
-		if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, tunedConfigMap); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete tunedConfig ConfigMap: %w", err)
-		}
-	} else {
-		if result, err := r.CreateOrUpdate(ctx, r.Client, tunedConfigMap, func() error {
-			return reconcileTunedConfigMap(tunedConfigMap, nodePool, tunedConfig)
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile Tuned ConfigMap: %w", err)
-		} else {
-			log.Info("Reconciled Tuned ConfigMap", "result", result)
-		}
-	}
-
-	if performanceProfileConfig == "" {
-		// at this point in time, we no longer know the name of the ConfigMap in the HCP NS
-		// so, we remove it by listing by a label unique to PerformanceProfile
-		if err := deleteConfigByLabel(ctx, r.Client, map[string]string{
-			PerformanceProfileConfigMapLabel: "true",
-			hyperv1.NodePoolLabel:            nodePool.Name,
-		}, controlPlaneNamespace); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete performanceprofileConfig ConfigMap: %w", err)
-		}
-		if err := r.SetPerformanceProfileConditions(ctx, log, nodePool, controlPlaneNamespace, true); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, performanceProfileConfigMapName, nodePool.Name)
-		result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
-			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig)
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile PerformanceProfile ConfigMap: %w", err)
-		}
-		log.Info("Reconciled PerformanceProfile ConfigMap", "result", result)
-		if err := r.SetPerformanceProfileConditions(ctx, log, nodePool, controlPlaneNamespace, false); err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	// 2. - Reconcile towards expected state of the world.
