@@ -145,7 +145,7 @@ func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, no
 		cm.Labels = make(map[string]string)
 	}
 	cm.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-	cm.Labels[nodePoolAnnotation] = nodePool.GetName()
+	cm.Labels[hyperv1.NodePoolLabel] = nodePool.GetName()
 	cm.Labels[mirroredConfigLabel] = ""
 	cm.Labels = labels.Merge(cm.Labels, mirroredConfig.Labels)
 	cm.Data = mirroredConfig.Data
