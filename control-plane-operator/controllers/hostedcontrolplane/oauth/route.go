@@ -10,14 +10,14 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileExternalPublicRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
+func ReconcileExternalPublicRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string, labelHCPRoutes bool) error {
 	ownerRef.ApplyTo(route)
-	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.OauthServerService(route.Namespace).Name)
+	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.OauthServerService(route.Namespace).Name, labelHCPRoutes)
 }
 
-func ReconcileExternalPrivateRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
+func ReconcileExternalPrivateRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string, labelHCPRoutes bool) error {
 	ownerRef.ApplyTo(route)
-	if err := util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.OauthServerService(route.Namespace).Name); err != nil {
+	if err := util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.OauthServerService(route.Namespace).Name, labelHCPRoutes); err != nil {
 		return err
 	}
 	if route.Labels == nil {
