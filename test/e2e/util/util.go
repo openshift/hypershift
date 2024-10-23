@@ -1163,34 +1163,35 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		g := NewWithT(t)
 
 		auditedAppList := map[string]string{
-			"cloud-controller-manager":         "app",
-			"cloud-credential-operator":        "app",
-			"aws-ebs-csi-driver-controller":    "app",
-			"capi-provider-controller-manager": "app",
-			"cloud-network-config-controller":  "app",
-			"cluster-network-operator":         "app",
-			"cluster-version-operator":         "app",
-			"control-plane-operator":           "app",
-			"ignition-server":                  "app",
-			"ingress-operator":                 "app",
-			"kube-apiserver":                   "app",
-			"kube-controller-manager":          "app",
-			"kube-scheduler":                   "app",
-			"multus-admission-controller":      "app",
-			"oauth-openshift":                  "app",
-			"openshift-apiserver":              "app",
-			"openshift-oauth-apiserver":        "app",
-			"packageserver":                    "app",
-			"ovnkube-master":                   "app",
-			"kubevirt-csi-driver":              "app",
-			"cluster-image-registry-operator":  "name",
-			"virt-launcher":                    "kubevirt.io",
-			"azure-disk-csi-driver-controller": "app",
-			"azure-file-csi-driver-controller": "app",
-			"certified-operators-catalog":      "app",
-			"community-operators-catalog":      "app",
-			"redhat-operators-catalog":         "app",
-			"redhat-marketplace-catalog":       "app",
+			"cloud-controller-manager":               "app",
+			"cloud-credential-operator":              "app",
+			"aws-ebs-csi-driver-controller":          "app",
+			"capi-provider-controller-manager":       "app",
+			"cloud-network-config-controller":        "app",
+			"cluster-network-operator":               "app",
+			"cluster-version-operator":               "app",
+			"control-plane-operator":                 "app",
+			"ignition-server":                        "app",
+			"ingress-operator":                       "app",
+			"kube-apiserver":                         "app",
+			"kube-controller-manager":                "app",
+			"kube-scheduler":                         "app",
+			"multus-admission-controller":            "app",
+			"oauth-openshift":                        "app",
+			"openshift-apiserver":                    "app",
+			"openshift-oauth-apiserver":              "app",
+			"packageserver":                          "app",
+			"ovnkube-master":                         "app",
+			"kubevirt-csi-driver":                    "app",
+			"cluster-image-registry-operator":        "name",
+			"virt-launcher":                          "kubevirt.io",
+			"azure-disk-csi-driver-controller":       "app",
+			"azure-file-csi-driver-controller":       "app",
+			"certified-operators-catalog":            "app",
+			"community-operators-catalog":            "app",
+			"redhat-operators-catalog":               "app",
+			"redhat-marketplace-catalog":             "app",
+			"openstack-cinder-csi-driver-controller": "app",
 		}
 
 		hcpPods := &corev1.PodList{}
@@ -1902,6 +1903,13 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 				"azure-disk-csi-driver-operator",
 				"azure-file-csi-driver-controller",
 				"azure-file-csi-driver-operator",
+			)
+		}
+
+		if hostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
+				"openstack-cinder-csi-driver-controller",
+				"openstack-cinder-csi-driver-operator",
 			)
 		}
 

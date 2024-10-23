@@ -2519,8 +2519,16 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		errs = append(errs, fmt.Errorf("failed to reconcile Storage : %w", err))
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-		driver := manifests.ClusterCSIDriver(operatorv1.AWSEBSCSIDriver)
+	var driverNames []operatorv1.CSIDriverName
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		driverNames = []operatorv1.CSIDriverName{operatorv1.AWSEBSCSIDriver}
+	case hyperv1.OpenStackPlatform:
+		// TODO(stephenfin): Add Manila here once it supports Hypershift
+		driverNames = []operatorv1.CSIDriverName{operatorv1.CinderCSIDriver}
+	}
+	for _, driverName := range driverNames {
+		driver := manifests.ClusterCSIDriver(driverName)
 		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
 			return nil
