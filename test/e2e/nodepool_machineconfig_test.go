@@ -167,15 +167,21 @@ func eventuallyDaemonSetRollsOut(t *testing.T, ctx context.Context, client crcli
 		func(ctx context.Context) ([]*corev1.Pod, error) {
 			list := &corev1.PodList{}
 			err := client.List(ctx, list, crclient.InNamespace(ds.Namespace), crclient.MatchingLabels(ds.Spec.Selector.MatchLabels))
-			pods := make([]*corev1.Pod, len(list.Items))
+			readyPods := []*corev1.Pod{}
 			for i := range list.Items {
-				pods[i] = &list.Items[i]
+				pod := &list.Items[i]
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						readyPods = append(readyPods, pod)
+						break
+					}
+				}
 			}
-			return pods, err
+			return readyPods, err
 		},
 		[]e2eutil.Predicate[[]*corev1.Pod]{
-			func(pods []*corev1.Pod) (done bool, reasons string, err error) {
-				want, got := expectedCount, len(pods)
+			func(readyPods []*corev1.Pod) (done bool, reasons string, err error) {
+				want, got := expectedCount, len(readyPods)
 				return want == got, fmt.Sprintf("expected %d Pods, got %d", want, got), nil
 			},
 		},
