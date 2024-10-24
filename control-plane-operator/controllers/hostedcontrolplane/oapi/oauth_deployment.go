@@ -310,6 +310,6 @@ func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisrup
 		}
 	}
 	p.OwnerRef.ApplyTo(pdb)
-	util.ReconcilePodDisruptionBudget(pdb, p.Availability)
+	util.ReconcilePodDisruptionBudget(pdb)
 	return nil
 }
