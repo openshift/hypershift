@@ -182,6 +182,14 @@ type HostedControlPlaneSpec struct {
 	//
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+
+	// MinimumKubeletVersion is the lowest version of a kubelet that can join a this hosted cluster.
+	// Specifically, the hosted apiserver will deny (most) authorization requests of kubelets that are older
+	// than the specified version.
+	// +kubebuilder:validation:Pattern=`^[0-9]*\.[0-9]*\.[0-9]*$`
+	// +openshift:enable:FeatureGate=MinimumKubeletVersion
+	// +optional
+	MinimumKubeletVersion string `json:"minimumKubeletVersion,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.

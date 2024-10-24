@@ -33,6 +33,7 @@ var map_KubeAPIServerConfig = map[string]string{
 	"projectConfig":                "projectConfig feeds an admission plugin",
 	"serviceAccountPublicKeyFiles": "serviceAccountPublicKeyFiles is a list of files, each containing a PEM-encoded public RSA key. (If any file contains a private key, the public portion of the key is used) The list of public keys is used to verify presented service account tokens. Each key is tried in order until the list is exhausted or verification succeeds. If no keys are specified, no service account authentication will be available.",
 	"oauthConfig":                  "oauthConfig, if present start the /oauth endpoint in this process",
+	"minimumKubeletVersion":        "MinimumKubeletVersion is the lowest version of a kubelet that can meaningfully join the cluster. Specifically, the apiserver will deny (most) authorization requests of kubelets that are older than the specified version.",
 }
 
 func (KubeAPIServerConfig) SwaggerDoc() map[string]string {

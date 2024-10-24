@@ -347,6 +347,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 			{Group: "config.openshift.io", Version: "v1", Kind: "FeatureGate"},
 			{Group: "config.openshift.io", Version: "v1", Kind: "ClusterOperator"},
 			{Group: "config.openshift.io", Version: "v1", Kind: "OperatorHub"},
+			{Group: "config.openshift.io", Version: "v1", Kind: "Node"},
 			{Group: "operator.openshift.io", Version: "v1", Kind: "Network"},
 			{Group: "operator.openshift.io", Version: "v1", Kind: "CloudCredential"},
 			{Group: "operator.openshift.io", Version: "v1", Kind: "IngressController"},

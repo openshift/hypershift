@@ -23,6 +23,7 @@
 //
 // Operands, logically uint32s, are encoded using little-endian 7-bit
 // varints, the top bit indicating that more bytes follow.
+//
 package compile // import "go.starlark.net/internal/compile"
 
 import (
@@ -46,7 +47,7 @@ var Disassemble = false
 const debug = false // make code generation verbose, for debugging the compiler
 
 // Increment this to force recompilation of saved bytecode files.
-const Version = 14
+const Version = 13
 
 type Opcode uint8
 
@@ -316,7 +317,6 @@ type Program struct {
 	Functions []*Funcode
 	Globals   []Binding // for error messages and tracing
 	Toplevel  *Funcode  // module initialization function
-	Recursion bool      // disable recursion check for functions in this file
 }
 
 // The type of a bytes literal value, to distinguish from text string.
@@ -335,7 +335,7 @@ type Funcode struct {
 	pclinetab             []uint16        // mapping from pc to linenum
 	Locals                []Binding       // locals, parameters first
 	Cells                 []int           // indices of Locals that require cells
-	FreeVars              []Binding       // for tracing
+	Freevars              []Binding       // for tracing
 	MaxStack              int
 	NumParams             int
 	NumKwonlyParams       int
@@ -486,20 +486,17 @@ func bindings(bindings []*resolve.Binding) []Binding {
 }
 
 // Expr compiles an expression to a program whose toplevel function evaluates it.
-// The options must be consistent with those used when parsing expr.
-func Expr(opts *syntax.FileOptions, expr syntax.Expr, name string, locals []*resolve.Binding) *Program {
+func Expr(expr syntax.Expr, name string, locals []*resolve.Binding) *Program {
 	pos := syntax.Start(expr)
 	stmts := []syntax.Stmt{&syntax.ReturnStmt{Result: expr}}
-	return File(opts, stmts, pos, name, locals, nil)
+	return File(stmts, pos, name, locals, nil)
 }
 
 // File compiles the statements of a file into a program.
-// The options must be consistent with those used when parsing stmts.
-func File(opts *syntax.FileOptions, stmts []syntax.Stmt, pos syntax.Position, name string, locals, globals []*resolve.Binding) *Program {
+func File(stmts []syntax.Stmt, pos syntax.Position, name string, locals, globals []*resolve.Binding) *Program {
 	pcomp := &pcomp{
 		prog: &Program{
-			Globals:   bindings(globals),
-			Recursion: opts.Recursion,
+			Globals: bindings(globals),
 		},
 		names:     make(map[string]uint32),
 		constants: make(map[interface{}]uint32),
@@ -520,7 +517,7 @@ func (pcomp *pcomp) function(name string, pos syntax.Position, stmts []syntax.St
 			Name:     name,
 			Doc:      docStringFromBody(stmts),
 			Locals:   bindings(locals),
-			FreeVars: bindings(freevars),
+			Freevars: bindings(freevars),
 		},
 	}
 
@@ -887,7 +884,7 @@ func PrintOp(fn *Funcode, pc uint32, op Opcode, arg uint32) {
 	case ATTR, SETFIELD, PREDECLARED, UNIVERSAL:
 		comment = fn.Prog.Names[arg]
 	case FREE:
-		comment = fn.FreeVars[arg].Name
+		comment = fn.Freevars[arg].Name
 	case CALL, CALL_VAR, CALL_KW, CALL_VAR_KW:
 		comment = fmt.Sprintf("%d pos, %d named", arg>>8, arg&0xff)
 	default:

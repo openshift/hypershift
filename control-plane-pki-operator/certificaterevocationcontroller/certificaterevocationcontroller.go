@@ -723,12 +723,14 @@ func (c *CertificateRevocationController) prunePreviousSignerCertificates(ctx co
 				return true, nil, false, fmt.Errorf("could not parse certificate in secret %s/%s: %w", secret.Namespace, secret.Name, err)
 			}
 
-			if isLeafCertificate(certKeyInfo) {
-				existingLeafCerts = append(existingLeafCerts, &certificateSecret{
-					namespace: secret.Namespace,
-					name:      secret.Name,
-					cert:      certs[0],
-				})
+			for _, cert := range certKeyInfo {
+				if isLeafCertificate(cert) {
+					existingLeafCerts = append(existingLeafCerts, &certificateSecret{
+						namespace: secret.Namespace,
+						name:      secret.Name,
+						cert:      certs[0],
+					})
+				}
 			}
 		}
 

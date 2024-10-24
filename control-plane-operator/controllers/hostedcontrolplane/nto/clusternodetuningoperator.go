@@ -104,7 +104,7 @@ func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.S
 			Path:       "/metrics",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: metricsServiceName + "." + sm.Namespace + ".svc",
+					ServerName: ptr.To(metricsServiceName + "." + sm.Namespace + ".svc"),
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{

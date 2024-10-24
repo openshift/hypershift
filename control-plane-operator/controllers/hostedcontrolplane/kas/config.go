@@ -136,6 +136,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
 		ServiceAccountPublicKeyFiles: []string{cpath(kasVolumeServiceAccountKey().Name, pki.ServiceSignerPublicKey)},
 		ServicesSubnet:               strings.Join(p.ServiceNetwork, ","),
+		MinimumKubeletVersion:        p.MinimumKubeletVersion,
 	}
 
 	if p.Authentication == nil || p.Authentication.Type == configv1.AuthenticationTypeIntegratedOAuth {

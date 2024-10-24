@@ -73,6 +73,7 @@ type KubeAPIServerParams struct {
 
 	MaxMutatingRequestsInflight string
 	MaxRequestsInflight         string
+	MinimumKubeletVersion       string
 }
 
 type KubeAPIServerServiceParams struct {
@@ -117,6 +118,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		},
 		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
+		MinimumKubeletVersion:       hcp.Spec.MinimumKubeletVersion,
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
@@ -390,6 +392,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		Authentication:               p.Authentication,
 		MaxRequestsInflight:          p.MaxRequestsInflight,
 		MaxMutatingRequestsInflight:  p.MaxMutatingRequestsInflight,
+		MinimumKubeletVersion:        p.MinimumKubeletVersion,
 	}
 }
 
@@ -418,6 +421,7 @@ type KubeAPIServerConfigParams struct {
 	Authentication               *configv1.AuthenticationSpec
 	MaxRequestsInflight          string
 	MaxMutatingRequestsInflight  string
+	MinimumKubeletVersion        string
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {

@@ -5495,6 +5495,20 @@ map[string]string
 <p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>minimumKubeletVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MinimumKubeletVersion is the lowest version of a kubelet that can join a this hosted cluster.
+Specifically, the hosted apiserver will deny (most) authorization requests of kubelets that are older
+than the specified version.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneStatus { #hypershift.openshift.io/v1beta1.HostedControlPlaneStatus }
