@@ -25,6 +25,11 @@ type OpenStackNodePoolPlatform struct {
 	// +kubebuilder:validation:MaxLength=63
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
+
+	// AdditionalPorts is a list of additional ports to create on the node instances.
+	//
+	// +optional
+	AdditionalPorts []PortSpec `json:"additionalPorts,omitempty"`
 }
 
 // OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.
@@ -332,4 +337,55 @@ type SubnetFilter struct {
 	//
 	// +optional
 	FilterByNeutronTags `json:",inline"`
+}
+
+// PortSpec specifies the options for creating a port.
+type PortSpec struct {
+	// Network is a query for an openstack network that the port will be created or discovered on.
+	// This will fail if the query returns more than one network.
+	//
+	// +optional
+	Network *NetworkParam `json:"network,omitempty"`
+
+	// Description is a human-readable description for the port.
+	//
+	// +optional
+	Description string `json:"description,omitempty"`
+
+	// AllowedAddressPairs is a list of address pairs which Neutron will
+	// allow the port to send traffic from in addition to the port's
+	// addresses. If not specified, the MAC Address will be the MAC Address
+	// of the port. Depending on the configuration of Neutron, it may be
+	// supported to specify a CIDR instead of a specific IP address.
+	//
+	// +optional
+	AllowedAddressPairs []AddressPair `json:"allowedAddressPairs,omitempty"`
+
+	// VNICType specifies the type of vNIC which this port should be
+	// attached to. This is used to determine which mechanism driver(s) to
+	// be used to bind the port. The valid values are normal, macvtap,
+	// direct, baremetal, direct-physical, virtio-forwarder, smart-nic and
+	// remote-managed, although these values will not be validated in this
+	// API to ensure compatibility with future neutron changes or custom
+	// implementations. What type of vNIC is actually available depends on
+	// deployments. If not specified, the Neutron default value is used.
+	//
+	// +optional
+	VNICType string `json:"vnicType,omitempty"`
+
+	// DisablePortSecurity enables or disables the port security when set.
+	// When not set, it takes the value of the corresponding field at the network level.
+	//
+	// +optional
+	DisablePortSecurity bool `json:"disablePortSecurity,omitempty"`
+}
+
+type AddressPair struct {
+	// IPAddress is the IP address of the allowed address pair. Depending on
+	// the configuration of Neutron, it may be supported to specify a CIDR
+	// instead of a specific IP address.
+	//
+	// +kubebuilder:validation:Required
+	// +required
+	IPAddress string `json:"ipAddress"`
 }

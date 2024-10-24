@@ -20,9 +20,10 @@ package v1beta1
 // OpenStackNodePoolPlatformApplyConfiguration represents an declarative configuration of the OpenStackNodePoolPlatform type for use
 // with apply.
 type OpenStackNodePoolPlatformApplyConfiguration struct {
-	Flavor           *string `json:"flavor,omitempty"`
-	ImageName        *string `json:"imageName,omitempty"`
-	AvailabilityZone *string `json:"availabilityZone,omitempty"`
+	Flavor           *string                      `json:"flavor,omitempty"`
+	ImageName        *string                      `json:"imageName,omitempty"`
+	AvailabilityZone *string                      `json:"availabilityZone,omitempty"`
+	AdditionalPorts  []PortSpecApplyConfiguration `json:"additionalPorts,omitempty"`
 }
 
 // OpenStackNodePoolPlatformApplyConfiguration constructs an declarative configuration of the OpenStackNodePoolPlatform type for use with
@@ -52,5 +53,18 @@ func (b *OpenStackNodePoolPlatformApplyConfiguration) WithImageName(value string
 // If called multiple times, the AvailabilityZone field is set to the value of the last call.
 func (b *OpenStackNodePoolPlatformApplyConfiguration) WithAvailabilityZone(value string) *OpenStackNodePoolPlatformApplyConfiguration {
 	b.AvailabilityZone = &value
+	return b
+}
+
+// WithAdditionalPorts adds the given value to the AdditionalPorts field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the AdditionalPorts field.
+func (b *OpenStackNodePoolPlatformApplyConfiguration) WithAdditionalPorts(values ...*PortSpecApplyConfiguration) *OpenStackNodePoolPlatformApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithAdditionalPorts")
+		}
+		b.AdditionalPorts = append(b.AdditionalPorts, *values[i])
+	}
 	return b
 }
