@@ -120,19 +120,19 @@ spec:
   nodeVolumeDetachTimeout: 0s
   platform:
     azure:
-      diskSizeGB: 120
-      diskStorageAccountType: Standard_LRS
-      enableEphemeralOSDisk: true
       image:
-        azureImageType: AzureMarketplace
         azureMarketplace:
           offer: aro4
           publisher: azureopenshift
           sku: aro_414
           version: 414.92.2024021
+        type: AzureMarketplace
       machineIdentityID: fakeMachineIdentityID
+      osDisk:
+        diskStorageAccountType: Standard_LRS
+        sizeGiB: 120
       subnetID: fakeSubnetID
-      vmsize: Standard_DS2_v2
+      vmSize: Standard_DS2_v2
     type: Azure
   release:
     image: fake-release-image

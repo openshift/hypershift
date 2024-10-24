@@ -82,10 +82,16 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.AzureKMSKeyApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &applyconfigurationhypershiftv1alpha1.AzureKMSSpecApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureMarketplaceImage"):
+		return &applyconfigurationhypershiftv1alpha1.AzureMarketplaceImageApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureNodePoolOSDisk"):
+		return &applyconfigurationhypershiftv1alpha1.AzureNodePoolOSDiskApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):
 		return &applyconfigurationhypershiftv1alpha1.AzureNodePoolPlatformApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &applyconfigurationhypershiftv1alpha1.AzurePlatformSpecApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureResourceManagedIdentities"):
+		return &applyconfigurationhypershiftv1alpha1.AzureResourceManagedIdentitiesApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureVMImage"):
 		return &applyconfigurationhypershiftv1alpha1.AzureVMImageApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
@@ -98,6 +104,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.ClusterNetworkingApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &applyconfigurationhypershiftv1alpha1.ClusterVersionStatusApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
+		return &applyconfigurationhypershiftv1alpha1.ControlPlaneManagedIdentitiesApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Diagnostics"):
 		return &applyconfigurationhypershiftv1alpha1.DiagnosticsApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("DNSSpec"):
@@ -168,12 +176,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.LoadBalancerPublishingStrategyApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):
 		return &applyconfigurationhypershiftv1alpha1.MachineNetworkEntryApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ManagedAzureKeyVault"):
+		return &applyconfigurationhypershiftv1alpha1.ManagedAzureKeyVaultApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ManagedEtcdSpec"):
 		return &applyconfigurationhypershiftv1alpha1.ManagedEtcdSpecApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &applyconfigurationhypershiftv1alpha1.ManagedEtcdStorageSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("MarketplaceImage"):
-		return &applyconfigurationhypershiftv1alpha1.MarketplaceImageApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ManagedIdentity"):
+		return &applyconfigurationhypershiftv1alpha1.ManagedIdentityApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePool"):
 		return &applyconfigurationhypershiftv1alpha1.NodePoolApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolAutoScaling"):
@@ -228,6 +238,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationhypershiftv1alpha1.TaintApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &applyconfigurationhypershiftv1alpha1.UnmanagedEtcdSpecApplyConfiguration{}
+	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("UserManagedDiagnostics"):
+		return &applyconfigurationhypershiftv1alpha1.UserManagedDiagnosticsApplyConfiguration{}
 	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Volume"):
 		return &applyconfigurationhypershiftv1alpha1.VolumeApplyConfiguration{}
 
@@ -274,6 +286,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &hypershiftv1beta1.AzureKMSSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureMarketplaceImage"):
+		return &hypershiftv1beta1.AzureMarketplaceImageApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureNodePoolOSDisk"):
+		return &hypershiftv1beta1.AzureNodePoolOSDiskApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
@@ -382,8 +398,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedIdentity"):
 		return &hypershiftv1beta1.ManagedIdentityApplyConfiguration{}
-	case v1beta1.SchemeGroupVersion.WithKind("MarketplaceImage"):
-		return &hypershiftv1beta1.MarketplaceImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkFilter"):
 		return &hypershiftv1beta1.NetworkFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkParam"):
@@ -458,6 +472,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("UserManagedDiagnostics"):
+		return &hypershiftv1beta1.UserManagedDiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):
 		return &hypershiftv1beta1.VolumeApplyConfiguration{}
 

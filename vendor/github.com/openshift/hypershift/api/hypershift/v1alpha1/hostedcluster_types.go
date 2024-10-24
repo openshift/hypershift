@@ -1562,20 +1562,6 @@ type AWSServiceEndpoint struct {
 	URL string `json:"url"`
 }
 
-type AzurePlatformSpec struct {
-	Credentials corev1.LocalObjectReference `json:"credentials"`
-	// The cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
-	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud
-	// +kubebuilder:default="AzurePublicCloud"
-	Cloud             string `json:"cloud,omitempty"`
-	Location          string `json:"location"`
-	ResourceGroupName string `json:"resourceGroup"`
-	VnetID            string `json:"vnetID"`
-	SubnetID          string `json:"subnetID"`
-	SubscriptionID    string `json:"subscriptionID"`
-	SecurityGroupID   string `json:"securityGroupID"`
-}
-
 // Release represents the metadata for an OCP release payload image.
 type Release struct {
 	// Image is the image pullspec of an OCP release payload image.
@@ -1801,29 +1787,6 @@ type KMSSpec struct {
 	// Azure defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
 	// +optional
 	Azure *AzureKMSSpec `json:"azure,omitempty"`
-}
-
-// AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
-type AzureKMSSpec struct {
-	// ActiveKey defines the active key used to encrypt new secrets
-	//
-	// +kubebuilder:validation:Required
-	ActiveKey AzureKMSKey `json:"activeKey"`
-	// BackupKey defines the old key during the rotation process so previously created
-	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
-	// +optional
-	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
-}
-
-type AzureKMSKey struct {
-	// KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
-	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
-	KeyVaultName string `json:"keyVaultName"`
-	// KeyName is the name of the keyvault key used for encrypt/decrypt
-	KeyName string `json:"keyName"`
-	// KeyVersion contains the version of the key to use
-	KeyVersion string `json:"keyVersion"`
 }
 
 // IBMCloudKMSSpec defines metadata for the IBM Cloud KMS encryption strategy

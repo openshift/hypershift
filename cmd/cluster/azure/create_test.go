@@ -3,10 +3,11 @@ package azure
 import (
 	"context"
 	"encoding/json"
-	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"os"
 	"path/filepath"
 	"testing"
+
+	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"

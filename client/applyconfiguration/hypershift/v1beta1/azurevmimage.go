@@ -24,9 +24,9 @@ import (
 // AzureVMImageApplyConfiguration represents an declarative configuration of the AzureVMImage type for use
 // with apply.
 type AzureVMImageApplyConfiguration struct {
-	Type             *v1beta1.AzureVMImageType           `json:"azureImageType,omitempty"`
-	ImageID          *string                             `json:"imageID,omitempty"`
-	AzureMarketplace *MarketplaceImageApplyConfiguration `json:"azureMarketplace,omitempty"`
+	Type             *v1beta1.AzureVMImageType                `json:"type,omitempty"`
+	ImageID          *string                                  `json:"imageID,omitempty"`
+	AzureMarketplace *AzureMarketplaceImageApplyConfiguration `json:"azureMarketplace,omitempty"`
 }
 
 // AzureVMImageApplyConfiguration constructs an declarative configuration of the AzureVMImage type for use with
@@ -54,7 +54,7 @@ func (b *AzureVMImageApplyConfiguration) WithImageID(value string) *AzureVMImage
 // WithAzureMarketplace sets the AzureMarketplace field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the AzureMarketplace field is set to the value of the last call.
-func (b *AzureVMImageApplyConfiguration) WithAzureMarketplace(value *MarketplaceImageApplyConfiguration) *AzureVMImageApplyConfiguration {
+func (b *AzureVMImageApplyConfiguration) WithAzureMarketplace(value *AzureMarketplaceImageApplyConfiguration) *AzureVMImageApplyConfiguration {
 	b.AzureMarketplace = value
 	return b
 }

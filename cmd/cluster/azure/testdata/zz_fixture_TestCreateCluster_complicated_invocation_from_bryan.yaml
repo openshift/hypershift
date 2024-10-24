@@ -155,15 +155,15 @@ spec:
   nodeVolumeDetachTimeout: 0s
   platform:
     azure:
-      diskSizeGB: 120
-      diskStorageAccountType: Standard_LRS
-      enableEphemeralOSDisk: true
       image:
-        azureImageType: ImageID
         imageID: fakeBootImageID
+        type: ImageID
       machineIdentityID: fakeMachineIdentityID
+      osDisk:
+        diskStorageAccountType: Standard_LRS
+        sizeGiB: 120
       subnetID: fakeSubnetID
-      vmsize: Standard_DS2_v2
+      vmSize: Standard_DS2_v2
     type: Azure
   release:
     image: fake-release-image

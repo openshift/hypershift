@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -120,6 +121,12 @@ func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreat
 		return nil, fmt.Errorf("flag --enable-encryption-at-host has an invalid value; accepted values are 'Enabled' and 'Disabled'")
 	}
 
+	if o.AvailabilityZone != "" {
+		if _, err := strconv.ParseInt(o.AvailabilityZone, 10, 32); err != nil {
+			return nil, fmt.Errorf("invalid value for --availability-zone: %v", err)
+		}
+	}
+
 	return &ValidatedAzurePlatformCreateOptions{
 		validatedAzurePlatformCreateOptions: &validatedAzurePlatformCreateOptions{
 			RawAzurePlatformCreateOptions: o,
@@ -175,7 +182,7 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 	} else {
 		vmImage = hyperv1.AzureVMImage{
 			Type: hyperv1.AzureMarketplace,
-			AzureMarketplace: &hyperv1.MarketplaceImage{
+			AzureMarketplace: &hyperv1.AzureMarketplaceImage{
 				Publisher: o.MarketplacePublisher,
 				Offer:     o.MarketplaceOffer,
 				SKU:       o.MarketplaceSKU,
@@ -195,22 +202,44 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 		}
 	}
 
+	var persistence hyperv1.AzureDiskPersistence
+	if o.EnableEphemeralOSDisk {
+		persistence = hyperv1.EphemeralDiskPersistence
+	}
+
+	// Ignoring error as it is already validated in the Validate() function
+	var availabilityZone int64
+	if o.AvailabilityZone != "" {
+		availabilityZone, _ = strconv.ParseInt(o.AvailabilityZone, 10, 32)
+	}
+
 	platform := &hyperv1.AzureNodePoolPlatform{
-		VMSize:                 instanceType,
-		DiskSizeGB:             o.DiskSize,
-		AvailabilityZone:       o.AvailabilityZone,
-		DiskEncryptionSetID:    o.DiskEncryptionSetID,
-		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
-		DiskStorageAccountType: o.DiskStorageAccountType,
-		SubnetID:               o.SubnetID,
-		Image:                  vmImage,
-		EncryptionAtHost:       o.EncryptionAtHost,
+		VMSize: instanceType,
+		OSDisk: hyperv1.AzureNodePoolOSDisk{
+			SizeGiB:                o.DiskSize,
+			DiskStorageAccountType: hyperv1.AzureDiskStorageAccountType(o.DiskStorageAccountType),
+			Persistence:            persistence,
+			EncryptionSetID:        o.DiskEncryptionSetID,
+		},
+		AvailabilityZone: int32(availabilityZone),
+		SubnetID:         o.SubnetID,
+		Image:            vmImage,
+		EncryptionAtHost: o.EncryptionAtHost,
 	}
 
 	if len(o.DiagnosticsStorageAccountType) > 0 {
 		platform.Diagnostics = &hyperv1.Diagnostics{
 			StorageAccountType: o.DiagnosticsStorageAccountType,
-			StorageAccountURI:  o.DiagnosticsStorageAccountURI,
+		}
+
+		if o.DiagnosticsStorageAccountType == hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged &&
+			o.DiagnosticsStorageAccountURI != "" {
+			platform.Diagnostics = &hyperv1.Diagnostics{
+				StorageAccountType: o.DiagnosticsStorageAccountType,
+				UserManaged: &hyperv1.UserManagedDiagnostics{
+					StorageAccountURI: o.DiagnosticsStorageAccountURI,
+				},
+			}
 		}
 	}
 
