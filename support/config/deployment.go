@@ -408,6 +408,23 @@ func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) 
 	}
 }
 
+func DefaultReplicas(hcp *hyperv1.HostedControlPlane, isRequestServingComponent bool) int {
+	isolateAsRequestServing := false
+	if hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
+		isolateAsRequestServing = isRequestServingComponent
+	}
+
+	switch hcp.Spec.ControllerAvailabilityPolicy {
+	case hyperv1.HighlyAvailable:
+		if isolateAsRequestServing {
+			return 2
+		}
+		return 3
+	default:
+		return 1
+	}
+}
+
 // SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their sheduling
 // attributes can be modified accordingly.
 func (c *DeploymentConfig) SetRequestServingDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
