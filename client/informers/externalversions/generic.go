@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -59,12 +58,6 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateRevocationRequests().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateSigningRequestApprovals().Informer()}, nil
-
-		// Group=hypershift.openshift.io, Version=v1alpha1
-	case hypershiftv1alpha1.SchemeGroupVersion.WithResource("hostedclusters"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1alpha1().HostedClusters().Informer()}, nil
-	case hypershiftv1alpha1.SchemeGroupVersion.WithResource("nodepools"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1alpha1().NodePools().Informer()}, nil
 
 		// Group=hypershift.openshift.io, Version=v1beta1
 	case v1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):

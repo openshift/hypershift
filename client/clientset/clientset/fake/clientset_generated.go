@@ -21,8 +21,6 @@ import (
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
 	fakecertificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1/fake"
-	hypershiftv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1alpha1"
-	fakehypershiftv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1alpha1/fake"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	fakehypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1/fake"
 	schedulingv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/scheduling/v1alpha1"
@@ -87,11 +85,6 @@ var (
 // CertificatesV1alpha1 retrieves the CertificatesV1alpha1Client
 func (c *Clientset) CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1alpha1Interface {
 	return &fakecertificatesv1alpha1.FakeCertificatesV1alpha1{Fake: &c.Fake}
-}
-
-// HypershiftV1alpha1 retrieves the HypershiftV1alpha1Client
-func (c *Clientset) HypershiftV1alpha1() hypershiftv1alpha1.HypershiftV1alpha1Interface {
-	return &fakehypershiftv1alpha1.FakeHypershiftV1alpha1{Fake: &c.Fake}
 }
 
 // HypershiftV1beta1 retrieves the HypershiftV1beta1Client
