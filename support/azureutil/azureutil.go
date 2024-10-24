@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -222,4 +223,8 @@ func VerifyResourceGroupLocationsMatch(ctx context.Context, hc *hyperv1.HostedCl
 // IsAroHCP returns true if the managed service environment variable is set to ARO-HCP
 func IsAroHCP() bool {
 	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
+}
+
+func GetKeyVaultAuthorizedUser() string {
+	return os.Getenv(config.AROHCPKeyVaultManagedIdentityClientID)
 }
