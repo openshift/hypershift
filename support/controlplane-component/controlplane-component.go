@@ -21,6 +21,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -298,15 +299,12 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 	deploymentConfig := &config.DeploymentConfig{
 		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
 		Resources:                 existingResources,
+		AdditionalLabels: map[string]string{
+			hyperv1.ControlPlaneComponentLabel: c.Name(),
+		},
 	}
-	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	if cpContext.HCP.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
-		deploymentConfig.Scheduling.PriorityClass = cpContext.HCP.Annotations[hyperv1.ControlPlanePriorityClass]
-	}
+	deploymentConfig.Scheduling.PriorityClass = getPriorityClass(c.Name(), cpContext.HCP)
 
-	deploymentConfig.AdditionalLabels = map[string]string{
-		hyperv1.ControlPlaneComponentLabel: c.Name(),
-	}
 	if c.NeedsManagementKASAccess() {
 		deploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
@@ -384,10 +382,33 @@ func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageP
 		key := container.Image
 		if payloadImage, exist := imageProvider.ImageExist(key); exist {
 			containers[i].Image = payloadImage
-		} else {
-			return fmt.Errorf("image doesn't exist for container %s with image key %s", container.Name, key)
 		}
 	}
 
 	return nil
+}
+
+var (
+	apiCriticalComponents = sets.New(
+		"kube-apiserver",
+	)
+)
+
+func getPriorityClass(componentName string, hcp *hyperv1.HostedControlPlane) string {
+	priorityClass := config.DefaultPriorityClass
+	overrideAnnotation := hyperv1.ControlPlanePriorityClass
+
+	if componentName == "etcd" {
+		priorityClass = config.EtcdPriorityClass
+		overrideAnnotation = hyperv1.EtcdPriorityClass
+	} else if apiCriticalComponents.Has(componentName) {
+		priorityClass = config.APICriticalPriorityClass
+		overrideAnnotation = hyperv1.APICriticalPriorityClass
+	}
+
+	if overrideValue := hcp.Annotations[overrideAnnotation]; overrideValue != "" {
+		priorityClass = overrideValue
+	}
+
+	return priorityClass
 }

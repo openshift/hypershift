@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"reflect"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -28,6 +29,18 @@ func UpdateContainer(name string, containers []corev1.Container, update func(c *
 			update(&containers[i])
 		}
 	}
+}
+
+func RemoveContainer(name string, podSpec *corev1.PodSpec) {
+	podSpec.Containers = slices.DeleteFunc(podSpec.Containers, func(c corev1.Container) bool {
+		return c.Name == name
+	})
+}
+
+func RemoveInitContainer(name string, podSpec *corev1.PodSpec) {
+	podSpec.InitContainers = slices.DeleteFunc(podSpec.InitContainers, func(c corev1.Container) bool {
+		return c.Name == name
+	})
 }
 
 const (

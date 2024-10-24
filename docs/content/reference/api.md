@@ -3944,6 +3944,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>version reports the current version of this component.</p>
 </td>
 </tr>
