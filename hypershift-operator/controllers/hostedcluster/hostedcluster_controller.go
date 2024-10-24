@@ -1773,7 +1773,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				releaseProvider.GetRegistryOverrides(),
 				hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 				r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-				config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
+				config.OwnerRefFrom(hcp),
 			); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 			}
@@ -4070,7 +4070,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		machineApproverImage = imageVal
 	}
 
-	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
+	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
 func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hc *hyperv1.HostedCluster) error {

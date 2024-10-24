@@ -5,9 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,25 +40,12 @@ func GetClient() (crclient.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get discovery client: %w", err)
-	}
-	list, err := discoveryClient.ServerResourcesForGroupVersion(schema.GroupVersion{Group: "hypershift.openshift.io", Version: "v1beta1"}.String())
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("cannot discover HyperShift API version: %w", err)
-	}
-	wrapClient := false
-	if err != nil || len(list.APIResources) == 0 {
-		wrapClient = true
-	}
+
 	client, err := crclient.New(config, crclient.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
 	}
-	if wrapClient {
-		return v1alpha1Client(client), nil
-	}
+
 	return client, nil
 }
 
@@ -74,24 +58,10 @@ func GetImpersonatedClient(userName string) (crclient.Client, error) {
 	config.Impersonate = rest.ImpersonationConfig{
 		UserName: userName,
 	}
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get discovery client: %w", err)
-	}
-	list, err := discoveryClient.ServerResourcesForGroupVersion(schema.GroupVersion{Group: "hypershift.openshift.io", Version: "v1beta1"}.String())
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("cannot discover HyperShift API version: %w", err)
-	}
-	wrapClient := false
-	if err != nil || len(list.APIResources) == 0 {
-		wrapClient = true
-	}
+
 	client, err := crclient.New(config, crclient.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
-	}
-	if wrapClient {
-		return v1alpha1Client(client), nil
 	}
 	return client, nil
 }
