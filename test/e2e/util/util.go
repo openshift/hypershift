@@ -262,6 +262,37 @@ func WaitForReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcli
 	return WaitForNReadyNodesWithOptions(t, ctx, client, *np.Spec.Replicas, platform, fmt.Sprintf("for NodePool %s/%s", np.Namespace, np.Name), append(opts, WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: np.Name})}))...)
 }
 
+func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool) {
+	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to start config update", np.Namespace, np.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			nodePool := &hyperv1.NodePool{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
+			return nodePool, err
+		},
+		[]Predicate[*hyperv1.NodePool]{
+			ConditionPredicate[*hyperv1.NodePool](Condition{
+				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
+				Status: metav1.ConditionTrue,
+			}),
+		},
+		WithTimeout(30*time.Second),
+	)
+	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finsih config update", np.Namespace, np.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			nodePool := &hyperv1.NodePool{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
+			return nodePool, err
+		},
+		[]Predicate[*hyperv1.NodePool]{
+			ConditionPredicate[*hyperv1.NodePool](Condition{
+				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
+				Status: metav1.ConditionFalse,
+			}),
+		},
+		WithTimeout(20*time.Minute),
+	)
+}
+
 type NodePoolPollOptions struct {
 	collectionPredicates []Predicate[[]*corev1.Node]
 	predicates           []Predicate[*corev1.Node]

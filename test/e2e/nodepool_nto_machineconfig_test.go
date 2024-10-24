@@ -130,6 +130,7 @@ func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePo
 		}
 	}
 
+	e2eutil.WaitForNodePoolConfigUpdateComplete(t, ctx, mc.mgmtClient, &nodePool)
 	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
 	e2eutil.WaitForReadyNodesByNodePool(t, ctx, mc.hostedClusterClient, &nodePool, mc.hostedCluster.Spec.Platform.Type)
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mc.mgmtClient, mc.hostedClusterClient, mc.hostedCluster.Spec.Platform.Type, mc.hostedCluster.Namespace)
