@@ -40,7 +40,8 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := konnectivityproxy.Options{
-		ResolveBeforeDial: true,
+		ResolveBeforeDial:          true,
+		ResolveFromGuestClusterDNS: true,
 	}
 
 	var servingPort uint32
