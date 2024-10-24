@@ -107,6 +107,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackExternalNetworkID, "e2e.openstack-external-network-id", "", "ID of the OpenStack external network")
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeFlavor, "e2e.openstack-node-flavor", "", "The flavor to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeImageName, "e2e.openstack-node-image-name", "", "The image name to use for OpenStack nodes")
+	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone, "e2e.openstack-node-availability-zone", "", "The availability zone to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
@@ -459,6 +460,7 @@ type configurableClusterOptions struct {
 	OpenStackExternalNetworkID    string
 	OpenStackNodeFlavor           string
 	OpenStackNodeImageName        string
+	OpenStackNodeAvailabilityZone string
 	PowerVSResourceGroup          string
 	PowerVSRegion                 string
 	PowerVSZone                   string
@@ -556,8 +558,9 @@ func (p *options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 		OpenStackExternalNetworkID: p.configurableClusterOptions.OpenStackExternalNetworkID,
 		NodePoolOpts: &openstacknodepool.RawOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
-				Flavor:    p.configurableClusterOptions.OpenStackNodeFlavor,
-				ImageName: p.configurableClusterOptions.OpenStackNodeImageName,
+				Flavor:         p.configurableClusterOptions.OpenStackNodeFlavor,
+				ImageName:      p.configurableClusterOptions.OpenStackNodeImageName,
+				AvailabityZone: p.configurableClusterOptions.OpenStackNodeAvailabilityZone,
 			},
 		},
 	}

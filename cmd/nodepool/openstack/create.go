@@ -17,8 +17,9 @@ func DefaultOptions() *RawOpenStackPlatformCreateOptions {
 }
 
 type OpenStackPlatformOptions struct {
-	Flavor    string
-	ImageName string
+	Flavor         string
+	ImageName      string
+	AvailabityZone string
 }
 
 // completedCreateOptions is a private wrapper that enforces a call of Complete() before nodepool creation can be invoked.
@@ -79,6 +80,7 @@ func BindOptions(opts *RawOpenStackPlatformCreateOptions, flags *pflag.FlagSet) 
 func bindCoreOptions(opts *RawOpenStackPlatformCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Flavor, "openstack-node-flavor", opts.Flavor, "The flavor to use for the nodepool (required)")
 	flags.StringVar(&opts.ImageName, "openstack-node-image-name", opts.ImageName, "The image name to use for the nodepool (required)")
+	flags.StringVar(&opts.AvailabityZone, "openstack-node-availability-zone", opts.AvailabityZone, "The availability zone to use for the nodepool (optional)")
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
@@ -118,7 +120,8 @@ func (o *OpenStackPlatformCreateOptions) Type() hyperv1.PlatformType {
 
 func (o *OpenStackPlatformCreateOptions) NodePoolPlatform() *hyperv1.OpenStackNodePoolPlatform {
 	return &hyperv1.OpenStackNodePoolPlatform{
-		Flavor:    o.Flavor,
-		ImageName: o.ImageName,
+		Flavor:           o.Flavor,
+		ImageName:        o.ImageName,
+		AvailabilityZone: o.AvailabityZone,
 	}
 }

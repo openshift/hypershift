@@ -117,6 +117,10 @@ func TestNodePool(t *testing.T) {
 						name: "TestNodePoolPrevReleaseN2",
 						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.n2MinorReleaseImage, clusterOpts),
 					},
+					{
+						name: "OpenStackAZTest",
+						test: NewOpenStackAZTest(ctx, mgtClient, hostedCluster),
+					},
 				}
 			},
 		},
