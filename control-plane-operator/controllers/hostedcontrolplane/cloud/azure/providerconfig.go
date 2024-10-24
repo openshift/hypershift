@@ -123,4 +123,5 @@ type AzureConfig struct {
 	LoadBalancerSku              string `json:"loadBalancerSku"`
 	DisableOutboundSNAT          bool   `json:"disableOutboundSNAT"`
 	LoadBalancerName             string `json:"loadBalancerName"`
+	AADClientCertPath            string `json:"aadClientCertPath"`
 }
