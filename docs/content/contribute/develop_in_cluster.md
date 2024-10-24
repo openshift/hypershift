@@ -13,7 +13,7 @@ very tedious and slow, the HyperShift project includes a few tools and technique
 to help make the feedback loop as fast as possible.
 
 This guide makes use of the [ko](https://github.com/google/ko) tool to rapidly
-build lightweight images which are then published directly into an OCP cluster's 
+build lightweight images which are then published directly into an OCP cluster's
 internal registry. This approach has the following properties which can speed up
 development:
 
@@ -22,7 +22,7 @@ development:
 - Resulting images are almost as small as the Go binary being published.
 - Images are published directly into OCP's internal image registry, so images
   are immediately available on or near the machines that will be pulling them.
-  
+
 ## Prerequisites
 
 - An OCP 4.9+ cluster
@@ -93,7 +93,7 @@ make it easy to incorporate the script into pipelines.
     Pods in the cluster cannot pull the image using the public repo name because the
     host's certificate is likely self-signed, which would require additional
     configuration in the cluster to enable pods to pull it.
-    
+
     Pods must reference the _internal repo pullspec_ as printed to stdout on line
     10: `image-registry.openshift-image-registry.svc:5000/hypershift/hypershift-operator-cd22...`.
 
@@ -158,9 +158,18 @@ scaled to 0, enabling developers to replace the components with their own proces
 (inside or outside the cluster) while preserving the `Deployment` resources to
 use as templates for the replacement process environments.
 
-For example, the following `HostedCluster` resource will result in a control
-plane with the `control-plane-operator` and `ignition-server` deployments
-scaled to 0:
+For example, to scale the `control-plane-operator` and `ignition-server` deployments
+to 0:
+
+```shell
+oc annotate -n clusters HostedCluster test-cluster hypershift.openshift.io/debug-deployments=control-plane-operator,ignition-server
+```
+
+!!! note
+
+    Update the name of the HostedCluster to match your cluster.
+
+This will result in a `HostedCluster` like so:
 
 ```yaml linenums="1" hl_lines="5"
 apiVersion: hypershift.openshift.io/v1alpha1
@@ -179,10 +188,17 @@ spec:
 To scale back up a given component's original deployment simply remove the component's
 deployment name from the list.
 
+The `hypershift.openshift.io/pod-security-admission-label-override` annotation
+may also need to be set in order to run debug pods locally.
+
+```shell
+oc annotate -n clusters HostedCluster test-cluster hypershift.openshift.io/pod-security-admission-label-override=baseline
+```
+
 ## Launch a custom `control-plane-operator` image interactively
 
 To iterate on the `control-plane-operator` binary in-cluster interactively, first
-[configure the HostedCluster](#configure-a-hostedcluster-for-iterative-control-plane-development) 
+[configure the HostedCluster](#configure-a-hostedcluster-for-iterative-control-plane-development)
 to scale down the `control-plane-operator` deployment.
 
 Now, you can build and publish the `control-plane-operator` image and run it interactively
@@ -202,7 +218,7 @@ press `ctrl-c` to terminate and delete the pod.
     The default arguments to `control-plane-operator run` should be sufficient to
     get started.
 
-## Launch a custom ignition server interactively
+## Launch a custom `ignition-server` interactively
 
 To iterate on the ignition server in-cluster interactively, first
 [configure the HostedCluster](#configure-a-hostedcluster-for-iterative-control-plane-development)
