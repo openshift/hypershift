@@ -137,6 +137,7 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 		t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
 	}
 
+	e2eutil.WaitForNodePoolConfigUpdateComplete(t, ctx, mc.mgmtClient, &nodePool)
 	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
 	e2eutil.WaitForReadyNodesByNodePool(t, ctx, mc.hostedClusterClient, &nodePool, mc.hostedCluster.Spec.Platform.Type)
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mc.mgmtClient, mc.hostedClusterClient, mc.hostedCluster.Spec.Platform.Type, mc.hostedCluster.Namespace)
@@ -184,13 +185,6 @@ func eventuallyDaemonSetRollsOut(t *testing.T, ctx context.Context, client crcli
 				want, got := expectedCount, len(readyPods)
 				return want == got, fmt.Sprintf("expected %d Pods, got %d", want, got), nil
 			},
-		},
-		[]e2eutil.Predicate[*corev1.Pod]{
-			e2eutil.ConditionPredicate[*corev1.Pod](e2eutil.Condition{
-				Type:   string(corev1.PodReady),
-				Status: metav1.ConditionTrue,
-			}),
-		},
-		e2eutil.WithTimeout(timeout),
+		}, nil, e2eutil.WithTimeout(timeout),
 	)
 }
