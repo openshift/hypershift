@@ -28,9 +28,9 @@ func TestEnsureSupportedVersionConfigMap(t *testing.T) {
 	cfgMap := manifests.ConfigMap("hypershift")
 	err = c.Get(context.Background(), client.ObjectKeyFromObject(cfgMap), cfgMap)
 	g.Expect(err).To(BeNil())
-	g.Expect(cfgMap.Data[configMapKey]).ToNot(BeEmpty())
-	data := &supportedVersions{}
-	err = json.Unmarshal([]byte(cfgMap.Data[configMapKey]), data)
+	g.Expect(cfgMap.Data[ConfigMapVersionsKey]).ToNot(BeEmpty())
+	data := &SupportedVersions{}
+	err = json.Unmarshal([]byte(cfgMap.Data[ConfigMapVersionsKey]), data)
 	g.Expect(err).To(BeNil())
 	g.Expect(len(data.Versions)).To(Equal(supportedversion.SupportedPreviousMinorVersions + 1))
 }
