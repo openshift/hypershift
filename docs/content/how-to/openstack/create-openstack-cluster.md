@@ -58,8 +58,13 @@ Use the hypershift cli tool to install the HyperShift operator into the
 management cluster.
 
 ```shell
-hypershift install
+hypershift install --tech-preview-no-upgrade
 ```
+
+!!! note
+
+    Hypershift on OpenStack is possible behind a feature gate, which is why we have
+    to install the operator with `--tech-preview-no-upgrade`.
 
 You will see the operator running in the `hypershift` namespace:
 
