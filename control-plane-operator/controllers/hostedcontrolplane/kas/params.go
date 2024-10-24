@@ -228,7 +228,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromString("client"),
-					Path:   "readyz",
+					Path:   "readyz?exclude=poststarthook%2Fapiservice-status-available-controller",
 				},
 			},
 			PeriodSeconds:    10,
