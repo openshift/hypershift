@@ -20,11 +20,15 @@ const (
 	TunedClusterOperatorResourceName = "node-tuning"
 
 	// Name of the NTO operand for versioning in ClusterOperator.
-	TunedOperandName = "openshift-tuned"
+	TunedOperandName = "ocp-tuned"
 
 	// TunedBootcmdlineAnnotationKey is a Node-specific annotation denoting kernel command-line parameters
 	// calculated by TuneD for the current profile applied to that Node.
 	TunedBootcmdlineAnnotationKey string = "tuned.openshift.io/bootcmdline"
+
+	// TunedDeferredUpdate request the tuned daemons to defer the update of the rendered profile
+	// until the next restart.
+	TunedDeferredUpdate string = "tuned.openshift.io/deferred"
 )
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -113,6 +117,10 @@ type OperandConfig struct {
 	// +optional
 	Debug bool `json:"debug,omitempty"`
 
+	// klog logging verbosity
+	// +optional
+	Verbosity int `json:"verbosity,omitempty"`
+
 	// +optional
 	TuneDConfig TuneDConfig `json:"tunedConfig,omitempty"`
 }
@@ -153,6 +161,9 @@ type Profile struct {
 
 type ProfileSpec struct {
 	Config ProfileConfig `json:"config"`
+	// Tuned profiles.
+	// +optional
+	Profile []TunedProfile `json:"profile"`
 }
 
 type ProfileConfig struct {
@@ -161,6 +172,9 @@ type ProfileConfig struct {
 	// option to debug TuneD daemon execution
 	// +optional
 	Debug bool `json:"debug"`
+	// klog logging verbosity
+	// +optional
+	Verbosity int `json:"verbosity"`
 	// +optional
 	TuneDConfig TuneDConfig `json:"tunedConfig,omitempty"`
 	// Name of the cloud provider as taken from the Node providerID: <ProviderName>://<ProviderSpecificNodeID>

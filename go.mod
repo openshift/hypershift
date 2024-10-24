@@ -24,7 +24,7 @@ require (
 	github.com/aws/aws-sdk-go v1.52.6
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
-	github.com/coreos/ignition/v2 v2.17.0
+	github.com/coreos/ignition/v2 v2.18.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/elazarl/goproxy v0.0.0-20231117061959-7cc037d33fb5
@@ -46,9 +46,9 @@ require (
 	github.com/openshift/client-go v0.0.0-20241001162912-da6d55e4611f
 	github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
-	github.com/openshift/cluster-node-tuning-operator v0.0.0-20240131125539-0e319439e65a
+	github.com/openshift/cluster-node-tuning-operator v0.0.0-20241024094933-6d2e1edef5b8
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
-	github.com/openshift/hypershift/api v0.0.0-20240522104800-604a957be25e
+	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
 	github.com/openshift/library-go v0.0.0-20241016162852-a9bf3fe3cd0a
 	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
@@ -123,7 +123,7 @@ require (
 	github.com/chai2010/gettext-go v1.0.3 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/coreos/vcontext v0.0.0-20230201181013-d72178a18687 // indirect
+	github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
@@ -152,7 +152,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.19.0 // indirect
-	github.com/gobuffalo/flect v1.0.2 // indirect
+	github.com/gobuffalo/flect v1.0.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
@@ -191,7 +191,6 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opencontainers/runc v1.1.14 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
-	github.com/openshift/machine-config-operator v0.0.1-0.20230807154212-886c5c3fc7a9 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
@@ -241,7 +240,7 @@ require (
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kms v0.31.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240521193020-835d969ad83a // indirect
-	k8s.io/kubelet v0.27.4 // indirect
+	k8s.io/kubelet v0.31.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
@@ -252,7 +251,7 @@ require (
 
 replace github.com/openshift/hypershift/api => ./api
 
-// These are because of github.com/openshift/cluster-node-tuning-operator@v0.0.0-20240131125539-0e319439e65a
+// These are because of github.com/openshift/cluster-node-tuning-operator@v0.0.0-20241024094933-6d2e1edef5b8
 replace (
 	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.31.1
 	k8s.io/kubernetes => k8s.io/kubernetes v0.31.1
