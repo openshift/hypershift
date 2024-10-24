@@ -5,9 +5,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	"github.com/blang/semver"
-	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -32,13 +29,4 @@ func ControllerOwnerRef(obj client.Object) *metav1.OwnerReference {
 		return nil
 	}
 	return metav1.NewControllerRef(obj, gvk)
-}
-
-// MutatingOwnerRefFromHCP returns ownerRef with altered API version based on OCP release version
-func MutatingOwnerRefFromHCP(hcp *hyperv1.HostedControlPlane, version semver.Version) OwnerRef {
-	ownerRef := OwnerRefFrom(hcp)
-	if version.Major == 4 && version.Minor < 12 {
-		ownerRef.Reference.APIVersion = hyperv1alpha1.GroupVersion.String()
-	}
-	return ownerRef
 }

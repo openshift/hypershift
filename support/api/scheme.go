@@ -17,7 +17,6 @@ import (
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
-	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -72,7 +71,6 @@ func init() {
 	clientgoscheme.AddToScheme(Scheme)
 	auditv1.AddToScheme(Scheme)
 	apiregistrationv1.AddToScheme(Scheme)
-	hyperv1alpha1.AddToScheme(Scheme)
 	hyperv1beta1.AddToScheme(Scheme)
 	schedulingv1alpha1.AddToScheme(Scheme)
 	certificatesv1alpha1.AddToScheme(Scheme)

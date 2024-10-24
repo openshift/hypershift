@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
@@ -23,7 +22,7 @@ func TestReconcileControlPlanePKIOperatorDeployment(t *testing.T) {
 			UID:       "test-uid",
 			Annotations: map[string]string{
 				hypershiftv1beta1.ControlPlanePriorityClass: "whatever",
-				hyperv1.RestartDateAnnotation:               "sometime",
+				hypershiftv1beta1.RestartDateAnnotation:     "sometime",
 			},
 		},
 		Spec: hypershiftv1beta1.HostedControlPlaneSpec{
@@ -56,7 +55,7 @@ func TestReconcileControlPlanePKIOperatorRole(t *testing.T) {
 			UID:       "test-uid",
 			Annotations: map[string]string{
 				hypershiftv1beta1.ControlPlanePriorityClass: "whatever",
-				hyperv1.RestartDateAnnotation:               "sometime",
+				hypershiftv1beta1.RestartDateAnnotation:     "sometime",
 			},
 		},
 	}
@@ -79,7 +78,7 @@ func TestReconcileControlPlanePKIOperatorRoleBinding(t *testing.T) {
 			UID:       "test-uid",
 			Annotations: map[string]string{
 				hypershiftv1beta1.ControlPlanePriorityClass: "whatever",
-				hyperv1.RestartDateAnnotation:               "sometime",
+				hypershiftv1beta1.RestartDateAnnotation:     "sometime",
 			},
 		},
 	}
