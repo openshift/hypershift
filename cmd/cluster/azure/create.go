@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -100,6 +101,12 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
 		},
+	}
+
+	for _, az := range o.AvailabilityZones {
+		if !slices.Contains([]string{"1", "2", "3"}, az) {
+			return nil, fmt.Errorf("invalid value for --availability-zone: %s", az)
+		}
 	}
 
 	validOpts.ValidatedAzurePlatformCreateOptions, err = o.NodePoolOpts.Validate()
@@ -271,7 +278,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	} else {
 		vmImage = hyperv1.AzureVMImage{
 			Type: hyperv1.AzureMarketplace,
-			AzureMarketplace: &hyperv1.MarketplaceImage{
+			AzureMarketplace: &hyperv1.AzureMarketplaceImage{
 				Publisher: o.MarketplacePublisher,
 				Offer:     o.MarketplaceOffer,
 				SKU:       o.MarketplaceSKU,
@@ -300,23 +307,40 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-				VMSize:                 instanceType,
-				Image:                  vmImage,
-				DiskSizeGB:             o.NodePoolOpts.DiskSize,
-				AvailabilityZone:       availabilityZone,
-				DiskEncryptionSetID:    o.DiskEncryptionSetID,
-				EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
-				DiskStorageAccountType: o.DiskStorageAccountType,
-				SubnetID:               o.infra.SubnetID,
-				MachineIdentityID:      o.infra.MachineIdentityID,
-				EncryptionAtHost:       o.EncryptionAtHost,
+				VMSize: instanceType,
+				Image:  vmImage,
+				OSDisk: hyperv1.AzureNodePoolOSDisk{
+					SizeGiB:                o.NodePoolOpts.DiskSize,
+					EncryptionSetID:        o.DiskEncryptionSetID,
+					DiskStorageAccountType: hyperv1.AzureDiskStorageAccountType(o.DiskStorageAccountType),
+				},
+				AvailabilityZone:  availabilityZone,
+				SubnetID:          o.infra.SubnetID,
+				MachineIdentityID: o.infra.MachineIdentityID,
+				EncryptionAtHost:  o.EncryptionAtHost,
 			}
+
+			var persistence hyperv1.AzureDiskPersistence
+			if o.EnableEphemeralOSDisk {
+				nodePool.Spec.Platform.Azure.OSDisk.Persistence = persistence
+			}
+
 			if len(o.DiagnosticsStorageAccountType) > 0 {
 				nodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
 					StorageAccountType: o.DiagnosticsStorageAccountType,
-					StorageAccountURI:  o.DiagnosticsStorageAccountURI,
+				}
+
+				if o.DiagnosticsStorageAccountType == hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged &&
+					o.DiagnosticsStorageAccountURI != "" {
+					nodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
+						StorageAccountType: o.DiagnosticsStorageAccountType,
+						UserManaged: &hyperv1.UserManagedDiagnostics{
+							StorageAccountURI: o.DiagnosticsStorageAccountURI,
+						},
+					}
 				}
 			}
+
 			nodePools = append(nodePools, nodePool)
 		}
 		return nodePools
@@ -326,20 +350,36 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		azureNodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 	}
 	azureNodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:                 instanceType,
-		Image:                  vmImage,
-		DiskSizeGB:             o.NodePoolOpts.DiskSize,
-		DiskEncryptionSetID:    o.DiskEncryptionSetID,
-		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
-		DiskStorageAccountType: o.DiskStorageAccountType,
-		SubnetID:               o.infra.SubnetID,
-		MachineIdentityID:      o.infra.MachineIdentityID,
-		EncryptionAtHost:       o.EncryptionAtHost,
+		VMSize:            instanceType,
+		Image:             vmImage,
+		SubnetID:          o.infra.SubnetID,
+		MachineIdentityID: o.infra.MachineIdentityID,
+		EncryptionAtHost:  o.EncryptionAtHost,
+		OSDisk: hyperv1.AzureNodePoolOSDisk{
+			SizeGiB:                o.NodePoolOpts.DiskSize,
+			EncryptionSetID:        o.DiskEncryptionSetID,
+			DiskStorageAccountType: hyperv1.AzureDiskStorageAccountType(o.DiskStorageAccountType),
+		},
 	}
+
+	var persistence hyperv1.AzureDiskPersistence
+	if o.EnableEphemeralOSDisk {
+		azureNodePool.Spec.Platform.Azure.OSDisk.Persistence = persistence
+	}
+
 	if len(o.DiagnosticsStorageAccountType) > 0 {
 		azureNodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
 			StorageAccountType: o.DiagnosticsStorageAccountType,
-			StorageAccountURI:  o.DiagnosticsStorageAccountURI,
+		}
+
+		if o.DiagnosticsStorageAccountType == hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged &&
+			o.DiagnosticsStorageAccountURI != "" {
+			azureNodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
+				StorageAccountType: o.DiagnosticsStorageAccountType,
+				UserManaged: &hyperv1.UserManagedDiagnostics{
+					StorageAccountURI: o.DiagnosticsStorageAccountURI,
+				},
+			}
 		}
 	}
 

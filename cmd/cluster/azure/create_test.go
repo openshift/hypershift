@@ -3,10 +3,11 @@ package azure
 import (
 	"context"
 	"encoding/json"
-	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"os"
 	"path/filepath"
 	"testing"
+
+	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
@@ -108,6 +109,16 @@ func TestCreateCluster(t *testing.T) {
 				"--marketplace-offer=aro4",
 				"--marketplace-sku=aro_414",
 				"--marketplace-version=414.92.2024021",
+			},
+		},
+		{
+			name: "with availability zones",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--rhcos-image=whatever",
+				"--render-sensitive",
+				"--availability-zones=1,2",
 			},
 		},
 	} {
