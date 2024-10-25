@@ -115,11 +115,11 @@ func TestNodePool(t *testing.T) {
 					},
 					{
 						name: "TestNodePoolPrevReleaseN1",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.n1MinorReleaseImage, clusterOpts),
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N1MinorReleaseImage, clusterOpts),
 					},
 					{
 						name: "TestNodePoolPrevReleaseN2",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.n2MinorReleaseImage, clusterOpts),
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts),
 					},
 					{
 						name: "OpenStackAZTest",
@@ -164,7 +164,7 @@ func TestNodePoolMultiArch(t *testing.T) {
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
 			setup: func(t *testing.T) {
-				if !globalOpts.configurableClusterOptions.AWSMultiArch {
+				if !globalOpts.ConfigurableClusterOptions.AWSMultiArch {
 					t.Skip("test only supported on multi-arch clusters")
 				}
 				if globalOpts.Platform != hyperv1.AWSPlatform {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -21,28 +22,29 @@ import (
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
 	"github.com/openshift/hypershift/cmd/version"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
-	"github.com/openshift/hypershift/test/e2e/util"
+	"k8s.io/apimachinery/pkg/util/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// options are global test options applicable to all scenarios.
-type options struct {
+// Options are global test options applicable to all scenarios.
+type Options struct {
 	LatestReleaseImage   string
 	PreviousReleaseImage string
-	n2MinorReleaseImage  string
-	n1MinorReleaseImage  string
+	N2MinorReleaseImage  string
+	N1MinorReleaseImage  string
 	IsRunningInCI        bool
 	ArtifactDir          string
 
 	// BeforeApply is a function passed to the CLI create command giving the test
 	// code an opportunity to inspect or mutate the resources the CLI will create
 	// before they're applied.
-	BeforeApply func(crclient.Object) `json:"-"`
+	BeforeApply func(client.Object) `json:"-"`
 
 	Platform    hyperv1.PlatformType
-	platformRaw string
+	PlatformRaw string
 
-	configurableClusterOptions configurableClusterOptions
-	additionalTags             stringSliceVar
+	ConfigurableClusterOptions ConfigurableClusterOptions
+	AdditionalTags             stringSliceVar
 
 	IssuerURL                string
 	ServiceAccountSigningKey []byte
@@ -62,7 +64,7 @@ type options struct {
 	DisablePKIReconciliation bool
 }
 
-type configurableClusterOptions struct {
+type ConfigurableClusterOptions struct {
 	AWSCredentialsFile            string
 	AWSMultiArch                  bool
 	AzureCredentialsFile          string
@@ -122,28 +124,28 @@ type configurableClusterOptions struct {
 
 var nextAWSZoneIndex = 0
 
-func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOptions {
-	createOption := e2eutil.PlatformAgnosticOptions{
+func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
+	createOption := PlatformAgnosticOptions{
 		RawCreateOptions: core.RawCreateOptions{
 			ReleaseImage:                     o.LatestReleaseImage,
 			NodePoolReplicas:                 2,
 			ControlPlaneAvailabilityPolicy:   string(hyperv1.SingleReplica),
 			InfrastructureAvailabilityPolicy: string(hyperv1.SingleReplica),
-			NetworkType:                      string(o.configurableClusterOptions.NetworkType),
-			BaseDomain:                       o.configurableClusterOptions.BaseDomain,
-			PullSecretFile:                   o.configurableClusterOptions.PullSecretFile,
-			ControlPlaneOperatorImage:        o.configurableClusterOptions.ControlPlaneOperatorImage,
-			ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
+			NetworkType:                      string(o.ConfigurableClusterOptions.NetworkType),
+			BaseDomain:                       o.ConfigurableClusterOptions.BaseDomain,
+			PullSecretFile:                   o.ConfigurableClusterOptions.PullSecretFile,
+			ControlPlaneOperatorImage:        o.ConfigurableClusterOptions.ControlPlaneOperatorImage,
+			ExternalDNSDomain:                o.ConfigurableClusterOptions.ExternalDNSDomain,
 			NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
 			ServiceCIDR:                      []string{"172.31.0.0/16"},
 			ClusterCIDR:                      []string{"10.132.0.0/14"},
 			BeforeApply:                      o.BeforeApply,
-			Log:                              util.NewLogr(t),
+			Log:                              NewLogr(t),
 			Annotations: []string{
 				fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
 				fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
 			},
-			EtcdStorageClass: o.configurableClusterOptions.EtcdStorageClass,
+			EtcdStorageClass: o.ConfigurableClusterOptions.EtcdStorageClass,
 		},
 		NonePlatform:      o.DefaultNoneOptions(),
 		AWSPlatform:       o.DefaultAWSOptions(),
@@ -160,46 +162,46 @@ func (o *options) DefaultClusterOptions(t *testing.T) e2eutil.PlatformAgnosticOp
 		createOption.Arch = hyperv1.ArchitecturePPC64LE
 	}
 
-	if o.configurableClusterOptions.SSHKeyFile == "" {
+	if o.ConfigurableClusterOptions.SSHKeyFile == "" {
 		createOption.GenerateSSH = true
 	} else {
-		createOption.SSHKeyFile = o.configurableClusterOptions.SSHKeyFile
+		createOption.SSHKeyFile = o.ConfigurableClusterOptions.SSHKeyFile
 	}
 
-	if o.configurableClusterOptions.Annotations != nil {
-		for k, v := range o.configurableClusterOptions.Annotations {
+	if o.ConfigurableClusterOptions.Annotations != nil {
+		for k, v := range o.ConfigurableClusterOptions.Annotations {
 			createOption.Annotations = append(createOption.Annotations, fmt.Sprintf("%s=%s", k, v))
 		}
 	}
 
-	if len(o.configurableClusterOptions.ServiceCIDR) != 0 {
-		createOption.ServiceCIDR = o.configurableClusterOptions.ServiceCIDR
+	if len(o.ConfigurableClusterOptions.ServiceCIDR) != 0 {
+		createOption.ServiceCIDR = o.ConfigurableClusterOptions.ServiceCIDR
 	}
 
-	if len(o.configurableClusterOptions.ClusterCIDR) != 0 {
-		createOption.ClusterCIDR = o.configurableClusterOptions.ClusterCIDR
+	if len(o.ConfigurableClusterOptions.ClusterCIDR) != 0 {
+		createOption.ClusterCIDR = o.ConfigurableClusterOptions.ClusterCIDR
 	}
 
 	return createOption
 }
 
-func (o *options) DefaultNoneOptions() none.RawCreateOptions {
+func (o *Options) DefaultNoneOptions() none.RawCreateOptions {
 	return none.RawCreateOptions{
 		APIServerAddress:          "",
 		ExposeThroughLoadBalancer: true,
 	}
 }
 
-func (p *options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions {
+func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions {
 	opts := hypershiftopenstack.RawCreateOptions{
-		OpenStackCredentialsFile:   p.configurableClusterOptions.OpenStackCredentialsFile,
-		OpenStackCACertFile:        p.configurableClusterOptions.OpenStackCACertFile,
-		OpenStackExternalNetworkID: p.configurableClusterOptions.OpenStackExternalNetworkID,
+		OpenStackCredentialsFile:   p.ConfigurableClusterOptions.OpenStackCredentialsFile,
+		OpenStackCACertFile:        p.ConfigurableClusterOptions.OpenStackCACertFile,
+		OpenStackExternalNetworkID: p.ConfigurableClusterOptions.OpenStackExternalNetworkID,
 		NodePoolOpts: &openstacknodepool.RawOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
-				Flavor:         p.configurableClusterOptions.OpenStackNodeFlavor,
-				ImageName:      p.configurableClusterOptions.OpenStackNodeImageName,
-				AvailabityZone: p.configurableClusterOptions.OpenStackNodeAvailabilityZone,
+				Flavor:         p.ConfigurableClusterOptions.OpenStackNodeFlavor,
+				ImageName:      p.ConfigurableClusterOptions.OpenStackNodeImageName,
+				AvailabityZone: p.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone,
 			},
 		},
 	}
@@ -207,25 +209,25 @@ func (p *options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 	return opts
 }
 
-func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
+func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 	opts := hypershiftaws.RawCreateOptions{
 		RootVolumeSize: 64,
 		RootVolumeType: "gp3",
 		Credentials: awscmdutil.AWSCredentialsOptions{
-			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+			AWSCredentialsFile: o.ConfigurableClusterOptions.AWSCredentialsFile,
 		},
-		Region:         o.configurableClusterOptions.Region,
-		EndpointAccess: o.configurableClusterOptions.AWSEndpointAccess,
+		Region:         o.ConfigurableClusterOptions.Region,
+		EndpointAccess: o.ConfigurableClusterOptions.AWSEndpointAccess,
 		IssuerURL:      o.IssuerURL,
-		MultiArch:      o.configurableClusterOptions.AWSMultiArch,
+		MultiArch:      o.ConfigurableClusterOptions.AWSMultiArch,
 		PublicOnly:     true,
 	}
-	if e2eutil.IsLessThan(semver.MustParse("4.16.0")) {
+	if IsLessThan(semver.MustParse("4.16.0")) {
 		opts.PublicOnly = false
 	}
 
-	opts.AdditionalTags = append(opts.AdditionalTags, o.additionalTags...)
-	if len(o.configurableClusterOptions.Zone) == 0 {
+	opts.AdditionalTags = append(opts.AdditionalTags, o.AdditionalTags...)
+	if len(o.ConfigurableClusterOptions.Zone) == 0 {
 		// align with default for e2e.aws-region flag
 		opts.Zones = []string{"us-east-1a"}
 	} else {
@@ -234,7 +236,7 @@ func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		// in any test, so we know InfrastructureAvailabilityPolicy is SingleReplica.
 		// If any test changes this in the future, we need to add logic here to make the
 		// guest cluster multi-zone in that case.
-		zones := strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		zones := strings.Split(o.ConfigurableClusterOptions.Zone.String(), ",")
 		awsGuestZone := zones[nextAWSZoneIndex]
 		nextAWSZoneIndex = (nextAWSZoneIndex + 1) % len(zones)
 		opts.Zones = []string{awsGuestZone}
@@ -243,89 +245,89 @@ func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 	return opts
 }
 
-func (o *options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
+func (o *Options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 	return kubevirt.RawCreateOptions{
 		ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
-		InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
-		InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
+		InfraKubeConfigFile:       o.ConfigurableClusterOptions.KubeVirtInfraKubeconfigFile,
+		InfraNamespace:            o.ConfigurableClusterOptions.KubeVirtInfraNamespace,
 		NodePoolOpts: &kubevirtnodepool.RawKubevirtPlatformCreateOptions{
 			KubevirtPlatformOptions: &kubevirtnodepool.KubevirtPlatformOptions{
-				Cores:                uint32(o.configurableClusterOptions.KubeVirtNodeCores),
-				Memory:               o.configurableClusterOptions.KubeVirtNodeMemory,
-				RootVolumeSize:       uint32(o.configurableClusterOptions.KubeVirtRootVolumeSize),
-				RootVolumeVolumeMode: o.configurableClusterOptions.KubeVirtRootVolumeVolumeMode,
+				Cores:                uint32(o.ConfigurableClusterOptions.KubeVirtNodeCores),
+				Memory:               o.ConfigurableClusterOptions.KubeVirtNodeMemory,
+				RootVolumeSize:       uint32(o.ConfigurableClusterOptions.KubeVirtRootVolumeSize),
+				RootVolumeVolumeMode: o.ConfigurableClusterOptions.KubeVirtRootVolumeVolumeMode,
 			},
 		},
 	}
 }
 
-func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
+func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
-		CredentialsFile:                  o.configurableClusterOptions.AzureCredentialsFile,
-		Location:                         o.configurableClusterOptions.AzureLocation,
-		IssuerURL:                        o.configurableClusterOptions.AzureIssuerURL,
-		ServiceAccountTokenIssuerKeyPath: o.configurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,
-		DataPlaneIdentitiesFile:          o.configurableClusterOptions.AzureDataPlaneIdentities,
+		CredentialsFile:                  o.ConfigurableClusterOptions.AzureCredentialsFile,
+		Location:                         o.ConfigurableClusterOptions.AzureLocation,
+		IssuerURL:                        o.ConfigurableClusterOptions.AzureIssuerURL,
+		ServiceAccountTokenIssuerKeyPath: o.ConfigurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,
+		DataPlaneIdentitiesFile:          o.ConfigurableClusterOptions.AzureDataPlaneIdentities,
 		DNSZoneRGName:                    "os4-common",
 		AssignServicePrincipalRoles:      true,
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
-	if len(o.configurableClusterOptions.Zone) != 0 {
-		zones := strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+	if len(o.ConfigurableClusterOptions.Zone) != 0 {
+		zones := strings.Split(o.ConfigurableClusterOptions.Zone.String(), ",")
 		// Assign all Azure zones to guest cluster
 		opts.AvailabilityZones = zones
 	}
 
-	if o.configurableClusterOptions.AzureManagedIdentitiesFile != "" {
-		opts.ManagedIdentitiesFile = o.configurableClusterOptions.AzureManagedIdentitiesFile
+	if o.ConfigurableClusterOptions.AzureManagedIdentitiesFile != "" {
+		opts.ManagedIdentitiesFile = o.ConfigurableClusterOptions.AzureManagedIdentitiesFile
 	}
 
 	if opts.ManagedIdentitiesFile != "" {
 		opts.TechPreviewEnabled = true
 	}
 
-	if o.configurableClusterOptions.AzureMarketplaceOffer != "" {
-		opts.NodePoolOpts.MarketplaceOffer = o.configurableClusterOptions.AzureMarketplaceOffer
+	if o.ConfigurableClusterOptions.AzureMarketplaceOffer != "" {
+		opts.NodePoolOpts.MarketplaceOffer = o.ConfigurableClusterOptions.AzureMarketplaceOffer
 	}
 
-	if o.configurableClusterOptions.AzureMarketplacePublisher != "" {
-		opts.NodePoolOpts.MarketplacePublisher = o.configurableClusterOptions.AzureMarketplacePublisher
+	if o.ConfigurableClusterOptions.AzureMarketplacePublisher != "" {
+		opts.NodePoolOpts.MarketplacePublisher = o.ConfigurableClusterOptions.AzureMarketplacePublisher
 	}
 
-	if o.configurableClusterOptions.AzureMarketplaceSKU != "" {
-		opts.NodePoolOpts.MarketplaceSKU = o.configurableClusterOptions.AzureMarketplaceSKU
+	if o.ConfigurableClusterOptions.AzureMarketplaceSKU != "" {
+		opts.NodePoolOpts.MarketplaceSKU = o.ConfigurableClusterOptions.AzureMarketplaceSKU
 	}
 
-	if o.configurableClusterOptions.AzureMarketplaceVersion != "" {
-		opts.NodePoolOpts.MarketplaceVersion = o.configurableClusterOptions.AzureMarketplaceVersion
+	if o.ConfigurableClusterOptions.AzureMarketplaceVersion != "" {
+		opts.NodePoolOpts.MarketplaceVersion = o.ConfigurableClusterOptions.AzureMarketplaceVersion
 	}
 
 	return opts
 }
 
-func (o *options) DefaultPowerVSOptions() powervs.RawCreateOptions {
+func (o *Options) DefaultPowerVSOptions() powervs.RawCreateOptions {
 	return powervs.RawCreateOptions{
-		ResourceGroup:          o.configurableClusterOptions.PowerVSResourceGroup,
-		Region:                 o.configurableClusterOptions.PowerVSRegion,
-		Zone:                   o.configurableClusterOptions.PowerVSZone,
-		VPCRegion:              o.configurableClusterOptions.PowerVSVpcRegion,
-		SysType:                o.configurableClusterOptions.PowerVSSysType,
-		ProcType:               o.configurableClusterOptions.PowerVSProcType,
-		Processors:             o.configurableClusterOptions.PowerVSProcessors,
-		Memory:                 int32(o.configurableClusterOptions.PowerVSMemory),
-		CloudInstanceID:        o.configurableClusterOptions.PowerVSCloudInstanceID,
-		CloudConnection:        o.configurableClusterOptions.PowerVSCloudConnection,
-		VPC:                    o.configurableClusterOptions.PowerVSVPC,
-		PER:                    o.configurableClusterOptions.PowerVSPER,
-		TransitGatewayLocation: o.configurableClusterOptions.PowerVSTransitGatewayLocation,
-		TransitGateway:         o.configurableClusterOptions.PowerVSTransitGateway,
+		ResourceGroup:          o.ConfigurableClusterOptions.PowerVSResourceGroup,
+		Region:                 o.ConfigurableClusterOptions.PowerVSRegion,
+		Zone:                   o.ConfigurableClusterOptions.PowerVSZone,
+		VPCRegion:              o.ConfigurableClusterOptions.PowerVSVpcRegion,
+		SysType:                o.ConfigurableClusterOptions.PowerVSSysType,
+		ProcType:               o.ConfigurableClusterOptions.PowerVSProcType,
+		Processors:             o.ConfigurableClusterOptions.PowerVSProcessors,
+		Memory:                 int32(o.ConfigurableClusterOptions.PowerVSMemory),
+		CloudInstanceID:        o.ConfigurableClusterOptions.PowerVSCloudInstanceID,
+		CloudConnection:        o.ConfigurableClusterOptions.PowerVSCloudConnection,
+		VPC:                    o.ConfigurableClusterOptions.PowerVSVPC,
+		PER:                    o.ConfigurableClusterOptions.PowerVSPER,
+		TransitGatewayLocation: o.ConfigurableClusterOptions.PowerVSTransitGatewayLocation,
+		TransitGateway:         o.ConfigurableClusterOptions.PowerVSTransitGateway,
 	}
 }
 
 // Complete is intended to be called after flags have been bound and sets
 // up additional contextual defaulting.
-func (o *options) Complete() error {
+func (o *Options) Complete() error {
 
 	if shouldTestCPOOverride() {
 		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases()
@@ -353,9 +355,9 @@ func (o *options) Complete() error {
 		if len(o.ArtifactDir) == 0 {
 			o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
 		}
-		if len(o.configurableClusterOptions.BaseDomain) == 0 && o.Platform != hyperv1.KubevirtPlatform {
+		if len(o.ConfigurableClusterOptions.BaseDomain) == 0 && o.Platform != hyperv1.KubevirtPlatform {
 			// TODO: make this an envvar with change to openshift/release, then change here
-			o.configurableClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
+			o.ConfigurableClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
 	}
 
@@ -364,14 +366,14 @@ func (o *options) Complete() error {
 
 // Validate is intended to be called after Complete and validates the options
 // are usable by tests.
-func (o *options) Validate() error {
+func (o *Options) Validate() error {
 	var errs []error
 
 	if len(o.LatestReleaseImage) == 0 {
 		errs = append(errs, fmt.Errorf("latest release image is required"))
 	}
 
-	if len(o.configurableClusterOptions.BaseDomain) == 0 {
+	if len(o.ConfigurableClusterOptions.BaseDomain) == 0 {
 		// The KubeVirt e2e tests don't require a base domain right now.
 		//
 		// For KubeVirt, the e2e tests generate a base domain within the *.apps domain
@@ -400,7 +402,7 @@ func (o *options) Validate() error {
 		}
 	}
 
-	return apierr.NewAggregate(errs)
+	return errors.NewAggregate(errs)
 }
 
 var _ flag.Value = &stringSliceVar{}
