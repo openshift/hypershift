@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-controller-manager
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: kube-controller-manager
+  strategy:
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: kube-controller-manager
+    spec:
+      containers:
+      - args:
+        - --openshift-config=/etc/kubernetes/config/config.json
+        - --kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --authentication-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --authorization-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --allocate-node-cidrs=false
+        - --cert-dir=/var/run/kubernetes
+        - --cluster-signing-cert-file=/etc/kubernetes/certs/cluster-signer/ca.crt
+        - --cluster-signing-key-file=/etc/kubernetes/certs/cluster-signer/ca.key
+        - --configure-cloud-routes=false
+        - --controllers=*
+        - --controllers=-ttl
+        - --controllers=-bootstrapsigner
+        - --controllers=-tokencleaner
+        - --enable-dynamic-provisioning=true
+        - --flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec
+        - --pv-recycler-pod-template-filepath-nfs=/etc/kubernetes/recycler-config/recycler-pod.yaml
+        - --kube-api-burst=300
+        - --kube-api-qps=150
+        - --leader-elect-resource-lock=leases
+        - --leader-elect=true
+        - --leader-elect-renew-deadline=12s
+        - --leader-elect-retry-period=3s
+        - --root-ca-file=/etc/kubernetes/certs/root-ca/ca.crt
+        - --secure-port=10257
+        - --service-account-private-key-file=/etc/kubernetes/certs/service-signer/service-account.key
+        - --use-service-account-credentials=true
+        - --cluster-signing-duration=17520h
+        - --tls-cert-file=/etc/kubernetes/certs/server/tls.crt
+        - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
+        - --node-monitor-grace-period=50s
+        command:
+        - hyperkube
+        - kube-controller-manager
+        image: hyperkube
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 10257
+            scheme: HTTPS
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: kube-controller-manager
+        ports:
+        - containerPort: 10257
+          name: client
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 10257
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
+        resources:
+          requests:
+            cpu: 60m
+            memory: 400Mi
+        volumeMounts:
+        - mountPath: /var/run/kubernetes
+          name: certs
+        - mountPath: /etc/kubernetes/certs/cluster-signer
+          name: cluster-signer
+        - mountPath: /etc/kubernetes/config
+          name: kcm-config
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /var/log/kube-controller-manager
+          name: logs
+        - mountPath: /etc/kubernetes/recycler-config
+          name: recycler-config
+        - mountPath: /etc/kubernetes/certs/root-ca
+          name: root-ca
+        - mountPath: /etc/kubernetes/certs/server
+          name: server-crt
+        - mountPath: /etc/kubernetes/certs/service-signer
+          name: service-signer
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: kcm-config
+        name: kcm-config
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca
+      - emptyDir: {}
+        name: logs
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: kube-controller-manager-kubeconfig
+      - name: cluster-signer
+        secret:
+          defaultMode: 416
+          secretName: cluster-signer-ca
+      - emptyDir: {}
+        name: certs
+      - name: service-signer
+        secret:
+          defaultMode: 416
+          secretName: sa-signing-key
+      - name: server-crt
+        secret:
+          defaultMode: 416
+          secretName: kcm-server
+      - configMap:
+          defaultMode: 420
+          name: recycler-config
+        name: recycler-config

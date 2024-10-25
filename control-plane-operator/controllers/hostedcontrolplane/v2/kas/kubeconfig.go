@@ -25,8 +25,8 @@ const (
 )
 
 func adaptServiceKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
-	svcURL := inClusterKASURL(cpContext.HCP.Spec.Platform.Type)
-	kubeconfig, err := generateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), svcURL)
+	svcURL := InClusterKASURL(cpContext.HCP.Spec.Platform.Type)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), svcURL)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -53,8 +53,8 @@ func adaptCAPIKubeconfigSecret(cpContext component.ControlPlaneContext, secret *
 	}
 	secret.Labels[capiv1.ClusterNameLabel] = clusterName
 
-	svcURL := inClusterKASURL(cpContext.HCP.Spec.Platform.Type)
-	kubeconfig, err := generateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), svcURL)
+	svcURL := InClusterKASURL(cpContext.HCP.Spec.Platform.Type)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), svcURL)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -67,8 +67,8 @@ func adaptCAPIKubeconfigSecret(cpContext component.ControlPlaneContext, secret *
 }
 
 func adaptHCCOKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
-	svcURL := inClusterKASURL(cpContext.HCP.Spec.Platform.Type)
-	kubeconfig, err := generateKubeConfig(cpContext, manifests.HCCOClientCertSecret(cpContext.HCP.Namespace), svcURL)
+	svcURL := InClusterKASURL(cpContext.HCP.Spec.Platform.Type)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.HCCOClientCertSecret(cpContext.HCP.Namespace), svcURL)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -83,7 +83,7 @@ func adaptHCCOKubeconfigSecret(cpContext component.ControlPlaneContext, secret *
 func adaptLocalhostKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
 	apiServerPort := util.KASPodPort(cpContext.HCP)
 	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
-	kubeconfig, err := generateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), localhostURL)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), localhostURL)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -104,7 +104,7 @@ func adapExternalAdminKubeconfigSecret(cpContext component.ControlPlaneContext, 
 	if !util.IsPublicHCP(cpContext.HCP) && !util.IsRouteKAS(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
 	}
-	kubeconfig, err := generateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), url)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), url)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -121,7 +121,7 @@ func adaptBootstrapKubeconfigSecret(cpContext component.ControlPlaneContext, sec
 	if util.IsPrivateHCP(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
 	}
-	kubeconfig, err := generateKubeConfig(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -146,7 +146,7 @@ func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.ControlPlane
 	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, "openshift-authentication", "aws-pod-identity-webhook")
 }
 
-func generateKubeConfig(cpContext component.ControlPlaneContext, cert *corev1.Secret, url string) ([]byte, error) {
+func GenerateKubeConfig(cpContext component.ControlPlaneContext, cert *corev1.Secret, url string) ([]byte, error) {
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(cert), cert); err != nil {
 		return nil, fmt.Errorf("failed to get cert secret %s: %w", cert.Name, err)
 	}
@@ -186,7 +186,7 @@ func generateKubeConfig(cpContext component.ControlPlaneContext, cert *corev1.Se
 	return clientcmd.Write(kubeCfg)
 }
 
-func inClusterKASURL(platformType hyperv1.PlatformType) string {
+func InClusterKASURL(platformType hyperv1.PlatformType) string {
 	if platformType == hyperv1.IBMCloudPlatform {
 		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
 	}
