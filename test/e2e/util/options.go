@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -22,8 +21,12 @@ import (
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
 	"github.com/openshift/hypershift/cmd/version"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+
 	"k8s.io/apimachinery/pkg/util/errors"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 // Options are global test options applicable to all scenarios.
@@ -68,6 +71,8 @@ type Options struct {
 	// This is used in tests which include the HyperShift Operator as part of
 	// the test such as the UpgradeHyperShiftOperatorTest
 	HOInstallationOptions HyperShiftOperatorInstallOptions
+	// RunUpgradeTest is set to run HyperShift Operator upgrade test
+	RunUpgradeTest bool
 }
 
 type HyperShiftOperatorInstallOptions struct {
@@ -87,61 +92,61 @@ type HyperShiftOperatorInstallOptions struct {
 }
 
 type ConfigurableClusterOptions struct {
-	AWSCredentialsFile            string
-	AWSEndpointAccess             string
-	AWSKmsKeyAlias                string
-	AWSMultiArch                  bool
-	AWSOidcS3BucketName           string
-	Annotations                   stringMapVar
-	AzureCredentialsFile          string
-	AzureManagedIdentitiesFile    string
+	AWSCredentialsFile                    string
+	AWSEndpointAccess                     string
+	AWSKmsKeyAlias                        string
+	AWSMultiArch                          bool
+	AWSOidcS3BucketName                   string
+	Annotations                           stringMapVar
+	AzureCredentialsFile                  string
+	AzureManagedIdentitiesFile            string
 	AzureIssuerURL                        string
 	AzureServiceAccountTokenIssuerKeyPath string
 	AzureDataPlaneIdentities              string
-	OpenStackCredentialsFile      string
-	OpenStackCACertFile           string
-	AzureLocation                 string
-	AzureMarketplaceOffer         string
-	AzureMarketplacePublisher     string
-	AzureMarketplaceSKU           string
-	AzureMarketplaceVersion       string
-	BaseDomain                    string
-	ClusterCIDR                   stringSliceVar
-	ControlPlaneOperatorImage     string
-	EtcdStorageClass              string
-	ExternalDNSDomain             string
-	KubeVirtContainerDiskImage    string
-	KubeVirtInfraKubeconfigFile   string
-	KubeVirtInfraNamespace        string
-	KubeVirtNodeCores             uint
-	KubeVirtNodeMemory            string
-	KubeVirtRootVolumeSize        uint
-	KubeVirtRootVolumeVolumeMode  string
-	NetworkType                   string
-	NodePoolReplicas              int
-	OpenStackExternalNetworkID    string
-	OpenStackNodeAvailabilityZone string
-	OpenStackNodeFlavor           string
-	OpenStackNodeImageName        string
-	PowerVSCloudConnection        string
-	PowerVSCloudInstanceID        string
-	PowerVSMemory                 int
-	PowerVSPER                    bool
-	PowerVSProcType               hyperv1.PowerVSNodePoolProcType
-	PowerVSProcessors             string
-	PowerVSRegion                 string
-	PowerVSResourceGroup          string
-	PowerVSSysType                string
-	PowerVSTransitGateway         string
-	PowerVSTransitGatewayLocation string
-	PowerVSVPC                    string
-	PowerVSVpcRegion              string
-	PowerVSZone                   string
-	PullSecretFile                string
-	Region                        string
-	SSHKeyFile                    string
-	ServiceCIDR                   stringSliceVar
-	Zone                          stringSliceVar
+	OpenStackCredentialsFile              string
+	OpenStackCACertFile                   string
+	AzureLocation                         string
+	AzureMarketplaceOffer                 string
+	AzureMarketplacePublisher             string
+	AzureMarketplaceSKU                   string
+	AzureMarketplaceVersion               string
+	BaseDomain                            string
+	ClusterCIDR                           stringSliceVar
+	ControlPlaneOperatorImage             string
+	EtcdStorageClass                      string
+	ExternalDNSDomain                     string
+	KubeVirtContainerDiskImage            string
+	KubeVirtInfraKubeconfigFile           string
+	KubeVirtInfraNamespace                string
+	KubeVirtNodeCores                     uint
+	KubeVirtNodeMemory                    string
+	KubeVirtRootVolumeSize                uint
+	KubeVirtRootVolumeVolumeMode          string
+	NetworkType                           string
+	NodePoolReplicas                      int
+	OpenStackExternalNetworkID            string
+	OpenStackNodeAvailabilityZone         string
+	OpenStackNodeFlavor                   string
+	OpenStackNodeImageName                string
+	PowerVSCloudConnection                string
+	PowerVSCloudInstanceID                string
+	PowerVSMemory                         int
+	PowerVSPER                            bool
+	PowerVSProcType                       hyperv1.PowerVSNodePoolProcType
+	PowerVSProcessors                     string
+	PowerVSRegion                         string
+	PowerVSResourceGroup                  string
+	PowerVSSysType                        string
+	PowerVSTransitGateway                 string
+	PowerVSTransitGatewayLocation         string
+	PowerVSVPC                            string
+	PowerVSVpcRegion                      string
+	PowerVSZone                           string
+	PullSecretFile                        string
+	Region                                string
+	SSHKeyFile                            string
+	ServiceCIDR                           stringSliceVar
+	Zone                                  stringSliceVar
 }
 
 func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
