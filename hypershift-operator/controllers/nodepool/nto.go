@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -394,4 +395,78 @@ func getMirrorConfigForManifest(manifest []byte) (*MirrorConfig, error) {
 		mirrorConfig = &MirrorConfig{Labels: map[string]string{ContainerRuntimeConfigConfigMapLabel: ""}}
 	}
 	return mirrorConfig, err
+}
+
+func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1.NodePool, configGenerator *ConfigGenerator, controlPlaneNamespace string) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	mirroredConfigs, err := BuildMirrorConfigs(ctx, configGenerator)
+	if err != nil {
+		return fmt.Errorf("failed to build mirror configs: %w", err)
+	}
+	if err := r.reconcileMirroredConfigs(ctx, log, mirroredConfigs, controlPlaneNamespace, nodePool); err != nil {
+		return fmt.Errorf("failed to mirror configs: %w", err)
+	}
+
+	// Validate tuningConfig input.
+	tunedConfig, performanceProfileConfig, performanceProfileConfigMapName, err := r.getTuningConfig(ctx, nodePool)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidTuningConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return fmt.Errorf("failed to get tuningConfig: %w", err)
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidTuningConfigConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		ObservedGeneration: nodePool.Generation,
+	})
+
+	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
+	if tunedConfig == "" {
+		if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, tunedConfigMap); err != nil {
+			return fmt.Errorf("failed to delete tunedConfig ConfigMap: %w", err)
+		}
+	} else {
+		if result, err := r.CreateOrUpdate(ctx, r.Client, tunedConfigMap, func() error {
+			return reconcileTunedConfigMap(tunedConfigMap, nodePool, tunedConfig)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Tuned ConfigMap: %w", err)
+		} else {
+			log.Info("Reconciled Tuned ConfigMap", "result", result)
+		}
+	}
+
+	if performanceProfileConfig == "" {
+		// at this point in time, we no longer know the name of the ConfigMap in the HCP NS
+		// so, we remove it by listing by a label unique to PerformanceProfile
+		if err := deleteConfigByLabel(ctx, r.Client, map[string]string{
+			PerformanceProfileConfigMapLabel: "true",
+			hyperv1.NodePoolLabel:            nodePool.Name,
+		}, controlPlaneNamespace); err != nil {
+			return fmt.Errorf("failed to delete performanceprofileConfig ConfigMap: %w", err)
+		}
+		if err := r.SetPerformanceProfileConditions(ctx, log, nodePool, controlPlaneNamespace, true); err != nil {
+			return err
+		}
+	} else {
+		performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, performanceProfileConfigMapName, nodePool.Name)
+		result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
+			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile PerformanceProfile ConfigMap: %w", err)
+		}
+		log.Info("Reconciled PerformanceProfile ConfigMap", "result", result)
+		if err := r.SetPerformanceProfileConditions(ctx, log, nodePool, controlPlaneNamespace, false); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
