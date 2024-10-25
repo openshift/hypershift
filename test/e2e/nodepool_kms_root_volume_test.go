@@ -43,7 +43,7 @@ func (k *KMSRootVolumeTest) Setup(t *testing.T) {
 	t.Log("Starting test KMSRootVolumeTest")
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
 		t.Fatalf("failed to retrieve kms key arn")
 	}

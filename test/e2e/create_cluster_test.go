@@ -1098,7 +1098,7 @@ func TestCreateCluster(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
+	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
 	if len(zones) >= 3 {
 		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
 		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
@@ -1152,7 +1152,7 @@ func TestCreateClusterV2(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
+	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
 	if len(zones) >= 3 {
 		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
 		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
@@ -1214,7 +1214,7 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	defer e2eutil.TearDownNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, nodePools)
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
+	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
 	if len(zones) >= 3 {
 		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
 		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
@@ -1248,7 +1248,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
 		t.Fatal("failed to retrieve kms key arn")
 	}

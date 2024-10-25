@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -22,33 +21,17 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
-	"github.com/openshift/hypershift/cmd/cluster/azure"
-	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
-	"github.com/openshift/hypershift/cmd/cluster/none"
-	hypershiftopenstack "github.com/openshift/hypershift/cmd/cluster/openstack"
-	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-	awscmdutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
-	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
-	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
-	"github.com/openshift/hypershift/cmd/version"
-	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	apierr "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -59,7 +42,7 @@ import (
 
 var (
 	// opts are global options for the test suite bound in TestMain.
-	globalOpts = &options{}
+	globalOpts = &e2eutil.Options{}
 
 	// testContext should be used as the parent context for any test code, and will
 	// be cancelled if a SIGINT or SIGTERM is received. It's set up in TestMain.
@@ -82,86 +65,86 @@ func TestMain(m *testing.M) {
 	// Platform-agnostic flags
 	flag.BoolVar(&globalOpts.DisablePKIReconciliation, "e2e.disable-pki-reconciliation", false, "If set, TestUpgradeControlPlane will upgrade the control plane without reconciling the pki components")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
-	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
+	flag.IntVar(&globalOpts.ConfigurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
 	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
-	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.ManagementClusterName, "e2e.management-cluster-name", "", "Name of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementClusterNamespace, "e2e.management-cluster-namespace", "", "Namespace of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementParentKubeconfig, "e2e.management-parent-kubeconfig", "", "Kubeconfig of the management cluster's parent cluster (required to test request serving isolation)")
+	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
-	flag.StringVar(&globalOpts.configurableClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
-	flag.StringVar(&globalOpts.configurableClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
-	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
-	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
-	flag.StringVar(&globalOpts.configurableClusterOptions.NetworkType, "network-type", string(hyperv1.OVNKubernetes), "The network type to use. If unset, will default based on the OCP version.")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
-	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
-	flag.StringVar(&globalOpts.n1MinorReleaseImage, "e2e.n1-minor-release-image", "", "The n-1 minor OCP release image relative to the latest")
-	flag.StringVar(&globalOpts.n2MinorReleaseImage, "e2e.n2-minor-release-image", "", "The n-2 minor OCP release image relative to the latest")
-	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
-	flag.Var(&globalOpts.configurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
-	flag.Var(&globalOpts.configurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
-	flag.Var(&globalOpts.configurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
-	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.NetworkType, "network-type", string(hyperv1.OVNKubernetes), "The network type to use. If unset, will default based on the OCP version.")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
+	flag.StringVar(&globalOpts.N1MinorReleaseImage, "e2e.n1-minor-release-image", "", "The n-1 minor OCP release image relative to the latest")
+	flag.StringVar(&globalOpts.N2MinorReleaseImage, "e2e.n2-minor-release-image", "", "The n-2 minor OCP release image relative to the latest")
+	flag.StringVar(&globalOpts.PlatformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
+	flag.Var(&globalOpts.ConfigurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
+	flag.Var(&globalOpts.ConfigurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
+	flag.Var(&globalOpts.ConfigurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
+	flag.Var(&globalOpts.ConfigurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
 
 	// AWS specific flags
-	flag.BoolVar(&globalOpts.configurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AWSKmsKeyAlias, "e2e.aws-kms-key-alias", "", "AWS KMS Key Alias to use when creating encrypted nodepools, when empty the default EBS KMS Key will be used")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AWSOidcS3BucketName, "e2e.aws-oidc-s3-bucket-name", "", "AWS S3 Bucket Name to setup the OIDC provider in")
-	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
-	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
-	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "Deprecated, use -e2e.availability-zones instead")
+	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias, "e2e.aws-kms-key-alias", "", "AWS KMS Key Alias to use when creating encrypted nodepools, when empty the default EBS KMS Key will be used")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName, "e2e.aws-oidc-s3-bucket-name", "", "AWS S3 Bucket Name to setup the OIDC provider in")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
+	flag.Var(&globalOpts.AdditionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
+	flag.Var(&globalOpts.ConfigurableClusterOptions.Zone, "e2e.aws-zones", "Deprecated, use -e2e.availability-zones instead")
 
 	// Azure specific flags
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureManagedIdentitiesFile, "e2e.azure-managed-identities-file", "", "Path to an Azure managed identities file")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceOffer, "e2e.azure-marketplace-offer", "", "The location to use for Azure")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplacePublisher, "e2e.azure-marketplace-publisher", "", "The marketplace publisher to use for Azure")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceSKU, "e2e.azure-marketplace-sku", "", "The marketplace SKU to use for Azure")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceVersion, "e2e.azure-marketplace-version", "", "The marketplace version to use for Azure")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureIssuerURL, "e2e.oidc-issuer-url", "", "The OIDC provider issuer URL")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath, "e2e.sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
-	flag.StringVar(&globalOpts.configurableClusterOptions.AzureDataPlaneIdentities, "e2e.azure-data-plane-identities-file", "", "Path to a file containing the client IDs of the managed identities associated with the data plane")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureManagedIdentitiesFile, "e2e.azure-managed-identities-file", "", "Path to an Azure managed identities file")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureMarketplaceOffer, "e2e.azure-marketplace-offer", "", "The location to use for Azure")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureMarketplacePublisher, "e2e.azure-marketplace-publisher", "", "The marketplace publisher to use for Azure")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureMarketplaceSKU, "e2e.azure-marketplace-sku", "", "The marketplace SKU to use for Azure")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureMarketplaceVersion, "e2e.azure-marketplace-version", "", "The marketplace version to use for Azure")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureIssuerURL, "e2e.oidc-issuer-url", "", "The OIDC provider issuer URL")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath, "e2e.sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureDataPlaneIdentities, "e2e.azure-data-plane-identities-file", "", "Path to a file containing the client IDs of the managed identities associated with the data plane")
 
 	// Kubevirt specific flags
-	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "DEPRECATED (ignored will be removed soon)")
-	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraKubeconfigFile, "e2e.kubevirt-infra-kubeconfig", "", "path to the kubeconfig file of the external infra cluster")
-	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraNamespace, "e2e.kubevirt-infra-namespace", "", "the namespace on the infra cluster the workers will be created on")
-	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "8Gi", "the amount of memory to provide to each workload node")
-	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtRootVolumeVolumeMode, "e2e.kubevirt-root-volume-volume-mode", "Filesystem", "The root pvc volume mode")
-	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtNodeCores, "e2e.kubevirt-node-cores", 2, "The number of cores provided to each workload node")
-	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtRootVolumeSize, "e2e.kubevirt-root-volume-size", 32, "The root volume size in Gi")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "DEPRECATED (ignored will be removed soon)")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtInfraKubeconfigFile, "e2e.kubevirt-infra-kubeconfig", "", "path to the kubeconfig file of the external infra cluster")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtInfraNamespace, "e2e.kubevirt-infra-namespace", "", "the namespace on the infra cluster the workers will be created on")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "8Gi", "the amount of memory to provide to each workload node")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtRootVolumeVolumeMode, "e2e.kubevirt-root-volume-volume-mode", "Filesystem", "The root pvc volume mode")
+	flag.UintVar(&globalOpts.ConfigurableClusterOptions.KubeVirtNodeCores, "e2e.kubevirt-node-cores", 2, "The number of cores provided to each workload node")
+	flag.UintVar(&globalOpts.ConfigurableClusterOptions.KubeVirtRootVolumeSize, "e2e.kubevirt-root-volume-size", 32, "The root volume size in Gi")
 
 	// OpenStack specific flags
-	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackCACertFile, "e2e.openstack-ca-cert-file", "", "Path to the OpenStack CA certificate file")
-	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackCredentialsFile, "e2e.openstack-credentials-file", "", "Path to the OpenStack credentials file")
-	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackExternalNetworkID, "e2e.openstack-external-network-id", "", "ID of the OpenStack external network")
-	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone, "e2e.openstack-node-availability-zone", "", "The availability zone to use for OpenStack nodes")
-	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeFlavor, "e2e.openstack-node-flavor", "", "The flavor to use for OpenStack nodes")
-	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeImageName, "e2e.openstack-node-image-name", "", "The image name to use for OpenStack nodes")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackCACertFile, "e2e.openstack-ca-cert-file", "", "Path to the OpenStack CA certificate file")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackCredentialsFile, "e2e.openstack-credentials-file", "", "Path to the OpenStack credentials file")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackExternalNetworkID, "e2e.openstack-external-network-id", "", "ID of the OpenStack external network")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone, "e2e.openstack-node-availability-zone", "", "The availability zone to use for OpenStack nodes")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackNodeFlavor, "e2e.openstack-node-flavor", "", "The flavor to use for OpenStack nodes")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName, "e2e.openstack-node-image-name", "", "The image name to use for OpenStack nodes")
 
 	// PowerVS specific flags
-	flag.BoolVar(&globalOpts.configurableClusterOptions.PowerVSPER, "e2e-powervs-power-edge-router", false, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
-	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudConnection, "e2e-powervs-cloud-connection", "", "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudInstanceID, "e2e-powervs-cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSRegion, "e2e.powervs-region", "us-south", "IBM Cloud region. Default is us-south")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSResourceGroup, "e2e.powervs-resource-group", "", "IBM Cloud Resource group")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSSysType, "e2e.powervs-sys-type", "s922", "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSTransitGateway, "e2e-powervs-transit-gateway", "", "Transit gateway name. Use this flag to reuse an existing transit gateway resource for cluster's infra")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSTransitGatewayLocation, "e2e-powervs-transit-gateway-location", "", "IBM Cloud Transit Gateway location")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVPC, "e2e-powervs-vpc", "", "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVpcRegion, "e2e.powervs-vpc-region", "us-south", "IBM Cloud VPC Region for VPC resources. Default is us-south")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
-	flag.Var(&globalOpts.configurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "Processor type (dedicated, shared, capped). Default is shared")
+	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.PowerVSPER, "e2e-powervs-power-edge-router", false, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
+	flag.IntVar(&globalOpts.ConfigurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSCloudConnection, "e2e-powervs-cloud-connection", "", "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSCloudInstanceID, "e2e-powervs-cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSRegion, "e2e.powervs-region", "us-south", "IBM Cloud region. Default is us-south")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSResourceGroup, "e2e.powervs-resource-group", "", "IBM Cloud Resource group")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSSysType, "e2e.powervs-sys-type", "s922", "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSTransitGateway, "e2e-powervs-transit-gateway", "", "Transit gateway name. Use this flag to reuse an existing transit gateway resource for cluster's infra")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSTransitGatewayLocation, "e2e-powervs-transit-gateway-location", "", "IBM Cloud Transit Gateway location")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSVPC, "e2e-powervs-vpc", "", "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSVpcRegion, "e2e.powervs-vpc-region", "us-south", "IBM Cloud VPC Region for VPC resources. Default is us-south")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
+	flag.Var(&globalOpts.ConfigurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "Processor type (dedicated, shared, capped). Default is shared")
 
 	flag.Parse()
 
-	globalOpts.Platform = hyperv1.PlatformType(globalOpts.platformRaw)
+	globalOpts.Platform = hyperv1.PlatformType(globalOpts.PlatformRaw)
 
 	// Set defaults for the test options
 	if err := globalOpts.Complete(); err != nil {
@@ -216,7 +199,7 @@ func main(m *testing.M) int {
 	}
 
 	// set the semantic version of the latest release image for version gating tests
-	err := util.SetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.configurableClusterOptions.PullSecretFile)
+	err := util.SetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
 	if err != nil {
 		log.Error(err, "failed to set release image version")
 		return -1
@@ -229,15 +212,15 @@ func main(m *testing.M) int {
 
 // setup a shared OIDC provider to be used by all HostedClusters
 func setupSharedOIDCProvider(artifactDir string) error {
-	if globalOpts.configurableClusterOptions.AWSOidcS3BucketName == "" {
+	if globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName == "" {
 		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
 	}
 
-	iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
-	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+	iamClient := e2eutil.GetIAMClient(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
+	s3Client := e2eutil.GetS3Client(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
 
 	providerID := e2eutil.SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
-	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", globalOpts.configurableClusterOptions.AWSOidcS3BucketName, globalOpts.configurableClusterOptions.Region, providerID)
+	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName, globalOpts.ConfigurableClusterOptions.Region, providerID)
 
 	key, err := certs.PrivateKey()
 	if err != nil {
@@ -268,11 +251,11 @@ func setupSharedOIDCProvider(artifactDir string) error {
 		}
 		_, err = s3Client.PutObject(&s3.PutObjectInput{
 			Body:   bodyReader,
-			Bucket: aws.String(globalOpts.configurableClusterOptions.AWSOidcS3BucketName),
+			Bucket: aws.String(globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName),
 			Key:    aws.String(providerID + path),
 		})
 		if err != nil {
-			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, globalOpts.configurableClusterOptions.AWSOidcS3BucketName)
+			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName)
 			if awsErr, ok := err.(awserr.Error); ok {
 				// Generally, the underlying message from AWS has unique per-request
 				// info not suitable for publishing as condition messages, so just
@@ -285,7 +268,7 @@ func setupSharedOIDCProvider(artifactDir string) error {
 
 	iamOptions := awsinfra.CreateIAMOptions{
 		IssuerURL:      issuerURL,
-		AdditionalTags: globalOpts.additionalTags,
+		AdditionalTags: globalOpts.AdditionalTags,
 	}
 	iamOptions.ParseAdditionalTags()
 
@@ -312,11 +295,11 @@ func setupSharedOIDCProvider(artifactDir string) error {
 }
 
 func cleanupSharedOIDCProvider() {
-	iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
-	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+	iamClient := e2eutil.GetIAMClient(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
+	s3Client := e2eutil.GetS3Client(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
 
 	e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
-	e2eutil.CleanupOIDCBucketObjects(log, s3Client, globalOpts.configurableClusterOptions.AWSOidcS3BucketName, globalOpts.IssuerURL)
+	e2eutil.CleanupOIDCBucketObjects(log, s3Client, globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName, globalOpts.IssuerURL)
 }
 
 // alertSLOs creates alert for our SLO/SLIs and log when firing.
