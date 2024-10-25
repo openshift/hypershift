@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/install"
 	"github.com/openshift/hypershift/support/metrics"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 

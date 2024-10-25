@@ -97,7 +97,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.HOInstallationOptions.ExternalDNSCredentials, "e2e.external-dns-credentials", "/etc/hypershift-pool-aws-credentials/credentials", "path to credentials file to use for managing DNS records using external-dns. This is a HyperShift Operator installation option")
 	flag.BoolVar(&globalOpts.HOInstallationOptions.EnableCIDebugOutput, "e2e.ho-enable-ci-debug-output", false, "Install the HyperShift Operator with extra CI debug output enabled. This is a HyperShift Operator installation option")
 	flag.StringVar(&globalOpts.HOInstallationOptions.PlatformMonitoring, "e2e.platform-monitoring", "All", "The option for enabling platform cluster monitoring when installing the HyperShift Operator. Valid values are: None, OperatorOnly, All. This is a HyperShift Operator installation option")
-
+	flag.BoolVar(&globalOpts.RunUpgradeTest, "upgrade.run-tests", false, "Run HyperShift Operator upgrade test")
 
 	// AWS specific flags
 	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")
