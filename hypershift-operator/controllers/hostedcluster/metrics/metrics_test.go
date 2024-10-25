@@ -774,10 +774,10 @@ func TestReportEtcdManualInterventionRequired(t *testing.T) {
 			Metric: []*dto.Metric{{
 				Label: []*dto.LabelPair{
 					{Name: ptr.To("_id"), Value: ptr.To("id")},
+					{Name: ptr.To("environment"), Value: ptr.To("")},
+					{Name: ptr.To("internal_id"), Value: ptr.To("")},
 					{Name: ptr.To("name"), Value: ptr.To("hc")},
 					{Name: ptr.To("namespace"), Value: ptr.To("any")},
-					{Name: ptr.To("rosa_environment"), Value: ptr.To("")},
-					{Name: ptr.To("rosa_id"), Value: ptr.To("")},
 				},
 				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
 			}},
