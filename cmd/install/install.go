@@ -107,6 +107,7 @@ type Options struct {
 	EnableCPOOverrides                        bool
 	AroHCPKeyVaultUsersClientID               string
 	TechPreviewNoUpgrade                      bool
+	RenderNamespace                           bool
 }
 
 func (o *Options) Validate() error {
@@ -166,6 +167,7 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) ApplyDefaults() {
+	o.RenderNamespace = true
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
@@ -280,6 +282,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(NewRenderCommand(&opts))
+	cmd.AddCommand(NewHelmRenderCommand(&opts))
 
 	return cmd
 }
@@ -478,7 +481,9 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 		Name:                       opts.Namespace,
 		EnableOCPClusterMonitoring: opts.PlatformMonitoring.IsEnabled(),
 	}.Build()
-	objects = append(objects, operatorNamespace)
+	if opts.RenderNamespace {
+		objects = append(objects, operatorNamespace)
+	}
 
 	// Setup RBAC resources
 	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)

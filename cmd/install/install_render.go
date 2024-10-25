@@ -25,22 +25,29 @@ const (
 var (
 	RenderFormatYaml = "yaml"
 	RenderFormatJson = "json"
-
-	TemplateParamHyperShiftImage          = "OPERATOR_IMG"
-	TemplateParamHyperShiftImageTag       = "IMAGE_TAG"
-	TemplateParamNamespace                = "NAMESPACE"
-	TemplateParamOIDCS3Name               = "OIDC_S3_NAME"
-	TemplateParamOIDCS3Region             = "OIDC_S3_REGION"
-	TemplateParamOIDCS3CredsSecret        = "OIDC_S3_CREDS_SECRET"
-	TemplateParamOIDCS3CredsSecretKey     = "OIDC_S3_CREDS_SECRET_KEY"
-	TemplateParamAWSPrivateRegion         = "AWS_PRIVATE_REGION"
-	TemplateParamAWSPrivateCredsSecret    = "AWS_PRIVATE_CREDS_SECRET"
-	TemplateParamAWSPrivateCredsSecretKey = "AWS_PRIVATE_CREDS_SECRET_KEY"
-	TemplateParamOperatorReplicas         = "OPERATOR_REPLICAS"
-	TemplateParamExternalDNSCredsSecret   = "EXTERNAL_DNS_CREDS_SECRET"
-	TemplateParamExternalDNSDomainFilter  = "EXTERNAL_DNS_DOMAIN_FILTER"
-	TemplateParamExternalDNSTxtOwnerID    = "EXTERNAL_DNS_TXT_OWNER_ID"
 )
+
+var openshiftTemplateParams = TemplateParams{
+	HyperShiftImage:            "OPERATOR_IMG",
+	HyperShiftImageTag:         "IMAGE_TAG",
+	Namespace:                  "NAMESPACE",
+	HypershiftOperatorReplicas: "OPERATOR_REPLICAS",
+	OIDCS3Name:                 "OIDC_S3_NAME",
+	OIDCS3Region:               "OIDC_S3_REGION",
+	OIDCS3CredsSecret:          "OIDC_S3_CREDS_SECRET",
+	OIDCS3CredsSecretKey:       "OIDC_S3_CREDS_SECRET_KEY",
+	AWSPrivateRegion:           "AWS_PRIVATE_REGION",
+	AWSPrivateCredsSecret:      "AWS_PRIVATE_CREDS_SECRET",
+	AWSPrivateCredsSecretKey:   "AWS_PRIVATE_CREDS_SECRET_KEY",
+	ExternalDNSCredsSecret:     "EXTERNAL_DNS_CREDS_SECRET",
+	ExternalDNSDomainFilter:    "EXTERNAL_DNS_DOMAIN_FILTER",
+	ExternalDNSTxtOwnerID:      "EXTERNAL_DNS_TXT_OWNER_ID",
+	ExternalDNSImage:           "EXTERNAL_DNS_IMAGE",
+	TemplateNamespace:          true,
+	TemplateParamWrapper: func(name string) string {
+		return fmt.Sprintf("${%s}", name)
+	},
+}
 
 func NewRenderCommand(opts *Options) *cobra.Command {
 	cmd := &cobra.Command{
@@ -67,7 +74,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 		var objects []crclient.Object
 
 		if opts.Template {
-			templateObject, err := hyperShiftOperatorTemplateManifest(opts)
+			templateObject, err := openshiftTemplate(opts)
 			if err != nil {
 				return err
 			}
@@ -127,88 +134,62 @@ func (o *Options) ValidateRender() error {
 	return nil
 }
 
-func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) {
+func openshiftTemplate(opts *Options) (crclient.Object, error) {
 	templateParameters := []map[string]string{}
-
-	// image parameter
 	templateParameters = append(
 		templateParameters,
-		map[string]string{"name": TemplateParamHyperShiftImage, "value": version.HypershiftImageBase},
-		map[string]string{"name": TemplateParamHyperShiftImageTag, "value": version.HypershiftImageTag},
+		map[string]string{"name": openshiftTemplateParams.HyperShiftImage, "value": fmt.Sprintf("%s:%s", version.HypershiftImageBase, version.HypershiftImageTag)},
+		map[string]string{"name": openshiftTemplateParams.HypershiftOperatorReplicas, "value": string(opts.HyperShiftOperatorReplicas)},
+		map[string]string{"name": openshiftTemplateParams.Namespace, "value": opts.Namespace},
 	)
-	opts.HyperShiftImage = fmt.Sprintf("${%s}:${%s}", TemplateParamHyperShiftImage, TemplateParamHyperShiftImageTag)
-
-	// namespace parameter
-	templateParameters = append(
-		templateParameters,
-		map[string]string{"name": TemplateParamNamespace, "value": opts.Namespace},
-	)
-	opts.Namespace = fmt.Sprintf("${%s}", TemplateParamNamespace)
 
 	// oidc S3 parameter
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": TemplateParamOIDCS3Name},
-			map[string]string{"name": TemplateParamOIDCS3Region},
-			map[string]string{"name": TemplateParamOIDCS3CredsSecret, "value": opts.OIDCStorageProviderS3CredentialsSecret},
-			map[string]string{"name": TemplateParamOIDCS3CredsSecretKey, "value": opts.OIDCStorageProviderS3CredentialsSecretKey},
+			map[string]string{"name": openshiftTemplateParams.OIDCS3Name},
+			map[string]string{"name": openshiftTemplateParams.OIDCS3Region},
+			map[string]string{"name": openshiftTemplateParams.OIDCS3CredsSecret, "value": opts.OIDCStorageProviderS3CredentialsSecret},
+			map[string]string{"name": openshiftTemplateParams.OIDCS3CredsSecretKey, "value": opts.OIDCStorageProviderS3CredentialsSecretKey},
 		)
-		opts.OIDCStorageProviderS3BucketName = fmt.Sprintf("${%s}", TemplateParamOIDCS3Name)
-		opts.OIDCStorageProviderS3Region = fmt.Sprintf("${%s}", TemplateParamOIDCS3Region)
-		opts.OIDCStorageProviderS3CredentialsSecret = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecret)
-		opts.OIDCStorageProviderS3CredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecretKey)
 	}
 
 	// aws private credentials
 	if opts.AWSPrivateCredentialsSecret != "" {
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": TemplateParamAWSPrivateRegion, "value": opts.AWSPrivateRegion},
-			map[string]string{"name": TemplateParamAWSPrivateCredsSecret, "value": opts.AWSPrivateCredentialsSecret},
-			map[string]string{"name": TemplateParamAWSPrivateCredsSecretKey, "value": opts.AWSPrivateCredentialsSecretKey},
+			map[string]string{"name": openshiftTemplateParams.AWSPrivateRegion, "value": opts.AWSPrivateRegion},
+			map[string]string{"name": openshiftTemplateParams.AWSPrivateCredsSecret, "value": opts.AWSPrivateCredentialsSecret},
+			map[string]string{"name": openshiftTemplateParams.AWSPrivateCredsSecretKey, "value": opts.AWSPrivateCredentialsSecretKey},
 		)
-		opts.AWSPrivateRegion = fmt.Sprintf("${%s}", TemplateParamAWSPrivateRegion)
-		opts.AWSPrivateCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecret)
-		opts.AWSPrivateCredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecretKey)
 	}
 
 	// external DNS
 	if opts.ExternalDNSProvider != "" && opts.ExternalDNSDomainFilter != "" && opts.ExternalDNSCredentialsSecret != "" {
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": TemplateParamExternalDNSDomainFilter, "value": opts.ExternalDNSDomainFilter},
-			map[string]string{"name": TemplateParamExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret},
+			map[string]string{"name": openshiftTemplateParams.ExternalDNSDomainFilter, "value": opts.ExternalDNSDomainFilter},
+			map[string]string{"name": openshiftTemplateParams.ExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret},
 		)
-		opts.ExternalDNSDomainFilter = fmt.Sprintf("${%s}", TemplateParamExternalDNSDomainFilter)
-		opts.ExternalDNSCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamExternalDNSCredsSecret)
-
 		if opts.ExternalDNSTxtOwnerId != "" {
 			templateParameters = append(
 				templateParameters,
-				map[string]string{"name": TemplateParamExternalDNSTxtOwnerID, "value": opts.ExternalDNSTxtOwnerId},
+				map[string]string{"name": openshiftTemplateParams.ExternalDNSTxtOwnerID, "value": opts.ExternalDNSTxtOwnerId},
 			)
-			opts.ExternalDNSTxtOwnerId = fmt.Sprintf("${%s}", TemplateParamExternalDNSTxtOwnerID)
 		}
-
 	}
 
 	// create manifests
-	crds, objects, err := hyperShiftOperatorManifests(*opts)
+	crds, objects, err := hyperShiftOperatorTemplateManifest(opts, openshiftTemplateParams)
+	objects = append(objects, crds...)
 	if err != nil {
 		return nil, err
 	}
 
-	objects = append(objects, crds...)
-
 	// patch those manifests, where the template parameter placeholder was not injectable with opts (e.g. type mistmatch)
 	patches := []ObjectPatch{
-		{Kind: "Deployment", Name: "operator", Path: []string{"spec", "replicas"}, Value: fmt.Sprintf("${{%s}}", TemplateParamOperatorReplicas)},
+		{Kind: "Deployment", Name: "operator", Path: []string{"spec", "replicas"}, Value: openshiftTemplateParams.TemplateParamWrapper(openshiftTemplateParams.HypershiftOperatorReplicas)},
 	}
-	templateParameters = append(
-		templateParameters,
-		map[string]string{"name": TemplateParamOperatorReplicas, "value": "1"},
-	)
 	patchedObjects, err := applyPatchesToObjects(objects, patches)
 	if err != nil {
 		return nil, err
