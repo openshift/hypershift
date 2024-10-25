@@ -67,6 +67,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
+	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -193,6 +194,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 func (r *HostedControlPlaneReconciler) registerComponents() {
 	r.components = append(r.components,
+		kasv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		routecmv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
@@ -896,30 +898,8 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	if r.IsCPOV2 {
-		// reconcile components only when kube apiserver is fully ready
-		// TODO(Mulham): remove when dependencies managment abstraction is implemented.
-		kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(kubeAPIServerDeployment), kubeAPIServerDeployment); err == nil {
-			if util.IsDeploymentReady(ctx, kubeAPIServerDeployment) {
-				cpContext := component.ControlPlaneContext{
-					Context:                   ctx,
-					Client:                    r.Client,
-					HCP:                       hostedControlPlane,
-					CreateOrUpdateProviderV2:  upsert.NewV2(r.EnableCIDebugOutput),
-					InfraStatus:               infraStatus,
-					ReleaseImageProvider:      releaseImageProvider,
-					UserReleaseImageProvider:  userReleaseImageProvider,
-					SetDefaultSecurityContext: r.SetDefaultSecurityContext,
-					MetricsSet:                r.MetricsSet,
-					EnableCIDebugOutput:       r.EnableCIDebugOutput,
-				}
-				for _, c := range r.components {
-					r.Log.Info("Reconciling component", "component_name", c.Name())
-					if err := c.Reconcile(cpContext); err != nil {
-						errs = append(errs, err)
-					}
-				}
-			}
+		if err := r.reconcileCPOV2(ctx, hostedControlPlane, infraStatus, releaseImageProvider, userReleaseImageProvider); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
@@ -948,6 +928,45 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider) error {
+	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed {
+		// reconcile components only when etcd is fully rolled out at the desired generation.
+		// TODO(Mulham): remove when etcd component is refactored.
+		statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(statefulSet), statefulSet); err != nil {
+			return err
+		}
+
+		if ready := util.IsStatefulSetReady(ctx, statefulSet); !ready {
+			r.Log.Info("Waiting for etcd statefulset to become ready")
+			return nil
+		}
+	}
+
+	cpContext := component.ControlPlaneContext{
+		Context:                   ctx,
+		Client:                    r.Client,
+		HCP:                       hcp,
+		CreateOrUpdateProviderV2:  upsert.NewV2(r.EnableCIDebugOutput),
+		InfraStatus:               infraStatus,
+		ReleaseImageProvider:      releaseImageProvider,
+		UserReleaseImageProvider:  userReleaseImageProvider,
+		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		MetricsSet:                r.MetricsSet,
+		EnableCIDebugOutput:       r.EnableCIDebugOutput,
+	}
+
+	var errs []error
+	for _, c := range r.components {
+		r.Log.Info("Reconciling component", "component_name", c.Name())
+		if err := c.Reconcile(cpContext); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
 
 // useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
@@ -1026,18 +1045,20 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile cloud provider config: %w", err)
 	}
 
-	// Reconcile kube apiserver
-	r.Log.Info("Reconciling Kube API Server")
-	kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment); err != nil {
-		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
-	}
+	if !r.IsCPOV2 {
+		// Reconcile kube apiserver
+		r.Log.Info("Reconciling Kube API Server")
+		kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
+		if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment); err != nil {
+			return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
+		}
 
-	// Block until kube apiserver is fully ready to enforce upgrade order of version skew policy
-	// https://kubernetes.io/releases/version-skew-policy/#supported-component-upgrade-order
-	if ready := util.IsDeploymentReady(ctx, kubeAPIServerDeployment); !ready {
-		r.Log.Info("Waiting for kube apiserver deployment to become ready")
-		return nil
+		// Block until kube apiserver is fully ready to enforce upgrade order of version skew policy
+		// https://kubernetes.io/releases/version-skew-policy/#supported-component-upgrade-order
+		if ready := util.IsDeploymentReady(ctx, kubeAPIServerDeployment); !ready {
+			r.Log.Info("Waiting for kube apiserver deployment to become ready")
+			return nil
+		}
 	}
 
 	// Reconcile kube controller manager

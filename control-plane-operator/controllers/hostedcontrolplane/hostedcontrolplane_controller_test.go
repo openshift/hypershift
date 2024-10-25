@@ -22,8 +22,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -1591,16 +1593,39 @@ func TestControlPlaneComponents(t *testing.T) {
 		},
 	}
 
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:                  context.Background(),
+		CreateOrUpdateProviderV2: upsert.NewV2(false),
+		ReleaseImageProvider:     testutil.FakeImageProvider(),
+		UserReleaseImageProvider: testutil.FakeImageProvider(),
+		HCP:                      hcp,
+		SkipPredicate:            true,
+	}
 	for _, component := range reconciler.components {
-		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
-		cpContext := controlplanecomponent.ControlPlaneContext{
-			Context:                  context.Background(),
-			Client:                   fakeClient,
-			CreateOrUpdateProviderV2: upsert.NewV2(false),
-			ReleaseImageProvider:     testutil.FakeImageProvider(),
-			HCP:                      hcp,
-			SkipPredicate:            true,
+		fakeClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+		if component.Name() == kasv2.ComponentName {
+			fakeClientBuilder.WithObjects(kasFakeObjects(hcp.Namespace)...)
+		} else {
+			// we need this to exist for components to reconcile, since all components have a dependency on KAS.
+			kasComponent := &hyperv1.ControlPlaneComponent{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      kasv2.ComponentName,
+					Namespace: hcp.Namespace,
+				},
+				Status: hyperv1.ControlPlaneComponentStatus{
+					Version: testutil.FakeImageProvider().Version(),
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ControlPlaneComponentAvailable),
+							Status: metav1.ConditionTrue,
+						},
+					},
+				},
+			}
+			fakeClientBuilder.WithObjects(kasComponent)
 		}
+		fakeClient := fakeClientBuilder.Build()
+		cpContext.Client = fakeClient
 
 		if err := component.Reconcile(cpContext); err != nil {
 			t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
@@ -1633,24 +1658,57 @@ func TestControlPlaneComponents(t *testing.T) {
 		}
 		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
 
-		var controlPaneComponentList hyperv1.ControlPlaneComponentList
-		if err := fakeClient.List(context.Background(), &controlPaneComponentList); err != nil {
-			t.Fatalf("failed to list controlPaneComponents: %v", err)
+		controlPaneComponent := &hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      component.Name(),
+				Namespace: hcp.Namespace,
+			},
+		}
+		if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+			t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
 		}
 
-		if len(controlPaneComponentList.Items) == 0 {
-			t.Fatalf("expected ControlPlaneComponent to exist for component %s", component.Name())
-		}
-		componentResource := controlPaneComponentList.Items[0]
 		// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
-		componentResource.Status.Conditions[0].LastTransitionTime = metav1.Time{}
-		componentResource.Status.Conditions[1].LastTransitionTime = metav1.Time{}
+		for i := range controlPaneComponent.Status.Conditions {
+			controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+		}
 
-		yaml, err = util.SerializeResource(&componentResource, api.Scheme)
+		yaml, err = util.SerializeResource(controlPaneComponent, api.Scheme)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix("_component"))
 	}
 
+}
+
+func kasFakeObjects(namespace string) []client.Object {
+	rootCA := manifests.RootCAConfigMap(namespace)
+	rootCA.Data = map[string]string{
+		certs.CASignerCertMapKey: "fake",
+	}
+	authenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(namespace)
+	authenticatorCertSecret.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+	bootsrapCertSecret := manifests.KASMachineBootstrapClientCertSecret(namespace)
+	bootsrapCertSecret.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+	adminCertSecert := manifests.SystemAdminClientCertSecret(namespace)
+	adminCertSecert.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+	hccoCertSecert := manifests.HCCOClientCertSecret(namespace)
+	hccoCertSecert.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+
+	return []client.Object{
+		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
+	}
 }

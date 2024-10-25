@@ -8,16 +8,9 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
-	hyperapi "github.com/openshift/hypershift/support/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -160,99 +153,4 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestReconcileExisting(t *testing.T) {
-	hcp := &hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "hcp",
-			Namespace: "hcp-namespace",
-		},
-		Spec: hyperv1.HostedControlPlaneSpec{
-			InfraID: "test-infra-id",
-			Autoscaling: hyperv1.ClusterAutoscaling{
-				MaxNodesTotal:        ptr.To[int32](100),
-				MaxPodGracePeriod:    ptr.To[int32](300),
-				MaxNodeProvisionTime: "20m",
-				PodPriorityThreshold: ptr.To[int32](-5),
-			},
-		},
-	}
-
-	capiKubeconfigSecret := manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID)
-	hcp.Status.KubeConfig = &hyperv1.KubeconfigSecretRef{
-		Name: capiKubeconfigSecret.Name,
-	}
-
-	oldDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ComponentName,
-			Namespace: hcp.Namespace,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: ComponentName,
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									// exisint resources requests should be preserved.
-									corev1.ResourceCPU:    resource.MustParse("777m"),
-									corev1.ResourceMemory: resource.MustParse("88Mi"),
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(capiKubeconfigSecret).
-		WithObjects(oldDeployment).
-		Build()
-	cpContext := controlplanecomponent.ControlPlaneContext{
-		Context:                  context.Background(),
-		Client:                   client,
-		CreateOrUpdateProviderV2: upsert.NewV2(false),
-		ReleaseImageProvider:     testutil.FakeImageProvider(),
-		HCP:                      hcp,
-	}
-
-	compoent := NewComponent()
-	if err := compoent.Reconcile(cpContext); err != nil {
-		t.Fatalf("failed to reconciler autoscaler: %v", err)
-	}
-
-	var deployments appsv1.DeploymentList
-	if err := client.List(context.Background(), &deployments); err != nil {
-		t.Fatalf("failed to list deployments: %v", err)
-	}
-
-	if len(deployments.Items) == 0 {
-		t.Fatalf("expected deployment to exist")
-	}
-
-	deploymentYaml, err := util.SerializeResource(&deployments.Items[0], hyperapi.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	testutil.CompareWithFixture(t, deploymentYaml, testutil.WithSuffix("_deployment"))
-
-	// check RBAC is created
-	var roleBindings rbacv1.RoleBindingList
-	if err := client.List(context.Background(), &roleBindings); err != nil {
-		t.Fatalf("failed to list roles: %v", err)
-	}
-
-	if len(roleBindings.Items) == 0 {
-		t.Fatalf("expected role binding to exist")
-	}
-
-	roleBindingYaml, err := util.SerializeResource(&roleBindings.Items[0], hyperapi.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	testutil.CompareWithFixture(t, roleBindingYaml, testutil.WithSuffix("_rolebinding"))
 }

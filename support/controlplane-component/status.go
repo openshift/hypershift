@@ -20,8 +20,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	KubeAPIServerComponentName = "kube-apiserver"
+)
+
 func (c *controlPlaneWorkload) checkDependencies(cpContext ControlPlaneContext) ([]string, error) {
-	if len(c.dependencies) == 0 {
+	unavailableDependencies := sets.New(c.dependencies...)
+	// always add kube-apiserver as a dependency.
+	// TODO: don't add for etcd component once refactored.
+	unavailableDependencies.Insert(KubeAPIServerComponentName)
+	// make sure component's don't have a circular dependency.
+	if unavailableDependencies.Has(c.Name()) {
+		unavailableDependencies.Delete(c.Name())
+	}
+
+	if len(unavailableDependencies) == 0 {
 		return nil, nil
 	}
 
@@ -31,7 +44,6 @@ func (c *controlPlaneWorkload) checkDependencies(cpContext ControlPlaneContext) 
 	}
 
 	desiredVersion := cpContext.ReleaseImageProvider.Version()
-	unavailableDependencies := sets.New(c.dependencies...)
 	for _, component := range componentsList.Items {
 		if !unavailableDependencies.Has(component.Name) {
 			continue

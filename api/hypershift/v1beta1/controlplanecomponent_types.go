@@ -49,8 +49,8 @@ type ComponentResource struct {
 // ControlPlaneComponentStatus defines the observed state of ControlPlaneComponent
 type ControlPlaneComponentStatus struct {
 	// version reports the current version of this component.
-	// +required
-	Version string `json:"version"`
+	// +optional
+	Version string `json:"version,omitempty"`
 
 	// resources is a list of the resources reconciled by this component.
 	// +optional
