@@ -828,7 +828,6 @@ github.com/openshift/custom-resource-status/conditions/v1
 ## explicit; go 1.22.0
 github.com/openshift/hypershift/api/certificates
 github.com/openshift/hypershift/api/certificates/v1alpha1
-github.com/openshift/hypershift/api/hypershift/v1alpha1
 github.com/openshift/hypershift/api/hypershift/v1beta1
 github.com/openshift/hypershift/api/ibmcapi
 github.com/openshift/hypershift/api/scheduling

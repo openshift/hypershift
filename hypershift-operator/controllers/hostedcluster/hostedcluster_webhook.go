@@ -6,7 +6,10 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/supportedversion"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,11 +17,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/conversion"
-	"github.com/openshift/hypershift/support/supportedversion"
-	hyperutil "github.com/openshift/hypershift/support/util"
 )
 
 type hostedClusterDefaulter struct {
@@ -121,9 +119,6 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
 func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.RegistryClientImageMetadataProvider, logger logr.Logger) error {
-
-	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
-
 	err := ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithDefaulter(&hostedClusterDefaulter{}).
