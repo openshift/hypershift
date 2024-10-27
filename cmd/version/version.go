@@ -7,8 +7,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/openshift/hypershift/cmd/util"
+	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -61,7 +65,8 @@ func LookupDefaultOCPVersion(releaseStream string) (OCPVersion, error) {
 }
 
 func NewVersionCommand() *cobra.Command {
-	var commitOnly bool
+	var commitOnly, clientOnly bool
+	namespace := "hypershift"
 	cmd := &cobra.Command{
 		Use:          "version",
 		Short:        "Prints HyperShift CLI version",
@@ -71,9 +76,40 @@ func NewVersionCommand() *cobra.Command {
 				fmt.Printf("%s\n", version.GetRevision())
 				return
 			}
-			fmt.Printf("%s\n", version.String())
+			fmt.Printf("Client Version: %s\n", version.String())
+			if clientOnly {
+				return
+			}
+			client, err := util.GetClient()
+			if err != nil {
+				fmt.Printf("failed to connect to server: %v\n", err)
+				return
+			}
+
+			supportedVersions := manifests.ConfigMap(namespace)
+			if err := client.Get(cmd.Context(), crclient.ObjectKeyFromObject(supportedVersions), supportedVersions); err != nil {
+				fmt.Printf("failed to find supported versions on the server: %v\n", err)
+				return
+			}
+			if serverVersion, present := supportedVersions.Data[supportedversion.ConfigMapServerVersionKey]; present {
+				fmt.Printf("Server Version: %s\n", serverVersion)
+			} else {
+				fmt.Println("The server did not advertise its HyperShift version.")
+			}
+			if supportedVersionData, present := supportedVersions.Data[supportedversion.ConfigMapVersionsKey]; present {
+				var versions supportedversion.SupportedVersions
+				if err := json.Unmarshal([]byte(supportedVersionData), &versions); err != nil {
+					fmt.Printf("failed to parse supported versions on the server: %v\n", err)
+					return
+				}
+				fmt.Printf("Server Supports OCP Versions: %s\n", strings.Join(versions.Versions, ", "))
+			} else {
+				fmt.Println("The server did not advertise supported OCP versions.")
+			}
 		},
 	}
 	cmd.Flags().BoolVar(&commitOnly, "commit-only", commitOnly, "Output only the code commit")
+	cmd.Flags().BoolVar(&clientOnly, "client-only", clientOnly, "Output only the client version")
+	cmd.Flags().StringVar(&namespace, "namespace", namespace, "The namespace in which HyperShift is installed")
 	return cmd
 }

@@ -79,7 +79,8 @@ const (
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
-	HypershiftOperatorName = "operator"
+	HypershiftOperatorName                = "operator"
+	HyperShiftInstallCLIVersionAnnotation = "hypershift.openshift.io/install-cli-version"
 )
 
 type HyperShiftOperatorCredentialsSecret struct {
@@ -620,7 +621,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 
 	if o.IncludeVersion {
 		deployment.Annotations = map[string]string{
-			"hypershift.openshift.io/install-cli-version": version.String(),
+			HyperShiftInstallCLIVersionAnnotation: version.String(),
 		}
 	}
 
