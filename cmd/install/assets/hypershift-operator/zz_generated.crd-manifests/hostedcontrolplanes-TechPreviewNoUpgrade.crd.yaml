@@ -3477,13 +3477,43 @@ spec:
                           rule: self == oldSelf
                       subnetID:
                         description: |-
-                          SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
-                          subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
-                          same subscription as SubscriptionID.
-
-                          In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.
+                          subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+                          different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
+                          exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
+                          HostedCluster.Spec.Platform.Azure.SubscriptionID.
+                          subnetID is immutable once set.
+                          The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
+                          The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                          The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis and must not end with a period (.) character.
+                          The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
+                          The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
+                        maxLength: 355
+                        minLength: 1
                         type: string
                         x-kubernetes-validations:
+                        - message: encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
+                          rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
+                        - message: The resourceGroupName should be between 1 and 90
+                            characters, consisting only of alphanumeric characters,
+                            hyphens, underscores, periods and paranthesis
+                          rule: self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')
+                        - message: the resourceGroupName in the subnetID must not
+                            end with a period (.) character
+                          rule: '!self.split(''/'')[4].endsWith(''.'')'
+                        - message: The vnetName should be between 2 and 64 characters,
+                            consisting only of alphanumeric characters, hyphens, underscores
+                            and periods
+                          rule: self.split('/')[8].matches('[a-zA-Z0-9-_\\.]{2,64}')
+                        - message: the vnetName in the subnetID must not end with
+                            either a period (.) or hyphen (-) character
+                          rule: '!self.split(''/'')[8].endsWith(''.'') && !self.split(''/'')[8].endsWith(''-'')'
+                        - message: The subnetName should be between 1 and 80 characters,
+                            consisting only of alphanumeric characters, hyphens and
+                            underscores and must start with an alphanumeric character
+                          rule: self.split('/')[10].matches('[a-zA-Z0-9][a-zA-Z0-9-_\\.]{0,79}')
+                        - message: the subnetName in the subnetID must not end with
+                            a period (.) or hyphen (-) character
+                          rule: '!self.split(''/'')[10].endsWith(''.'') && !self.split(''/'')[10].endsWith(''-'')'
                         - message: SubnetID is immutable
                           rule: self == oldSelf
                       subscriptionID:

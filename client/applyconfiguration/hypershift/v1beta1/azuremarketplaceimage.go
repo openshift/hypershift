@@ -17,25 +17,25 @@ limitations under the License.
 
 package v1beta1
 
-// MarketplaceImageApplyConfiguration represents an declarative configuration of the MarketplaceImage type for use
+// AzureMarketplaceImageApplyConfiguration represents an declarative configuration of the AzureMarketplaceImage type for use
 // with apply.
-type MarketplaceImageApplyConfiguration struct {
+type AzureMarketplaceImageApplyConfiguration struct {
 	Publisher *string `json:"publisher,omitempty"`
 	Offer     *string `json:"offer,omitempty"`
 	SKU       *string `json:"sku,omitempty"`
 	Version   *string `json:"version,omitempty"`
 }
 
-// MarketplaceImageApplyConfiguration constructs an declarative configuration of the MarketplaceImage type for use with
+// AzureMarketplaceImageApplyConfiguration constructs an declarative configuration of the AzureMarketplaceImage type for use with
 // apply.
-func MarketplaceImage() *MarketplaceImageApplyConfiguration {
-	return &MarketplaceImageApplyConfiguration{}
+func AzureMarketplaceImage() *AzureMarketplaceImageApplyConfiguration {
+	return &AzureMarketplaceImageApplyConfiguration{}
 }
 
 // WithPublisher sets the Publisher field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Publisher field is set to the value of the last call.
-func (b *MarketplaceImageApplyConfiguration) WithPublisher(value string) *MarketplaceImageApplyConfiguration {
+func (b *AzureMarketplaceImageApplyConfiguration) WithPublisher(value string) *AzureMarketplaceImageApplyConfiguration {
 	b.Publisher = &value
 	return b
 }
@@ -43,7 +43,7 @@ func (b *MarketplaceImageApplyConfiguration) WithPublisher(value string) *Market
 // WithOffer sets the Offer field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Offer field is set to the value of the last call.
-func (b *MarketplaceImageApplyConfiguration) WithOffer(value string) *MarketplaceImageApplyConfiguration {
+func (b *AzureMarketplaceImageApplyConfiguration) WithOffer(value string) *AzureMarketplaceImageApplyConfiguration {
 	b.Offer = &value
 	return b
 }
@@ -51,7 +51,7 @@ func (b *MarketplaceImageApplyConfiguration) WithOffer(value string) *Marketplac
 // WithSKU sets the SKU field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the SKU field is set to the value of the last call.
-func (b *MarketplaceImageApplyConfiguration) WithSKU(value string) *MarketplaceImageApplyConfiguration {
+func (b *AzureMarketplaceImageApplyConfiguration) WithSKU(value string) *AzureMarketplaceImageApplyConfiguration {
 	b.SKU = &value
 	return b
 }
@@ -59,7 +59,7 @@ func (b *MarketplaceImageApplyConfiguration) WithSKU(value string) *MarketplaceI
 // WithVersion sets the Version field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Version field is set to the value of the last call.
-func (b *MarketplaceImageApplyConfiguration) WithVersion(value string) *MarketplaceImageApplyConfiguration {
+func (b *AzureMarketplaceImageApplyConfiguration) WithVersion(value string) *AzureMarketplaceImageApplyConfiguration {
 	b.Version = &value
 	return b
 }

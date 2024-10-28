@@ -155,13 +155,14 @@ spec:
   nodeVolumeDetachTimeout: 0s
   platform:
     azure:
-      diskSizeGB: 120
       image:
-        azureImageType: ImageID
         imageID: fakeBootImageID
+        type: ImageID
       machineIdentityID: fakeMachineIdentityID
+      osDisk:
+        sizeGiB: 120
       subnetID: fakeSubnetID
-      vmsize: Standard_D4s_v3
+      vmSize: Standard_D4s_v3
     type: Azure
   release:
     image: ""
