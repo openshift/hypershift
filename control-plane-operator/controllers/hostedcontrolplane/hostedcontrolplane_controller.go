@@ -67,6 +67,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
+	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
@@ -194,6 +195,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 func (r *HostedControlPlaneReconciler) registerComponents() {
 	r.components = append(r.components,
+		etcdv2.NewComponent(),
 		kasv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		routecmv2.NewComponent(),
@@ -931,20 +933,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider) error {
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed {
-		// reconcile components only when etcd is fully rolled out at the desired generation.
-		// TODO(Mulham): remove when etcd component is refactored.
-		statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(statefulSet), statefulSet); err != nil {
-			return err
-		}
-
-		if ready := util.IsStatefulSetReady(ctx, statefulSet); !ready {
-			r.Log.Info("Waiting for etcd statefulset to become ready")
-			return nil
-		}
-	}
-
 	cpContext := component.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -1022,14 +1010,16 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling Etcd")
 	switch hostedControlPlane.Spec.Etcd.ManagementType {
 	case hyperv1.Managed:
-		statefulSet := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
-		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, statefulSet); err != nil {
-			return fmt.Errorf("failed to reconcile etcd: %w", err)
-		}
-		// Block until etcd is fully rolled out at the desired generation
-		if ready := util.IsStatefulSetReady(ctx, statefulSet); !ready {
-			r.Log.Info("Waiting for etcd statefulset to become ready")
-			return nil
+		if !r.IsCPOV2 {
+			statefulSet := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+			if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, statefulSet); err != nil {
+				return fmt.Errorf("failed to reconcile etcd: %w", err)
+			}
+			// Block until etcd is fully rolled out at the desired generation
+			if ready := util.IsStatefulSetReady(ctx, statefulSet); !ready {
+				r.Log.Info("Waiting for etcd statefulset to become ready")
+				return nil
+			}
 		}
 	case hyperv1.Unmanaged:
 		if err := r.reconcileUnmanagedEtcd(ctx, hostedControlPlane, createOrUpdate); err != nil {

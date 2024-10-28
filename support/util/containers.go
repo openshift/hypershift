@@ -43,6 +43,16 @@ func RemoveInitContainer(name string, podSpec *corev1.PodSpec) {
 	})
 }
 
+func UpsertEnvVar(c *corev1.Container, envVar corev1.EnvVar) {
+	for idx, env := range c.Env {
+		if env.Name == envVar.Name {
+			c.Env[idx].Value = envVar.Value
+			return
+		}
+	}
+	c.Env = append(c.Env, envVar)
+}
+
 const (
 
 	// CPOImageName is the name under which components can find the CPO image in the release image..

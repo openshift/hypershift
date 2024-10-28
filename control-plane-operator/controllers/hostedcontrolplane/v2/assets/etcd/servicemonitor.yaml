@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: etcd
+spec:
+  endpoints:
+  - metricRelabelings:
+    - action: keep
+      regex: (etcd_disk_wal_fsync_duration_seconds_bucket|etcd_mvcc_db_total_size_in_bytes|etcd_network_peer_round_trip_time_seconds_bucket|etcd_mvcc_db_total_size_in_use_in_bytes|etcd_disk_backend_commit_duration_seconds_bucket|etcd_server_leader_changes_seen_total)
+      sourceLabels:
+      - __name__
+    port: metrics
+    scheme: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: etcd-ca
+      cert:
+        secret:
+          key: etcd-client.crt
+          name: etcd-metrics-client-tls
+      keySecret:
+        key: etcd-client.key
+        name: etcd-metrics-client-tls
+      serverName: etcd-client
+  selector:
+    matchLabels:
+      app: etcd

@@ -2,6 +2,7 @@ package kas
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +35,7 @@ func (k *KubeAPIServer) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &KubeAPIServer{}).
 		WithAdaptFunction(adaptDeployment).
+		WithDependencies(etcdv2.ComponentName).
 		WithManifestAdapter(
 			"service-network-admin-kubeconfig.yaml",
 			component.WithAdaptFunction(adaptServiceKubeconfigSecret),
