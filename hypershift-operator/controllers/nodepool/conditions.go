@@ -3,12 +3,14 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
@@ -450,4 +452,293 @@ func (r NodePoolReconciler) reconciliationActiveCondition(ctx context.Context, n
 	// Set ReconciliationActive condition
 	SetStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
 	return nil, nil
+}
+
+// setMachineAndNodeConditions sets the nodePool's AllMachinesReady and AllNodesHealthy conditions.
+func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) error {
+	// Get all Machines for NodePool.
+	machines, err := r.getMachinesForNodePool(ctx, nodePool)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolFailedToGetReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return fmt.Errorf("failed to get Machines: %w", err)
+	}
+
+	r.setAllMachinesReadyCondition(nodePool, machines)
+
+	r.setAllNodesHealthyCondition(nodePool, machines)
+
+	r.setCIDRConflictCondition(nodePool, machines, hc)
+
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		err = r.setAllMachinesLMCondition(ctx, nodePool, hc)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
+	status := corev1.ConditionTrue
+	reason := hyperv1.AsExpectedReason
+	var message string
+
+	if len(machines) < 1 {
+		status = corev1.ConditionFalse
+		reason = hyperv1.NodePoolNotFoundReason
+		message = "No Machines are created"
+		if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
+			reason = hyperv1.AsExpectedReason
+			message = "NodePool set to no replicas"
+		}
+	}
+
+	for _, machine := range machines {
+		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
+		if condition != nil && condition.Status != corev1.ConditionTrue {
+			status = corev1.ConditionFalse
+			reason = condition.Reason
+			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
+		}
+	}
+
+	if status == corev1.ConditionTrue {
+		message = hyperv1.AllIsWellMessage
+	}
+
+	allMachinesHealthyCondition := &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolAllNodesHealthyConditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: nodePool.Generation,
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesHealthyCondition)
+}
+
+func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
+	status := corev1.ConditionTrue
+	reason := hyperv1.AsExpectedReason
+	message := hyperv1.AllIsWellMessage
+
+	if numMachines := len(machines); numMachines == 0 {
+		status = corev1.ConditionFalse
+		reason = hyperv1.NodePoolNotFoundReason
+		message = "No Machines are created"
+		if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
+			reason = hyperv1.AsExpectedReason
+			message = "NodePool set to no replicas"
+		}
+	} else {
+		// Aggregate conditions.
+		// TODO (alberto): consider bubbling failureReason / failureMessage.
+		// This a rudimentary approach which aggregates every Machine, until
+		// https://github.com/kubernetes-sigs/cluster-api/pull/6218 and
+		// https://github.com/kubernetes-sigs/cluster-api/pull/6025
+		// are solved.
+		// Eventually we should solve this in CAPI to make it available in MachineDeployments / MachineSets
+		// with a consumable "Reason" and an aggregated "Message".
+
+		numNotReady := 0
+		messageMap := make(map[string][]string)
+
+		for _, machine := range machines {
+			readyCond := findCAPIStatusCondition(machine.Status.Conditions, capiv1.ReadyCondition)
+			if readyCond != nil && readyCond.Status != corev1.ConditionTrue {
+				status = corev1.ConditionFalse
+				numNotReady++
+				infraReadyCond := findCAPIStatusCondition(machine.Status.Conditions, capiv1.InfrastructureReadyCondition)
+				// We append the reason as part of the higher Message, since the message is meaningless.
+				// This is how a CAPI condition looks like in AWS for an instance deleted out of band failure.
+				//	- lastTransitionTime: "2022-11-28T15:14:28Z"
+				//		message: 1 of 2 completed
+				//		reason: InstanceTerminated
+				//		severity: Error
+				//		status: "False"
+				//		type: Ready
+				var mapReason, mapMessage string
+				if infraReadyCond != nil && infraReadyCond.Status != corev1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+					mapReason = infraReadyCond.Reason
+					mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
+				} else {
+					mapReason = readyCond.Reason
+					mapMessage = fmt.Sprintf("Machine %s: %s\n", machine.Name, readyCond.Reason)
+				}
+
+				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
+			}
+		}
+		if numNotReady > 0 {
+			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotReady, aggregatorMachineStateReady)
+		}
+	}
+
+	allMachinesReadyCondition := &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: nodePool.Generation,
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+}
+
+func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hc *hyperv1.HostedCluster) error {
+	maxMessageLength := 256
+
+	if len(machines) < 1 || len(hc.Spec.Networking.ClusterNetwork) < 1 {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolClusterNetworkCIDRConflictType)
+		return nil
+	}
+
+	clusterNetworkStr := hc.Spec.Networking.ClusterNetwork[0].CIDR.String()
+	clusterNetwork, err := netip.ParsePrefix(clusterNetworkStr)
+	if err != nil {
+		return err
+	}
+
+	messages := []string{}
+	for _, machine := range machines {
+		for _, addr := range machine.Status.Addresses {
+			if addr.Type != capiv1.MachineExternalIP && addr.Type != capiv1.MachineInternalIP {
+				continue
+			}
+			ipaddr, err := netip.ParseAddr(addr.Address)
+			if err != nil {
+				return err
+			}
+			if clusterNetwork.Contains(ipaddr) {
+				messages = append(messages, fmt.Sprintf("machine [%s] with ip [%s] collides with cluster-network cidr [%s]", machine.Name, addr.Address, clusterNetworkStr))
+			}
+		}
+	}
+
+	if len(messages) > 0 {
+		message := ""
+		for _, entry := range messages {
+
+			if len(message) == 0 {
+				message = entry
+			} else if len(entry)+len(message) < maxMessageLength {
+				message = message + ", " + entry
+			} else {
+				message = message + ", too many similar errors..."
+			}
+		}
+
+		cidrConflictCondition := &hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolClusterNetworkCIDRConflictType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.InvalidConfigurationReason,
+			Message:            message,
+			ObservedGeneration: nodePool.Generation,
+		}
+		SetStatusCondition(&nodePool.Status.Conditions, *cidrConflictCondition)
+	}
+
+	return nil
+}
+
+// createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
+func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
+	var condition *hyperv1.NodePoolCondition
+	if err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			condition = &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolFailedToGetReason,
+				Message:            err.Error(),
+				ObservedGeneration: generation,
+			}
+		} else {
+			condition = &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolNotFoundReason,
+				Message:            err.Error(),
+				ObservedGeneration: generation,
+			}
+		}
+		return condition, nil
+	}
+
+	if _, ok := tokenSecret.Annotations[TokenSecretIgnitionReachedAnnotation]; !ok {
+		condition = &hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.IgnitionNotReached,
+			Message:            "",
+			ObservedGeneration: generation,
+		}
+		return condition, nil
+	}
+
+	condition = &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "",
+		ObservedGeneration: generation,
+	}
+
+	return condition, nil
+}
+
+// createValidGeneratedPayloadCondition creates a condition for the NodePool based on the tokenSecret data.
+func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
+	var condition *hyperv1.NodePoolCondition
+	if err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			condition = &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolFailedToGetReason,
+				Message:            err.Error(),
+				ObservedGeneration: generation,
+			}
+		} else {
+			condition = &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolNotFoundReason,
+				Message:            err.Error(),
+				ObservedGeneration: generation,
+			}
+		}
+		return condition, nil
+	}
+
+	if _, ok := tokenSecret.Data[ignserver.TokenSecretReasonKey]; !ok {
+		condition = &hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             string(tokenSecret.Data[ignserver.TokenSecretReasonKey]),
+			Message:            "Unable to get status data from token secret",
+			ObservedGeneration: generation,
+		}
+		return condition, nil
+	}
+
+	var status corev1.ConditionStatus
+	if string(tokenSecret.Data[ignserver.TokenSecretReasonKey]) == hyperv1.AsExpectedReason {
+		status = corev1.ConditionTrue
+	}
+	condition = &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+		Status:             status,
+		Reason:             string(tokenSecret.Data[ignserver.TokenSecretReasonKey]),
+		Message:            string(tokenSecret.Data[ignserver.TokenSecretMessageKey]),
+		ObservedGeneration: generation,
+	}
+
+	return condition, nil
 }
