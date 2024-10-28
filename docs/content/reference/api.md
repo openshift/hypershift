@@ -3756,6 +3756,20 @@ github.com/openshift/api/config/v1.ProxySpec
 <em>(Optional)</em>
 </td>
 </tr>
+<tr>
+<td>
+<code>node</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.NodeSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSpec holds cluster-wide details for the node configuration object.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ClusterNetworkEntry { #hypershift.openshift.io/v1beta1.ClusterNetworkEntry }

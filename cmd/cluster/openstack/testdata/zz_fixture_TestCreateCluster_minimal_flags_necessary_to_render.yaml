@@ -64,8 +64,7 @@ metadata:
   namespace: clusters
 spec:
   autoscaling: {}
-  configuration:
-    node: null
+  configuration: {}
   controllerAvailabilityPolicy: SingleReplica
   dns:
     baseDomain: ""
