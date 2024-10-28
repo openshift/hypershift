@@ -1703,6 +1703,28 @@ spec:
                       rule: '!has(self.networkDiagnostics) || !has(self.networkDiagnostics.mode)
                         || self.networkDiagnostics.mode!=''Disabled'' || !has(self.networkDiagnostics.sourcePlacement)
                         && !has(self.networkDiagnostics.targetPlacement)'
+                  node:
+                    description: NodeSpec holds cluster-wide details for the node
+                      configuration object.
+                    properties:
+                      cgroupMode:
+                        description: CgroupMode determines the cgroups version on
+                          the node
+                        enum:
+                        - v1
+                        - v2
+                        - ""
+                        type: string
+                      workerLatencyProfile:
+                        description: |-
+                          WorkerLatencyProfile determins the how fast the kubelet is updating
+                          the status and corresponding reaction of the cluster
+                        enum:
+                        - Default
+                        - MediumUpdateAverageReaction
+                        - LowUpdateSlowReaction
+                        type: string
+                    type: object
                   oauth:
                     description: |-
                       OAuth holds cluster-wide information about OAuth.
