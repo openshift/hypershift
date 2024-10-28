@@ -710,6 +710,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.ExternalDNSReachable,
 			hyperv1.ValidHostedControlPlaneConfiguration,
 			hyperv1.ValidReleaseInfo,
+			hyperv1.ValidIDPConfiguration,
 		}
 
 		for _, conditionType := range hcpConditions {
