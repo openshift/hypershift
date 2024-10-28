@@ -5,9 +5,12 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kubevirt.BootImage, nodePool *hyperv1.NodePool) {
@@ -106,5 +109,55 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 		nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation] = "true"
 	}
 
+	return nil
+}
+
+func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) error {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	kubevirtMachines := &capikubevirt.KubevirtMachineList{}
+	err := r.Client.List(ctx, kubevirtMachines, &client.ListOptions{
+		Namespace: controlPlaneNamespace,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list KubeVirt Machines: %w", err)
+	}
+
+	if len(kubevirtMachines.Items) == 0 {
+		// not setting the condition if there are no kubevirt machines present
+		return nil
+	}
+
+	numNotLiveMigratable := 0
+	messageMap := make(map[string][]string)
+	var mapReason, mapMessage string
+	for _, kubevirtmachine := range kubevirtMachines.Items {
+		for _, cond := range kubevirtmachine.Status.Conditions {
+			if cond.Type == capikubevirt.VMLiveMigratableCondition && cond.Status == corev1.ConditionFalse {
+				mapReason = cond.Reason
+				mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", kubevirtmachine.Name, cond.Reason, cond.Message)
+				numNotLiveMigratable++
+				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
+			}
+		}
+	}
+
+	if numNotLiveMigratable == 0 {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolKubeVirtLiveMigratableType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            hyperv1.AllIsWellMessage,
+			ObservedGeneration: nodePool.Generation,
+		})
+	} else {
+		reason, message := aggregateMachineReasonsAndMessages(messageMap, len(kubevirtMachines.Items), numNotLiveMigratable, aggregatorMachineStateLiveMigratable)
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolKubeVirtLiveMigratableType,
+			Status:             corev1.ConditionFalse,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
 	return nil
 }
