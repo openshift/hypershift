@@ -53,9 +53,9 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20240610070307-1c0d75a5c247
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.2
-	github.com/prometheus/client_golang v1.19.1
+	github.com/prometheus/client_golang v1.20.0
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.54.0
+	github.com/prometheus/common v0.55.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 	github.com/stretchr/testify v1.9.0
@@ -94,7 +94,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-azure v1.17.0
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
-	sigs.k8s.io/cluster-api-provider-openstack v0.10.4
+	sigs.k8s.io/cluster-api-provider-openstack v0.11.0
 	sigs.k8s.io/controller-runtime v0.18.5
 	sigs.k8s.io/secrets-store-csi-driver v1.4.5
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1
