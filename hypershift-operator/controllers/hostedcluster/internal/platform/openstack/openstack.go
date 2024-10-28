@@ -54,7 +54,10 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 		return nil, fmt.Errorf("failed to reconcile OpenStack CAPI cluster, empty OpenStack platform spec")
 	}
 
-	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference(openStackPlatform.IdentityRef)
+	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference{
+		Name:      openStackPlatform.IdentityRef.Name,
+		CloudName: openStackPlatform.IdentityRef.CloudName,
+	}
 	if _, err := createOrUpdate(ctx, client, openStackCluster, func() error {
 		reconcileOpenStackClusterSpec(hcluster, &openStackCluster.Spec, apiEndpoint)
 		return nil

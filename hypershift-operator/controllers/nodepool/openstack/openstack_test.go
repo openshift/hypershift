@@ -7,7 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/utils/ptr"
-	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 )
 
 const flavor = "m1.xlarge"
@@ -20,7 +20,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 		clusterStatus       *hyperv1.HostedClusterStatus
 		nodePool            hyperv1.NodePoolSpec
 		nodePoolAnnotations map[string]string
-		expected            *capiopenstack.OpenStackMachineTemplateSpec
+		expected            *capiopenstackv1beta1.OpenStackMachineTemplateSpec
 		checkError          func(*testing.T, error)
 	}{
 		{
@@ -41,12 +41,12 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 				Release: hyperv1.Release{},
 			},
 
-			expected: &capiopenstack.OpenStackMachineTemplateSpec{
-				Template: capiopenstack.OpenStackMachineTemplateResource{
-					Spec: capiopenstack.OpenStackMachineSpec{
-						Flavor: flavor,
-						Image: capiopenstack.ImageParam{
-							Filter: &capiopenstack.ImageFilter{
+			expected: &capiopenstackv1beta1.OpenStackMachineTemplateSpec{
+				Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{
+					Spec: capiopenstackv1beta1.OpenStackMachineSpec{
+						Flavor: ptr.To(flavor),
+						Image: capiopenstackv1beta1.ImageParam{
+							Filter: &capiopenstackv1beta1.ImageFilter{
 								Name: ptr.To(imageName),
 							},
 						},
