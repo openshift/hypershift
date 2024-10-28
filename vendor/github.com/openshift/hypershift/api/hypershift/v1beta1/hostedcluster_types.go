@@ -1623,6 +1623,10 @@ type ClusterConfiguration struct {
 	// +rollout
 	// +optional
 	Proxy *configv1.ProxySpec `json:"proxy,omitempty"`
+
+	// NodeSpec holds cluster-wide details for the node configuration object.
+	// +optional
+	Node *configv1.NodeSpec `json:"node,omitemtpy"`
 }
 
 // +genclient
