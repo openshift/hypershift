@@ -2140,6 +2140,7 @@ func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.C
 	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
 		nodepool.KubeletConfigConfigMapLabel: "true",
 		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
+		nodepool.NTOMirroredConfigLabel:      "true",
 	})
 	hostedClusterConfigMap.Data = controlPlaneConfigMap.Data
 	return nil

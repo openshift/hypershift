@@ -554,7 +554,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							mirroredConfigLabel:                  "",
+							NTOMirroredConfigLabel:               "true",
 							nodePoolAnnotation:                   npName,
 							ContainerRuntimeConfigConfigMapLabel: "",
 						},
@@ -603,7 +603,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							mirroredConfigLabel:                  "",
+							NTOMirroredConfigLabel:               "true",
 							nodePoolAnnotation:                   npName,
 							ContainerRuntimeConfigConfigMapLabel: "",
 						},
@@ -653,7 +653,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							mirroredConfigLabel:         "",
+							NTOMirroredConfigLabel:      "true",
 							nodePoolAnnotation:          npName,
 							KubeletConfigConfigMapLabel: "true",
 						},

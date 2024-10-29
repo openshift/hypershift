@@ -78,8 +78,8 @@ const (
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
-	// mirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
-	mirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
+	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
+	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
 )
 
 type NodePoolReconciler struct {

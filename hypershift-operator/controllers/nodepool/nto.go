@@ -45,8 +45,8 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	if err := r.List(ctx, existingConfigsList, &client.ListOptions{
 		Namespace: controlPlaneNamespace,
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			mirroredConfigLabel:   "",
-			hyperv1.NodePoolLabel: nodePool.Name}),
+			NTOMirroredConfigLabel: "true",
+			hyperv1.NodePoolLabel:  nodePool.Name}),
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -183,7 +183,7 @@ func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, no
 		cm.Labels = make(map[string]string)
 	}
 	cm.Labels[hyperv1.NodePoolLabel] = nodePool.GetName()
-	cm.Labels[mirroredConfigLabel] = ""
+	cm.Labels[NTOMirroredConfigLabel] = "true"
 	cm.Labels = labels.Merge(cm.Labels, mirroredConfig.Labels)
 	cm.Data = mirroredConfig.Data
 	return nil
@@ -422,12 +422,12 @@ func getMirrorConfigForManifest(manifest []byte) (*MirrorConfig, error) {
 	case *mcfgv1.ContainerRuntimeConfig:
 		mirrorConfig = &MirrorConfig{Labels: map[string]string{
 			ContainerRuntimeConfigConfigMapLabel: "true",
-			mirroredConfigLabel:                  "true",
+			NTOMirroredConfigLabel:               "true",
 		}}
 	case *mcfgv1.KubeletConfig:
 		mirrorConfig = &MirrorConfig{Labels: map[string]string{
 			KubeletConfigConfigMapLabel: "true",
-			mirroredConfigLabel:         "true",
+			NTOMirroredConfigLabel:      "true",
 		}}
 	}
 	return mirrorConfig, err
