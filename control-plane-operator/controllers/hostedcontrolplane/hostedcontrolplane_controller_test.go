@@ -16,12 +16,14 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
@@ -1591,6 +1593,18 @@ func TestControlPlaneComponents(t *testing.T) {
 			Name:      "hcp",
 			Namespace: "hcp-namespace",
 		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+					{
+						CIDR: *ipnet.MustParseCIDR("10.132.0.0/14"),
+					},
+				},
+			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
+		},
 	}
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
@@ -1602,29 +1616,10 @@ func TestControlPlaneComponents(t *testing.T) {
 		SkipPredicate:            true,
 	}
 	for _, component := range reconciler.components {
-		fakeClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
-		if component.Name() == kasv2.ComponentName {
-			fakeClientBuilder.WithObjects(kasFakeObjects(hcp.Namespace)...)
-		} else {
-			// we need this to exist for components to reconcile, since all components have a dependency on KAS.
-			kasComponent := &hyperv1.ControlPlaneComponent{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      kasv2.ComponentName,
-					Namespace: hcp.Namespace,
-				},
-				Status: hyperv1.ControlPlaneComponentStatus{
-					Version: testutil.FakeImageProvider().Version(),
-					Conditions: []metav1.Condition{
-						{
-							Type:   string(hyperv1.ControlPlaneComponentAvailable),
-							Status: metav1.ConditionTrue,
-						},
-					},
-				},
-			}
-			fakeClientBuilder.WithObjects(kasComponent)
-		}
-		fakeClient := fakeClientBuilder.Build()
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+			WithObjects(componentsFakeObjects(hcp.Namespace)...).
+			WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
+			Build()
 		cpContext.Client = fakeClient
 
 		if err := component.Reconcile(cpContext); err != nil {
@@ -1682,7 +1677,7 @@ func TestControlPlaneComponents(t *testing.T) {
 
 }
 
-func kasFakeObjects(namespace string) []client.Object {
+func componentsFakeObjects(namespace string) []client.Object {
 	rootCA := manifests.RootCAConfigMap(namespace)
 	rootCA.Data = map[string]string{
 		certs.CASignerCertMapKey: "fake",
@@ -1711,4 +1706,31 @@ func kasFakeObjects(namespace string) []client.Object {
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
 	}
+}
+
+func componentsFakeDependencies(componentName string, namespace string) []client.Object {
+	// we need this to exist for components to reconcile
+	fakeComponent := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+		},
+		Status: hyperv1.ControlPlaneComponentStatus{
+			Version: testutil.FakeImageProvider().Version(),
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	// all components depend on KAS and KAS depends on etcd.
+	if componentName == kasv2.ComponentName {
+		fakeComponent.Name = etcdv2.ComponentName
+	} else {
+		fakeComponent.Name = kasv2.ComponentName
+	}
+
+	return []client.Object{fakeComponent}
 }

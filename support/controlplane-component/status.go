@@ -21,14 +21,20 @@ import (
 )
 
 const (
-	KubeAPIServerComponentName = "kube-apiserver"
+	kubeAPIServerComponentName = "kube-apiserver"
+	etcdComponentName          = "etcd"
 )
 
 func (c *controlPlaneWorkload) checkDependencies(cpContext ControlPlaneContext) ([]string, error) {
 	unavailableDependencies := sets.New(c.dependencies...)
-	// always add kube-apiserver as a dependency.
-	// TODO: don't add for etcd component once refactored.
-	unavailableDependencies.Insert(KubeAPIServerComponentName)
+	// always add kube-apiserver as a dependency, except for etcd.
+	if c.Name() != etcdComponentName {
+		unavailableDependencies.Insert(kubeAPIServerComponentName)
+	}
+	// we don't deploy etcd for unmanaged, therfore components can't have a dependecny on it.
+	if cpContext.HCP.Spec.Etcd.ManagementType != hyperv1.Managed && unavailableDependencies.Has(etcdComponentName) {
+		unavailableDependencies.Delete(etcdComponentName)
+	}
 	// make sure component's don't have a circular dependency.
 	if unavailableDependencies.Has(c.Name()) {
 		unavailableDependencies.Delete(c.Name())

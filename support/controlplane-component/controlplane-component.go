@@ -398,7 +398,7 @@ func getPriorityClass(componentName string, hcp *hyperv1.HostedControlPlane) str
 	priorityClass := config.DefaultPriorityClass
 	overrideAnnotation := hyperv1.ControlPlanePriorityClass
 
-	if componentName == "etcd" {
+	if componentName == etcdComponentName {
 		priorityClass = config.EtcdPriorityClass
 		overrideAnnotation = hyperv1.EtcdPriorityClass
 	} else if apiCriticalComponents.Has(componentName) {
