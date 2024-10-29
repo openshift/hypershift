@@ -9,12 +9,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
@@ -147,8 +143,8 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 	return vnet, nil
 }
 
-// getNetworkSecurityGroupInfo gets the full information on a network security group based on its ID
-func getNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscriptionID string, azureCreds azcore.TokenCredential) (armnetwork.SecurityGroupsClientGetResponse, error) {
+// GetNetworkSecurityGroupInfo gets the full information on a network security group based on its ID
+func GetNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscriptionID string, azureCreds azcore.TokenCredential) (armnetwork.SecurityGroupsClientGetResponse, error) {
 	partialNSGInfo, err := arm.ParseResourceID(nsgID)
 	if err != nil {
 		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to parse network security group id %q: %v", nsgID, err)
@@ -167,8 +163,8 @@ func getNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscription
 	return nsg, nil
 }
 
-// getResourceGroupInfo gets the full information on a resource group based on its name
-func getResourceGroupInfo(ctx context.Context, rgName string, subscriptionID string, azureCreds azcore.TokenCredential) (armresources.ResourceGroupsClientGetResponse, error) {
+// GetResourceGroupInfo gets the full information on a resource group based on its name
+func GetResourceGroupInfo(ctx context.Context, rgName string, subscriptionID string, azureCreds azcore.TokenCredential) (armresources.ResourceGroupsClientGetResponse, error) {
 	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
 	if err != nil {
 		return armresources.ResourceGroupsClientGetResponse{}, fmt.Errorf("failed to create new resource groups client: %w", err)
@@ -180,44 +176,6 @@ func getResourceGroupInfo(ctx context.Context, rgName string, subscriptionID str
 	}
 
 	return rg, nil
-}
-
-// VerifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
-func VerifyResourceGroupLocationsMatch(ctx context.Context, hc *hyperv1.HostedCluster, credentialsSecret *corev1.Secret) error {
-	// Setup azureCreds so we can retrieve the locations of the resource groups
-	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-	clientID := string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	clientSecret := string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
-
-	creds, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
-	}
-
-	// Retrieve full vnet information from the VNET ID
-	vnet, err := GetVnetInfoFromVnetID(ctx, hc.Spec.Platform.Azure.VnetID, hc.Spec.Platform.Azure.SubscriptionID, creds)
-	if err != nil {
-		return fmt.Errorf("failed to get vnet info to verify its location: %v", err)
-	}
-
-	// Retrieve full network security group information from the network security group ID
-	nsg, err := getNetworkSecurityGroupInfo(ctx, hc.Spec.Platform.Azure.SecurityGroupID, hc.Spec.Platform.Azure.SubscriptionID, creds)
-	if err != nil {
-		return fmt.Errorf("failed to get network security group info to verify its location: %v", err)
-	}
-
-	// Retrieve full resource group information from the resource group name
-	rg, err := getResourceGroupInfo(ctx, hc.Spec.Platform.Azure.ResourceGroupName, hc.Spec.Platform.Azure.SubscriptionID, creds)
-	if err != nil {
-		return fmt.Errorf("failed to get resource group info to verify its location: %v", err)
-	}
-
-	// Verify the vnet resource group location, network security group resource group location, and the managed resource group location match
-	if ptr.Deref(vnet.Location, "") != ptr.Deref(nsg.Location, "") || ptr.Deref(nsg.Location, "") != ptr.Deref(rg.Location, "") {
-		return fmt.Errorf("the locations of the resource groups do not match - vnet location: %v; network security group location: %v; managed resource group location: %v", ptr.Deref(vnet.Location, ""), ptr.Deref(nsg.Location, ""), ptr.Deref(rg.Location, ""))
-	}
-
-	return nil
 }
 
 // IsAroHCP returns true if the managed service environment variable is set to ARO-HCP
