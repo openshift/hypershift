@@ -119,10 +119,10 @@ func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagRefe
 }
 
 var CatalogToImage = map[string]string{
-	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.16",
-	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.16",
-	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.16",
-	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.16",
+	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.17",
+	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.17",
+	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.17",
+	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.17",
 }
 
 func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, isImageRegistryOverrides map[string][]string) error {
