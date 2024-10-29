@@ -347,6 +347,23 @@ func (o MonitoringDashboardTemplate) Build() *corev1.ConfigMap {
 	}
 }
 
+type TechPreviewFeatureGateConfig struct {
+	Namespace          string
+	TechPreviewEnabled string
+}
+
+func (o TechPreviewFeatureGateConfig) Build() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "feature-gate",
+			Namespace: o.Namespace,
+		},
+		Data: map[string]string{
+			"TechPreviewEnabled": o.TechPreviewEnabled,
+		},
+	}
+}
+
 type HyperShiftOperatorDeployment struct {
 	AdditionalTrustBundle                   *corev1.ConfigMap
 	OpenShiftTrustBundle                    *corev1.ConfigMap
