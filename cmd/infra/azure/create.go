@@ -425,6 +425,9 @@ func buildCreateServicePrincipalCommand(subscriptionID, managedResourceGroupName
 	switch component {
 	case cloudProvider:
 		scopes = fmt.Sprintf("%s %s", scopes, nsgRG)
+	case cpo:
+		scopes = fmt.Sprintf("%s %s", scopes, nsgRG)
+		scopes = fmt.Sprintf("%s %s", scopes, vnetRG)
 	case ingress:
 		scopes = fmt.Sprintf("%s %s %s", scopes, vnetRG, dnsZoneRG)
 	}

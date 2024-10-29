@@ -416,7 +416,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(hostedControlPlane); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
@@ -869,12 +869,26 @@ func healthCheckKASEndpoint(ingressPoint string, port int) error {
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedControlPlane) error {
-	for _, svc := range hc.Spec.Services {
+func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	for _, svc := range hcp.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
 		}
 	}
+
+	if hyperazureutil.IsAroHCP() {
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		if err := verifyResourceGroupLocationsMatch(ctx, hcp, tenantID); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -5685,4 +5699,49 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 		return true, nil
 	}
 	return false, nil
+}
+
+// verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
+func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane, tenantID string) error {
+	// Retrieve the CPO certificate
+	certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CertificateName
+	certsContent, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	// Authenticate to Azure with the certificate
+	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
+	if err != nil {
+		return err
+	}
+
+	options := &azidentity.ClientCertificateCredentialOptions{
+		SendCertificateChain: true,
+	}
+	creds, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ClientID, parsedCertificate, key, options)
+	if err != nil {
+		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+	}
+
+	// Retrieve full vnet information from the VNET ID
+	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get vnet info to verify its location: %v", err)
+	}
+	// Retrieve full network security group information from the network security group ID
+	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get network security group info to verify its location: %v", err)
+	}
+	// Retrieve full resource group information from the resource group name
+	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get resource group info to verify its location: %v", err)
+	}
+	// Verify the vnet resource group location, network security group resource group location, and the managed resource group location match
+	if ptr.Deref(vnet.Location, "") != ptr.Deref(nsg.Location, "") || ptr.Deref(nsg.Location, "") != ptr.Deref(rg.Location, "") {
+		return fmt.Errorf("the locations of the resource groups do not match - vnet location: %v; network security group location: %v; managed resource group location: %v", ptr.Deref(vnet.Location, ""), ptr.Deref(nsg.Location, ""), ptr.Deref(rg.Location, ""))
+	}
+	return nil
 }
