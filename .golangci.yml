@@ -28,3 +28,19 @@ issues:
     - linters:
         - unused
       text: "const `tuningConfigKey` is unused"
+linters:
+  enable:
+    - gci
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - dot
+      - prefix(github.com/openshift/hypershift)
+      - prefix(github.com/openshift)
+      - prefix(github.com/aws)
+      - prefix(github.com/Azure)
+      - prefix(k8s.io)
+      - prefix(sigs.k8s.io)
+      - default
+    custom-order: true
