@@ -2127,7 +2127,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		if want.Has(cm.Name) {
 			continue
 		}
-		log.Info("delete mirror config", "config", client.ObjectKeyFromObject(cm).String())
+		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
 		if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
 			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
 		}

@@ -45,15 +45,15 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	if err := r.List(ctx, existingConfigsList, &client.ListOptions{
 		Namespace: controlPlaneNamespace,
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			NTOMirroredConfigLabel: "true",
+			NTOMirroredConfigLabel:   "true",
 			hyperv1.NodePoolLabel:  nodePool.Name}),
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
 	want := set.Set[string]{}
-	for _, mirrorConfig := range mirroredConfigs {
-		want.Insert(supportutil.ShortenName(mirrorConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
+	for _, mirroredConfig := range mirroredConfigs {
+		want.Insert(supportutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
 	}
 	have := set.Set[string]{}
 	for _, configMap := range existingConfigsList.Items {
@@ -127,7 +127,15 @@ func validateMirroredConfigs(generatedKubeletConfigs []corev1.ConfigMap, mirrore
 	}
 	if KubeletConfigConfigMapCount > 1 {
 		// whether the config provided by the user or by NTO, only a single KubeletConfig ConfigMap allow per NodePool
-		return fmt.Errorf("More than a single KubeletConfig ConfigMap is referred under NodePool %s.\nPlease delete the redundant configs", nodePoolName)
+		var ntoGeneratedKubeletConfigNames, userProvidedConfigNames []string
+		for _, ntoGenerated := range generatedKubeletConfigs {
+			ntoGeneratedKubeletConfigNames = append(ntoGeneratedKubeletConfigNames, ntoGenerated.Name)
+		}
+		for _, mirroredConfig := range mirroredConfigs {
+			userProvidedConfigNames = append(userProvidedConfigNames, mirroredConfig.Name)
+		}
+		return fmt.Errorf("more than a single KubeletConfig ConfigMap is associated with NodePool %s. please delete the redundant configs: NTO generated KubeletConfigs %v user provided KubeletConfigs %v",
+			nodePoolName, ntoGeneratedKubeletConfigNames, userProvidedConfigNames)
 	}
 	return nil
 }
