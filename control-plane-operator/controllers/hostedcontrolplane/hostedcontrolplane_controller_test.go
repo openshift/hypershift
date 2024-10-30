@@ -1592,6 +1592,9 @@ func TestControlPlaneComponents(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hcp",
 			Namespace: "hcp-namespace",
+			Labels: map[string]string{
+				"cluster.x-k8s.io/cluster-name": "cluster_name",
+			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
 			Networking: hyperv1.ClusterNetworking{
@@ -1603,6 +1606,25 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 			Etcd: hyperv1.EtcdSpec{
 				ManagementType: hyperv1.Managed,
+			},
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{},
+				Azure: &hyperv1.AzurePlatformSpec{
+					SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
+					SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
+					VnetID:          "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
+					Credentials: corev1.LocalObjectReference{
+						Name: "fake-cloud-credentials-secret",
+					},
+				},
+				OpenStack: &hyperv1.OpenStackPlatformSpec{
+					IdentityRef: hyperv1.OpenStackIdentityReference{
+						Name: "fake-cloud-credentials-secret",
+					},
+				},
+				PowerVS: &hyperv1.PowerVSPlatformSpec{
+					VPC: &hyperv1.PowerVSVPC{},
+				},
 			},
 		},
 	}
@@ -1703,9 +1725,17 @@ func componentsFakeObjects(namespace string) []client.Object {
 		corev1.TLSPrivateKeyKey: []byte("fake"),
 	}
 
+	cloudCredsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fake-cloud-credentials-secret",
+			Namespace: namespace,
+		},
+	}
+
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
 		manifests.KubeControllerManagerClientCertSecret(namespace),
+		cloudCredsSecret,
 	}
 }
 

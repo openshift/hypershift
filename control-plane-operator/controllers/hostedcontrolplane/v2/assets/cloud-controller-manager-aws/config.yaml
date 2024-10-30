@@ -1,0 +1,11 @@
+apiVersion: v1
+data:
+  aws.conf: |-
+    [Global]
+    Zone = %s
+    VPC = %s
+    KubernetesClusterID = %s
+    SubnetID = %s
+kind: ConfigMap
+metadata:
+  name: aws-cloud-config

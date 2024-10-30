@@ -66,6 +66,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
+	awsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/aws"
+	azureccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure"
+	kubevirtccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/kubevirt"
+	openstackccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack"
+	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
@@ -202,6 +207,11 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		autoscalerv2.NewComponent(),
 		routecmv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+		awsccmv2.NewComponent(),
+		azureccmv2.NewComponent(),
+		kubevirtccmv2.NewComponent(),
+		openstackccmv2.NewComponent(),
+		powervsccmv2.NewComponent(),
 	)
 }
 
@@ -1031,13 +1041,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("unrecognized etcd management type: %s", hostedControlPlane.Spec.Etcd.ManagementType)
 	}
 
-	// Reconcile Cloud Provider Config
-	r.Log.Info("Reconciling cloud provider config")
-	if err := r.reconcileCloudProviderConfig(ctx, hostedControlPlane, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cloud provider config: %w", err)
-	}
-
 	if !r.IsCPOV2 {
+		// Reconcile Cloud Provider Config
+		r.Log.Info("Reconciling cloud provider config")
+		if err := r.reconcileCloudProviderConfig(ctx, hostedControlPlane, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cloud provider config: %w", err)
+		}
+
 		// Reconcile kube apiserver
 		r.Log.Info("Reconciling Kube API Server")
 		kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
@@ -1213,12 +1223,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists); err != nil {
 			return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
 		}
-	}
 
-	// Reconcile cloud controller manager
-	r.Log.Info("Reconciling Cloud Controller Manager")
-	if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+		// Reconcile cloud controller manager
+		r.Log.Info("Reconciling Cloud Controller Manager")
+		if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+		}
 	}
 
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -2682,26 +2692,6 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
-
-		// Reconcile the Azure Disk configuration secret
-		// TODO this just copies the cloud provider secret at the moment. There will be a follow-on PR to provide
-		// different credentials for Azure Disk and Azure File (right below).
-		// This is related to https://github.com/openshift/csi-operator/pull/290.
-		azureDiskConfigSecret := manifests.AzureDiskConfigWithCredentials(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureDiskConfigSecret, func() error {
-			return azure.ReconcileCloudConfigWithCredentials(azureDiskConfigSecret, hcp, credentialsSecret)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
-		}
-
-		// Reconcile the Azure File configuration secret
-		azureFileConfigSecret := manifests.AzureFileConfigWithCredentials(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureFileConfigSecret, func() error {
-			return azure.ReconcileCloudConfigWithCredentials(azureFileConfigSecret, hcp, credentialsSecret)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
-		}
-
 	case hyperv1.OpenStackPlatform:
 		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.OpenStack.IdentityRef.Name}}
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
@@ -4902,6 +4892,32 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 
 func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
+
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		// Reconcile the Azure Disk configuration secret
+		// TODO this just copies the cloud provider secret at the moment. There will be a follow-on PR to provide
+		// different credentials for Azure Disk and Azure File (right below).
+		// This is related to https://github.com/openshift/csi-operator/pull/290.
+		azureDiskConfigSecret := manifests.AzureDiskConfigWithCredentials(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskConfigSecret, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(azureDiskConfigSecret, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
+		}
+
+		// Reconcile the Azure File configuration secret
+		azureFileConfigSecret := manifests.AzureFileConfigWithCredentials(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureFileConfigSecret, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(azureFileConfigSecret, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
+		}
+	}
 
 	deployment := manifests.ClusterStorageOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {

@@ -1,0 +1,33 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: cloud-controller-manager-openstack
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: cloud-controller-manager-openstack Deployment Available condition not
+      found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: cloud-controller-manager-openstack Deployment Progressing condition not
+      found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: Secret
+    name: openstack-cloud-config
+  - group: ""
+    kind: ConfigMap
+    name: openstack-cloud-config
+  - group: ""
+    kind: ConfigMap
+    name: openstack-trusted-ca
+  version: "4.18"

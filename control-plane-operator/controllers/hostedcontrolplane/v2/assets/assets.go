@@ -1,7 +1,8 @@
-package controlplanecomponent
+package assets
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"path"
 
@@ -12,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-//go:embed *
+//go:embed */*.yaml
 var manifestsAssets embed.FS
 
 const (
@@ -55,6 +56,9 @@ func LoadManifestInto(componentName string, fileName string, into client.Object)
 	}
 
 	obj, gvk, err := hyperapi.YamlSerializer.Decode(bytes, nil, into)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load %s manifest: %v", filePath, err)
+	}
 	return obj.(client.Object), gvk, err
 }
 
