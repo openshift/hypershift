@@ -2,8 +2,10 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -164,9 +166,14 @@ func destroyServicePrincipals(o *DestroyInfraOptions) error {
 func destroyServicePrincipal(clientID string) error {
 	cmdStr := `az ad app delete --id ` + clientID
 	cmd := exec.Command("sh", "-c", cmdStr)
-	_, err := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
+
 	if err != nil {
 		return fmt.Errorf("failed to delete service principal, %s: %w", clientID, err)
+	}
+
+	if strings.Contains(string(output), "ERROR") {
+		return errors.New(string(output))
 	}
 
 	return nil

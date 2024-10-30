@@ -165,14 +165,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	} else {
 		// Create a resource group for network security group
 		nsgResourceGroupName = o.Name + "-nsg"
-		nsgRG, msg, err := createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
+		nsgResourceGroupName, msg, err = createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for network security group: %w", err)
 		}
-		l.Info(msg, "name", nsgRG)
+		l.Info(msg, "name", nsgResourceGroupName)
 
 		// Create a network security group
-		nsgID, err := createSecurityGroup(ctx, subscriptionID, nsgRG, o.Name, o.InfraID, o.Location, azureCreds)
+		nsgID, err := createSecurityGroup(ctx, subscriptionID, nsgResourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
 		if err != nil {
 			return nil, err
 		}
@@ -201,14 +201,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	} else {
 		//create a resource group for virtual network
 		vnetResourceGroupName = o.Name + "-vnet"
-		vnetRG, msg, err := createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
+		vnetResourceGroupName, msg, err = createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for virtual network: %w", err)
 		}
-		l.Info(msg, "name", vnetRG)
+		l.Info(msg, "name", vnetResourceGroupName)
 
 		// Create a virtual network
-		vnet, err := createVirtualNetwork(ctx, subscriptionID, vnetRG, o.Name, o.InfraID, o.Location, o.SubnetID, result.SecurityGroupID, azureCreds)
+		vnet, err := createVirtualNetwork(ctx, subscriptionID, vnetResourceGroupName, o.Name, o.InfraID, o.Location, o.SubnetID, result.SecurityGroupID, azureCreds)
 		if err != nil {
 			return nil, err
 		}
@@ -355,6 +355,10 @@ func createServicePrincipalWithCertificate(cmdStr string) (string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to create service principal in Azure AD cluster: %w", err)
+	}
+
+	if strings.Contains(string(output), "ERROR") {
+		return "", errors.New(string(output))
 	}
 
 	//Trim off any newline characters from the output
