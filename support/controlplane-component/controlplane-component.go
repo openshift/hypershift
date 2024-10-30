@@ -40,6 +40,7 @@ type ControlPlaneContext struct {
 	context.Context
 
 	upsert.CreateOrUpdateProviderV2
+	ManifestReader           assets.ManifestReader
 	Client                   client.Client
 	HCP                      *hyperv1.HostedControlPlane
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
@@ -142,13 +143,13 @@ func (c *controlPlaneWorkload) update(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
-	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
+	if err := cpContext.ManifestReader.ForEachManifest(c.name, func(manifestName string) error {
 		adapter, exist := c.manifestsAdapters[manifestName]
 		if exist {
 			return adapter.reconcile(cpContext, c.Name(), manifestName)
 		}
 
-		obj, _, err := assets.LoadManifest(c.name, manifestName)
+		obj, _, err := cpContext.ManifestReader.LoadManifest(c.name, manifestName)
 		if err != nil {
 			return err
 		}
@@ -182,14 +183,14 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 
 	switch c.workloadType {
 	case deploymentWorkloadType:
-		dep, err := assets.LoadDeploymentManifest(c.Name())
+		dep, err := cpContext.ManifestReader.LoadDeploymentManifest(c.Name())
 		if err != nil {
 			return fmt.Errorf("faild loading deployment manifest: %v", err)
 		}
 		workloadObj = dep
 		oldWorkloadObj = &appsv1.Deployment{}
 	case statefulSetWorkloadType:
-		sts, err := assets.LoadStatefulSetManifest(c.Name())
+		sts, err := cpContext.ManifestReader.LoadStatefulSetManifest(c.Name())
 		if err != nil {
 			return fmt.Errorf("faild loading statefulset manifest: %v", err)
 		}

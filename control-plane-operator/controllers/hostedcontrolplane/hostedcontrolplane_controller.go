@@ -65,6 +65,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
+	assetsv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
@@ -940,6 +941,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		Client:                    r.Client,
 		HCP:                       hcp,
 		CreateOrUpdateProviderV2:  upsert.NewV2(r.EnableCIDebugOutput),
+		ManifestReader:            assetsv2.NewManifestReader(hcp.Spec.Platform.Type),
 		InfraStatus:               infraStatus,
 		ReleaseImageProvider:      releaseImageProvider,
 		UserReleaseImageProvider:  userReleaseImageProvider,
@@ -1213,12 +1215,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists); err != nil {
 			return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
 		}
-	}
+		}
 
-	// Reconcile cloud controller manager
-	r.Log.Info("Reconciling Cloud Controller Manager")
-	if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+		// Reconcile cloud controller manager
+		r.Log.Info("Reconciling Cloud Controller Manager")
+		if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
 	}
 
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {

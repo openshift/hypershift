@@ -38,7 +38,8 @@ func TestReconcileOpenShiftRouteControllerManagerConfig(t *testing.T) {
 	}
 
 	configMap := &corev1.ConfigMap{}
-	_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", configMap)
+	manifestReader := assets.NewManifestReader(hyperv1.AWSPlatform)
+	_, _, err := manifestReader.LoadManifestInto(ComponentName, "config.yaml", configMap)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -66,13 +65,13 @@ func (c *controlPlaneWorkload) checkDependencies(cpContext ControlPlaneContext) 
 
 func (c *controlPlaneWorkload) reconcileComponentStatus(cpContext ControlPlaneContext, component *hyperv1.ControlPlaneComponent, unavailableDependencies []string, reconcilationError error) error {
 	component.Status.Resources = []hyperv1.ComponentResource{}
-	if err := assets.ForEachManifest(c.Name(), func(manifestName string) error {
+	if err := cpContext.ManifestReader.ForEachManifest(c.Name(), func(manifestName string) error {
 		adapter, exist := c.manifestsAdapters[manifestName]
 		if exist && adapter.predicate != nil && !adapter.predicate(cpContext) {
 			return nil
 		}
 
-		obj, gvk, err := assets.LoadManifest(c.name, manifestName)
+		obj, gvk, err := cpContext.ManifestReader.LoadManifest(c.name, manifestName)
 		if err != nil {
 			return err
 		}

@@ -139,7 +139,8 @@ func TestAdaptDeployment(t *testing.T) {
 
 			g := NewGomegaWithT(t)
 
-			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			manifestReader := assets.NewManifestReader(hyperv1.AWSPlatform)
+			deployment, err := manifestReader.LoadDeploymentManifest(ComponentName)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			err = AdaptDeployment(cpContext, deployment)

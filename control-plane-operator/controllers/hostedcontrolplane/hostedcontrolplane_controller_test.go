@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	assetsv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/support/api"
@@ -1610,6 +1611,7 @@ func TestControlPlaneComponents(t *testing.T) {
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                  context.Background(),
 		CreateOrUpdateProviderV2: upsert.NewV2(false),
+		ManifestReader:           assetsv2.NewManifestReader(hyperv1.AWSPlatform),
 		ReleaseImageProvider:     testutil.FakeImageProvider(),
 		UserReleaseImageProvider: testutil.FakeImageProvider(),
 		HCP:                      hcp,

@@ -1,7 +1,6 @@
 package controlplanecomponent
 
 import (
-	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -37,7 +36,7 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName
 		return nil
 	}
 
-	obj, _, err := assets.LoadManifest(componentName, manifestName)
+	obj, _, err := cpContext.ManifestReader.LoadManifest(componentName, manifestName)
 	if err != nil {
 		return err
 	}
