@@ -440,6 +440,7 @@ func NewStartCommand() *cobra.Command {
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 			IsCPOV2:                                 isCPOV2,
+			OperateOnPlatform:                       hyperv1.PlatformType(os.Getenv("OPERATE_ON_PLATFORM")),
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

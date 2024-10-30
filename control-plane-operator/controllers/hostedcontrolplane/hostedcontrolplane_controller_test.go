@@ -1585,7 +1585,8 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 // This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
 func TestControlPlaneComponents(t *testing.T) {
 	reconciler := &HostedControlPlaneReconciler{
-		ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:   &fakereleaseprovider.FakeReleaseProvider{},
+		OperateOnPlatform: hyperv1.AWSPlatform,
 	}
 	reconciler.registerComponents()
 

@@ -2568,6 +2568,10 @@ func reconcileControlPlaneOperatorDeployment(
 								Value: hyperutil.HCControlPlaneReleaseImage(hc),
 							},
 							{
+								Name:  "OPERATE_ON_PLATFORM",
+								Value: string(hc.Spec.Platform.Type),
+							},
+							{
 								Name:  "OPENSHIFT_IMG_OVERRIDES",
 								Value: openShiftRegistryOverrides,
 							},
