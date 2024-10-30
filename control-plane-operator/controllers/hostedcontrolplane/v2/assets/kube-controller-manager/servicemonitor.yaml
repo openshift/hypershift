@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-controller-manager
+spec:
+  endpoints:
+  - metricRelabelings:
+    - action: keep
+      regex: pv_collector_total_pv_count
+      sourceLabels:
+      - __name__
+    scheme: https
+    targetPort: client
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: metrics-client
+      keySecret:
+        key: tls.key
+        name: metrics-client
+      serverName: kube-controller-manager
+  selector:
+    matchLabels:
+      app: kube-controller-manager

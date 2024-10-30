@@ -6,6 +6,7 @@ import (
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
+	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	oauthv1 "github.com/openshift/api/oauth/v1"
@@ -106,4 +107,5 @@ func init() {
 	capiopenstackv1alpha1.AddToScheme(Scheme)
 	capiopenstackv1beta1.AddToScheme(Scheme)
 	secretsstorev1.AddToScheme(Scheme)
+	kcpv1.AddToScheme(Scheme)
 }
