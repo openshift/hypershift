@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -27,7 +28,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func DefaultOptions(client crclient.Client) (*RawCreateOptions, error) {
+func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
 	rawCreateOptions := &RawCreateOptions{
 		Location:           "eastus",
 		TechPreviewEnabled: false,
@@ -36,10 +37,10 @@ func DefaultOptions(client crclient.Client) (*RawCreateOptions, error) {
 
 	techPreviewCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "hypershift", Name: "feature-gate"}}
 	if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(techPreviewCM), techPreviewCM); err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to retrieve feature-gate ConfigMap: %w", err)
+		log.Info("Warning: Failed to get feature-gate configmap, proceeding without tech preview", "error", err)
 	}
 
-	if techPreviewCM.Data["TechPreviewEnabled"] == "true" {
+	if techPreviewCM != nil && techPreviewCM.Data["TechPreviewEnabled"] == "true" {
 		rawCreateOptions.TechPreviewEnabled = true
 	}
 
@@ -475,7 +476,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		return nil
 	}
 
-	azureOpts, err := DefaultOptions(client)
+	azureOpts, err := DefaultOptions(client, opts.Log)
 	if err != nil {
 		opts.Log.Error(err, "Failed to create default options")
 		return nil
