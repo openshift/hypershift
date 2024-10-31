@@ -182,6 +182,30 @@ snapshot of volumes that use storage class `guest-sca`
    proper mapping is configured before attempting to create a snapshot in the
    guest cluster.
 
+## Disabling KubeVirt CSI
+
+By default KubeVirt CSI maps the default storage class on the underlying
+infrastructure cluster to a storage class in the guest cluster.
+
+To disable KubeVirt CSI entirely, set the hostedCluster.spec.platform.kubeVirt.storageDriver.type
+to the value `None` at cluster creation time. Below is an example HostedCluster
+spec that outlines this behavior.
+
+```yaml linenums="1"
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example
+  namespace: clusters
+spec:
+  platform:
+    type: KubeVirt
+    storageDriver:
+      type: None
+  pullSecret:
+    name: hcp-pull-secret
+```
+
 ## KubeVirt CSI Storage Security and Isolation
 
 While KubeVirt CSI is extending storage capabilities of the underlying
