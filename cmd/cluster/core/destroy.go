@@ -40,7 +40,6 @@ type DestroyOptions struct {
 	DestroyCloudResources bool
 	Log                   logr.Logger
 	CredentialSecretName  string
-	TechPreviewEnabled    bool
 }
 
 type AWSPlatformDestroyOptions struct {
@@ -58,7 +57,6 @@ type AzurePlatformDestroyOptions struct {
 	CredentialsFile              string
 	Location                     string
 	ResourceGroupName            string
-	ControlPlaneMIs              hyperv1.AzureResourceManagedIdentities
 	SkipServicePrincipalDeletion bool
 }
 

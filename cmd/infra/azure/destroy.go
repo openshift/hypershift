@@ -2,12 +2,12 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
@@ -24,9 +24,12 @@ type DestroyInfraOptions struct {
 	CredentialsFile              string
 	Credentials                  *util.AzureCreds
 	ResourceGroupName            string
-	TechPreviewEnabled           bool
-	ControlPlaneMIs              hyperv1.AzureResourceManagedIdentities
 	SkipServicePrincipalDeletion bool
+}
+
+type Application struct {
+	Name  string `json:"name"`
+	AppID string `json:"appId"`
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -112,10 +115,10 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		}
 	}
 
-	if o.TechPreviewEnabled && !o.SkipServicePrincipalDeletion {
+	if !o.SkipServicePrincipalDeletion {
 		// Destroy created service principals
 		logger.Info("Destroying service principals")
-		err = destroyServicePrincipals(o)
+		err = deleteApplicationsByInfraID(o.InfraID, logger)
 		if err != nil {
 			logger.Error(err, "Failed to destroy service principals")
 		}
@@ -131,54 +134,60 @@ func (o *DestroyInfraOptions) GetResourceGroupName() string {
 	return o.Name + "-" + o.InfraID
 }
 
-func destroyServicePrincipals(o *DestroyInfraOptions) error {
-	clientID := o.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
-	}
-	clientID = o.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
-	}
-	clientID = o.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
-	}
-	clientID = o.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
-	}
-	clientID = o.ControlPlaneMIs.ControlPlane.Network.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
-	}
-	clientID = o.ControlPlaneMIs.ControlPlane.Ingress.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
-	}
-	clientID = o.ControlPlaneMIs.ControlPlane.Disk.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
-	}
-	clientID = o.ControlPlaneMIs.ControlPlane.File.ClientID
-	if err := destroyServicePrincipal(clientID); err != nil {
-		return err
+func deleteApplicationsByInfraID(infraID string, logger logr.Logger) error {
+	prefixes := []string{
+		"azure-disk",
+		"azure-file",
+		"ciro",
+		"cloud-provider",
+		"cncc",
+		"cpo",
+		"ingress",
+		"capz",
 	}
 
-	return nil
-}
-
-func destroyServicePrincipal(clientID string) error {
-	cmdStr := `az ad app delete --id ` + clientID
+	cmdStr := `az ad app list --query "[].{name:displayName, appId:appId}" --all`
 	cmd := exec.Command("sh", "-c", cmdStr)
 	output, err := cmd.CombinedOutput()
 
-	if err != nil {
-		return fmt.Errorf("failed to delete service principal, %s: %w", clientID, err)
-	}
-
 	if strings.Contains(string(output), "ERROR") {
 		return errors.New(string(output))
+	}
+	if err != nil {
+		return fmt.Errorf("failed to retrieve applications: %w", err)
+	}
+
+	var applications []Application
+	if err := json.Unmarshal(output, &applications); err != nil {
+		return fmt.Errorf("failed to parse applications: %w", err)
+	}
+
+	var filteredApplications []Application
+	for _, app := range applications {
+		for _, prefix := range prefixes {
+			if app.Name == prefix+"-"+infraID {
+				filteredApplications = append(filteredApplications, app)
+				break
+			}
+		}
+	}
+
+	if len(filteredApplications) == 0 {
+		logger.Info("No service principals found to delete")
+		return nil
+	}
+
+	for _, app := range filteredApplications {
+		cmdStr = `az ad app delete --id ` + app.AppID
+		cmd = exec.Command("sh", "-c", cmdStr)
+		output, err = cmd.CombinedOutput()
+		if strings.Contains(string(output), "ERROR") {
+			return errors.New(string(output))
+		}
+		if err != nil {
+			return fmt.Errorf("failed to delete application, %s: %w", app.AppID, err)
+		}
+		logger.Info("Deleted application", "name", app.Name, "appId", app.AppID)
 	}
 
 	return nil
