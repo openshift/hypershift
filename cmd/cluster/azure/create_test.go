@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
@@ -125,10 +126,11 @@ func TestCreateCluster(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			log := logr.Logger{}
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
-			azureOpts, err := DefaultOptions(fakeClient)
+			azureOpts, err := DefaultOptions(fakeClient, log)
 			if err != nil {
 				t.Fatal("failed to create azure options: ", err)
 			}
