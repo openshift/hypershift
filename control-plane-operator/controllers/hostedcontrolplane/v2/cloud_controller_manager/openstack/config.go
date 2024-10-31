@@ -52,24 +52,6 @@ func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) 
 	return nil
 }
 
-// For some controllers (e.g. Manila CSI, CNCC, etc), the cloud config needs to be stored in a secret.
-// In the hosted cluster config operator, we create the secrets needed by these controllers.
-func adaptConfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
-	credentialsSecret, err := getCredentialsSecret(cpContext)
-	if err != nil {
-		return err
-	}
-
-	caCertData := GetCACertFromCredentialsSecret(credentialsSecret)
-	if caCertData != nil {
-		secret.Data[CABundleKey] = caCertData
-	}
-
-	config := getCloudConfig(cpContext.HCP.Spec, credentialsSecret)
-	secret.Data[CredentialsFile] = []byte(config)
-	return nil
-}
-
 // getCloudConfig returns the cloud config.
 func getCloudConfig(hcpSpec hyperv1.HostedControlPlaneSpec, credentialsSecret *corev1.Secret) string {
 	caCertData := GetCACertFromCredentialsSecret(credentialsSecret)

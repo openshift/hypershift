@@ -39,7 +39,7 @@ spec:
           value: /etc/openstack/config/cloud.conf
         image: openstack-cloud-controller-manager
         name: cloud-controller-manager
-        resources: 
+        resources:
           requests:
               cpu: 200m
               memory: 50Mi

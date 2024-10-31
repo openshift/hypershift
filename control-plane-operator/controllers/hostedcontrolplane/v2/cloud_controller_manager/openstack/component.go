@@ -38,10 +38,6 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptConfig),
 		).
 		WithManifestAdapter(
-			"config-secret.yaml",
-			component.WithAdaptFunction(adaptConfigSecret),
-		).
-		WithManifestAdapter(
 			"openstack-trusted-ca.yaml",
 			component.WithAdaptFunction(adaptTrustedCA),
 		).
