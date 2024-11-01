@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 	"github.com/spf13/pflag"
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
@@ -129,4 +130,179 @@ func TestCreateCluster(t *testing.T) {
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
+}
+
+func TestExtractCloud(t *testing.T) {
+	dumpYAML := func(t *testing.T, path string, contents map[string]any) {
+		data, err := yaml.Marshal(contents)
+		if err != nil {
+			t.Fatalf("failed to marshal YAML: %v", err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatalf("failed to write YAML to %s: %v", path, err)
+		}
+	}
+
+	t.Run("invalid path", func(t *testing.T) {
+		tempDir := t.TempDir()
+		// we know a new temporary directory will be empty so this file will never exist
+		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
+
+		cloudsYAML, caCert, err := extractCloud(cloudsYAMLPath, "", "openstack")
+
+		assert.Nil(t, cloudsYAML)
+		assert.Nil(t, caCert)
+		assert.Error(t, err)
+	})
+
+	t.Run("empty clouds.yaml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
+		junkData := []byte("{ this is not valid YAML }")
+		if err := os.WriteFile(cloudsYAMLPath, junkData, 0600); err != nil {
+			t.Fatalf("failed to write clouds.yaml: %v", err)
+		}
+
+		cloudsYAML, caCert, err := extractCloud(cloudsYAMLPath, "", "openstack")
+
+		assert.Nil(t, cloudsYAML)
+		assert.Nil(t, caCert)
+		assert.Error(t, err)
+	})
+
+	t.Run("incomplete clouds.yaml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
+		junkData := []byte("")
+		if err := os.WriteFile(cloudsYAMLPath, junkData, 0600); err != nil {
+			t.Fatalf("failed to write clouds.yaml: %v", err)
+		}
+
+		cloudsYAML, caCert, err := extractCloud(cloudsYAMLPath, "", "openstack")
+
+		assert.Nil(t, cloudsYAML)
+		assert.Nil(t, caCert)
+		assert.Error(t, err)
+	})
+
+	t.Run("invalid cloud for clouds.yaml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
+		clouds := map[string]any{
+			"clouds": map[string]any{},
+		}
+		dumpYAML(t, cloudsYAMLPath, clouds)
+
+		cloudsYAML, caCert, err := extractCloud(cloudsYAMLPath, "", "openstack")
+
+		assert.Nil(t, cloudsYAML)
+		assert.Nil(t, caCert)
+		assert.Error(t, err)
+	})
+
+	t.Run("invalid cacert path in clouds.yaml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
+		// we know a new temporary directory will be empty so this file will not exist
+		caCertPath := filepath.Join(tempDir, "openstack-ca.crt")
+		clouds := map[string]any{
+			"clouds": map[string]any{
+				"openstack": map[string]any{
+					"auth": map[string]any{
+						"auth_url": "fakeAuthURL",
+					},
+					"cacert": caCertPath,
+				},
+			},
+		}
+		dumpYAML(t, cloudsYAMLPath, clouds)
+
+		cloudsYAML, caCert, err := extractCloud(cloudsYAMLPath, "", "openstack")
+
+		assert.Nil(t, cloudsYAML)
+		assert.Nil(t, caCert)
+		assert.Error(t, err)
+	})
+
+	t.Run("drop any additional clouds specified in clouds.yaml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
+		caCertPath := filepath.Join(tempDir, "valid-ca.crt")
+		caCertData := []byte("this is not real CA cert data but that's okay")
+		if err := os.WriteFile(caCertPath, caCertData, 0600); err != nil {
+			t.Fatalf("failed to write %s: %v", caCertPath, err)
+		}
+		clouds := map[string]any{
+			"clouds": map[string]any{
+				"openstack": map[string]any{
+					"auth": map[string]any{
+						"auth_url": "fakeAuthURL",
+					},
+					"cacert": caCertPath,
+				},
+				"another-openstack": map[string]any{
+					"auth": map[string]any{
+						"auth_url": "fakeAuthURL",
+					},
+				},
+			},
+		}
+		dumpYAML(t, cloudsYAMLPath, clouds)
+		expectedCloudsYAML, err := yaml.Marshal(map[string]any{
+			"clouds": map[string]any{
+				"openstack": map[string]any{
+					"auth": map[string]any{
+						"auth_url": "fakeAuthURL",
+					},
+				},
+			},
+		})
+		assert.Nil(t, err)
+
+		cloudsYAML, caCert, err := extractCloud(cloudsYAMLPath, "", "openstack")
+
+		assert.Equal(t, cloudsYAML, expectedCloudsYAML)
+		assert.Equal(t, caCert, caCertData)
+		assert.Nil(t, err)
+	})
+
+	t.Run("explicit cacert preferred to clouds.yaml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
+		// we know a new temporary directory will be empty so this file will not exist
+		invalidCACertPath := filepath.Join(tempDir, "invalid-ca.crt")
+		validCACertPath := filepath.Join(tempDir, "valid-ca.crt")
+		caCertData := []byte("this is not real CA cert data but that's okay")
+		if err := os.WriteFile(validCACertPath, caCertData, 0600); err != nil {
+			t.Fatalf("failed to write %s: %v", validCACertPath, err)
+		}
+		clouds := map[string]any{
+			"clouds": map[string]any{
+				"openstack": map[string]any{
+					"auth": map[string]any{
+						"auth_url": "fakeAuthURL",
+					},
+					// this should be ignored/not checked
+					"cacert": invalidCACertPath,
+				},
+			},
+		}
+		dumpYAML(t, cloudsYAMLPath, clouds)
+		expectedCloudsYAML, err := yaml.Marshal(map[string]any{
+			"clouds": map[string]any{
+				"openstack": map[string]any{
+					"auth": map[string]any{
+						"auth_url": "fakeAuthURL",
+					},
+				},
+			},
+		})
+		assert.Nil(t, err)
+
+		cloudsYAML, caCert, err := extractCloud(cloudsYAMLPath, validCACertPath, "openstack")
+		assert.Equal(t, cloudsYAML, expectedCloudsYAML)
+		assert.Equal(t, caCert, caCertData)
+		assert.Nil(t, err)
+	})
+
 }
