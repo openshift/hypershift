@@ -101,6 +101,7 @@ func TestCreateCluster(t *testing.T) {
 				"--release-image=fakeReleaseImage",
 				"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
 				"--render-sensitive",
+				"--machine-cidr=192.168.25.0/24",
 			},
 		},
 	} {
