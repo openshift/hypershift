@@ -99,6 +99,10 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		logger.Info("Deleting resource group", "resource-group", rg)
 		destroyFuture, err = resourceGroupClient.BeginDelete(ctx, rg, nil)
 		if err != nil {
+			if strings.Contains(err.Error(), "ResourceGroupNotFound") {
+				logger.Info("Resource group not found, continuing with infra deletion", "resource-group", rg)
+				continue
+			}
 			return fmt.Errorf("failed to start deletion for resource group %s: %w", rg, err)
 		}
 
