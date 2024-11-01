@@ -34,17 +34,13 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	// TODO(stephenfin): This is unnecessary given the information should already be in clouds.yaml. We should deprecate and remove it.
-	flags.StringVar(&opts.OpenStackCredentialsFile, "openstack-credentials-file", opts.OpenStackCredentialsFile, "Path to the OpenStack credentials file (optional)")
 	flags.StringVar(&opts.OpenStackCloud, "openstack-cloud", opts.OpenStackCloud, "Name of the cloud in clouds.yaml (optional) (default: 'openstack')")
-	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 }
 
 type RawCreateOptions struct {
 	OpenStackCredentialsFile   string
 	OpenStackCloud             string
-	OpenStackCACertFile        string
 	OpenStackExternalNetworkID string
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
@@ -93,21 +89,14 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
-	// Check that the OpenStack credentials file arg is set and that the file exists with the correct cloud
-	if o.OpenStackCredentialsFile != "" {
-		if _, err := os.Stat(o.OpenStackCredentialsFile); err != nil {
-			return nil, fmt.Errorf("OpenStack credentials file does not exist: %w", err)
-		}
-	} else {
-		credentialsFile, err := findOpenStackCredentialsFile()
-		if err != nil {
-			return nil, fmt.Errorf("failed to find clouds.yaml file: %w", err)
-		}
-		if credentialsFile == "" {
-			return nil, fmt.Errorf("failed to find clouds.yaml file")
-		}
-		o.OpenStackCredentialsFile = credentialsFile
+	credentialsFile, err := findOpenStackCredentialsFile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find clouds.yaml file: %w", err)
 	}
+	if credentialsFile == "" {
+		return nil, fmt.Errorf("failed to find clouds.yaml file")
+	}
+	o.OpenStackCredentialsFile = credentialsFile
 
 	if o.OpenStackCloud == "" {
 		cloud := os.Getenv("OS_CLOUD")
@@ -117,7 +106,7 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		o.OpenStackCloud = cloud
 	}
 
-	_, _, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCACertFile, o.OpenStackCloud)
+	_, _, err = extractCloud(o.OpenStackCredentialsFile, o.OpenStackCloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
 	}
@@ -175,7 +164,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 }
 
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
-	cloudsYAML, caCert, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCACertFile, o.OpenStackCloud)
+	cloudsYAML, caCert, err := extractCloud(o.OpenStackCredentialsFile, o.OpenStackCloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
 	}
@@ -272,7 +261,8 @@ func findOpenStackCredentialsFile() (string, error) {
 
 // extractCloud extracts the relevant cloud from a provided clouds.yaml and return a new clouds.yaml
 // with only that cloud in it and using a well-known cloud name
-func extractCloud(cloudsYAMLPath, caCertPath, cloudName string) ([]byte, []byte, error) {
+func extractCloud(cloudsYAMLPath, cloudName string) ([]byte, []byte, error) {
+	var caCertPath string
 	cloudsFile, err := os.ReadFile(cloudsYAMLPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read OpenStack credentials file: %w", err)
@@ -295,9 +285,7 @@ func extractCloud(cloudsYAMLPath, caCertPath, cloudName string) ([]byte, []byte,
 
 	cloud := clouds[cloudName].(map[string]any)
 	if _, ok := cloud["cacert"]; ok {
-		if caCertPath == "" {
-			caCertPath = cloud["cacert"].(string)
-		}
+		caCertPath = cloud["cacert"].(string)
 		// Always unset this key if present since it's not used and can therefore be confusing. We
 		// set '[Global] ca-file' in the cloud provider and CSI configs, which means takes priority
 		// over configuration sourced from clouds.yaml
