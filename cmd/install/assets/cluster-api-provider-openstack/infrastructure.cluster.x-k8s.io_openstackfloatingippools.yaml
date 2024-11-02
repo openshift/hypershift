@@ -133,10 +133,20 @@ spec:
                       The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
                       The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
                     type: string
+                  region:
+                    description: |-
+                      Region specifies an OpenStack region to use. If specified, it overrides
+                      any value in clouds.yaml. If specified for an OpenStackMachine, its
+                      value will be included in providerID.
+                    type: string
                 required:
                 - cloudName
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: region is immutable
+                  rule: (!has(self.region) && !has(oldSelf.region)) || self.region
+                    == oldSelf.region
               maxIPs:
                 description: |-
                   MaxIPs is the maximum number of floating ips that can be allocated from this pool, if nil there is no limit.

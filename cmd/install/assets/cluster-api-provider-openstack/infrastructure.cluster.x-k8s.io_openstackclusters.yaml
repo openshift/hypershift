@@ -120,6 +120,10 @@ spec:
                       API server loadbalancer, omit the APIServerLoadBalancer field in the
                       cluster spec instead.
                     type: boolean
+                  flavor:
+                    description: Flavor is the flavor name that will be used to create
+                      the APIServerLoadBalancer Spec.
+                    type: string
                   network:
                     description: Network defines which network should the load balancer
                       be allocated on.
@@ -305,7 +309,9 @@ spec:
               apiServerPort:
                 description: |-
                   APIServerPort is the port on which the listener on the APIServer
-                  will be created
+                  will be created. If specified, it must be an integer between 0 and 65535.
+                maximum: 65535
+                minimum: 0
                 type: integer
               bastion:
                 description: |-
@@ -433,6 +439,13 @@ spec:
                       flavor:
                         description: The flavor reference for the flavor for your
                           server instance.
+                        minLength: 1
+                        type: string
+                      flavorID:
+                        description: |-
+                          FlavorID allows flavors to be specified by ID.  This field takes precedence
+                          over Flavor.
+                        minLength: 1
                         type: string
                       floatingIPPoolRef:
                         description: |-
@@ -473,10 +486,20 @@ spec:
                               The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
                               The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
                             type: string
+                          region:
+                            description: |-
+                              Region specifies an OpenStack region to use. If specified, it overrides
+                              any value in clouds.yaml. If specified for an OpenStackMachine, its
+                              value will be included in providerID.
+                            type: string
                         required:
                         - cloudName
                         - name
                         type: object
+                        x-kubernetes-validations:
+                        - message: region is immutable
+                          rule: (!has(self.region) && !has(oldSelf.region)) || self.region
+                            == oldSelf.region
                       image:
                         description: |-
                           The image to use for your server instance.
@@ -511,6 +534,17 @@ spec:
                               be validated before use.
                             format: uuid
                             type: string
+                          imageRef:
+                            description: |-
+                              ImageRef is a reference to an ORC Image in the same namespace as the
+                              referring object.
+                            properties:
+                              name:
+                                description: Name is the name of the referenced resource
+                                type: string
+                            required:
+                            - name
+                            type: object
                         type: object
                       ports:
                         description: |-
@@ -765,8 +799,10 @@ spec:
                                 rule:create_port:binding:profile
                               properties:
                                 ovsHWOffload:
-                                  description: OVSHWOffload enables or disables the
-                                    OVS hardware offload feature.
+                                  description: |-
+                                    OVSHWOffload enables or disables the OVS hardware offload feature.
+                                    This flag is not required on OpenStack clouds since Yoga as Nova will set it automatically when the port is attached.
+                                    See: https://bugs.launchpad.net/nova/+bug/2020813
                                   type: boolean
                                 trustedVF:
                                   description: TrustedVF enables or disables the “trusted
@@ -972,6 +1008,77 @@ spec:
                         required:
                         - sizeGiB
                         type: object
+                      schedulerHintAdditionalProperties:
+                        description: |-
+                          SchedulerHintAdditionalProperties are arbitrary key/value pairs that provide additional hints
+                          to the OpenStack scheduler. These hints can influence how instances are placed on the infrastructure,
+                          such as specifying certain host aggregates or availability zones.
+                        items:
+                          description: |-
+                            SchedulerHintAdditionalProperty represents a single additional property for a scheduler hint.
+                            It includes a Name to identify the property and a Value that can be of various types.
+                          properties:
+                            name:
+                              description: |-
+                                Name is the name of the scheduler hint property.
+                                It is a unique identifier for the property.
+                              minLength: 1
+                              type: string
+                            value:
+                              description: |-
+                                Value is the value of the scheduler hint property, which can be of various types
+                                (e.g., bool, string, int). The type is indicated by the Value.Type field.
+                              properties:
+                                bool:
+                                  description: |-
+                                    Bool is the boolean value of the scheduler hint, used when Type is "Bool".
+                                    This field is required if type is 'Bool', and must not be set otherwise.
+                                  type: boolean
+                                number:
+                                  description: |-
+                                    Number is the integer value of the scheduler hint, used when Type is "Number".
+                                    This field is required if type is 'Number', and must not be set otherwise.
+                                  type: integer
+                                string:
+                                  description: |-
+                                    String is the string value of the scheduler hint, used when Type is "String".
+                                    This field is required if type is 'String', and must not be set otherwise.
+                                  maxLength: 255
+                                  minLength: 1
+                                  type: string
+                                type:
+                                  description: |-
+                                    Type represents the type of the value.
+                                    Valid values are Bool, String, and Number.
+                                  enum:
+                                  - Bool
+                                  - String
+                                  - Number
+                                  type: string
+                              required:
+                              - type
+                              type: object
+                              x-kubernetes-validations:
+                              - message: bool is required when type is Bool, and forbidden
+                                  otherwise
+                                rule: 'has(self.type) && self.type == ''Bool'' ? has(self.bool)
+                                  : !has(self.bool)'
+                              - message: number is required when type is Number, and
+                                  forbidden otherwise
+                                rule: 'has(self.type) && self.type == ''Number'' ?
+                                  has(self.number) : !has(self.number)'
+                              - message: string is required when type is String, and
+                                  forbidden otherwise
+                                rule: 'has(self.type) && self.type == ''String'' ?
+                                  has(self.string) : !has(self.string)'
+                          required:
+                          - name
+                          - value
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
                       securityGroups:
                         description: The names of the security groups to assign to
                           the instance
@@ -1113,9 +1220,11 @@ spec:
                           port or not.
                         type: boolean
                     required:
-                    - flavor
                     - image
                     type: object
+                    x-kubernetes-validations:
+                    - message: at least one of flavor or flavorID must be set
+                      rule: (has(self.flavor) || has(self.flavorID))
                 type: object
                 x-kubernetes-validations:
                 - message: spec is required if bastion is enabled
@@ -1386,10 +1495,20 @@ spec:
                       The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
                       The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
                     type: string
+                  region:
+                    description: |-
+                      Region specifies an OpenStack region to use. If specified, it overrides
+                      any value in clouds.yaml. If specified for an OpenStackMachine, its
+                      value will be included in providerID.
+                    type: string
                 required:
                 - cloudName
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: region is immutable
+                  rule: (!has(self.region) && !has(oldSelf.region)) || self.region
+                    == oldSelf.region
               managedSecurityGroups:
                 description: |-
                   ManagedSecurityGroups determines whether OpenStack security groups for the cluster
@@ -1886,6 +2005,9 @@ spec:
                       Resolved contains parts of the bastion's machine spec with all
                       external references fully resolved.
                     properties:
+                      flavorID:
+                        description: FlavorID is the ID of the flavor to use.
+                        type: string
                       imageID:
                         description: ImageID is the ID of the image to use for the
                           machine and is calculated based on ImageFilter.
@@ -1984,8 +2106,10 @@ spec:
                                 rule:create_port:binding:profile
                               properties:
                                 ovsHWOffload:
-                                  description: OVSHWOffload enables or disables the
-                                    OVS hardware offload feature.
+                                  description: |-
+                                    OVSHWOffload enables or disables the OVS hardware offload feature.
+                                    This flag is not required on OpenStack clouds since Yoga as Nova will set it automatically when the port is attached.
+                                    See: https://bugs.launchpad.net/nova/+bug/2020813
                                   type: boolean
                                 trustedVF:
                                   description: TrustedVF enables or disables the “trusted

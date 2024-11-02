@@ -6,16 +6,16 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"k8s.io/utils/ptr"
-	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 )
 
-func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*capiopenstack.OpenStackMachineTemplateSpec, error) {
-	openStackMachineTemplate := &capiopenstack.OpenStackMachineTemplateSpec{Template: capiopenstack.OpenStackMachineTemplateResource{Spec: capiopenstack.OpenStackMachineSpec{
-		Flavor: nodePool.Spec.Platform.OpenStack.Flavor,
+func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
+	openStackMachineTemplate := &capiopenstackv1beta1.OpenStackMachineTemplateSpec{Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{Spec: capiopenstackv1beta1.OpenStackMachineSpec{
+		Flavor: ptr.To(nodePool.Spec.Platform.OpenStack.Flavor),
 	}}}
 
 	if nodePool.Spec.Platform.OpenStack.ImageName != "" {
-		openStackMachineTemplate.Template.Spec.Image.Filter = &capiopenstack.ImageFilter{
+		openStackMachineTemplate.Template.Spec.Image.Filter = &capiopenstackv1beta1.ImageFilter{
 			Name: ptr.To(nodePool.Spec.Platform.OpenStack.ImageName),
 		}
 	} else {

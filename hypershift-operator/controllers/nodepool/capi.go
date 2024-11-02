@@ -28,7 +28,7 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -826,7 +826,7 @@ func (c *CAPI) machineTemplateBuilders() (client.Object, func(object client.Obje
 			return nil
 		}
 	case hyperv1.OpenStackPlatform:
-		template = &capiopenstack.OpenStackMachineTemplate{}
+		template = &capiopenstackv1beta1.OpenStackMachineTemplate{}
 		var err error
 		machineTemplateSpec, err = openstack.MachineTemplateSpec(hcluster, nodePool)
 		if err != nil {
@@ -844,8 +844,8 @@ func (c *CAPI) machineTemplateBuilders() (client.Object, func(object client.Obje
 		}
 
 		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*capiopenstack.OpenStackMachineTemplate)
-			o.Spec = *machineTemplateSpec.(*capiopenstack.OpenStackMachineTemplateSpec)
+			o, _ := object.(*capiopenstackv1beta1.OpenStackMachineTemplate)
+			o.Spec = *machineTemplateSpec.(*capiopenstackv1beta1.OpenStackMachineTemplateSpec)
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}
@@ -1289,7 +1289,7 @@ func (c *CAPI) listMachineTemplates() ([]client.Object, error) {
 			return nil, err
 		}
 	case hyperv1.OpenStackPlatform:
-		gvk, err = apiutil.GVKForObject(&capiopenstack.OpenStackMachineTemplate{}, api.Scheme)
+		gvk, err = apiutil.GVKForObject(&capiopenstackv1beta1.OpenStackMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
