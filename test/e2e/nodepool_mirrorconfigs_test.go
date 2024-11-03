@@ -63,6 +63,9 @@ func (mc *MirrorConfigsTest) Setup(t *testing.T) {
 	if globalOpts.Platform == hyperv1.OpenStackPlatform {
 		t.Skip("test is being skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
 	}
+	if e2eutil.IsLessThan(e2eutil.Version418) {
+		t.Skip("test only applicable for 4.18+")
+	}
 }
 
 func (mc *MirrorConfigsTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
