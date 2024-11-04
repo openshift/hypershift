@@ -44,7 +44,6 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 		})
 		return fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
 	}
-	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
 
 	infraNS := controlPlaneNamespace
 	if hcluster.Spec.Platform.Kubevirt != nil &&
