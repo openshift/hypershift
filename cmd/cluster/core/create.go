@@ -176,10 +176,10 @@ type resources struct {
 func (r *resources) asObjects() []crclient.Object {
 	var objects []crclient.Object
 
-	if object := r.AdditionalTrustBundle; object != nil {
+	if object := r.Namespace; object != nil {
 		objects = append(objects, object)
 	}
-	if object := r.Namespace; object != nil {
+	if object := r.AdditionalTrustBundle; object != nil {
 		objects = append(objects, object)
 	}
 	if object := r.PullSecret; object != nil {
@@ -188,14 +188,14 @@ func (r *resources) asObjects() []crclient.Object {
 	if object := r.SSHKey; object != nil {
 		objects = append(objects, object)
 	}
-	if object := r.Cluster; object != nil {
-		objects = append(objects, object)
-	}
 
 	// there's no way to check that the objects in `r.Resources` are not nil, as we can have
 	// a non-nil controllerruntime.Object interface vtable but a nil object that it points to
 	objects = append(objects, r.Resources...)
 
+	if object := r.Cluster; object != nil {
+		objects = append(objects, object)
+	}
 	for _, object := range r.NodePools {
 		if object != nil {
 			objects = append(objects, object)

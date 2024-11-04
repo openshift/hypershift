@@ -17,6 +17,30 @@ metadata:
   name: test-pull-secret
   namespace: clusters
 ---
+apiVersion: v1
+data:
+  clouds.yaml: Y2xvdWRzOgogICAgb3BlbnN0YWNrOgogICAgICAgIGF1dGg6CiAgICAgICAgICAgIGF1dGhfdXJsOiBmYWtlQXV0aFVSTAo=
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: test-cloud-credentials
+  namespace: clusters
+type: Opaque
+---
+apiVersion: v1
+data:
+  key: FYHY8RFxHaJUPFFWuo2z9iWCO01hcj3fqHMMWMeEHHw=
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: test-etcd-encryption-key
+  namespace: clusters
+type: Opaque
+---
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
@@ -83,30 +107,6 @@ status:
   controlPlaneEndpoint:
     host: ""
     port: 0
----
-apiVersion: v1
-data:
-  clouds.yaml: Y2xvdWRzOgogICAgb3BlbnN0YWNrOgogICAgICAgIGF1dGg6CiAgICAgICAgICAgIGF1dGhfdXJsOiBmYWtlQXV0aFVSTAo=
-kind: Secret
-metadata:
-  creationTimestamp: null
-  labels:
-    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
-  name: test-cloud-credentials
-  namespace: clusters
-type: Opaque
----
-apiVersion: v1
-data:
-  key: FYHY8RFxHaJUPFFWuo2z9iWCO01hcj3fqHMMWMeEHHw=
-kind: Secret
-metadata:
-  creationTimestamp: null
-  labels:
-    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
-  name: test-etcd-encryption-key
-  namespace: clusters
-type: Opaque
 ---
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
