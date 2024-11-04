@@ -1,0 +1,66 @@
+apiVersion: v1
+data:
+  config.yaml: |
+    apiVersion: openshiftcontrolplane.config.openshift.io/v1
+    build:
+      additionalTrustedCA: ""
+      buildDefaults: null
+      buildOverrides: null
+      imageTemplateFormat:
+        format: registry.build01.ci.openshift.org/ci-op-fyyrss4t/stable@sha256:cad36212ecf2de916baef0c524ba91fb59aeb35357141db22cdb365ffc21a752
+        latest: false
+    controllers: null
+    deployer:
+      imageTemplateFormat:
+        format: registry.build01.ci.openshift.org/ci-op-fyyrss4t/stable@sha256:7fa906b447ceb3a188974de54617ccbffbc99c32e07d874c6fbe19257ec038d5
+        latest: false
+    dockerPullSecret:
+      internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
+      registryURLs: null
+    featureGates: null
+    imageImport:
+      disableScheduledImport: false
+      maxScheduledImageImportsPerMinute: 0
+      scheduledImageImportMinimumIntervalSeconds: 0
+    ingress:
+      ingressIPNetworkCIDR: ""
+    kind: OpenShiftControllerManagerConfig
+    kubeClientConfig:
+      connectionOverrides:
+        acceptContentTypes: ""
+        burst: 0
+        contentType: ""
+        qps: 0
+      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+    leaderElection:
+      leaseDuration: 0s
+      renewDeadline: 0s
+      retryPeriod: 0s
+    network:
+      clusterNetworks: null
+      networkPluginName: ""
+      serviceNetworkCIDR: ""
+      vxlanPort: 0
+    resourceQuota:
+      concurrentSyncs: 0
+      minResyncPeriod: 0s
+      syncPeriod: 0s
+    securityAllocator:
+      mcsAllocatorRange: ""
+      mcsLabelsPerProject: 0
+      uidAllocatorRange: ""
+    serviceAccount:
+      managedNames: null
+    serviceServingCert:
+      signer: null
+    servingInfo:
+      bindAddress: 0.0.0.0:8443
+      bindNetwork: ""
+      certFile: /etc/kubernetes/certs/tls.crt
+      clientCA: /etc/kubernetes/client-ca/ca.crt
+      keyFile: /etc/kubernetes/certs/tls.key
+      maxRequestsInFlight: 0
+      requestTimeoutSeconds: 0
+kind: ConfigMap
+metadata:
+  name: openshift-controller-manager-config

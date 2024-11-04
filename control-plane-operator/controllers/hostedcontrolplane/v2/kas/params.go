@@ -196,13 +196,6 @@ func namedCertificates(configuration *hyperv1.ClusterConfiguration) []configv1.A
 	}
 }
 
-func cipherSuites(configuration *hyperv1.ClusterConfiguration) []string {
-	if configuration != nil && configuration.APIServer != nil {
-		return config.CipherSuites(configuration.APIServer.TLSSecurityProfile)
-	}
-	return config.CipherSuites(nil)
-}
-
 type kmsImages struct {
 	IBMCloudKMS      string
 	AWSKMS           string

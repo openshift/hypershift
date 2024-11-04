@@ -70,6 +70,7 @@ import (
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
+	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -200,6 +201,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
 		autoscalerv2.NewComponent(),
+		ocmv2.NewComponent(),
 		routecmv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 	)
@@ -1161,13 +1163,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	// Reconcile openshift controller manager
-	r.Log.Info("Reconciling OpenShift Controller Manager")
-	if err := r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
-	}
-
 	if !r.IsCPOV2 {
+		// Reconcile openshift controller manager
+		r.Log.Info("Reconciling OpenShift Controller Manager")
+		if err := r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
+		}
+
 		// Reconcile openshift route controller manager
 		r.Log.Info("Reconciling OpenShift Route Controller Manager")
 		if err := r.reconcileOpenShiftRouteControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
