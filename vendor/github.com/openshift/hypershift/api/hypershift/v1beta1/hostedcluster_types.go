@@ -421,7 +421,7 @@ type HostedClusterSpec struct {
 	// SingleReplica.
 	//
 	// +optional
-	// +kubebuilder:default:="SingleReplica"
+	// +kubebuilder:default:="HighlyAvailable"
 	// +immutable
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 

@@ -2229,7 +2229,7 @@ spec:
                   and its associated NodePools.
                 type: string
               infrastructureAvailabilityPolicy:
-                default: SingleReplica
+                default: HighlyAvailable
                 description: |-
                   InfrastructureAvailabilityPolicy specifies the availability policy applied
                   to infrastructure services which run on cluster nodes. The default value is
