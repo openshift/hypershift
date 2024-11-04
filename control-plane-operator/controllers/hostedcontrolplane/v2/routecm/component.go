@@ -1,0 +1,65 @@
+package routecm
+
+import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
+)
+
+const (
+	ComponentName = "openshift-route-controller-manager"
+
+	ConfigMapName = "openshift-route-controller-manager-config"
+)
+
+var _ component.ComponentOptions = &routeControllerManager{}
+
+type routeControllerManager struct {
+}
+
+// IsRequestServing implements controlplanecomponent.ComponentOptions.
+func (r *routeControllerManager) IsRequestServing() bool {
+	return false
+}
+
+// MultiZoneSpread implements controlplanecomponent.ComponentOptions.
+func (r *routeControllerManager) MultiZoneSpread() bool {
+	return true
+}
+
+// NeedsManagementKASAccess implements controlplanecomponent.ComponentOptions.
+func (r *routeControllerManager) NeedsManagementKASAccess() bool {
+	return false
+}
+
+func NewComponent() component.ControlPlaneComponent {
+	return component.NewDeploymentComponent(ComponentName, &routeControllerManager{}).
+		WithAdaptFunction(adaptDeployment).
+		WithManifestAdapter(
+			"config.yaml",
+			component.WithAdaptFunction(adaptConfigMap),
+		).
+		WithManifestAdapter(
+			"service.yaml",
+			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),
+		).
+		WithManifestAdapter(
+			"servicemonitor.yaml",
+			component.WithAdaptFunction(adaptServiceMonitor),
+			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),
+		).
+		WatchResource(&corev1.ConfigMap{}, ConfigMapName).
+		Build()
+}
+
+func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+	deployment.Spec.Replicas = ptr.To[int32](2)
+	if cpContext.HCP.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		deployment.Spec.Replicas = ptr.To[int32](1)
+	}
+
+	return nil
+}
