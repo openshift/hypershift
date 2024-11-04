@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-controller-manager
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      infrastructure.openshift.io/cloud-controller-manager: OpenStack
+      k8s-app: openstack-cloud-controller-manager
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        infrastructure.openshift.io/cloud-controller-manager: OpenStack
+        k8s-app: openstack-cloud-controller-manager
+    spec:
+      containers:
+      - args:
+        - --v=1
+        - --cloud-config=$(CLOUD_CONFIG)
+        - --cluster-name=$(OCP_INFRASTRUCTURE_NAME)
+        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --cloud-provider=openstack
+        - --use-service-account-credentials=false
+        - --configure-cloud-routes=false
+        - --bind-address=127.0.0.1
+        - --leader-elect=true
+        - --leader-elect-lease-duration=137s
+        - --leader-elect-renew-deadline=107s
+        - --leader-elect-retry-period=26s
+        - --leader-elect-resource-namespace=openshift-cloud-controller-manager
+        command:
+        - /usr/bin/openstack-cloud-controller-manager
+        env:
+        - name: CLOUD_CONFIG
+          value: /etc/openstack/config/cloud.conf
+        image: openstack-cloud-controller-manager
+        name: cloud-controller-manager
+        resources: 
+          requests:
+              cpu: 200m
+              memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+          readOnly: true
+        - mountPath: /etc/openstack/config
+          name: cloud-config
+          readOnly: true
+        - mountPath: /etc/openstack/secret
+          name: secret-occm
+          readOnly: true
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: cloud.conf
+            path: cloud.conf
+          name: openstack-cloud-config
+        name: cloud-config
+      - name: secret-occm
+        secret:
+          defaultMode: 416
+          items:
+          - key: clouds.yaml
+            path: clouds.yaml
+          secretName: "hcp.Spec.Platform.OpenStack.IdentityRef.Name"

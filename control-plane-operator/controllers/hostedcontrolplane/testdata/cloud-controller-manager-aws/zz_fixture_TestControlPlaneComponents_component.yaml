@@ -1,0 +1,25 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: cloud-controller-manager-aws
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: cloud-controller-manager-aws Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: cloud-controller-manager-aws Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: aws-cloud-config
+  version: "4.18"
