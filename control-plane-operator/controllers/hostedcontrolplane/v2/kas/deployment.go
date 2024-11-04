@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
@@ -72,8 +71,6 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp)
-	case hyperv1.AzurePlatform:
-		applyCloudConfigVolumeMount(manifests.AzureProviderConfigWithCredentials("").Name, &deployment.Spec.Template.Spec, azure.Provider)
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -171,15 +168,6 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 				MountPath: fmt.Sprintf("%s-%d", kasNamedCertificateMountPathPrefix, i+1),
 			})
 		}
-	})
-}
-
-func applyCloudConfigVolumeMount(configMapName string, podSpec *corev1.PodSpec, cloudProviderName string) {
-	podSpec.Volumes = append(podSpec.Volumes, buildKASCloudConfigVolume(configMapName, cloudProviderName))
-
-	util.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
-		c.VolumeMounts = append(c.VolumeMounts,
-			cloudProviderConfigVolumeMount.ContainerMounts(ComponentName)...)
 	})
 }
 
@@ -300,21 +288,6 @@ func buildAuditLogsContainer() corev1.Container {
 			MountPath: "/var/log/kube-apiserver",
 		}},
 	}
-}
-
-func buildKASCloudConfigVolume(configMapName, providerName string) corev1.Volume {
-	v := corev1.Volume{
-		Name: cloudConfigVolumeName,
-	}
-	if providerName == azure.Provider {
-		v.Secret = &corev1.SecretVolumeSource{SecretName: configMapName}
-	} else {
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{
-			LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
-			DefaultMode:          ptr.To[int32](420),
-		}
-	}
-	return v
 }
 
 func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) corev1.Volume {
