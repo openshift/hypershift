@@ -1,0 +1,10 @@
+export WORKSPACE_DIR=
+export HC_CLUSTER_NS=
+export HC_CLUSTER_NAME=
+export AGENT_NAMESPACE=
+export MGMT_KUBECONFIG=
+export MGMT2_KUBECONFIG=
+# AWS s3 - untested
+export BUCKET_NAME=
+export AWS_ACCESS_KEY_ID=
+export AWS_SECRET_ACCESS_KEY=
