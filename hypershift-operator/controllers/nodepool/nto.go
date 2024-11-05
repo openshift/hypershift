@@ -45,7 +45,7 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	if err := r.List(ctx, existingConfigsList, &client.ListOptions{
 		Namespace: controlPlaneNamespace,
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			NTOMirroredConfigLabel:   "true",
+			NTOMirroredConfigLabel: "true",
 			hyperv1.NodePoolLabel:  nodePool.Name}),
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err

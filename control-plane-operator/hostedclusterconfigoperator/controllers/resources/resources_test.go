@@ -70,6 +70,7 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameMirror),
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameICSP),
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameInfra),
+	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameNTOMirroredConfigs),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameConfig)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
