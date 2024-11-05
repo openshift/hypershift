@@ -991,6 +991,25 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 	})
 }
 
+func EnsureCustomTolerations(t *testing.T, ctx context.Context, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCustomTolerations", func(t *testing.T) {
+		AtLeast(t, Version418)
+		g := NewWithT(t)
+
+		podList := &corev1.PodList{}
+		err := hostClient.List(ctx, podList, crclient.InNamespace(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)))
+		g.Expect(err).ToNot(HaveOccurred())
+		for _, pod := range podList.Items {
+			// Ensure that each pod in the HCP has the custom toleration
+			g.Expect(pod.Spec.Tolerations).To(ContainElement(corev1.Toleration{
+				Key:      "hypershift.openshift.io/e2e-test",
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoSchedule,
+			}))
+		}
+	})
+}
+
 func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
 	t.Run("EnsureSecretEncryptedUsingKMS", func(t *testing.T) {
 		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:")

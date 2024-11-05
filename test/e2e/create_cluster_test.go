@@ -299,6 +299,9 @@ func TestCreateCluster(t *testing.T) {
 	}
 	if !e2eutil.IsLessThan(e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
+		// We want to do the toleration test with TechPreviewNoUpgrade feature set enabled
+		// so we cover all pods, including ones that are only deployed with TechPreviewNoUpgrade
+		clusterOpts.Tolerations = []string{"key=hypershift.openshift.io/e2e-test,operator=Exists,effect=NoSchedule"}
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -326,6 +329,7 @@ func TestCreateCluster(t *testing.T) {
 
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
