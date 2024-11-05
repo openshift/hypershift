@@ -334,6 +334,10 @@ type HostedControlPlaneStatus struct {
 
 	// NodeCount tracks the number of nodes in the HostedControlPlane.
 	NodeCount *int `json:"nodeCount,omitempty"`
+
+	// OldestKubeletVersion tracks the oldest kubelet version in a hosted cluster
+	// +openshift:enable:FeatureGate=MinimumKubeletVersion
+	OldestKubeletVersion *string `json:"oldestKubeletVersion,omitempty"`
 }
 
 type APIEndpoint struct {

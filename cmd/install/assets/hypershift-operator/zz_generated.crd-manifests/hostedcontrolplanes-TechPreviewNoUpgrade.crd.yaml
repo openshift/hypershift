@@ -5739,6 +5739,10 @@ spec:
                   with the name of an identity provider defined on the HostedCluster.
                   This is populated after the infrastructure is ready.
                 type: string
+              oldestKubeletVersion:
+                description: OldestKubeletVersion tracks the oldest kubelet version
+                  in a hosted cluster
+                type: string
               platform:
                 description: Platform contains platform-specific status of the HostedCluster
                 properties:

@@ -1503,6 +1503,10 @@ type HostedClusterStatus struct {
 	// Platform contains platform-specific status of the HostedCluster
 	// +optional
 	Platform *PlatformStatus `json:"platform,omitempty"`
+
+	// OldestKubeletVersion tracks the oldest kubelet version in a hosted cluster
+	// +openshift:enable:FeatureGate=MinimumKubeletVersion
+	OldestKubeletVersion *string `json:"oldestKubeletVersion,omitempty"`
 }
 
 // PlatformStatus contains platform-specific status

@@ -28,7 +28,7 @@ const (
 	// MinimumKubeletVersion gates whether hosted clusters will
 	// obey the MinimumKubeletVersion configuration field on the NodeSpec object.
 	// When enabled and the field is set, no kubelets can join a hosted cluster
-	// that has an older version than the minimumm version specified.
+	// that has an older version than the minimum version specified.
 	// owner: @haircommander
 	// alpha: v0.1.51
 	// beta: x.y.z

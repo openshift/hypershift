@@ -5716,6 +5716,17 @@ PlatformStatus
 <p>Platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>oldestKubeletVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OldestKubeletVersion tracks the oldest kubelet version in a hosted cluster</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
@@ -6403,6 +6414,17 @@ int
 </td>
 <td>
 <p>NodeCount tracks the number of nodes in the HostedControlPlane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>oldestKubeletVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OldestKubeletVersion tracks the oldest kubelet version in a hosted cluster</p>
 </td>
 </tr>
 </tbody>

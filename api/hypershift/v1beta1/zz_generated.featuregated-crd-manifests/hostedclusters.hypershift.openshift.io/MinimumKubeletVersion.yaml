@@ -4895,6 +4895,10 @@ spec:
                   with the name of an identity provider defined on the HostedCluster.
                   This is populated after the infrastructure is ready.
                 type: string
+              oldestKubeletVersion:
+                description: OldestKubeletVersion tracks the oldest kubelet version
+                  in a hosted cluster
+                type: string
               payloadArch:
                 description: |-
                   payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
