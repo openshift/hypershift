@@ -161,6 +161,7 @@ spec:
       machineIdentityID: fakeMachineIdentityID
       osDisk:
         diskStorageAccountType: Standard_LRS
+        persistence: Ephemeral
         sizeGiB: 120
       subnetID: fakeSubnetID
       vmSize: Standard_DS2_v2
