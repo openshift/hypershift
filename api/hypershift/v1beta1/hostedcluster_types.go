@@ -564,6 +564,7 @@ type HostedClusterSpec struct {
 	// Tolerations when specified, define what custome tolerations are added to the hcp pods.
 	//
 	// +optional
+	// +openshift:enable:FeatureGate=HostedClusterTolerations
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 

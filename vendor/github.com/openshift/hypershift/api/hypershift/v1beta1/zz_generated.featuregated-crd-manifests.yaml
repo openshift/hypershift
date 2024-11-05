@@ -98,6 +98,7 @@ hostedclusters.hypershift.openshift.io:
   - AROHCPManagedIdentities
   - DynamicResourceAllocation
   - ExternalOIDC
+  - HostedClusterTolerations
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
