@@ -233,7 +233,7 @@ func buildOAuthContainerHTTPProxy(image string, proxyConfig *configv1.ProxySpec,
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"}
-		c.Args = []string{"run", fmt.Sprintf("--serving-port=%d", httpKonnectivityProxyPort)}
+		c.Args = []string{"run", fmt.Sprintf("--serving-port=%d", httpKonnectivityProxyPort), "--connect-directly-to-cloud-apis"}
 		if proxyConfig != nil {
 			c.Args = append(c.Args, "--http-proxy", proxyConfig.HTTPProxy)
 			c.Args = append(c.Args, "--https-proxy", proxyConfig.HTTPSProxy)
