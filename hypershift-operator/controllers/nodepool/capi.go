@@ -609,6 +609,7 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 	// TODO (alberto): possibly expose this config at the nodePool API.
 	maxUnhealthy := intstr.FromInt(2)
 	var timeOut time.Duration
+	nodeStartupTimeout := 20 * time.Minute
 
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AgentPlatform, hyperv1.NonePlatform:
@@ -644,6 +645,19 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 		}
 	}
 
+	nodeStartupTimeoutOverride := nodePool.Annotations[hyperv1.MachineHealthCheckNodeStartupTimeoutAnnotation]
+	if nodeStartupTimeoutOverride == "" {
+		nodeStartupTimeoutOverride = hc.Annotations[hyperv1.MachineHealthCheckNodeStartupTimeoutAnnotation]
+	}
+	if nodeStartupTimeoutOverride != "" {
+		nodeStartupTimeoutOverrideTime, err := time.ParseDuration(nodeStartupTimeoutOverride)
+		if err != nil {
+			log.Error(err, "Cannot parse node startup timeout override duration", "value", nodeStartupTimeoutOverrideTime)
+		} else {
+			nodeStartupTimeout = nodeStartupTimeoutOverrideTime
+		}
+	}
+
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: capiClusterName,
@@ -670,7 +684,7 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 		},
 		MaxUnhealthy: &maxUnhealthy,
 		NodeStartupTimeout: &metav1.Duration{
-			Duration: 20 * time.Minute,
+			Duration: nodeStartupTimeout,
 		},
 	}
 	return nil

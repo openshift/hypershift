@@ -926,6 +926,21 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			}
 		}
 	}
+	withNodeStartupTimeoutOverride := func(value string) func(client.Object) {
+		return func(o client.Object) {
+			a := o.GetAnnotations()
+			if a == nil {
+				a = map[string]string{}
+			}
+			a[hyperv1.MachineHealthCheckNodeStartupTimeoutAnnotation] = value
+			o.SetAnnotations(a)
+		}
+	}
+	withNodeStartupTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
+		return func(mhc *capiv1.MachineHealthCheck) {
+			mhc.Spec.NodeStartupTimeout = &metav1.Duration{Duration: d}
+		}
+	}
 
 	tests := []struct {
 		name     string
@@ -960,6 +975,30 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 		{
 			name:     "invalid timeout override, retains default",
 			hc:       hostedcluster(withTimeoutOverride("foo")),
+			np:       nodepool(),
+			expected: healthcheck(),
+		},
+		{
+			name:     "node startup timeout override in hc",
+			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
+			np:       nodepool(),
+			expected: healthcheck(withNodeStartupTimeout(10 * time.Minute)),
+		},
+		{
+			name:     "node startup timeout override in np",
+			hc:       hostedcluster(),
+			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
+			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "node startup timeout override in both, np takes precedence",
+			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
+			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
+			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "node startup invalid timeout override, retains default",
+			hc:       hostedcluster(withNodeStartupTimeoutOverride("foo")),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
