@@ -106,6 +106,7 @@ spec:
       - args:
         - run
         - --serving-port=8092
+        - --connect-directly-to-cloud-apis
         command:
         - /usr/bin/control-plane-operator
         - konnectivity-https-proxy
