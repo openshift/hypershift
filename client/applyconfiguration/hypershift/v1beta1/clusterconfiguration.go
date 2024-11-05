@@ -34,6 +34,7 @@ type ClusterConfigurationApplyConfiguration struct {
 	OperatorHub    *v1.OperatorHubSpec    `json:"operatorhub,omitempty"`
 	Scheduler      *v1.SchedulerSpec      `json:"scheduler,omitempty"`
 	Proxy          *v1.ProxySpec          `json:"proxy,omitempty"`
+	Node           *v1.NodeSpec           `json:"node,omitempty"`
 }
 
 // ClusterConfigurationApplyConfiguration constructs an declarative configuration of the ClusterConfiguration type for use with
@@ -119,5 +120,13 @@ func (b *ClusterConfigurationApplyConfiguration) WithScheduler(value v1.Schedule
 // If called multiple times, the Proxy field is set to the value of the last call.
 func (b *ClusterConfigurationApplyConfiguration) WithProxy(value v1.ProxySpec) *ClusterConfigurationApplyConfiguration {
 	b.Proxy = &value
+	return b
+}
+
+// WithNode sets the Node field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Node field is set to the value of the last call.
+func (b *ClusterConfigurationApplyConfiguration) WithNode(value v1.NodeSpec) *ClusterConfigurationApplyConfiguration {
+	b.Node = &value
 	return b
 }

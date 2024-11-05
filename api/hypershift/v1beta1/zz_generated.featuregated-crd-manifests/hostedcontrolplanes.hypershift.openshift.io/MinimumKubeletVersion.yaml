@@ -85,29 +85,30 @@ spec:
                 properties:
                   maxNodeProvisionTime:
                     description: |-
-                      MaxNodeProvisionTime is the maximum time to wait for node provisioning
+                      maxNodeProvisionTime is the maximum time to wait for node provisioning
                       before considering the provisioning to be unsuccessful, expressed as a Go
                       duration string. The default is 15 minutes.
                     pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                     type: string
                   maxNodesTotal:
                     description: |-
-                      MaxNodesTotal is the maximum allowable number of nodes across all NodePools
-                      for a HostedCluster. The autoscaler will not grow the cluster beyond this
+                      maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
+                      The autoscaler will not grow the cluster beyond this number.
+                      If omitted, the autoscaler will not have a maximum limit.
                       number.
                     format: int32
                     minimum: 0
                     type: integer
                   maxPodGracePeriod:
                     description: |-
-                      MaxPodGracePeriod is the maximum seconds to wait for graceful pod
+                      maxPodGracePeriod is the maximum seconds to wait for graceful pod
                       termination before scaling down a NodePool. The default is 600 seconds.
                     format: int32
                     minimum: 0
                     type: integer
                   podPriorityThreshold:
                     description: |-
-                      PodPriorityThreshold enables users to schedule "best-effort" pods, which
+                      podPriorityThreshold enables users to schedule "best-effort" pods, which
                       shouldn't trigger autoscaler actions, but only run when there are spare
                       resources available. The default is -10.
 
@@ -678,6 +679,7 @@ spec:
                       registries, and policies to block or allow registry hostnames.
                       When exposing OpenShift's image registry to the public, this also lets cluster
                       admins specify the external hostname.
+                      Changing this value will trigger a rollout for all existing NodePools in the cluster.
                     properties:
                       additionalTrustedCA:
                         description: |-
@@ -1143,7 +1145,7 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
+                          networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
@@ -1175,16 +1177,37 @@ spec:
                       configuration object.
                     properties:
                       cgroupMode:
-                        description: CgroupMode determines the cgroups version on
+                        description: cgroupMode determines the cgroups version on
                           the node
                         enum:
                         - v1
                         - v2
                         - ""
                         type: string
+                      minimumKubeletVersion:
+                        description: |-
+                          minimumKubeletVersion is the lowest version of a kubelet that can join the cluster.
+                          Specifically, the apiserver will deny most authorization requests of kubelets that are older
+                          than the specified version, only allowing the kubelet to get and update its node object, and perform
+                          subjectaccessreviews.
+                          This means any kubelet that attempts to join the cluster will not be able to run any assigned workloads,
+                          and will eventually be marked as not ready.
+                          Its max length is 8, so maximum version allowed is either "9.999.99" or "99.99.99".
+                          Since the kubelet reports the version of the kubernetes release, not Openshift, this field references
+                          the underlying kubernetes version this version of Openshift is based off of.
+                          In other words: if an admin wishes to ensure no nodes run an older version than Openshift 4.17, then
+                          they should set the minimumKubeletVersion to 1.30.0.
+                          When comparing versions, the kubelet's version is stripped of any contents outside of major.minor.patch version.
+                          Thus, a kubelet with version "1.0.0-ec.0" will be compatible with minimumKubeletVersion "1.0.0" or earlier.
+                        maxLength: 8
+                        type: string
+                        x-kubernetes-validations:
+                        - message: minmumKubeletVersion must be in a semver compatible
+                            format of x.y.z, or empty
+                          rule: self == "" || self.matches('^[0-9]*.[0-9]*.[0-9]*$')
                       workerLatencyProfile:
                         description: |-
-                          WorkerLatencyProfile determins the how fast the kubelet is updating
+                          workerLatencyProfile determins the how fast the kubelet is updating
                           the status and corresponding reaction of the cluster
                         enum:
                         - Default
@@ -1884,8 +1907,7 @@ spec:
                         type: array
                     type: object
                   proxy:
-                    description: Proxy holds cluster-wide information on how to configure
-                      default proxies for the cluster.
+                    description: ProxySpec contains cluster proxy creation configuration.
                     properties:
                       httpProxy:
                         description: httpProxy is the URL of the proxy for HTTP requests.  Empty
@@ -1971,7 +1993,7 @@ spec:
                         type: string
                       mastersSchedulable:
                         description: |-
-                          MastersSchedulable allows masters nodes to be schedulable. When this flag is
+                          mastersSchedulable allows masters nodes to be schedulable. When this flag is
                           turned on, all the master nodes in the cluster will be made schedulable,
                           so that workload pods can run on them. The default value for this field is false,
                           meaning none of the master nodes are schedulable.
@@ -2017,35 +2039,73 @@ spec:
                   If not defined, ReleaseImage is used
                 type: string
               controllerAvailabilityPolicy:
-                default: SingleReplica
+                default: HighlyAvailable
                 description: |-
                   ControllerAvailabilityPolicy specifies the availability policy applied to
                   critical control plane components. The default value is SingleReplica.
+                enum:
+                - HighlyAvailable
+                - SingleReplica
                 type: string
                 x-kubernetes-validations:
                 - message: ControllerAvailabilityPolicy is immutable
                   rule: self == oldSelf
               dns:
-                description: DNSSpec specifies the DNS configuration in the cluster.
+                description: DNSSpec specifies the DNS configuration for the hosted
+                  cluster ingress.
                 properties:
                   baseDomain:
-                    description: BaseDomain is the base domain of the cluster.
+                    description: |-
+                      baseDomain is the base domain of the hosted cluster.
+                      It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+                      If baseDomainPrefix is omitted, the hostedCluster.name will be used as the subdomain.
+                      Once set, this field is immutable.
+                      When the value is the empty string "", the controller might default to a value depending on the platform.
+                    maxLength: 253
                     type: string
+                    x-kubernetes-validations:
+                    - message: baseDomain must be a valid domain name (e.g., example,
+                        example.com, sub.example.com)
+                      rule: self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')
+                    - message: baseDomain is immutable
+                      rule: oldSelf == "" || self == oldSelf
                   baseDomainPrefix:
                     description: |-
-                      BaseDomainPrefix is the base domain prefix of the cluster.
-                      defaults to clusterName if not set. Set it to "" if you don't want a prefix to be prepended to BaseDomain.
+                      baseDomainPrefix is the base domain prefix for the hosted cluster ingress.
+                      It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+                      If baseDomainPrefix is omitted, the hostedCluster.name will be used as the subdomain.
+                      Set baseDomainPrefix to an empty string "", if you don't want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
+                      This field is immutable.
+                    maxLength: 253
                     type: string
+                    x-kubernetes-validations:
+                    - message: baseDomainPrefix must be a valid domain name (e.g.,
+                        example, example.com, sub.example.com)
+                      rule: self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')
+                    - message: baseDomainPrefix is immutable
+                      rule: self == oldSelf
                   privateZoneID:
                     description: |-
-                      PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
-                      available internally to the cluster exist.
+                      privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
+                      This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+                      Once set, this value is immutable.
+                    maxLength: 253
+                    minLength: 1
                     type: string
+                    x-kubernetes-validations:
+                    - message: privateZoneID is immutable
+                      rule: oldSelf == "" || self == oldSelf
                   publicZoneID:
                     description: |-
-                      PublicZoneID is the Hosted Zone ID where all the DNS records that are
-                      publicly accessible to the internet exist.
+                      publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
+                      This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+                      Once set, this value is immutable.
+                    maxLength: 253
+                    minLength: 1
                     type: string
+                    x-kubernetes-validations:
+                    - message: publicZoneID is immutable
+                      rule: oldSelf == "" || self == oldSelf
                 required:
                 - baseDomain
                 type: object
@@ -2055,15 +2115,15 @@ spec:
                   use to store data.
                 properties:
                   managed:
-                    description: Managed specifies the behavior of an etcd cluster
+                    description: managed specifies the behavior of an etcd cluster
                       managed by HyperShift.
                     properties:
                       storage:
-                        description: Storage specifies how etcd data is persisted.
+                        description: storage specifies how etcd data is persisted.
                         properties:
                           persistentVolume:
                             description: |-
-                              PersistentVolume is the configuration for PersistentVolume etcd storage.
+                              persistentVolume is the configuration for PersistentVolume etcd storage.
                               With this implementation, a PersistentVolume will be allocated for every
                               etcd member (either 1 or 3 depending on the HostedCluster control plane
                               availability configuration).
@@ -2073,8 +2133,10 @@ spec:
                                 - type: integer
                                 - type: string
                                 default: 8Gi
-                                description: Size is the minimum size of the data
-                                  volume for each etcd member.
+                                description: |-
+                                  size is the minimum size of the data volume for each etcd member.
+                                  Default is 8Gi.
+                                  This field is immutable
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true
                                 x-kubernetes-validations:
@@ -2082,14 +2144,16 @@ spec:
                                   rule: self == oldSelf
                               storageClassName:
                                 description: |-
-                                  StorageClassName is the StorageClass of the data volume for each etcd member.
-
+                                  storageClassName is the StorageClass of the data volume for each etcd member.
                                   See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1.
                                 type: string
+                                x-kubernetes-validations:
+                                - message: storageClassName is immutable
+                                  rule: self == oldSelf
                             type: object
                           restoreSnapshotURL:
                             description: |-
-                              RestoreSnapshotURL allows an optional URL to be provided where
+                              restoreSnapshotURL allows an optional URL to be provided where
                               an etcd snapshot can be downloaded, for example a pre-signed URL
                               referencing a storage service.
                               This snapshot will be restored on initial startup, only when the etcd PV
@@ -2102,8 +2166,9 @@ spec:
                                 1 entry
                               rule: self.size() <= 1
                           type:
-                            description: Type is the kind of persistent storage implementation
-                              to use for etcd.
+                            description: |-
+                              type is the kind of persistent storage implementation to use for etcd.
+                              Only PersistentVolume is supported at the moment.
                             enum:
                             - PersistentVolume
                             type: string
@@ -2114,19 +2179,25 @@ spec:
                     - storage
                     type: object
                   managementType:
-                    description: ManagementType defines how the etcd cluster is managed.
+                    description: |-
+                      managementType defines how the etcd cluster is managed.
+                      This can be either Managed or Unmanaged.
+                      This field is immutable.
                     enum:
                     - Managed
                     - Unmanaged
                     type: string
+                    x-kubernetes-validations:
+                    - message: managementType is immutable
+                      rule: self == oldSelf
                   unmanaged:
                     description: |-
-                      Unmanaged specifies configuration which enables the control plane to
-                      integrate with an eternally managed etcd cluster.
+                      unmanaged specifies configuration which enables the control plane to
+                      integrate with an externally managed etcd cluster.
                     properties:
                       endpoint:
                         description: |-
-                          Endpoint is the full etcd cluster client endpoint URL. For example:
+                          endpoint is the full etcd cluster client endpoint URL. For example:
 
                               https://etcd-client:2379
 
@@ -2134,7 +2205,7 @@ spec:
                         pattern: ^https://
                         type: string
                       tls:
-                        description: TLS specifies TLS configuration for HTTPS etcd
+                        description: tls specifies TLS configuration for HTTPS etcd
                           client endpoints.
                         properties:
                           clientSecret:
@@ -2167,6 +2238,15 @@ spec:
                 required:
                 - managementType
                 type: object
+                x-kubernetes-validations:
+                - message: Only managed configuration must be set when managementType
+                    is Managed
+                  rule: 'self.managementType == ''Managed'' ? has(self.managed) :
+                    !has(self.managed)'
+                - message: Only unmanaged configuration must be set when managementType
+                    is Unmanaged
+                  rule: 'self.managementType == ''Unmanaged'' ? has(self.unmanaged)
+                    : !has(self.unmanaged)'
               fips:
                 description: FIPS specifies if the nodes for the cluster will be running
                   in FIPS mode
@@ -2204,6 +2284,9 @@ spec:
                   InfrastructureAvailabilityPolicy specifies the availability policy applied
                   to infrastructure services which run on cluster nodes. The default value is
                   SingleReplica.
+                enum:
+                - HighlyAvailable
+                - SingleReplica
                 type: string
               issuerURL:
                 description: |-
@@ -2244,19 +2327,23 @@ spec:
                 properties:
                   apiServer:
                     description: |-
-                      APIServer contains advanced network settings for the API server that affect
-                      how the APIServer is exposed inside a cluster node.
+                      apiServer contains advanced network settings for the API server that affect
+                      how the APIServer is exposed inside a hosted cluster node.
                     properties:
                       advertiseAddress:
                         description: |-
-                          AdvertiseAddress is the address that nodes will use to talk to the API
+                          advertiseAddress is the address that pods within the nodes will use to talk to the API
                           server. This is an address associated with the loopback adapter of each
                           node. If not specified, the controller will take default values.
                           The default values will be set as 172.20.0.1 or fd00::1.
+                          This value is immutable.
                         type: string
+                        x-kubernetes-validations:
+                        - message: advertiseAddress is immutable
+                          rule: self == oldSelf
                       allowedCIDRBlocks:
                         description: |-
-                          AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+                          allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
                           If not specified, traffic is allowed from all addresses.
                           This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
                         items:
@@ -2265,42 +2352,64 @@ spec:
                         type: array
                       port:
                         description: |-
-                          Port is the port at which the APIServer is exposed inside a node. Other
+                          port is the port at which the APIServer is exposed inside a node. Other
                           pods using host networking cannot listen on this port.
-                          If unset 6443 is used.
+                          If omitted 6443 is used.
                           This is useful to choose a port other than the default one which might interfere with customer environments e.g. https://github.com/openshift/hypershift/pull/356.
                           Setting this to 443 is possible only for backward compatibility reasons and it's discouraged.
                           Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.
+                          This value is immutable.
                         format: int32
                         type: integer
+                        x-kubernetes-validations:
+                        - message: port is immutable
+                          rule: self == oldSelf
                     type: object
                   clusterNetwork:
                     default:
                     - cidr: 10.132.0.0/14
-                    description: ClusterNetwork is the list of IP address pools for
-                      pods.
+                    description: |-
+                      clusterNetwork is the list of IP address pools for pods.
+                      Defaults to cidr: "10.132.0.0/14".
+                      Currently only one entry is supported.
+                      This field is immutable.
                     items:
                       description: |-
                         ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
                         are allocated with size 2^HostSubnetLength.
                       properties:
                         cidr:
-                          description: CIDR is the IP block address pool.
+                          description: cidr is the IP block address pool.
+                          maxLength: 43
                           type: string
+                          x-kubernetes-validations:
+                          - message: cidr must be a valid IPv4 or IPv6 CIDR notation
+                              (e.g., 192.168.1.0/24 or 2001:db8::/64)
+                            rule: self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$')
+                              || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')
                         hostPrefix:
                           description: |-
-                            HostPrefix is the prefix size to allocate to each node from the CIDR.
-                            For example, 24 would allocate 2^8=256 adresses to each node. If this
+                            hostPrefix is the prefix size to allocate to each node from the CIDR.
+                            For example, 24 would allocate 2^(32-24)=2^8=256 addresses to each node. If this
                             field is not used by the plugin, it can be left unset.
                           format: int32
                           type: integer
                       required:
                       - cidr
                       type: object
+                    maxItems: 2
+                    minItems: 1
                     type: array
+                    x-kubernetes-validations:
+                    - message: clusterNetwork is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                   machineNetwork:
-                    description: MachineNetwork is the list of IP address pools for
-                      machines.
+                    description: |-
+                      machineNetwork is the list of IP address pools for machines.
+                      This might be used among other things to generate appropriate networking security groups in some clouds providers.
+                      Currently only one entry or two for dual stack is supported.
+                      This field is immutable.
                     items:
                       description: MachineNetworkEntry is a single IP address block
                         for node IP blocks.
@@ -2308,15 +2417,30 @@ spec:
                         cidr:
                           description: CIDR is the IP block address pool for machines
                             within the cluster.
+                          maxLength: 43
                           type: string
+                          x-kubernetes-validations:
+                          - message: cidr must be a valid IPv4 or IPv6 CIDR notation
+                              (e.g., 192.168.1.0/24 or 2001:db8::/64)
+                            rule: self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$')
+                              || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')
                       required:
                       - cidr
                       type: object
+                    maxItems: 2
+                    minItems: 1
                     type: array
+                    x-kubernetes-validations:
+                    - message: machineNetwork is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                   networkType:
                     default: OVNKubernetes
-                    description: NetworkType specifies the SDN provider used for cluster
-                      networking.
+                    description: |-
+                      networkType specifies the SDN provider used for cluster networking.
+                      Defaults to OVNKubernetes.
+                      This field is required and immutable.
+                      kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
                     enum:
                     - OpenShiftSDN
                     - Calico
@@ -2327,24 +2451,44 @@ spec:
                     default:
                     - cidr: 172.31.0.0/16
                     description: |-
-                      ServiceNetwork is the list of IP address pools for services.
-                      NOTE: currently only one entry is supported.
+                      serviceNetwork is the list of IP address pools for services.
+                      Defaults to cidr: "172.31.0.0/16".
+                      Currently only one entry is supported.
+                      This field is immutable.
                     items:
                       description: ServiceNetworkEntry is a single IP address block
                         for the service network.
                       properties:
                         cidr:
-                          description: CIDR is the IP block address pool for services
-                            within the cluster.
+                          description: cidr is the IP block address pool for services
+                            within the cluster in CIDR format (e.g., 192.168.1.0/24
+                            or 2001:0db8::/64)
+                          maxLength: 43
                           type: string
+                          x-kubernetes-validations:
+                          - message: cidr must be a valid IPv4 or IPv6 CIDR notation
+                              (e.g., 192.168.1.0/24 or 2001:db8::/64)
+                            rule: self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$')
+                              || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')
                       required:
                       - cidr
                       type: object
+                    maxItems: 2
+                    minItems: 1
                     type: array
-                required:
-                - clusterNetwork
-                - networkType
+                    x-kubernetes-validations:
+                    - message: serviceNetwork is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                 type: object
+                x-kubernetes-validations:
+                - message: CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork
+                    must be unique and non-overlapping
+                  rule: (!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s,
+                    c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m,
+                    self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m,
+                    self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c,
+                    self.serviceNetwork.all(s, c.cidr != s.cidr)))))
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -2819,22 +2963,6 @@ spec:
                         - AzureGermanCloud
                         - AzureStackCloud
                         type: string
-                      credentials:
-                        description: |-
-                          Credentials is the object containing existing Azure credentials needed for creating and managing cloud
-                          infrastructure resources.
-                        properties:
-                          name:
-                            default: ""
-                            description: |-
-                              Name of the referent.
-                              This field is effectively required, but due to backwards compatibility is
-                              allowed to be empty. Instances of this type with an empty value here are
-                              almost certainly wrong.
-                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                            type: string
-                        type: object
-                        x-kubernetes-map-type: atomic
                       location:
                         description: |-
                           Location is the Azure region in where all the cloud infrastructure resources will be created.
@@ -2844,6 +2972,577 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      managedIdentities:
+                        description: |-
+                          managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+                          authenticate with Azure's API.
+                        properties:
+                          controlPlane:
+                            description: |-
+                              controlPlane contains the client IDs of all the managed identities on the HCP control plane needing to
+                              authenticate with Azure's API.
+                            properties:
+                              cloudProvider:
+                                description: |-
+                                  cloudProvider is a pre-existing managed identity associated with the azure cloud provider, aka cloud controller
+                                  manager.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                              controlPlaneOperator:
+                                description: controlPlaneOperator is a pre-existing
+                                  managed identity associated with the control plane
+                                  operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                              disk:
+                                description: diskClientID is a pre-existing managed
+                                  identity associated with the azure-disk-controller.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                              file:
+                                description: fileClientID is a pre-existing managed
+                                  identity associated with the azure-disk-controller.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                              imageRegistry:
+                                description: imageRegistry is a pre-existing managed
+                                  identity associated with the cluster-image-registry-operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                              ingress:
+                                description: ingress is a pre-existing managed identity
+                                  associated with the cluster-ingress-operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                              managedIdentitiesKeyVault:
+                                description: |-
+                                  managedIdentitiesKeyVault contains information on the management cluster's managed identities Azure Key Vault.
+                                  This Key Vault is where the managed identities certificates are stored. These certificates are pulled out of the
+                                  Key Vault by the Secrets Store CSI driver and mounted into a volume on control plane pods requiring
+                                  authentication with Azure API.
+
+                                  More information on how the Secrets Store CSI driver works to do this can be found here:
+                                  https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver.
+                                properties:
+                                  name:
+                                    description: name is the name of the Azure Key
+                                      Vault on the management cluster.
+                                    type: string
+                                  tenantID:
+                                    description: tenantID is the tenant ID of the
+                                      Azure Key Vault on the management cluster.
+                                    type: string
+                                required:
+                                - name
+                                - tenantID
+                                type: object
+                              network:
+                                description: network is a pre-existing managed identity
+                                  associated with the cluster-network-operator.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                              nodePoolManagement:
+                                description: nodePoolManagement is a pre-existing
+                                  managed identity associated with the operator managing
+                                  the NodePools.
+                                properties:
+                                  certificateName:
+                                    description: |-
+                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                      reside in an Azure Key Vault on the management cluster.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                  clientID:
+                                    description: |-
+                                      clientID is the client ID of a managed identity.
+                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  credentialsSecretName:
+                                    description: |
+                                      credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                      format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                      ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                      More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                      credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                      credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                    maxLength: 127
+                                    type: string
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
+                                required:
+                                - certificateName
+                                - clientID
+                                - objectEncoding
+                                type: object
+                            required:
+                            - cloudProvider
+                            - controlPlaneOperator
+                            - disk
+                            - file
+                            - imageRegistry
+                            - ingress
+                            - managedIdentitiesKeyVault
+                            - network
+                            - nodePoolManagement
+                            type: object
+                          dataPlane:
+                            description: |-
+                              dataPlane contains the client IDs of all the managed identities on the data plane needing to authenticate with
+                              Azure's API.
+                            properties:
+                              diskMSIClientID:
+                                description: diskMSIClientID is the client ID of a
+                                  pre-existing managed identity ID associated with
+                                  the CSI Disk driver.
+                                type: string
+                              fileMSIClientID:
+                                description: fileMSIClientID is the client ID of a
+                                  pre-existing managed identity ID associated with
+                                  the CSI File driver.
+                                type: string
+                              imageRegistryMSIClientID:
+                                description: |-
+                                  imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
+                                  registry controller.
+                                type: string
+                            required:
+                            - diskMSIClientID
+                            - fileMSIClientID
+                            - imageRegistryMSIClientID
+                            type: object
+                        required:
+                        - controlPlane
+                        - dataPlane
+                        type: object
                       resourceGroup:
                         default: default
                         description: |-
@@ -2872,13 +3571,43 @@ spec:
                           rule: self == oldSelf
                       subnetID:
                         description: |-
-                          SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
-                          subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
-                          same subscription as SubscriptionID.
-
-                          In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.
+                          subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+                          different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
+                          exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
+                          HostedCluster.Spec.Platform.Azure.SubscriptionID.
+                          subnetID is immutable once set.
+                          The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
+                          The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                          The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
+                          The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
+                          The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
+                        maxLength: 355
+                        minLength: 1
                         type: string
                         x-kubernetes-validations:
+                        - message: encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
+                          rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
+                        - message: The resourceGroupName should be between 1 and 90
+                            characters, consisting only of alphanumeric characters,
+                            hyphens, underscores, periods and parenthesis
+                          rule: self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')
+                        - message: the resourceGroupName in the subnetID must not
+                            end with a period (.) character
+                          rule: '!self.split(''/'')[4].endsWith(''.'')'
+                        - message: The vnetName should be between 2 and 64 characters,
+                            consisting only of alphanumeric characters, hyphens, underscores
+                            and periods
+                          rule: self.split('/')[8].matches('[a-zA-Z0-9-_\\.]{2,64}')
+                        - message: the vnetName in the subnetID must not end with
+                            either a period (.) or hyphen (-) character
+                          rule: '!self.split(''/'')[8].endsWith(''.'') && !self.split(''/'')[8].endsWith(''-'')'
+                        - message: The subnetName should be between 1 and 80 characters,
+                            consisting only of alphanumeric characters, hyphens and
+                            underscores and must start with an alphanumeric character
+                          rule: self.split('/')[10].matches('[a-zA-Z0-9][a-zA-Z0-9-_\\.]{0,79}')
+                        - message: the subnetName in the subnetID must not end with
+                            a period (.) or hyphen (-) character
+                          rule: '!self.split(''/'')[10].endsWith(''.'') && !self.split(''/'')[10].endsWith(''-'')'
                         - message: SubnetID is immutable
                           rule: self == oldSelf
                       subscriptionID:
@@ -2888,6 +3617,10 @@ spec:
                         x-kubernetes-validations:
                         - message: SubscriptionID is immutable
                           rule: self == oldSelf
+                      tenantID:
+                        description: tenantID is a unique identifier for the tenant
+                          where Azure resources will be created and managed in.
+                        type: string
                       vnetID:
                         description: |-
                           VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
@@ -2902,12 +3635,13 @@ spec:
                         - message: VnetID is immutable
                           rule: self == oldSelf
                     required:
-                    - credentials
                     - location
+                    - managedIdentities
                     - resourceGroup
                     - securityGroupID
                     - subnetID
                     - subscriptionID
+                    - tenantID
                     - vnetID
                     type: object
                   ibmcloud:
@@ -3003,7 +3737,7 @@ spec:
                         properties:
                           manual:
                             description: |-
-                              Manual is used to explicilty define how the infra storageclasses are
+                              Manual is used to explicitly define how the infra storageclasses are
                               mapped to guest storageclasses
                             properties:
                               storageClassMapping:
@@ -3012,7 +3746,7 @@ spec:
                                   the KubeVirt VMs to StorageClasses that are made available within the
                                   Guest Cluster.
 
-                                  NOTE: It is possible that not all capablities of an infra cluster's
+                                  NOTE: It is possible that not all capabilities of an infra cluster's
                                   storageclass will be present for the corresponding guest clusters storageclass.
                                 items:
                                   properties:
@@ -3464,8 +4198,70 @@ spec:
                             - keyVaultName
                             - keyVersion
                             type: object
+                          kms:
+                            description: kms is a pre-existing managed identity used
+                              to authenticate with Azure KMS.
+                            properties:
+                              certificateName:
+                                description: |-
+                                  certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+                                  reside in an Azure Key Vault on the management cluster.
+                                  Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                  removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                type: string
+                              clientID:
+                                description: |-
+                                  clientID is the client ID of a managed identity.
+                                  Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+                                  removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              credentialsSecretName:
+                                description: |
+                                  credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+                                  format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+                                  ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
+
+                                  More info on this struct can be found here - https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156.
+
+                                  credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+                                  credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
+                                maxLength: 127
+                                type: string
+                              objectEncoding:
+                                allOf:
+                                - enum:
+                                  - utf-8
+                                  - hex
+                                  - base64
+                                - enum:
+                                  - utf-8
+                                  - hex
+                                  - base64
+                                default: utf-8
+                                description: |-
+                                  objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                  CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                  Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                  unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                  SecretProviderClass custom resource related to the managed identity.
+
+                                  The default value is utf-8.
+
+                                  See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                type: string
+                            required:
+                            - certificateName
+                            - clientID
+                            - objectEncoding
+                            type: object
                         required:
                         - activeKey
+                        - kms
                         type: object
                       ibmcloud:
                         description: IBMCloud defines metadata for the IBM Cloud KMS
@@ -3601,11 +4397,16 @@ spec:
                   in the management cluster.
                 items:
                   description: |-
-                    ServicePublishingStrategyMapping specifies how individual control plane
-                    services are published from the hosting cluster of a control plane.
+                    ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
+                    This includes APIServer;OAuthServer;Konnectivity;Ignition.
+                    If a given service is not present in this list, it will be exposed publicly by default.
                   properties:
                     service:
-                      description: Service identifies the type of service being published.
+                      description: |-
+                        service identifies the type of service being published.
+                        It can be APIServer;OAuthServer;Konnectivity;Ignition
+                        OVNSbDb;OIDC are no-op and kept for backward compatibility.
+                        This field is immutable.
                       enum:
                       - APIServer
                       - OAuthServer
@@ -3615,29 +4416,44 @@ spec:
                       - OVNSbDb
                       type: string
                     servicePublishingStrategy:
-                      description: ServicePublishingStrategy specifies how to publish
-                        Service.
+                      description: servicePublishingStrategy specifies how to publish
+                        a service endpoint.
                       properties:
                         loadBalancer:
-                          description: LoadBalancer configures exposing a service
-                            using a LoadBalancer.
+                          description: loadBalancer configures exposing a service
+                            using a dedicated LoadBalancer.
                           properties:
                             hostname:
-                              description: Hostname is the name of the DNS record
-                                that will be created pointing to the LoadBalancer.
+                              description: |-
+                                hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
+                                If omitted, the value will be inferred from the corev1.Service Load balancer type .status.
+                              maxLength: 253
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: hostname must be a valid domain name (e.g.,
+                                  example.com)
+                                rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
                           type: object
                         nodePort:
-                          description: NodePort configures exposing a service using
+                          description: nodePort configures exposing a service using
                             a NodePort.
                           properties:
                             address:
-                              description: Address is the host/ip that the NodePort
+                              description: address is the host/ip that the NodePort
                                 service is exposed over.
+                              maxLength: 253
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: address must be a valid hostname, IPv4, or
+                                  IPv6 address
+                                rule: isIP(self) || self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$')
+                                  || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$')
+                                  || self.matches('^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$')
                             port:
                               description: |-
-                                Port is the port of the NodePort service. If <=0, the port is dynamically
+                                port is the port of the NodePort service. If <=0, the port is dynamically
                                 assigned when the service is created.
                               format: int32
                               type: integer
@@ -3645,17 +4461,26 @@ spec:
                           - address
                           type: object
                         route:
-                          description: Route configures exposing a service using a
-                            Route.
+                          description: |-
+                            route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
+                            The specifics of the setup are platform dependent.
                           properties:
                             hostname:
-                              description: Hostname is the name of the DNS record
-                                that will be created pointing to the Route.
+                              description: |-
+                                Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
+                                If omitted, the value will be inferred from management ingress.Spec.Domain.
+                              maxLength: 253
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: hostname must be a valid domain name (e.g.,
+                                  example.com)
+                                rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
                           type: object
                         type:
-                          description: Type is the publishing strategy used for the
-                            service.
+                          description: |-
+                            type is the publishing strategy used for the service.
+                            It can be LoadBalancer;NodePort;Route;None;S3
                           enum:
                           - LoadBalancer
                           - NodePort
@@ -3666,10 +4491,32 @@ spec:
                       required:
                       - type
                       type: object
+                      x-kubernetes-validations:
+                      - message: nodePort is required when type is NodePort, and forbidden
+                          otherwise
+                        rule: 'self.type == ''NodePort'' ? has(self.nodePort) : !has(self.nodePort)'
+                      - message: only route is allowed when type is Route, and forbidden
+                          otherwise
+                        rule: 'self.type == ''Route'' ? !has(self.nodePort) && !has(self.loadBalancer)
+                          : !has(self.route)'
+                      - message: only loadBalancer is required when type is LoadBalancer,
+                          and forbidden otherwise
+                        rule: 'self.type == ''LoadBalancer'' ? !has(self.nodePort)
+                          && !has(self.route) : !has(self.loadBalancer)'
+                      - message: None does not allowed any configuration for loadBalancer,
+                          nodePort, or route
+                        rule: 'self.type == ''None'' ? !has(self.nodePort) && !has(self.route)
+                          && !has(self.loadBalancer) : true'
+                      - message: S3 does not allowed any configuration for loadBalancer,
+                          nodePort, or route
+                        rule: 'self.type == ''S3'' ? !has(self.nodePort) && !has(self.route)
+                          && !has(self.loadBalancer) : true'
                   required:
                   - service
                   - servicePublishingStrategy
                   type: object
+                maxItems: 6
+                minItems: 4
                 type: array
               sshKey:
                 description: |-
@@ -3688,7 +4535,7 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               tolerations:
-                description: Tolerations when specified, define what custome tolerations
+                description: Tolerations when specified, define what custom tolerations
                   are added to the hcp pods.
                 items:
                   description: |-
@@ -4114,12 +4961,12 @@ spec:
                                     fail to evaluate.
                                   properties:
                                     promql:
-                                      description: promQL represents a cluster condition
+                                      description: promql represents a cluster condition
                                         based on PromQL.
                                       properties:
                                         promql:
                                           description: |-
-                                            PromQL is a PromQL query classifying clusters. This query
+                                            promql is a PromQL query classifying clusters. This query
                                             query should return a 1 in the match case and a 0 in the
                                             does-not-match case. Queries which return no time
                                             series, or which return values besides 0 or 1, are
