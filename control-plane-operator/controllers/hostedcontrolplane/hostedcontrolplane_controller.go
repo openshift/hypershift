@@ -2923,6 +2923,30 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
+
+	// Report any IDP configuration errors as a condition on the HCP
+	new := metav1.Condition{
+		Type:    string(hyperv1.ValidIDPConfiguration),
+		Status:  metav1.ConditionTrue,
+		Reason:  "IDPConfigurationValid",
+		Message: "Identity provider configuration is valid",
+	}
+	if _, _, err := oauth.ConvertIdentityProviders(ctx, p.IdentityProviders(), p.OauthConfigOverrides, r, hcp.Namespace); err != nil {
+		// Report the error in a condition on the HCP
+		r.Log.Error(err, "failed to initialize identity providers")
+		new = metav1.Condition{
+			Type:    string(hyperv1.ValidIDPConfiguration),
+			Status:  metav1.ConditionFalse,
+			Reason:  "IDPConfigurationError",
+			Message: fmt.Sprintf("failed to initialize identity providers: %v", err),
+		}
+	}
+	// Update the condition on the HCP if it has changed
+	meta.SetStatusCondition(&hcp.Status.Conditions, new)
+	if err := r.Status().Update(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to update valid IDP configuration condition: %w", err)
+	}
+
 	return nil
 }
 
