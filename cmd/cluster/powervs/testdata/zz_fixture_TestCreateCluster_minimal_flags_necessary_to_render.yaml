@@ -63,14 +63,14 @@ spec:
         name: NodePoolManagement
       region: us-south
       resourceGroup: ""
-      serviceInstanceID: ""
+      serviceInstanceID: fakeCloudInstanceID
       storageOperatorCloudCreds:
         name: StorageOperator
       subnet:
         id: fakeDHCPSubnetID
         name: fakeDHCPSubnet
       vpc:
-        name: ""
+        name: fakeVPCName
         region: us-south
         subnet: fakeVPCSubnetName
       zone: us-south
