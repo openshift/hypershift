@@ -35,6 +35,10 @@ func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions,
 		NodePoolOpts:       azurenodepool.DefaultOptions(),
 	}
 
+	if client == nil {
+		return rawCreateOptions, nil
+	}
+
 	techPreviewCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "hypershift", Name: "feature-gate"}}
 	if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(techPreviewCM), techPreviewCM); err != nil && !apierrors.IsNotFound(err) {
 		log.Info("Warning: Failed to get feature-gate configmap, proceeding without tech preview", "error", err)
@@ -472,8 +476,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	client, err := util.GetClient()
 	if err != nil {
-		opts.Log.Error(err, "Failed to get client")
-		return nil
+		opts.Log.Info(fmt.Sprintf("Failed to get client, proceeding without checking feature gate CM: %s", err.Error()))
 	}
 
 	azureOpts, err := DefaultOptions(client, opts.Log)
