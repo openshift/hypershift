@@ -258,9 +258,19 @@ spec:
           name: server-certs
       - args:
         - -c
-        - "\nset -o errexit\nset -o nounset\nset -o pipefail\n\nfunction cleanup()
-          {\n\tkill -- -$$\n\twait\n}\ntrap cleanup SIGTERM\n\n/usr/bin/tail -c+1
-          -F /var/log/kube-apiserver/audit.log &\nwait $!\n"
+        - |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          function cleanup() {
+            kill -- -$$
+            wait
+          }
+          trap cleanup SIGTERM
+
+          /usr/bin/tail -c+1 -F /var/log/kube-apiserver/audit.log &
+          wait $!
         command:
         - /bin/bash
         image: cli
