@@ -86,10 +86,8 @@ spec:
             properties:
               arch:
                 default: amd64
-                description: "Arch is the preferred processor architecture for the
-                  NodePool (currently only supported on AWS)\nNOTE: This is set as
-                  optional to prevent validation from failing due to a limitation
-                  on client side validation with open API machinery:\n\thttps://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215"
+                description: "arch is the preferred processor architecture for the
+                  NodePool. Different platforms might have different supported architectures.\n\thttps://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215"
                 enum:
                 - arm64
                 - amd64
@@ -99,17 +97,19 @@ spec:
                 - message: Arch is immutable
                   rule: self == oldSelf
               autoScaling:
-                description: Autoscaling specifies auto-scaling behavior for the NodePool.
+                description: |-
+                  autoscaling specifies auto-scaling behavior for the NodePool.
+                  autoscaling is mutually exclusive with replicas. If replicas is set, this field must be ommited.
                 properties:
                   max:
                     description: Max is the maximum number of nodes allowed in the
-                      pool. Must be >= 1.
+                      pool. Must be >= 1 and >= Min.
                     format: int32
                     minimum: 1
                     type: integer
                   min:
                     description: Min is the minimum number of nodes to maintain in
-                      the pool. Must be >= 1.
+                      the pool. Must be >= 1 and <= .Max.
                     format: int32
                     minimum: 1
                     type: integer
@@ -121,15 +121,22 @@ spec:
                 - message: max must be equal or greater than min
                   rule: self.max >= self.min
               clusterName:
-                description: |
-                  ClusterName is the name of the HostedCluster this NodePool belongs to.
+                description: |-
+                  clusterName is the name of the HostedCluster this NodePool belongs to.
+                  If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
+                maxLength: 253
+                minLength: 1
                 type: string
                 x-kubernetes-validations:
                 - message: ClusterName is immutable
                   rule: self == oldSelf
+                - message: clusterName must consist of lowercase alphanumeric characters
+                    or '-', start and end with an alphanumeric character, and be between
+                    1 and 253 characters
+                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
               config:
                 description: |-
-                  Config is a list of references to ConfigMaps containing serialized
+                  config is a list of references to ConfigMaps containing serialized
                   MachineConfig resources to be injected into the ignition configurations of
                   nodes in the NodePool. The MachineConfig API schema is defined here:
 
@@ -137,13 +144,15 @@ spec:
 
                   Each ConfigMap must have a single key named "config" whose value is the YML
                   with one or more serialized machineconfiguration.openshift.io resources:
-                  KubeletConfig
-                  ContainerRuntimeConfig
-                  MachineConfig
-                  ClusterImagePolicy
-                  ImageContentSourcePolicy
-                  or
-                  ImageDigestMirrorSet
+
+                  * KubeletConfig
+                  * ContainerRuntimeConfig
+                  * MachineConfig
+                  * ClusterImagePolicy
+                  * ImageContentSourcePolicy
+                  * ImageDigestMirrorSet
+
+                  This is validated in the backend and signaled back via validMachineConfig condition.
                 items:
                   description: |-
                     LocalObjectReference contains enough information to let you locate the
@@ -163,24 +172,27 @@ spec:
                 type: array
               management:
                 description: |-
-                  Management specifies behavior for managing nodes in the pool, such as
+                  management specifies behavior for managing nodes in the pool, such as
                   upgrade strategies and auto-repair behaviors.
                 properties:
                   autoRepair:
                     default: false
                     description: |-
-                      AutoRepair specifies whether health checks should be enabled for machines
-                      in the NodePool. The default is false.
+                      autoRepair specifies whether health checks should be enabled for machines in the NodePool. The default is false.
+                      Enabling this feature will cause the controller to automatically delete unhealthy machines.
+                      The unhealthy criteria is reserved for the controller implementation and subject to change.
+                      But generally it's determined by checking the Node ready condition is true and a timeout that might vary depending on the platform provider.
+                      AutoRepair will no-op when more than 2 Nodes are unhealthy at the same time. Giving time for the cluster to stabilize or to the user to manually intervene.
                     type: boolean
                   inPlace:
-                    description: InPlace is the configuration for in-place upgrades.
+                    description: inPlace is the configuration for in-place upgrades.
                     properties:
                       maxUnavailable:
                         anyOf:
                         - type: integer
                         - type: string
                         description: |-
-                          MaxUnavailable is the maximum number of nodes that can be unavailable
+                          maxUnavailable is the maximum number of nodes that can be unavailable
                           during the update.
 
                           Value can be an absolute number (ex: 5) or a percentage of desired nodes
@@ -203,11 +215,13 @@ spec:
                         maxSurge: 1
                         maxUnavailable: 0
                       strategy: RollingUpdate
-                    description: Replace is the configuration for rolling upgrades.
+                    description: |-
+                      replace is the configuration for rolling upgrades.
+                      It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.
                     properties:
                       rollingUpdate:
                         description: |-
-                          RollingUpdate specifies a rolling update strategy which upgrades nodes by
+                          rollingUpdate specifies a rolling update strategy which upgrades nodes by
                           creating new nodes and deleting the old ones.
                         properties:
                           maxSurge:
@@ -215,7 +229,7 @@ spec:
                             - type: integer
                             - type: string
                             description: |-
-                              MaxSurge is the maximum number of nodes that can be provisioned above the
+                              maxSurge is the maximum number of nodes that can be provisioned above the
                               desired number of nodes.
 
                               Value can be an absolute number (ex: 5) or a percentage of desired nodes
@@ -238,7 +252,7 @@ spec:
                             - type: integer
                             - type: string
                             description: |-
-                              MaxUnavailable is the maximum number of nodes that can be unavailable
+                              maxUnavailable is the maximum number of nodes that can be unavailable
                               during the update.
 
                               Value can be an absolute number (ex: 5) or a percentage of desired nodes
@@ -258,16 +272,25 @@ spec:
                             x-kubernetes-int-or-string: true
                         type: object
                       strategy:
-                        description: Strategy is the node replacement strategy for
-                          nodes in the pool.
+                        description: |-
+                          strategy is the node replacement strategy for nodes in the pool.
+                          In can be either "RollingUpdate" or "OnDelete". RollingUpdate will rollout Nodes honoring maxSurge and maxUnavailable.
+                          OnDelete provide more granular control and will replace nodes as the old ones are manually deleted.
                         enum:
                         - RollingUpdate
                         - OnDelete
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: The 'rollingUpdate' field can only be set when 'strategy'
+                        is 'RollingUpdate'
+                      rule: '!has(self.rollingUpdate) || self.strategy == ''RollingUpdate'''
                   upgradeType:
-                    description: UpgradeType specifies the type of strategy for handling
-                      upgrades.
+                    description: |-
+                      upgradeType specifies the type of strategy for handling upgrades.
+                      This can be either "Replace" or "InPlace".
+                      "Replace" will update Nodes by recreating the underlying instances.
+                      "InPlace" will update Nodes by applying changes to the existing instances. This might or might not result in a reboot.
                     enum:
                     - Replace
                     - InPlace
@@ -278,40 +301,45 @@ spec:
                 required:
                 - upgradeType
                 type: object
+                x-kubernetes-validations:
+                - message: The 'inPlace' field can only be set when 'upgradeType'
+                    is 'InPlace'
+                  rule: '!has(self.inPlace) || self.upgradeType == ''InPlace'''
               nodeDrainTimeout:
                 description: |-
-                  NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
-                  The default value is 0, meaning that the node can be drained without any time limitations.
-                  NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
-                  the purpose of the change. In future we plan to propagate this field in-place.
-                  https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+                  nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
+                  The default value is 0, meaning that the node can retry drain without any time limitations.
                 type: string
               nodeLabels:
                 additionalProperties:
                   type: string
                 description: |-
-                  NodeLabels propagates a list of labels to Nodes, only once on creation.
+                  nodeLabels propagates a list of labels to Nodes, only once on creation.
                   Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
                 type: object
               nodeVolumeDetachTimeout:
                 description: |-
-                  NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+                  nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
                   The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-                  After the timeout, the detachment of volumes that haven't been detached yet is skipped.
-                  Today changing this field will trigger a recreate rolling update, which kind of defeats
-                  the purpose of the change. In future we plan to propagate this field in-place.
-                  https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+                  After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
                 type: string
               pausedUntil:
                 description: |-
-                  PausedUntil is a field that can be used to pause reconciliation on a resource.
-                  Either a date can be provided in RFC3339 format or a boolean. If a date is
+                  pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
+                  Either a date can be provided in RFC3339 format or a boolean as in 'true', 'false', 'True', 'False'. If a date is
                   provided: reconciliation is paused on the resource until that date. If the boolean true is
                   provided: reconciliation is paused on the resource until the field is removed.
+                maxLength: 35
+                minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: PausedUntil must be a date in RFC3339 format or 'True',
+                    'true', 'False' or 'false'
+                  rule: self.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*$')
+                    || self in ['true', 'false', 'True', 'False']
               platform:
                 description: |-
-                  Platform specifies the underlying infrastructure provider for the NodePool
+                  platform specifies the underlying infrastructure provider for the NodePool
                   and is used to configure platform specific behavior.
                 properties:
                   agent:
@@ -1167,53 +1195,82 @@ spec:
                 type: object
               release:
                 description: |-
-                  Release specifies the OCP release used for the NodePool. This informs the
-                  ignition configuration for machines, as well as other platform specific
+                  release specifies the OCP release used for the NodePool. This informs the
+                  ignition configuration for machines which includes the kubelet version, as well as other platform specific
                   machine properties (e.g. an AMI on the AWS platform).
+                  It's not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there's no enforcement that prevents this from happening.
+                  Attempting to use a release with a bigger skew might result in unpredictable behaviour.
+                  Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+                  Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
                 properties:
                   image:
-                    description: Image is the image pullspec of an OCP release payload
-                      image.
-                    pattern: ^(\w+\S+)$
+                    description: |-
+                      Image is the image pullspec of an OCP release payload image.
+                      See https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags for a list of available images.
+                    maxLength: 253
+                    minLength: 1
                     type: string
+                    x-kubernetes-validations:
+                    - message: Image must start with a word character (letters, digits,
+                        or underscores) and contain no white spaces
+                      rule: self.matches('^(\\w+\\S+)$')
                 required:
                 - image
                 type: object
               replicas:
                 description: |-
-                  Replicas is the desired number of nodes the pool should maintain. If
-                  unset, the default value is 0.
+                  replicas is the desired number of nodes the pool should maintain. If unset, the controller default value is 0.
+                  replicas is mutually exclusive with autoscaling. If autoscaling is configured, replicas must be omitted and autoscaling will control the NodePool size internally.
                 format: int32
                 type: integer
               taints:
-                description: Taints if specified, propagates a list of taints to Nodes,
-                  only once on creation.
+                description: |-
+                  taints if specified, propagates a list of taints to Nodes, only once on creation.
+                  These taints are additive to the ones applied by other controllers
                 items:
                   description: |-
-                    Taint is as v1 Core but without TimeAdded.
+                    taint is as v1 Core but without TimeAdded.
                     https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053
+                    Validation replicates the same validation as the upstream https://github.com/kubernetes/kubernetes/blob/9a2a7537f035969a68e432b4cc276dbce8ce1735/pkg/util/taints/taints.go#L273.
+                    See also https://kubernetes.io/docs/concepts/overview/working-with-objects/names/.
                   properties:
                     effect:
                       description: |-
-                        Required. The effect of the taint on pods
+                        effect is the effect of the taint on pods
                         that do not tolerate the taint.
                         Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                      enum:
+                      - NoSchedule
+                      - PreferNoSchedule
+                      - NoExecute
                       type: string
                     key:
-                      description: Required. The taint key to be applied to a node.
+                      description: key is the taint key to be applied to a node.
+                      maxLength: 253
+                      minLength: 1
                       type: string
+                      x-kubernetes-validations:
+                      - message: key must be a qualified name with an optional subdomain
+                          prefix e.g. example.com/MyName
+                        rule: self.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\\/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$')
                     value:
-                      description: The taint value corresponding to the taint key.
-                      pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                      description: value is the taint value corresponding to the taint
+                        key.
+                      maxLength: 253
                       type: string
+                      x-kubernetes-validations:
+                      - message: Value must start and end with alphanumeric characters
+                          and can only contain '-', '_', '.' in the middle
+                        rule: self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$')
                   required:
                   - effect
                   - key
                   type: object
+                maxItems: 50
                 type: array
               tuningConfig:
                 description: |-
-                  TuningConfig is a list of references to ConfigMaps containing serialized
+                  tuningConfig is a list of references to ConfigMaps containing serialized
                   Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
                   nodes in the NodePool. The Tuned API is defined here:
 

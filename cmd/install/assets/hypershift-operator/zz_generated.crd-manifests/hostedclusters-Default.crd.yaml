@@ -2441,10 +2441,16 @@ spec:
                   If not defined, Release is used
                 properties:
                   image:
-                    description: Image is the image pullspec of an OCP release payload
-                      image.
-                    pattern: ^(\w+\S+)$
+                    description: |-
+                      Image is the image pullspec of an OCP release payload image.
+                      See https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags for a list of available images.
+                    maxLength: 253
+                    minLength: 1
                     type: string
+                    x-kubernetes-validations:
+                    - message: Image must start with a word character (letters, digits,
+                        or underscores) and contain no white spaces
+                      rule: self.matches('^(\\w+\\S+)$')
                 required:
                 - image
                 type: object
@@ -3776,10 +3782,16 @@ spec:
                   and InfrastructureAvailabilityPolicy.
                 properties:
                   image:
-                    description: Image is the image pullspec of an OCP release payload
-                      image.
-                    pattern: ^(\w+\S+)$
+                    description: |-
+                      Image is the image pullspec of an OCP release payload image.
+                      See https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags for a list of available images.
+                    maxLength: 253
+                    minLength: 1
                     type: string
+                    x-kubernetes-validations:
+                    - message: Image must start with a word character (letters, digits,
+                        or underscores) and contain no white spaces
+                      rule: self.matches('^(\\w+\\S+)$')
                 required:
                 - image
                 type: object

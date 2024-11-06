@@ -16,11 +16,13 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestCreateClusterAPIUX(t *testing.T) {
+func TestOnCreateAPIUX(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -53,6 +55,227 @@ func TestCreateClusterAPIUX(t *testing.T) {
 			err = client.Create(ctx, hc)
 			g.Expect(err).To(HaveOccurred())
 			g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+		}
+	})
+
+	t.Run("NodePool creation", func(t *testing.T) {
+		g := NewWithT(t)
+		client, err := e2eutil.GetClient()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
+
+		testCases := []struct {
+			name        string
+			file        string
+			validations []struct {
+				name                   string
+				mutateInput            func(*hyperv1.NodePool)
+				expectedErrorSubstring string
+			}
+		}{
+			{
+				name: "When Taint key/value is not a qualified name with an optional subdomain prefix to upstream validation, it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when key prefix is not a valid sudomain it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Taints = []hyperv1.Taint{{Key: "prefix@/suffix", Value: "value", Effect: "NoSchedule"}}
+						},
+						expectedErrorSubstring: "key must be a qualified name with an optional subdomain prefix e.g. example.com/MyName",
+					},
+					{
+						name: "when key suffix is not a valid qualified name it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Taints = []hyperv1.Taint{{Key: "prefix/suffix@", Value: "value", Effect: "NoSchedule"}}
+						},
+						expectedErrorSubstring: "key must be a qualified name with an optional subdomain prefix e.g. example.com/MyName",
+					},
+					{
+						name: "when key is empty it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Taints = []hyperv1.Taint{{Key: "", Value: "value", Effect: "NoSchedule"}}
+						},
+						expectedErrorSubstring: "spec.taints[0].key in body should be at least 1 chars long",
+					},
+					{
+						name: "when key is a valid qualified name with no prefix it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Taints = []hyperv1.Taint{{Key: "valid-suffix", Value: "", Effect: "NoSchedule"}}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when key is a valid qualified name with a subdomain prefix it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Taints = []hyperv1.Taint{{Key: "valid-prefix.com/valid-suffix", Value: "", Effect: "NoSchedule"}}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when key is a valid qualified name with a subdomain prefix and value is a valid qualified name it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Taints = []hyperv1.Taint{{Key: "valid-prefix.com/valid-suffix", Value: "value", Effect: "NoSchedule"}}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when value contains strange chars it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Taints = []hyperv1.Taint{{Key: "valid-prefix.com/valid-suffix", Value: "@", Effect: "NoSchedule"}}
+						},
+						expectedErrorSubstring: "Value must start and end with alphanumeric characters and can only contain '-', '_', '.' in the middle",
+					},
+				},
+			},
+			{
+				name: "when pausedUntil is not a date with RFC3339 format or a boolean as in 'true', 'false', 'True', 'False' it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when pausedUntil is a random string it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.PausedUntil = ptr.To("fail")
+						},
+						expectedErrorSubstring: "PausedUntil must be a date in RFC3339 format or 'True', 'true', 'False' or 'false'",
+					},
+					{
+						name: "when pausedUntil date is not RFC3339 format it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.PausedUntil = ptr.To("2022-01-01")
+						},
+						expectedErrorSubstring: "PausedUntil must be a date in RFC3339 format or 'True', 'true', 'False' or 'false'",
+					},
+					{
+						name: "when pausedUntil is an allowed bool False it shoud pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.PausedUntil = ptr.To("False")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when pausedUntil is an allowed bool false it shoud pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.PausedUntil = ptr.To("false")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when pausedUntil is an allowed bool true it shoud pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.PausedUntil = ptr.To("true")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when pausedUntil is an allowed bool True it shoud pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.PausedUntil = ptr.To("True")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when pausedUntil date is RFC3339 it shoud pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.PausedUntil = ptr.To("2022-01-01T00:00:00Z")
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when release does not have a valid image value it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when image is bad format it shoud fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Release.Image = "@"
+						},
+						expectedErrorSubstring: "Image must start with a word character (letters, digits, or underscores) and contain no white spaces",
+					},
+					{
+						name: "when image is empty it shoud fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Release.Image = "@"
+						},
+						expectedErrorSubstring: "Image must start with a word character (letters, digits, or underscores) and contain no white spaces",
+					},
+					{
+						name: "when image is valid it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64"
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when management has invalid input it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when replace upgrade type is set with inPlace configuration it shoud fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Management = hyperv1.NodePoolManagement{
+								UpgradeType: hyperv1.UpgradeTypeReplace,
+								InPlace: &hyperv1.InPlaceUpgrade{
+									MaxUnavailable: ptr.To(intstr.FromInt32(1)),
+								},
+							}
+						},
+						expectedErrorSubstring: "The 'inPlace' field can only be set when 'upgradeType' is 'InPlace'",
+					},
+					{
+						name: "when  strategy is onDelete with RollingUpdate configuration it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Management = hyperv1.NodePoolManagement{
+								UpgradeType: hyperv1.UpgradeTypeReplace,
+								Replace: &hyperv1.ReplaceUpgrade{
+									Strategy: hyperv1.UpgradeStrategyOnDelete,
+									RollingUpdate: &hyperv1.RollingUpdate{
+										MaxUnavailable: ptr.To(intstr.FromInt32(1)),
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "The 'rollingUpdate' field can only be set when 'strategy' is 'RollingUpdate'",
+					},
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			for _, v := range tc.validations {
+				t.Logf("Running validation %q", v.name)
+				nodePool := assets.ShouldNodePool(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
+				defer client.Delete(ctx, nodePool)
+				v.mutateInput(nodePool)
+
+				err = client.Create(ctx, nodePool)
+				if v.expectedErrorSubstring != "" {
+					g.Expect(err).To(HaveOccurred())
+					g.Expect(err.Error()).To(ContainSubstring(v.expectedErrorSubstring))
+				} else {
+					g.Expect(err).ToNot(HaveOccurred())
+				}
+				client.Delete(ctx, nodePool)
+			}
 		}
 	})
 }
