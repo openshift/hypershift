@@ -670,8 +670,8 @@ string
 </em>
 </td>
 <td>
-<p>ClusterName is the name of the HostedCluster this NodePool belongs to.</p>
-<p>TODO(dan): Should this be a LocalObjectReference?</p>
+<p>clusterName is the name of the HostedCluster this NodePool belongs to.
+If a HostedCluster with this name doesn&rsquo;t exist, the controller will no-op until it exists.</p>
 </td>
 </tr>
 <tr>
@@ -684,9 +684,13 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).</p>
+<p>release specifies the OCP release used for the NodePool. This informs the
+ignition configuration for machines which includes the kubelet version, as well as other platform specific
+machine properties (e.g. an AMI on the AWS platform).
+It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
+Attempting to use a release with a bigger skew might result in unpredictable behaviour.
+Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.</p>
 </td>
 </tr>
 <tr>
@@ -699,7 +703,7 @@ NodePoolPlatform
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the NodePool
+<p>platform specifies the underlying infrastructure provider for the NodePool
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -712,8 +716,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>Replicas is the desired number of nodes the pool should maintain. If
-unset, the default value is 0.</p>
+<p>replicas is the desired number of nodes the pool should maintain. If unset, the controller default value is 0.
+replicas is mutually exclusive with autoscaling. If autoscaling is configured, replicas must be omitted and autoscaling will control the NodePool size internally.</p>
 </td>
 </tr>
 <tr>
@@ -726,7 +730,7 @@ NodePoolManagement
 </em>
 </td>
 <td>
-<p>Management specifies behavior for managing nodes in the pool, such as
+<p>management specifies behavior for managing nodes in the pool, such as
 upgrade strategies and auto-repair behaviors.</p>
 </td>
 </tr>
@@ -741,7 +745,8 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior for the NodePool.</p>
+<p>autoscaling specifies auto-scaling behavior for the NodePool.
+autoscaling is mutually exclusive with replicas. If replicas is set, this field must be ommited.</p>
 </td>
 </tr>
 <tr>
@@ -754,19 +759,21 @@ NodePoolAutoScaling
 </em>
 </td>
 <td>
-<p>Config is a list of references to ConfigMaps containing serialized
+<p>config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the YML
-with one or more serialized machineconfiguration.openshift.io resources:
-KubeletConfig
-ContainerRuntimeConfig
-MachineConfig
-ClusterImagePolicy
-ImageContentSourcePolicy
-or
-ImageDigestMirrorSet</p>
+with one or more serialized machineconfiguration.openshift.io resources:</p>
+<ul>
+<li>KubeletConfig</li>
+<li>ContainerRuntimeConfig</li>
+<li>MachineConfig</li>
+<li>ClusterImagePolicy</li>
+<li>ImageContentSourcePolicy</li>
+<li>ImageDigestMirrorSet</li>
+</ul>
+<p>This is validated in the backend and signaled back via validMachineConfig condition.</p>
 </td>
 </tr>
 <tr>
@@ -780,12 +787,8 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
-The default value is 0, meaning that the node can be drained without any time limitations.
-NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
-TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+<p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
+The default value is 0, meaning that the node can retry drain without any time limitations.</p>
 </td>
 </tr>
 <tr>
@@ -799,13 +802,9 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+<p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-After the timeout, the detachment of volumes that haven&rsquo;t been detached yet is skipped.
-TODO (cbusse): Same comment as Alberto&rsquo;s for <code>NodeDrainTimeout</code>:
-Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.</p>
 </td>
 </tr>
 <tr>
@@ -817,7 +816,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -832,7 +831,8 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
+These taints are additive to the ones applied by other controllers</p>
 </td>
 </tr>
 <tr>
@@ -844,8 +844,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -860,7 +860,7 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </em>
 </td>
 <td>
-<p>TuningConfig is a list of references to ConfigMaps containing serialized
+<p>tuningConfig is a list of references to ConfigMaps containing serialized
 Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
@@ -879,8 +879,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
-NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
+TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
 TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
@@ -6268,7 +6268,7 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </td>
 <td>
 <em>(Optional)</em>
-<p>MaxUnavailable is the maximum number of nodes that can be unavailable
+<p>maxUnavailable is the maximum number of nodes that can be unavailable
 during the update.</p>
 <p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
 (ex: 10%).</p>
@@ -7789,7 +7789,7 @@ int32
 </em>
 </td>
 <td>
-<p>Min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1.</p>
+<p>Min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1 and &lt;= .Max.</p>
 </td>
 </tr>
 <tr>
@@ -7800,7 +7800,7 @@ int32
 </em>
 </td>
 <td>
-<p>Max is the maximum number of nodes allowed in the pool. Must be &gt;= 1.</p>
+<p>Max is the maximum number of nodes allowed in the pool. Must be &gt;= 1 and &gt;= Min.</p>
 </td>
 </tr>
 </tbody>
@@ -7944,7 +7944,10 @@ UpgradeType
 </em>
 </td>
 <td>
-<p>UpgradeType specifies the type of strategy for handling upgrades.</p>
+<p>upgradeType specifies the type of strategy for handling upgrades.
+This can be either &ldquo;Replace&rdquo; or &ldquo;InPlace&rdquo;.
+&ldquo;Replace&rdquo; will update Nodes by recreating the underlying instances.
+&ldquo;InPlace&rdquo; will update Nodes by applying changes to the existing instances. This might or might not result in a reboot.</p>
 </td>
 </tr>
 <tr>
@@ -7957,7 +7960,8 @@ ReplaceUpgrade
 </em>
 </td>
 <td>
-<p>Replace is the configuration for rolling upgrades.</p>
+<p>replace is the configuration for rolling upgrades.
+It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.</p>
 </td>
 </tr>
 <tr>
@@ -7970,7 +7974,7 @@ InPlaceUpgrade
 </em>
 </td>
 <td>
-<p>InPlace is the configuration for in-place upgrades.</p>
+<p>inPlace is the configuration for in-place upgrades.</p>
 </td>
 </tr>
 <tr>
@@ -7982,8 +7986,11 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>AutoRepair specifies whether health checks should be enabled for machines
-in the NodePool. The default is false.</p>
+<p>autoRepair specifies whether health checks should be enabled for machines in the NodePool. The default is false.
+Enabling this feature will cause the controller to automatically delete unhealthy machines.
+The unhealthy criteria is reserved for the controller implementation and subject to change.
+But generally it&rsquo;s determined by checking the Node ready condition is true and a timeout that might vary depending on the platform provider.
+AutoRepair will no-op when more than 2 Nodes are unhealthy at the same time. Giving time for the cluster to stabilize or to the user to manually intervene.</p>
 </td>
 </tr>
 </tbody>
@@ -8171,8 +8178,8 @@ string
 </em>
 </td>
 <td>
-<p>ClusterName is the name of the HostedCluster this NodePool belongs to.</p>
-<p>TODO(dan): Should this be a LocalObjectReference?</p>
+<p>clusterName is the name of the HostedCluster this NodePool belongs to.
+If a HostedCluster with this name doesn&rsquo;t exist, the controller will no-op until it exists.</p>
 </td>
 </tr>
 <tr>
@@ -8185,9 +8192,13 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).</p>
+<p>release specifies the OCP release used for the NodePool. This informs the
+ignition configuration for machines which includes the kubelet version, as well as other platform specific
+machine properties (e.g. an AMI on the AWS platform).
+It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
+Attempting to use a release with a bigger skew might result in unpredictable behaviour.
+Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.</p>
 </td>
 </tr>
 <tr>
@@ -8200,7 +8211,7 @@ NodePoolPlatform
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the NodePool
+<p>platform specifies the underlying infrastructure provider for the NodePool
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -8213,8 +8224,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>Replicas is the desired number of nodes the pool should maintain. If
-unset, the default value is 0.</p>
+<p>replicas is the desired number of nodes the pool should maintain. If unset, the controller default value is 0.
+replicas is mutually exclusive with autoscaling. If autoscaling is configured, replicas must be omitted and autoscaling will control the NodePool size internally.</p>
 </td>
 </tr>
 <tr>
@@ -8227,7 +8238,7 @@ NodePoolManagement
 </em>
 </td>
 <td>
-<p>Management specifies behavior for managing nodes in the pool, such as
+<p>management specifies behavior for managing nodes in the pool, such as
 upgrade strategies and auto-repair behaviors.</p>
 </td>
 </tr>
@@ -8242,7 +8253,8 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior for the NodePool.</p>
+<p>autoscaling specifies auto-scaling behavior for the NodePool.
+autoscaling is mutually exclusive with replicas. If replicas is set, this field must be ommited.</p>
 </td>
 </tr>
 <tr>
@@ -8255,19 +8267,21 @@ NodePoolAutoScaling
 </em>
 </td>
 <td>
-<p>Config is a list of references to ConfigMaps containing serialized
+<p>config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the YML
-with one or more serialized machineconfiguration.openshift.io resources:
-KubeletConfig
-ContainerRuntimeConfig
-MachineConfig
-ClusterImagePolicy
-ImageContentSourcePolicy
-or
-ImageDigestMirrorSet</p>
+with one or more serialized machineconfiguration.openshift.io resources:</p>
+<ul>
+<li>KubeletConfig</li>
+<li>ContainerRuntimeConfig</li>
+<li>MachineConfig</li>
+<li>ClusterImagePolicy</li>
+<li>ImageContentSourcePolicy</li>
+<li>ImageDigestMirrorSet</li>
+</ul>
+<p>This is validated in the backend and signaled back via validMachineConfig condition.</p>
 </td>
 </tr>
 <tr>
@@ -8281,12 +8295,8 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
-The default value is 0, meaning that the node can be drained without any time limitations.
-NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
-TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+<p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
+The default value is 0, meaning that the node can retry drain without any time limitations.</p>
 </td>
 </tr>
 <tr>
@@ -8300,13 +8310,9 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+<p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-After the timeout, the detachment of volumes that haven&rsquo;t been detached yet is skipped.
-TODO (cbusse): Same comment as Alberto&rsquo;s for <code>NodeDrainTimeout</code>:
-Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.</p>
 </td>
 </tr>
 <tr>
@@ -8318,7 +8324,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -8333,7 +8339,8 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
+These taints are additive to the ones applied by other controllers</p>
 </td>
 </tr>
 <tr>
@@ -8345,8 +8352,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -8361,7 +8368,7 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </em>
 </td>
 <td>
-<p>TuningConfig is a list of references to ConfigMaps containing serialized
+<p>tuningConfig is a list of references to ConfigMaps containing serialized
 Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
@@ -8380,8 +8387,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
-NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
+TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
 TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
@@ -9667,7 +9674,8 @@ string
 </em>
 </td>
 <td>
-<p>Image is the image pullspec of an OCP release payload image.</p>
+<p>Image is the image pullspec of an OCP release payload image.
+See <a href="https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags">https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags</a> for a list of available images.</p>
 </td>
 </tr>
 </tbody>
@@ -9699,7 +9707,9 @@ UpgradeStrategy
 </em>
 </td>
 <td>
-<p>Strategy is the node replacement strategy for nodes in the pool.</p>
+<p>strategy is the node replacement strategy for nodes in the pool.
+In can be either &ldquo;RollingUpdate&rdquo; or &ldquo;OnDelete&rdquo;. RollingUpdate will rollout Nodes honoring maxSurge and maxUnavailable.
+OnDelete provide more granular control and will replace nodes as the old ones are manually deleted.</p>
 </td>
 </tr>
 <tr>
@@ -9712,7 +9722,7 @@ RollingUpdate
 </em>
 </td>
 <td>
-<p>RollingUpdate specifies a rolling update strategy which upgrades nodes by
+<p>rollingUpdate specifies a rolling update strategy which upgrades nodes by
 creating new nodes and deleting the old ones.</p>
 </td>
 </tr>
@@ -9746,7 +9756,7 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </td>
 <td>
 <em>(Optional)</em>
-<p>MaxUnavailable is the maximum number of nodes that can be unavailable
+<p>maxUnavailable is the maximum number of nodes that can be unavailable
 during the update.</p>
 <p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
 (ex: 10%).</p>
@@ -9771,7 +9781,7 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </td>
 <td>
 <em>(Optional)</em>
-<p>MaxSurge is the maximum number of nodes that can be provisioned above the
+<p>maxSurge is the maximum number of nodes that can be provisioned above the
 desired number of nodes.</p>
 <p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
 (ex: 10%).</p>
@@ -10399,8 +10409,10 @@ outside of these ranges manually.</p>
 <a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
-<p>Taint is as v1 Core but without TimeAdded.
-<a href="https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053">https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053</a></p>
+<p>taint is as v1 Core but without TimeAdded.
+<a href="https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053">https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053</a>
+Validation replicates the same validation as the upstream <a href="https://github.com/kubernetes/kubernetes/blob/9a2a7537f035969a68e432b4cc276dbce8ce1735/pkg/util/taints/taints.go#L273">https://github.com/kubernetes/kubernetes/blob/9a2a7537f035969a68e432b4cc276dbce8ce1735/pkg/util/taints/taints.go#L273</a>.
+See also <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/names/">https://kubernetes.io/docs/concepts/overview/working-with-objects/names/</a>.</p>
 </p>
 <table>
 <thead>
@@ -10418,7 +10430,7 @@ string
 </em>
 </td>
 <td>
-<p>Required. The taint key to be applied to a node.</p>
+<p>key is the taint key to be applied to a node.</p>
 </td>
 </tr>
 <tr>
@@ -10430,7 +10442,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>The taint value corresponding to the taint key.</p>
+<p>value is the taint value corresponding to the taint key.</p>
 </td>
 </tr>
 <tr>
@@ -10443,7 +10455,7 @@ Kubernetes core/v1.TaintEffect
 </em>
 </td>
 <td>
-<p>Required. The effect of the taint on pods
+<p>effect is the effect of the taint on pods
 that do not tolerate the taint.
 Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
 </td>

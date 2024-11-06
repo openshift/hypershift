@@ -949,8 +949,11 @@ type IBMCloudPlatformSpec struct {
 // Release represents the metadata for an OCP release payload image.
 type Release struct {
 	// Image is the image pullspec of an OCP release payload image.
-	//
-	// +kubebuilder:validation:Pattern=^(\w+\S+)$
+	// See https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags for a list of available images.
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(\\w+\\S+)$')`,message="Image must start with a word character (letters, digits, or underscores) and contain no white spaces"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	// +required
 	Image string `json:"image"`
 }
 
