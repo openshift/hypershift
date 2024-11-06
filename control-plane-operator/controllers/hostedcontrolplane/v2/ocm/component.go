@@ -2,6 +2,7 @@ package ocm
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -51,6 +52,7 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptServiceMonitor),
 			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),
 		).
+		WithDependencies(oapiv2.ComponentName).
 		WatchResource(&corev1.ConfigMap{}, configMapName).
 		Build()
 }

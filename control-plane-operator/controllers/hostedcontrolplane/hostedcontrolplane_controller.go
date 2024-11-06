@@ -75,6 +75,7 @@ import (
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
+	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
@@ -205,6 +206,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		etcdv2.NewComponent(),
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
+		oapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		ocmv2.NewComponent(),
 		routecmv2.NewComponent(),
@@ -1087,14 +1089,14 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to read observed global config: %w", err)
 	}
 
-	// Reconcile openshift apiserver
-	r.Log.Info("Reconciling OpenShift API Server")
 	openshiftAPIServerDeployment := manifests.OpenShiftAPIServerDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate, openshiftAPIServerDeployment); err != nil {
-		return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
-	}
-
 	if !r.IsCPOV2 {
+		// Reconcile openshift apiserver
+		r.Log.Info("Reconciling OpenShift API Server")
+		if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate, openshiftAPIServerDeployment); err != nil {
+			return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
+		}
+
 		// Block on kube controller manager being rolled out at the desired version
 		if ready := util.IsDeploymentReady(ctx, kcmDeployment); !ready {
 			r.Log.Info("Waiting for kube controller manager deployment to become ready")
@@ -1108,11 +1110,14 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return nil
 	}
 
-	// Block until openshift apiserver is fully ready to enforce upgrade order of version skew policy
-	// https://github.com/openshift/enhancements/blob/master/enhancements/update/eus-upgrades-mvp.md
-	if ready := util.IsDeploymentReady(ctx, openshiftAPIServerDeployment); !ready {
-		r.Log.Info("Waiting for openshift apiserver deployment to become ready")
-		return nil
+	if !r.IsCPOV2 {
+		// Block until openshift apiserver is fully ready to enforce upgrade order of version skew policy
+		// https://github.com/openshift/enhancements/blob/master/enhancements/update/eus-upgrades-mvp.md
+		if ready := util.IsDeploymentReady(ctx, openshiftAPIServerDeployment); !ready {
+			r.Log.Info("Waiting for openshift apiserver deployment to become ready")
+			return nil
+		}
+
 	}
 
 	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hostedControlPlane.Namespace); err != nil {

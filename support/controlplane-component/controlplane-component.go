@@ -391,6 +391,7 @@ func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageP
 var (
 	apiCriticalComponents = sets.New(
 		"kube-apiserver",
+		"openshift-apiserver",
 	)
 )
 

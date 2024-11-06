@@ -27,3 +27,10 @@ func (c *ClusterConfiguration) GetAutoAssignCIDRs() []string {
 	}
 	return nil
 }
+
+func (c *ClusterConfiguration) GetAuditPolicyConfig() configv1.Audit {
+	if c != nil && c.APIServer != nil && c.APIServer.Audit.Profile != "" {
+		return c.APIServer.Audit
+	}
+	return configv1.Audit{Profile: configv1.DefaultAuditProfileType}
+}

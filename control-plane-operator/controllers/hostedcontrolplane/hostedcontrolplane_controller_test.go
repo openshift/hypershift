@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
+	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
@@ -1740,8 +1741,10 @@ func componentsFakeObjects(namespace string) []client.Object {
 }
 
 func componentsFakeDependencies(componentName string, namespace string) []client.Object {
+	var fakeComponents []client.Object
+
 	// we need this to exist for components to reconcile
-	fakeComponent := &hyperv1.ControlPlaneComponent{
+	fakeComponentTemplate := &hyperv1.ControlPlaneComponent{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 		},
@@ -1758,10 +1761,16 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 
 	// all components depend on KAS and KAS depends on etcd.
 	if componentName == kasv2.ComponentName {
-		fakeComponent.Name = etcdv2.ComponentName
+		fakeComponentTemplate.Name = etcdv2.ComponentName
 	} else {
-		fakeComponent.Name = kasv2.ComponentName
+		fakeComponentTemplate.Name = kasv2.ComponentName
+	}
+	fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
+
+	if componentName != oapiv2.ComponentName {
+		fakeComponentTemplate.Name = oapiv2.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 	}
 
-	return []client.Object{fakeComponent}
+	return fakeComponents
 }
