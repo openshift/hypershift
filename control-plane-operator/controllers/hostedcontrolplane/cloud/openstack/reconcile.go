@@ -90,7 +90,7 @@ func addCACert(deployment *appsv1.Deployment) {
 	ccmContainer := &deployment.Spec.Template.Spec.Containers[0]
 	ccmContainer.VolumeMounts = append(ccmContainer.VolumeMounts, corev1.VolumeMount{
 		Name:      ccmCloudCA().Name,
-		MountPath: CaDir,
+		MountPath: CADir,
 		ReadOnly:  true,
 	})
 }

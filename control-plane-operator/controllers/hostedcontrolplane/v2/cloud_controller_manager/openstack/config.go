@@ -59,12 +59,17 @@ func getCloudConfig(hcpSpec hyperv1.HostedControlPlaneSpec, credentialsSecret *c
 	config := string(credentialsSecret.Data[CredentialsFile])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
-	config += "clouds-file=" + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
-	config += "cloud=" + hcpSpec.Platform.OpenStack.IdentityRef.CloudName + "\n"
+	config += "clouds-file = " + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
+	config += "cloud = " + hcpSpec.Platform.OpenStack.IdentityRef.CloudName + "\n"
+	// This takes priority over the 'cacert' value in 'clouds.yaml' and we therefore
+	// unset that when creating the initial secret.
 	if caCertData != nil {
-		config += "ca-file=" + CaDir + "/" + CABundleKey + "\n"
+		config += "ca-file = " + CADir + "/" + CABundleKey + "\n"
 	}
-	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
+	config += "\n"
+	config += "[LoadBalancer]\n"
+	config += "max-shared-lb = 1\n"
+	config += "manage-security-groups = true\n"
 	if hcpSpec.Platform.OpenStack.ExternalNetwork != nil {
 		externalNetworkID := ptr.Deref(hcpSpec.Platform.OpenStack.ExternalNetwork.ID, "")
 		if externalNetworkID != "" {
