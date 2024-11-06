@@ -80,12 +80,14 @@ import (
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/filewatcher"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -3046,6 +3048,28 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
 			}
+
+			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
+				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
+			}
+
+			if hyperazureutil.IsAroHCP() {
+				// Reconcile the SecretProviderClass
+				kmsSecretProviderClass := manifests.ManagedAzureKeyVaultSecretProviderClass(
+					config.ManagedAzureKMSSecretProviderClassName,
+					hcp.Namespace,
+					hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
+					hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
+					hcp.Spec.SecretEncryption.KMS.Azure.KMS.CertificateName)
+
+				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+				}
+			}
 		}
 	}
 
@@ -5370,6 +5394,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
+	// Pull the credentials secret so we can retrieve the tenant ID used in authenticating with Azure Cloud API
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 		condition := metav1.Condition{
@@ -5382,12 +5407,55 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return
 	}
-
 	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-	clientID := string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	clientSecret := string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
 
-	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	// Retrieve the KMS certificate
+	certPath := config.ManagedAzureCertificateMountPath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CertificateName
+	certsContent, err := os.ReadFile(certPath)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "Failed to retrieve KMS authentication certificate",
+			Reason:             err.Error(),
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	// Watch the KMS certificate for changes; if the certificate changes, the pod will be restarted
+	err = filewatcher.WatchFileForChanges(certPath)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "Failed to watch KMS authentication certificate for changes",
+			Reason:             err.Error(),
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	// Authenticate to Azure with the certificate
+	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "Failed to parse KMS authentication certificate",
+			Reason:             err.Error(),
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	options := &azidentity.ClientCertificateCredentialOptions{
+		SendCertificateChain: true,
+	}
+	cred, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.SecretEncryption.KMS.Azure.KMS.ClientID, parsedCertificate, key, options)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 			fmt.Sprintf("failed to obtain azure client credential: %v", err))
