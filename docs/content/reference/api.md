@@ -2849,8 +2849,7 @@ Valid values are Persistent and Ephemeral.
 When set to Ephmeral, the OS disk will not be persisted to Azure storage and implies restrictions to the VM size and caching type.
 Full details can be found in the Azure documentation <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks">https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks</a>.
 Ephmeral disks are primarily used for stateless applications, provide lower latency than Persistent disks and also incur no storage costs.
-When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-The current default is Persistent.</p>
+When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.</p>
 </td>
 </tr>
 </tbody>

@@ -388,9 +388,8 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				EncryptionAtHost:  o.EncryptionAtHost,
 			}
 
-			var persistence hyperv1.AzureDiskPersistence
 			if o.EnableEphemeralOSDisk {
-				nodePool.Spec.Platform.Azure.OSDisk.Persistence = persistence
+				nodePool.Spec.Platform.Azure.OSDisk.Persistence = hyperv1.EphemeralDiskPersistence
 			}
 
 			if len(o.DiagnosticsStorageAccountType) > 0 {
@@ -430,9 +429,8 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		},
 	}
 
-	var persistence hyperv1.AzureDiskPersistence
 	if o.EnableEphemeralOSDisk {
-		azureNodePool.Spec.Platform.Azure.OSDisk.Persistence = persistence
+		azureNodePool.Spec.Platform.Azure.OSDisk.Persistence = hyperv1.EphemeralDiskPersistence
 	}
 
 	if len(o.DiagnosticsStorageAccountType) > 0 {
