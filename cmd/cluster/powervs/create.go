@@ -188,13 +188,13 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			Region:            o.Region,
 			Zone:              o.Zone,
 			CISInstanceCRN:    o.infra.CISCRN,
-			ServiceInstanceID: o.CloudInstanceID,
+			ServiceInstanceID: o.infra.CloudInstanceID,
 			Subnet: &hyperv1.PowerVSResourceReference{
 				Name: &o.infra.DHCPSubnet,
 				ID:   &o.infra.DHCPSubnetID,
 			},
 			VPC: &hyperv1.PowerVSVPC{
-				Name:   o.VPC,
+				Name:   o.infra.VPCName,
 				Region: o.VPCRegion,
 				Subnet: o.infra.VPCSubnetName,
 			},
