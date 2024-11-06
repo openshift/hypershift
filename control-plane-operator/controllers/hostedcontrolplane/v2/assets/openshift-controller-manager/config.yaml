@@ -7,15 +7,15 @@ data:
       buildDefaults: null
       buildOverrides: null
       imageTemplateFormat:
-        format: ""
+        format: registry.build01.ci.openshift.org/ci-op-fyyrss4t/stable@sha256:cad36212ecf2de916baef0c524ba91fb59aeb35357141db22cdb365ffc21a752
         latest: false
     controllers: null
     deployer:
       imageTemplateFormat:
-        format: ""
+        format: registry.build01.ci.openshift.org/ci-op-fyyrss4t/stable@sha256:7fa906b447ceb3a188974de54617ccbffbc99c32e07d874c6fbe19257ec038d5
         latest: false
     dockerPullSecret:
-      internalRegistryHostname: ""
+      internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
       registryURLs: null
     featureGates: null
     imageImport:
@@ -31,10 +31,9 @@ data:
         burst: 0
         contentType: ""
         qps: 0
-      kubeConfig: ""
+      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
     leaderElection:
       leaseDuration: 0s
-      name: openshift-route-controllers
       renewDeadline: 0s
       retryPeriod: 0s
     network:
@@ -64,5 +63,4 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
-  name: openshift-route-controller-manager-config
-  namespace: HCP_NAMESPACE
+  name: openshift-controller-manager-config

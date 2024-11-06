@@ -42,7 +42,7 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 			strconv.Itoa(serverCount),
 		)
 
-		cipherSuites := cipherSuites(hcp.Spec.Configuration)
+		cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile())
 		if len(cipherSuites) != 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
 		}

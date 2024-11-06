@@ -13,3 +13,17 @@ func (c *ClusterConfiguration) GetNetwork() *configv1.NetworkSpec         { retu
 func (c *ClusterConfiguration) GetOAuth() *configv1.OAuthSpec             { return c.OAuth }
 func (c *ClusterConfiguration) GetScheduler() *configv1.SchedulerSpec     { return c.Scheduler }
 func (c *ClusterConfiguration) GetProxy() *configv1.ProxySpec             { return c.Proxy }
+
+func (c *ClusterConfiguration) GetTLSSecurityProfile() *configv1.TLSSecurityProfile {
+	if c != nil && c.APIServer != nil {
+		return c.APIServer.TLSSecurityProfile
+	}
+	return nil
+}
+
+func (c *ClusterConfiguration) GetAutoAssignCIDRs() []string {
+	if c != nil && c.Network != nil && c.Network.ExternalIP != nil {
+		return c.Network.ExternalIP.AutoAssignCIDRs
+	}
+	return nil
+}

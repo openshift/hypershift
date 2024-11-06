@@ -4,18 +4,22 @@ data:
     apiVersion: openshiftcontrolplane.config.openshift.io/v1
     build:
       additionalTrustedCA: ""
-      buildDefaults: null
+      buildDefaults:
+        env:
+        - name: TEST_VAR
+          value: TEST_VALUE
+        resources: {}
       buildOverrides: null
       imageTemplateFormat:
-        format: ""
+        format: quay.io/test/docker-builder
         latest: false
     controllers: null
     deployer:
       imageTemplateFormat:
-        format: ""
+        format: quay.io/test/deployer
         latest: false
     dockerPullSecret:
-      internalRegistryHostname: ""
+      internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
       registryURLs: null
     featureGates: null
     imageImport:
@@ -23,7 +27,7 @@ data:
       maxScheduledImageImportsPerMinute: 0
       scheduledImageImportMinimumIntervalSeconds: 0
     ingress:
-      ingressIPNetworkCIDR: ""
+      ingressIPNetworkCIDR: 99.1.0.0/24
     kind: OpenShiftControllerManagerConfig
     kubeClientConfig:
       connectionOverrides:
@@ -31,10 +35,9 @@ data:
         burst: 0
         contentType: ""
         qps: 0
-      kubeConfig: ""
+      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
     leaderElection:
       leaseDuration: 0s
-      name: openshift-route-controllers
       renewDeadline: 0s
       retryPeriod: 0s
     network:
@@ -58,11 +61,19 @@ data:
       bindAddress: 0.0.0.0:8443
       bindNetwork: ""
       certFile: /etc/kubernetes/certs/tls.crt
+      cipherSuites:
+      - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
       clientCA: /etc/kubernetes/client-ca/ca.crt
       keyFile: /etc/kubernetes/certs/tls.key
       maxRequestsInFlight: 0
+      minTLSVersion: VersionTLS12
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
-  name: openshift-route-controller-manager-config
-  namespace: HCP_NAMESPACE
+  creationTimestamp: null
+  name: openshift-controller-manager-config

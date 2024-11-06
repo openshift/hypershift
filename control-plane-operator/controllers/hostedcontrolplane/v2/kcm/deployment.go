@@ -38,11 +38,11 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 			c.Args = append(c.Args, fmt.Sprintf("--cloud-provider=%s", "external"))
 
 		}
-		if v := minTLSVersion(hcp.Spec.Configuration); v != "" {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", v))
+		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
 		}
-		if suites := cipherSuites(hcp.Spec.Configuration); len(suites) != 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(suites, ",")))
+		if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
 		}
 		if util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], ComponentName) {
 			c.Args = append(c.Args, "--profiling=false")
@@ -89,21 +89,6 @@ func getServiceServingCA(cpContext component.ControlPlaneContext) (*corev1.Confi
 		return nil, nil
 	}
 	return serviceServingCA, nil
-}
-
-// TODO: make this a method of ClusterConfiguration?
-func minTLSVersion(c *hyperv1.ClusterConfiguration) string {
-	if c != nil && c.APIServer != nil {
-		return config.MinTLSVersion(c.APIServer.TLSSecurityProfile)
-	}
-	return config.MinTLSVersion(nil)
-}
-
-func cipherSuites(c *hyperv1.ClusterConfiguration) []string {
-	if c != nil && c.APIServer != nil {
-		return config.CipherSuites(c.APIServer.TLSSecurityProfile)
-	}
-	return config.CipherSuites(nil)
 }
 
 func featureGates(c *hyperv1.ClusterConfiguration) []string {
