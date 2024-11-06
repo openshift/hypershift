@@ -1075,6 +1075,144 @@ spec:
                     description: OpenStack specifies the configuration used when using
                       OpenStack platform.
                     properties:
+                      additionalPorts:
+                        description: AdditionalPorts is a list of additional ports
+                          to create on the node instances.
+                        items:
+                          description: PortSpec specifies the options for creating
+                            a port.
+                          properties:
+                            allowedAddressPairs:
+                              description: |-
+                                AllowedAddressPairs is a list of address pairs which Neutron will
+                                allow the port to send traffic from in addition to the port's
+                                addresses. If not specified, the MAC Address will be the MAC Address
+                                of the port. Depending on the configuration of Neutron, it may be
+                                supported to specify a CIDR instead of a specific IP address.
+                              items:
+                                properties:
+                                  ipAddress:
+                                    description: |-
+                                      IPAddress is the IP address of the allowed address pair. Depending on
+                                      the configuration of Neutron, it may be supported to specify a CIDR
+                                      instead of a specific IP address.
+                                    type: string
+                                required:
+                                - ipAddress
+                                type: object
+                              type: array
+                            description:
+                              description: Description is a human-readable description
+                                for the port.
+                              type: string
+                            network:
+                              description: |-
+                                Network is a query for an openstack network that the port will be created or discovered on.
+                                This will fail if the query returns more than one network.
+                              maxProperties: 1
+                              minProperties: 1
+                              properties:
+                                filter:
+                                  description: Filter specifies a filter to select
+                                    an OpenStack network. If provided, cannot be empty.
+                                  minProperties: 1
+                                  properties:
+                                    description:
+                                      description: Description is the description
+                                        of the network to filter by.
+                                      type: string
+                                    name:
+                                      description: Name is the name of the network
+                                        to filter by.
+                                      type: string
+                                    notTags:
+                                      description: |-
+                                        NotTags is a list of tags to filter by. If specified, resources which
+                                        contain all of the given tags will be excluded from the result.
+                                      items:
+                                        description: |-
+                                          NeutronTag represents a tag on a Neutron resource.
+                                          It may not be empty and may not contain commas.
+                                        minLength: 1
+                                        pattern: ^[^,]+$
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: set
+                                    notTagsAny:
+                                      description: |-
+                                        NotTagsAny is a list of tags to filter by. If specified, resources
+                                        which contain any of the given tags will be excluded from the result.
+                                      items:
+                                        description: |-
+                                          NeutronTag represents a tag on a Neutron resource.
+                                          It may not be empty and may not contain commas.
+                                        minLength: 1
+                                        pattern: ^[^,]+$
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: set
+                                    projectID:
+                                      description: ProjectID is the project ID of
+                                        the network to filter by.
+                                      type: string
+                                    tags:
+                                      description: |-
+                                        Tags is a list of tags to filter by. If specified, the resource must
+                                        have all of the tags specified to be included in the result.
+                                      items:
+                                        description: |-
+                                          NeutronTag represents a tag on a Neutron resource.
+                                          It may not be empty and may not contain commas.
+                                        minLength: 1
+                                        pattern: ^[^,]+$
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: set
+                                    tagsAny:
+                                      description: |-
+                                        TagsAny is a list of tags to filter by. If specified, the resource
+                                        must have at least one of the tags specified to be included in the
+                                        result.
+                                      items:
+                                        description: |-
+                                          NeutronTag represents a tag on a Neutron resource.
+                                          It may not be empty and may not contain commas.
+                                        minLength: 1
+                                        pattern: ^[^,]+$
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: set
+                                  type: object
+                                id:
+                                  description: ID is the ID of the network to use.
+                                    If ID is provided, the other filters cannot be
+                                    provided. Must be in UUID format.
+                                  format: uuid
+                                  type: string
+                              type: object
+                            portSecurityPolicy:
+                              description: |-
+                                PortSecurityPolicy specifies whether or not to enable port security on the port.
+                                Allowed values are "Enabled", "Disabled" and omitted.
+                                When not set, it takes the value of the corresponding field at the network level.
+                              enum:
+                              - Enabled
+                              - Disabled
+                              - ""
+                              type: string
+                            vnicType:
+                              description: |-
+                                VNICType specifies the type of vNIC which this port should be
+                                attached to. This is used to determine which mechanism driver(s) to
+                                be used to bind the port. The valid values are normal, macvtap,
+                                direct, baremetal, direct-physical, virtio-forwarder, smart-nic and
+                                remote-managed, although these values will not be validated in this
+                                API to ensure compatibility with future neutron changes or custom
+                                implementations. What type of vNIC is actually available depends on
+                                deployments. If not specified, the Neutron default value is used.
+                              type: string
+                          type: object
+                        type: array
                       availabilityZone:
                         description: |-
                           availabilityZone is the nova availability zone in which the provider will create the VM.

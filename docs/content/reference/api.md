@@ -2373,6 +2373,36 @@ Example:
 </tr>
 </tbody>
 </table>
+###AddressPair { #hypershift.openshift.io/v1beta1.AddressPair }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ipAddress</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IPAddress is the IP address of the allowed address pair. Depending on
+the configuration of Neutron, it may be supported to specify a CIDR
+instead of a specific IP address.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AgentNodePoolPlatform { #hypershift.openshift.io/v1beta1.AgentNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -7685,7 +7715,8 @@ FilterByNeutronTags
 ###NetworkParam { #hypershift.openshift.io/v1beta1.NetworkParam }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
 </p>
 <p>
 <p>NetworkParam specifies an OpenStack network. It may be specified by either ID or Filter, but not both.</p>
@@ -8630,6 +8661,20 @@ to this availability zone register failure, see kubernetes/cloud-provider-openst
 The maximum length of availability zone name is 63 as per labels limits.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>additionalPorts</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">
+[]PortSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalPorts is a list of additional ports to create on the node instances.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###OpenStackPlatformSpec { #hypershift.openshift.io/v1beta1.OpenStackPlatformSpec }
@@ -9108,6 +9153,130 @@ AWSPlatformStatus
 <td><p>PowerVSPlatform represents PowerVS infrastructure.</p>
 </td>
 </tr></tbody>
+</table>
+###PortSecurityPolicy { #hypershift.openshift.io/v1beta1.PortSecurityPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
+</p>
+<p>
+<p>PortSecurityPolicy defines whether or not to enable port security on a port.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;&#34;</p></td>
+<td><p>PortSecurityDefault uses the default port security policy.</p>
+</td>
+</tr><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>PortSecurityDisabled disables port security on a port.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>PortSecurityEnabled enables port security on a port.</p>
+</td>
+</tr></tbody>
+</table>
+###PortSpec { #hypershift.openshift.io/v1beta1.PortSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackNodePoolPlatform">OpenStackNodePoolPlatform</a>)
+</p>
+<p>
+<p>PortSpec specifies the options for creating a port.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NetworkParam">
+NetworkParam
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Network is a query for an openstack network that the port will be created or discovered on.
+This will fail if the query returns more than one network.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>description</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Description is a human-readable description for the port.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedAddressPairs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AddressPair">
+[]AddressPair
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AllowedAddressPairs is a list of address pairs which Neutron will
+allow the port to send traffic from in addition to the port&rsquo;s
+addresses. If not specified, the MAC Address will be the MAC Address
+of the port. Depending on the configuration of Neutron, it may be
+supported to specify a CIDR instead of a specific IP address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>vnicType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>VNICType specifies the type of vNIC which this port should be
+attached to. This is used to determine which mechanism driver(s) to
+be used to bind the port. The valid values are normal, macvtap,
+direct, baremetal, direct-physical, virtio-forwarder, smart-nic and
+remote-managed, although these values will not be validated in this
+API to ensure compatibility with future neutron changes or custom
+implementations. What type of vNIC is actually available depends on
+deployments. If not specified, the Neutron default value is used.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>portSecurityPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PortSecurityPolicy">
+PortSecurityPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PortSecurityPolicy specifies whether or not to enable port security on the port.
+Allowed values are &ldquo;Enabled&rdquo;, &ldquo;Disabled&rdquo; and omitted.
+When not set, it takes the value of the corresponding field at the network level.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###PowerVSNodePoolImageDeletePolicy { #hypershift.openshift.io/v1beta1.PowerVSNodePoolImageDeletePolicy }
 <p>
