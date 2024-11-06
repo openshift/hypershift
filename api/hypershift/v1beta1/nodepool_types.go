@@ -82,41 +82,50 @@ type NodePool struct {
 // +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure)", message="Setting Arch to arm64 is only supported for AWS and Azure"
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
 type NodePoolSpec struct {
-	// ClusterName is the name of the HostedCluster this NodePool belongs to.
-	//
-	// TODO(dan): Should this be a LocalObjectReference?
-	//
+	// clusterName is the name of the HostedCluster this NodePool belongs to.
+	// If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ClusterName is immutable"
+	// +required
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="clusterName must consist of lowercase alphanumeric characters or '-', start and end with an alphanumeric character, and be between 1 and 253 characters"
 	ClusterName string `json:"clusterName"`
 
-	// Release specifies the OCP release used for the NodePool. This informs the
-	// ignition configuration for machines, as well as other platform specific
+	// release specifies the OCP release used for the NodePool. This informs the
+	// ignition configuration for machines which includes the kubelet version, as well as other platform specific
 	// machine properties (e.g. an AMI on the AWS platform).
+	// It's not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there's no enforcement that prevents this from happening.
+	// Attempting to use a release with a bigger skew might result in unpredictable behaviour.
+	// Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+	// Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+	// +required
 	Release Release `json:"release"`
 
-	// Platform specifies the underlying infrastructure provider for the NodePool
+	// platform specifies the underlying infrastructure provider for the NodePool
 	// and is used to configure platform specific behavior.
 	//
 	// +immutable
+	// +required
 	Platform NodePoolPlatform `json:"platform"`
 
-	// Replicas is the desired number of nodes the pool should maintain. If
-	// unset, the default value is 0.
-	//
+	// replicas is the desired number of nodes the pool should maintain. If unset, the controller default value is 0.
+	// replicas is mutually exclusive with autoscaling. If autoscaling is configured, replicas must be omitted and autoscaling will control the NodePool size internally.
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
-	// Management specifies behavior for managing nodes in the pool, such as
+	// management specifies behavior for managing nodes in the pool, such as
 	// upgrade strategies and auto-repair behaviors.
+	// +required
 	Management NodePoolManagement `json:"management"`
 
-	// Autoscaling specifies auto-scaling behavior for the NodePool.
+	// autoscaling specifies auto-scaling behavior for the NodePool.
+	// autoscaling is mutually exclusive with replicas. If replicas is set, this field must be ommited.
 	//
 	// +optional
 	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
 
-	// Config is a list of references to ConfigMaps containing serialized
+	// config is a list of references to ConfigMaps containing serialized
 	// MachineConfig resources to be injected into the ignition configurations of
 	// nodes in the NodePool. The MachineConfig API schema is defined here:
 	//
@@ -124,53 +133,51 @@ type NodePoolSpec struct {
 	//
 	// Each ConfigMap must have a single key named "config" whose value is the YML
 	// with one or more serialized machineconfiguration.openshift.io resources:
-	// KubeletConfig
-	// ContainerRuntimeConfig
-	// MachineConfig
-	// ClusterImagePolicy
-	// ImageContentSourcePolicy
-	// or
-	// ImageDigestMirrorSet
 	//
+	// * KubeletConfig
+	// * ContainerRuntimeConfig
+	// * MachineConfig
+	// * ClusterImagePolicy
+	// * ImageContentSourcePolicy
+	// * ImageDigestMirrorSet
+	//
+	// This is validated in the backend and signaled back via validMachineConfig condition.
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
-	// NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
-	// The default value is 0, meaning that the node can be drained without any time limitations.
-	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
-	// TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-	// the purpose of the change. In future we plan to propagate this field in-place.
-	// https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+	// nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
+	// The default value is 0, meaning that the node can retry drain without any time limitations.
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 
-	// NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+	// nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 	// The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-	// After the timeout, the detachment of volumes that haven't been detached yet is skipped.
-	// TODO (cbusse): Same comment as Alberto's for `NodeDrainTimeout`:
-	// Today changing this field will trigger a recreate rolling update, which kind of defeats
-	// the purpose of the change. In future we plan to propagate this field in-place.
-	// https://github.com/kubernetes-sigs/cluster-api/issues/5880 / https://github.com/kubernetes-sigs/cluster-api/pull/10589
+	// After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
 	// +optional
 	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 
-	// NodeLabels propagates a list of labels to Nodes, only once on creation.
+	// nodeLabels propagates a list of labels to Nodes, only once on creation.
 	// Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
 	// +optional
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
-	// Taints if specified, propagates a list of taints to Nodes, only once on creation.
+	// taints if specified, propagates a list of taints to Nodes, only once on creation.
+	// These taints are additive to the ones applied by other controllers
+	// +kubebuilder:validation:MaxItems=50
 	// +optional
 	Taints []Taint `json:"taints,omitempty"`
 
-	// PausedUntil is a field that can be used to pause reconciliation on a resource.
-	// Either a date can be provided in RFC3339 format or a boolean. If a date is
+	// pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
+	// Either a date can be provided in RFC3339 format or a boolean as in 'true', 'false', 'True', 'False'. If a date is
 	// provided: reconciliation is paused on the resource until that date. If the boolean true is
 	// provided: reconciliation is paused on the resource until the field is removed.
+	// +kubebuilder:validation:MaxLength=35
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*$') || self in ['true', 'false', 'True', 'False']`,message="PausedUntil must be a date in RFC3339 format or 'True', 'true', 'False' or 'false'"
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
 
-	// TuningConfig is a list of references to ConfigMaps containing serialized
+	// tuningConfig is a list of references to ConfigMaps containing serialized
 	// Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 	// nodes in the NodePool. The Tuned API is defined here:
 	//
@@ -184,8 +191,8 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:Optional
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 
-	// Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
-	// NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+	// arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
+	// TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 	//	https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
 	// TODO Add s390x to enum validation once the architecture is supported
 	//
@@ -273,14 +280,16 @@ const (
 
 // ReplaceUpgrade specifies upgrade behavior that replaces existing nodes
 // according to a given strategy.
+// +kubebuilder:validation:XValidation:rule="!has(self.rollingUpdate) || self.strategy == 'RollingUpdate'", message="The 'rollingUpdate' field can only be set when 'strategy' is 'RollingUpdate'"
 type ReplaceUpgrade struct {
-	// Strategy is the node replacement strategy for nodes in the pool.
-	//
+	// strategy is the node replacement strategy for nodes in the pool.
+	// In can be either "RollingUpdate" or "OnDelete". RollingUpdate will rollout Nodes honoring maxSurge and maxUnavailable.
+	// OnDelete provide more granular control and will replace nodes as the old ones are manually deleted.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Enum=RollingUpdate;OnDelete
 	Strategy UpgradeStrategy `json:"strategy"`
 
-	// RollingUpdate specifies a rolling update strategy which upgrades nodes by
+	// rollingUpdate specifies a rolling update strategy which upgrades nodes by
 	// creating new nodes and deleting the old ones.
 	//
 	// +kubebuilder:validation:Optional
@@ -290,7 +299,7 @@ type ReplaceUpgrade struct {
 // RollingUpdate specifies a rolling update strategy which upgrades nodes by
 // creating new nodes and deleting the old ones.
 type RollingUpdate struct {
-	// MaxUnavailable is the maximum number of nodes that can be unavailable
+	// maxUnavailable is the maximum number of nodes that can be unavailable
 	// during the update.
 	//
 	// Value can be an absolute number (ex: 5) or a percentage of desired nodes
@@ -311,7 +320,7 @@ type RollingUpdate struct {
 	// +optional
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 
-	// MaxSurge is the maximum number of nodes that can be provisioned above the
+	// maxSurge is the maximum number of nodes that can be provisioned above the
 	// desired number of nodes.
 	//
 	// Value can be an absolute number (ex: 5) or a percentage of desired nodes
@@ -336,7 +345,7 @@ type RollingUpdate struct {
 // InPlaceUpgrade specifies an upgrade strategy which upgrades nodes in-place
 // without any new nodes being created or any old nodes being deleted.
 type InPlaceUpgrade struct {
-	// MaxUnavailable is the maximum number of nodes that can be unavailable
+	// maxUnavailable is the maximum number of nodes that can be unavailable
 	// during the update.
 	//
 	// Value can be an absolute number (ex: 5) or a percentage of desired nodes
@@ -358,27 +367,35 @@ type InPlaceUpgrade struct {
 
 // NodePoolManagement specifies behavior for managing nodes in a NodePool, such
 // as upgrade strategies and auto-repair behaviors.
+// +kubebuilder:validation:XValidation:rule="!has(self.inPlace) || self.upgradeType == 'InPlace'", message="The 'inPlace' field can only be set when 'upgradeType' is 'InPlace'"
 type NodePoolManagement struct {
-	// UpgradeType specifies the type of strategy for handling upgrades.
+	// upgradeType specifies the type of strategy for handling upgrades.
+	// This can be either "Replace" or "InPlace".
+	// "Replace" will update Nodes by recreating the underlying instances.
+	// "InPlace" will update Nodes by applying changes to the existing instances. This might or might not result in a reboot.
 	//
 	// +kubebuilder:validation:Enum=Replace;InPlace
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="UpgradeType is immutable"
+	// +required
 	UpgradeType UpgradeType `json:"upgradeType"`
 
-	// Replace is the configuration for rolling upgrades.
+	// replace is the configuration for rolling upgrades.
+	// It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.
 	//
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={strategy: "RollingUpdate", rollingUpdate: {maxSurge: 1, maxUnavailable: 0 }}
 	Replace *ReplaceUpgrade `json:"replace,omitempty"`
 
-	// InPlace is the configuration for in-place upgrades.
+	// inPlace is the configuration for in-place upgrades.
 	//
 	// +kubebuilder:validation:Optional
 	InPlace *InPlaceUpgrade `json:"inPlace,omitempty"`
 
-	// AutoRepair specifies whether health checks should be enabled for machines
-	// in the NodePool. The default is false.
-	//
+	// autoRepair specifies whether health checks should be enabled for machines in the NodePool. The default is false.
+	// Enabling this feature will cause the controller to automatically delete unhealthy machines.
+	// The unhealthy criteria is reserved for the controller implementation and subject to change.
+	// But generally it's determined by checking the Node ready condition is true and a timeout that might vary depending on the platform provider.
+	// AutoRepair will no-op when more than 2 Nodes are unhealthy at the same time. Giving time for the cluster to stabilize or to the user to manually intervene.
 	// +optional
 	// +kubebuilder:default=false
 	AutoRepair bool `json:"autoRepair"`
@@ -387,12 +404,12 @@ type NodePoolManagement struct {
 // NodePoolAutoScaling specifies auto-scaling behavior for a NodePool.
 // +kubebuilder:validation:XValidation:rule="self.max >= self.min", message="max must be equal or greater than min"
 type NodePoolAutoScaling struct {
-	// Min is the minimum number of nodes to maintain in the pool. Must be >= 1.
+	// Min is the minimum number of nodes to maintain in the pool. Must be >= 1 and <= .Max.
 	//
 	// +kubebuilder:validation:Minimum=1
 	Min int32 `json:"min"`
 
-	// Max is the maximum number of nodes allowed in the pool. Must be >= 1.
+	// Max is the maximum number of nodes allowed in the pool. Must be >= 1 and >= Min.
 	//
 	// +kubebuilder:validation:Minimum=1
 	Max int32 `json:"max"`
@@ -479,18 +496,28 @@ type NodePoolCondition struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
-// Taint is as v1 Core but without TimeAdded.
+// taint is as v1 Core but without TimeAdded.
 // https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053
+// Validation replicates the same validation as the upstream https://github.com/kubernetes/kubernetes/blob/9a2a7537f035969a68e432b4cc276dbce8ce1735/pkg/util/taints/taints.go#L273.
+// See also https://kubernetes.io/docs/concepts/overview/working-with-objects/names/.
 type Taint struct {
-	// Required. The taint key to be applied to a node.
+	// key is the taint key to be applied to a node.
+	// +required
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\\/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$')`,message="key must be a qualified name with an optional subdomain prefix e.g. example.com/MyName"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key"`
-	// The taint value corresponding to the taint key.
+
+	// value is the taint value corresponding to the taint key.
 	// +optional
-	// +kubebuilder:validation:Pattern:=`^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$')`,message="Value must start and end with alphanumeric characters and can only contain '-', '_', '.' in the middle"
+	// +kubebuilder:validation:MaxLength=253
 	Value string `json:"value,omitempty"`
-	// Required. The effect of the taint on pods
+	// +required
+	// effect is the effect of the taint on pods
 	// that do not tolerate the taint.
 	// Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+	// +kubebuilder:validation:Enum=NoSchedule;PreferNoSchedule;NoExecute
 	Effect corev1.TaintEffect `json:"effect"`
 }
 

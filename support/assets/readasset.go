@@ -77,6 +77,12 @@ func ShouldHostedCluster(reader AssetReader, fileName string) *hyperv1.HostedClu
 	return hostedCluster
 }
 
+func ShouldNodePool(reader AssetReader, fileName string) *hyperv1.NodePool {
+	nodePool := &hyperv1.NodePool{}
+	tolerantDeserializeResource(reader, fileName, nodePool)
+	return nodePool
+}
+
 func deserializeResource(reader AssetReader, fileName string, obj runtime.Object) {
 	data := MustAsset(reader, fileName)
 	gvks, _, err := api.Scheme.ObjectKinds(obj)
