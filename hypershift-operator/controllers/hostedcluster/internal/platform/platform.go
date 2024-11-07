@@ -109,12 +109,14 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 	case hyperv1.KubevirtPlatform:
 		platform = &kubevirt.Kubevirt{}
 	case hyperv1.AzurePlatform:
-		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, AzureCAPIProvider, pullSecretBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
-			}
-		}
+		// TODO This section needs uncommented once the CAPZ cert changes have been downstreamed into OpenShift and the hardcoded image removed
+		//if pullSecretBytes != nil {
+		//	capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, AzureCAPIProvider, pullSecretBytes)
+		//	if err != nil {
+		//		return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
+		//	}
+		//}
+		capiImageProvider = "quay.io/rh_ee_brcox/hypershift/cluster-api-azure-controller-amd64:capz-with-cert"
 		platform = azure.New(capiImageProvider)
 	case hyperv1.PowerVSPlatform:
 		if pullSecretBytes != nil {

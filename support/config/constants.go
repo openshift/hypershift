@@ -49,9 +49,25 @@ const (
 	CPOOverridesEnvVar = "ENABLE_CPO_OVERRIDES"
 
 	AuditWebhookService = "audit-webhook"
+)
 
+// Azure related constants
+const (
 	// AROHCPKeyVaultManagedIdentityClientID captures the client ID of the managed identity created on an ARO HCP
 	// management cluster. This managed identity is used to pull secrets and certificates out of Azure Key Vaults in the
 	// management cluster's resource group in Azure.
 	AROHCPKeyVaultManagedIdentityClientID = "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
+
+	ManagedAzureClientIdEnvVarKey        = "ARO_HCP_MI_CLIENT_ID"
+	ManagedAzureTenantIdEnvVarKey        = "ARO_HCP_TENANT_ID"
+	ManagedAzureCertificatePathEnvVarKey = "ARO_HCP_CLIENT_CERTIFICATE_PATH"
+	ManagedAzureCertificateMountPath     = "/mnt/certs"
+	ManagedAzureSecretsStoreCSIDriver    = "secrets-store.csi.k8s.io"
+	ManagedAzureSecretProviderClass      = "secretProviderClass"
+
+	ManagedAzureKMSSecretStoreVolumeName   = "azure-kms-cert"
+	ManagedAzureKMSSecretProviderClassName = "managed-azure-kms"
+
+	ManagedAzureNodePoolMgmtSecretStoreVolumeName   = "azure-nodepool-management-cert"
+	ManagedAzureNodePoolMgmtSecretProviderClassName = "managed-azure-nodepool-management"
 )

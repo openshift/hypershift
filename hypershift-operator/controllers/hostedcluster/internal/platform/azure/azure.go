@@ -6,7 +6,9 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -67,6 +69,20 @@ func (a Azure) ReconcileCAPIInfraCR(
 		return nil, fmt.Errorf("failed to reconcile Azure CAPI cluster: %w", err)
 	}
 
+	// Reconcile the SecretProviderClass
+	nodepoolMgmtSecretProviderClass := manifests.ManagedAzureKeyVaultSecretProviderClass(
+		config.ManagedAzureNodePoolMgmtSecretProviderClassName,
+		controlPlaneNamespace,
+		hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
+		hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
+		hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName)
+
+	if _, err := createOrUpdate(ctx, client, nodepoolMgmtSecretProviderClass, func() error {
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+	}
+
 	return azureCluster, nil
 }
 
@@ -79,6 +95,10 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		image = override
 	}
 	defaultMode := int32(0640)
+	managedAzureKeyVaultManagedIdentityClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
+	if !ok {
+		return nil, fmt.Errorf("environment variable %s is not set", config.AROHCPKeyVaultManagedIdentityClientID)
+	}
 	return &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
@@ -107,16 +127,25 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 								},
 							},
 						},
+						{
+							Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+							Value: managedAzureKeyVaultManagedIdentityClientID,
+						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "capi-webhooks-tls",
-							ReadOnly:  true,
 							MountPath: "/tmp/k8s-webhook-server/serving-certs",
+							ReadOnly:  true,
 						},
 						{
 							Name:      "svc-kubeconfig",
 							MountPath: "/etc/kubernetes",
+						},
+						{
+							Name:      config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
+							MountPath: config.ManagedAzureCertificateMountPath,
+							ReadOnly:  true,
 						},
 					},
 				}},
@@ -135,6 +164,18 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							Secret: &corev1.SecretVolumeSource{
 								DefaultMode: &defaultMode,
 								SecretName:  "service-network-admin-kubeconfig",
+							},
+						},
+					},
+					{
+						Name: config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
+						VolumeSource: corev1.VolumeSource{
+							CSI: &corev1.CSIVolumeSource{
+								Driver:   config.ManagedAzureSecretsStoreCSIDriver,
+								ReadOnly: ptr.To(true),
+								VolumeAttributes: map[string]string{
+									config.ManagedAzureSecretProviderClass: config.ManagedAzureNodePoolMgmtSecretProviderClassName,
+								},
 							},
 						},
 					},
@@ -158,23 +199,6 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		}
 		for k, v := range source.Data {
 			userCloudCreds.Data[k] = v
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	// Sync Azure Client Secret in its own secret for since CAPZ needs it in a specific key value
-	// https://capz.sigs.k8s.io/topics/multitenancy#manual-service-principal-identity
-	azureClientSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "azure-client-secret", Namespace: controlPlaneNamespace}}
-	if _, err := createOrUpdate(ctx, c, azureClientSecret, func() error {
-		if azureClientSecret.Data == nil {
-			azureClientSecret.Data = map[string][]byte{}
-		}
-		for k, v := range source.Data {
-			if k == "AZURE_CLIENT_SECRET" {
-				azureClientSecret.Data["clientSecret"] = v
-			}
 		}
 		return nil
 	}); err != nil {
@@ -254,10 +278,10 @@ func reconcileAzureClusterIdentity(ctx context.Context, c client.Client, hcluste
 	}
 
 	azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-		ClientID:     string(credentialsSecret.Data["AZURE_CLIENT_ID"]),
-		ClientSecret: corev1.SecretReference{Name: "azure-client-secret", Namespace: controlPlaneNamespace},
-		TenantID:     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
-		Type:         capiazure.ServicePrincipal,
+		ClientID: hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
+		TenantID: string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+		CertPath: config.ManagedAzureCertificateMountPath + "/" + hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
+		Type:     capiazure.ServicePrincipalCertificate,
 		AllowedNamespaces: &capiazure.AllowedNamespaces{
 			NamespaceList: []string{
 				controlPlaneNamespace,
