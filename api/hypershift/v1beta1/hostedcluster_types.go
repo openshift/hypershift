@@ -351,144 +351,175 @@ const (
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires OAuthServer Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Konnectivity Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Ignition Route service with a hostname to be defined"
+// +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
+
 type HostedClusterSpec struct {
-	// Release specifies the desired OCP release payload for the hosted cluster.
-	//
-	// Updating this field will trigger a rollout of the control plane. The
-	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-	// and InfrastructureAvailabilityPolicy.
+	// release specifies the desired OCP release payload for all the hosted cluster components.
+	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
+	// The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
+	// Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
+	// Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+	// Changing this field will trigger a rollout of the control plane components.
+	// The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.
+	// +required
 	Release Release `json:"release"`
 
-	// ControlPlaneRelease specifies the desired OCP release payload for
-	// control plane components running on the management cluster.
-	// Updating this field will trigger a rollout of the control plane. The
-	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-	// and InfrastructureAvailabilityPolicy.
-	// If not defined, Release is used
+	// controlPlaneRelease is like spec.release but only for the components running on the management cluster.
+	// This excludes any operand which will land in the hosted cluster data plane.
+	// It is useful when you need to apply patch management side like a CVE, transparently for the hosted cluster.
+	// Version input for this field is free, no validation is performed against spec.release or maximum and minimum is performed.
+	// If defined, it will dicate the version of the components running management side, while spec.release will dictate the version of the components landing in the hosted cluster data plane.
+	// If not defined, spec.release is used for both.
+	// Changing this field will trigger a rollout of the control plane.
+	// The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.
 	// +optional
 	ControlPlaneRelease *Release `json:"controlPlaneRelease,omitempty"`
 
-	// ClusterID uniquely identifies this cluster. This is expected to be
-	// an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
-	// hexadecimal values).
-	// As with a Kubernetes metadata.uid, this ID uniquely identifies this
-	// cluster in space and time.
-	// This value identifies the cluster in metrics pushed to telemetry and
-	// metrics produced by the control plane operators. If a value is not
-	// specified, an ID is generated. After initial creation, the value is
-	// immutable.
-	// +kubebuilder:validation:Pattern:="[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+	// clusterID uniquely identifies this cluster. This is expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal digits).
+	// As with a Kubernetes metadata.uid, this ID uniquely identifies this cluster in space and time.
+	// This value identifies the cluster in metrics pushed to telemetry and metrics produced by the control plane operators.
+	// If a value is not specified, a random clusterID will be generated and set by the controller.
+	// Once set, this value is immutable.
+	// +kubebuilder:validation:XValidation:rule="self.matches('[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}')",message="clusterID must be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal digits)"
+	// +kubebuilder:validation:XValidation:rule=`oldSelf == "" || self == oldSelf`, message="clusterID is immutable"
+	// +kubebuilder:validation:MaxLength=36
+	// +kubebuilder:validation:MinLength=36
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
 
+	// infraID is a globally unique identifier for the cluster.
+	// It must consist of lowercase alphanumeric characters and hyphens ('-') only, and start and end with an alphanumeric character.
+	// It must be no more than 253 characters in length.
+	// This identifier will be used to associate various cloud resources with the HostedCluster and its associated NodePools.
+	// infraID is used to compute and tag created resources with "kubernetes.io/cluster/"+hcluster.Spec.InfraID which has contractual meaning for the cloud provider implementations.
+	// If a value is not specified, a random infraID will be generated and set by the controller.
+	// Once set, this value is immutable.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="infraID must consist of lowercase alphanumeric characters or '-', start and end with an alphanumeric character, and be between 1 and 253 characters"
+	// +kubebuilder:validation:XValidation:rule=`oldSelf == "" || self == oldSelf`, message="infraID is immutable"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	InfraID string `json:"infraID,omitempty"`
+
 	// updateService may be used to specify the preferred upstream update service.
-	// By default it will use the appropriate update service for the cluster and region.
-	//
+	// If ommitted we will use the appropriate update service for the cluster and region.
+	// This is used by the control plane operator to determine and signal the appropriate available upgrades in the hostedCluster.status.
+	// +kubebuilder:validation:XValidation:rule="isURL(self)",message="updateService must be a valid absolute URL"
 	// +optional
 	UpdateService configv1.URL `json:"updateService,omitempty"`
 
-	// channel is an identifier for explicitly requesting that a non-default
-	// set of updates be applied to this cluster. The default channel will be
-	// contain stable updates that are appropriate for production clusters.
-	//
+	// channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
+	// If ommited no particular upgrades are suggested.
+	// TODO(alberto): Consider the backend to use the default channel by default. Default channel will contain stable updates that are appropriate for production clusters.
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Channel string `json:"channel,omitempty"`
 
-	// InfraID is a globally unique identifier for the cluster. This identifier
-	// will be used to associate various cloud resources with the HostedCluster
-	// and its associated NodePools.
-	//
-	// +optional
-	// +immutable
-	InfraID string `json:"infraID,omitempty"`
-
-	// Platform specifies the underlying infrastructure provider for the cluster
+	// platform specifies the underlying infrastructure provider for the cluster
 	// and is used to configure platform specific behavior.
-	//
-	// +immutable
+	// +required
 	Platform PlatformSpec `json:"platform"`
 
-	// ControllerAvailabilityPolicy specifies the availability policy applied to
-	// critical control plane components. The default value is HighlyAvailable.
-	//
+	// controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
+	// Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
 	// +optional
 	// +kubebuilder:default:="HighlyAvailable"
-	// +immutable
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
-	// InfrastructureAvailabilityPolicy specifies the availability policy applied
-	// to infrastructure services which run on cluster nodes. The default value is
-	// SingleReplica.
-	//
+	// infrastructureAvailabilityPolicy specifies the availability policy applied to infrastructure services which run on the hosted cluster data plane like the ingress controller and image registry controller.
+	// Possible values are HighlyAvailable and SingleReplica. The default value is SingleReplica.
 	// +optional
 	// +kubebuilder:default:="SingleReplica"
-	// +immutable
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
-	// DNS specifies DNS configuration for the cluster.
-	//
-	// +immutable
+	// dns specifies the DNS configuration for the hosted cluster ingress.
+	// +optional
 	DNS DNSSpec `json:"dns,omitempty"`
 
-	// Networking specifies network configuration for the cluster.
-	//
-	// +immutable
+	// networking specifies network configuration for the hosted cluster.
+	// Defaults to OVNKubernetes with a cluster network of cidr: "10.132.0.0/14" and a service network of cidr: "172.31.0.0/16".
+	// +required
 	// +kubebuilder:default={networkType: "OVNKubernetes", clusterNetwork: {{cidr: "10.132.0.0/14"}}, serviceNetwork: {{cidr: "172.31.0.0/16"}}}
 	Networking ClusterNetworking `json:"networking"`
 
-	// Autoscaling specifies auto-scaling behavior that applies to all NodePools
-	// associated with the control plane.
+	// autoscaling specifies auto-scaling behavior that applies to all NodePools
+	// associated with this HostedCluster.
 	//
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
-	// Etcd specifies configuration for the control plane etcd cluster. The
-	// default ManagementType is Managed. Once set, the ManagementType cannot be
+	// etcd specifies configuration for the control plane etcd cluster. The
+	// default managementType is Managed. Once set, the managementType cannot be
 	// changed.
 	//
-	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "8Gi"}}}}
+	// +required
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
-	// Services specifies how individual control plane services are published from
-	// the hosting cluster of the control plane.
+	// services specifies how individual control plane services endpoints are published for consumption.
+	// This requires APIServer;OAuthServer;Konnectivity;Ignition.
+	// This field is immutable for all platforms but IBMCloud.
+	// Max is 6 to account for OIDC;OVNSbDb for backward compability though they are no-op.
 	//
-	// If a given service is not present in this list, it will be exposed publicly
-	// by default.
+	// +kubebuilder:validation:MaxItems=6
+	// +kubebuilder:validation:MinItems=4
+	// +kubebuilder:validation:ListType=atomic
+	// +kubebuilder:validation:XValidation:rule="self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route') || has(s.servicePublishingStrategy.route.hostname))",message="If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"
+	// +kubebuilder:validation:XValidation:rule="['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
+	// +kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'Route' && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'Route' && (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname) && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() <= 1)",message="Each route publishingStrategy 'hostname' must be unique within the Services list."
+	// +kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'NodePort' && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address) && has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort) && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port) && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() <= 1)",message="Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list."
+	// +required
+	// +immutable
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
-	// PullSecret references a pull secret to be injected into the container
-	// runtime of all cluster nodes. The secret must have a key named
-	// ".dockerconfigjson" whose value is the pull secret JSON.
+	// pullSecret is a local reference to a Secret that must have a ".dockerconfigjson" key whose content must be a valid Openshift pull secret JSON.
+	// If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+	// TODO(alberto): Signal this in a condition.
+	// This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
+	// and it will be injected into the container runtime of all NodePools.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
+	// Changing the content of the secret inplace will not trigger a rollout and might result in unpredicatble behaviour.
+	// +required
+	// +rollout
+	// TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
-	// SSHKey references an SSH key to be injected into all cluster node sshd
-	// servers. The secret must have a single key "id_rsa.pub" whose value is the
-	// public part of an SSH key.
-	//
-	// +immutable
+	// sshKey is a local reference to a Secret that must have a "id_rsa.pub" key whose content must be the public part of 1..N SSH keys.
+	// If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+	// TODO(alberto): Signal this in a condition.
+	// When sshKey is set, the controllers will generate a machineConfig with the sshAuthorizedKeys https://coreos.github.io/ignition/configuration-v3_2/ populated with this value.
+	// This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
+	// +rollout
+	// +optional
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
-	// IssuerURL is an OIDC issuer URL which is used as the issuer in all
-	// ServiceAccount tokens generated by the control plane API server. The
-	// default value is kubernetes.default.svc, which only works for in-cluster
+	// issuerURL is an OIDC issuer URL which will be used as the issuer in all
+	// ServiceAccount tokens generated by the control plane API server via --service-account-issuer kube api server flag.
+	// https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/
+	// https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection
+	// The default value is kubernetes.default.svc, which only works for in-cluster
 	// validation.
-	//
+	// If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
+	// The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	// +immutable
 	// +optional
-	// +kubebuilder:validation:Format=uri
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="issuerURL is immutable"
+	// +kubebuilder:validation:XValidation:rule="isURL(self)",message="issuerURL must be a valid absolute URL"
 	IssuerURL string `json:"issuerURL,omitempty"`
 
-	// ServiceAccountSigningKey is a reference to a secret containing the private key
-	// used by the service account token issuer. The secret is expected to contain
-	// a single key named "key". If not specified, a service account signing key will
-	// be generated automatically for the cluster. When specifying a service account
-	// signing key, a IssuerURL must also be specified.
+	// serviceAccountSigningKey is a local reference to a secret that must have a "key" key whose content must be the private key
+	// used by the service account token issuer.
+	// If not specified, a service account signing key will
+	// be generated automatically for the cluster.
+	// When specifying a service account signing key, an IssuerURL must also be specified.
+	// If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+	// TODO(alberto): Signal this in a condition.
 	//
 	// +immutable
-	// +kubebuilder:validation:Optional
 	// +optional
 	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
 
@@ -496,7 +527,6 @@ type HostedClusterSpec struct {
 	// cluster, represented as embedded resources that correspond to the openshift
 	// configuration API.
 	//
-	// +kubebuilder:validation:Optional
 	// +optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 
@@ -511,37 +541,44 @@ type HostedClusterSpec struct {
 	// +immutable
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 
-	// ImageContentSources specifies image mirrors that can be used by cluster
+	// imageContentSources specifies image mirrors that can be used by cluster
 	// nodes to pull content.
-	//
+	// When imageContentSources is set, the controllers will generate a machineConfig.
+	// This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
 	// +optional
-	// +immutable
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
-	// AdditionalTrustBundle is a reference to a ConfigMap containing a
-	// PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
-	//
+	// additionalTrustBundle is a local reference to a ConfigMap that must have a "ca-bundle.crt" key
+	// whose content must be a PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
+	// If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+	// TODO(alberto): Signal this in a condition.
+	// This will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
 	// +optional
 	AdditionalTrustBundle *corev1.LocalObjectReference `json:"additionalTrustBundle,omitempty"`
 
-	// SecretEncryption specifies a Kubernetes secret encryption strategy for the
+	// secretEncryption specifies a Kubernetes secret encryption strategy for the
 	// control plane.
 	//
 	// +optional
 	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
 
-	// FIPS indicates whether this cluster's nodes will be running in FIPS mode.
+	// fips indicates whether this cluster's nodes will be running in FIPS mode.
 	// If set to true, the control plane's ignition server will be configured to
 	// expect that nodes joining the cluster will be FIPS-enabled.
-	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="fips is immutable"
 	// +optional
 	// +immutable
 	FIPS bool `json:"fips"`
 
-	// PausedUntil is a field that can be used to pause reconciliation on a resource.
-	// Either a date can be provided in RFC3339 format or a boolean. If a date is
+	// pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
+	// Either a date can be provided in RFC3339 format or a boolean as in 'true', 'false', 'True', 'False'. If a date is
 	// provided: reconciliation is paused on the resource until that date. If the boolean true is
 	// provided: reconciliation is paused on the resource until the field is removed.
+	// +kubebuilder:validation:MaxLength=35
+	// +kubebuilder:validation:MinLength=4
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*$') || self in ['true', 'false', 'True', 'False']`,message="PausedUntil must be a date in RFC3339 format or 'True', 'true', 'False' or 'false'"
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
 
@@ -556,8 +593,11 @@ type HostedClusterSpec struct {
 	// +immutable
 	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
 
-	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
-	//
+	// NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+	// It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
+	// Changes to this field will propagate to existing Deployments and StatefulSets.
+	// +kubebuilder:validation:XValidation:rule="size(self) <= 20",message="nodeSelector map can have at most 20 entries"
+	// TODO(alberto): add additional validation for the map key/values.
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
@@ -619,34 +659,51 @@ type ImageContentSource struct {
 	Mirrors []string `json:"mirrors,omitempty"`
 }
 
-// ServicePublishingStrategyMapping specifies how individual control plane
-// services are published from the hosting cluster of a control plane.
+// ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
+// This includes APIServer;OAuthServer;Konnectivity;Ignition.
+// If a given service is not present in this list, it will be exposed publicly by default.
 type ServicePublishingStrategyMapping struct {
-	// Service identifies the type of service being published.
+	// service identifies the type of service being published.
+	// It can be APIServer;OAuthServer;Konnectivity;Ignition
+	// OVNSbDb;OIDC are no-op and kept for backward compatibility.
+	// This field is immutable.
 	//
 	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition;OVNSbDb
 	// +immutable
+	// +required
 	Service ServiceType `json:"service"`
 
-	// ServicePublishingStrategy specifies how to publish Service.
+	// servicePublishingStrategy specifies how to publish a service endpoint.
+	// +required
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
 
 // ServicePublishingStrategy specfies how to publish a ServiceType.
+// +kubebuilder:validation:XValidation:rule="self.type == 'NodePort' ? has(self.nodePort) : !has(self.nodePort)",message="nodePort is required when type is NodePort, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'Route' ? !has(self.nodePort) && !has(self.loadBalancer) : !has(self.route)",message="only route is allowed when type is Route, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'LoadBalancer' ? !has(self.nodePort) && !has(self.route) : !has(self.loadBalancer)",message="only loadBalancer is required when type is LoadBalancer, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'None' ? !has(self.nodePort) && !has(self.route) && !has(self.loadBalancer) : true",message="None does not allowed any configuration for loadBalancer, nodePort, or route"
+// +kubebuilder:validation:XValidation:rule="self.type == 'S3' ? !has(self.nodePort) && !has(self.route) && !has(self.loadBalancer) : true",message="S3 does not allowed any configuration for loadBalancer, nodePort, or route"
+
 type ServicePublishingStrategy struct {
-	// Type is the publishing strategy used for the service.
+	// type is the publishing strategy used for the service.
+	// It can be LoadBalancer;NodePort;Route;None;S3
 	//
 	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None;S3
-	// +immutable
+	// +required
 	Type PublishingStrategyType `json:"type"`
 
-	// NodePort configures exposing a service using a NodePort.
+	// nodePort configures exposing a service using a NodePort.
+	// +optional
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
 
-	// LoadBalancer configures exposing a service using a LoadBalancer.
+	// loadBalancer configures exposing a service using a dedicated LoadBalancer.
+	// +optional
 	LoadBalancer *LoadBalancerPublishingStrategy `json:"loadBalancer,omitempty"`
 
-	// Route configures exposing a service using a Route.
+	// route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
+	// The specifics of the setup are platform dependent.
+	// +optional
 	Route *RoutePublishingStrategy `json:"route,omitempty"`
 }
 
@@ -680,99 +737,151 @@ var (
 	// OAuthServer is the control plane OAuth service.
 	OAuthServer ServiceType = "OAuthServer"
 
-	// OIDC is the control plane OIDC service.
-	OIDC ServiceType = "OIDC"
-
 	// Ignition is the control plane ignition service for nodes.
 	Ignition ServiceType = "Ignition"
 
 	// OVNSbDb is the optional control plane ovn southbound database service used by OVNKubernetes CNI.
 	// Deprecated: This service is no longer used by OVNKubernetes CNI for >= 4.14.
 	OVNSbDb ServiceType = "OVNSbDb"
+
+	// OIDC is the control plane OIDC service.
+	// Deprecated: This service is no longer used by the control plane.
+	OIDC ServiceType = "OIDC"
 )
 
 // NodePortPublishingStrategy specifies a NodePort used to expose a service.
 type NodePortPublishingStrategy struct {
-	// Address is the host/ip that the NodePort service is exposed over.
+	// address is the host/ip that the NodePort service is exposed over.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$') || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$') || self.matches('^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$')`, message="address must be a valid hostname, IPv4, or IPv6 address"
+	// +required
 	Address string `json:"address"`
 
-	// Port is the port of the NodePort service. If <=0, the port is dynamically
+	// port is the port of the NodePort service. If <=0, the port is dynamically
 	// assigned when the service is created.
 	Port int32 `json:"port,omitempty"`
 }
 
 // LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.
 type LoadBalancerPublishingStrategy struct {
-	// Hostname is the name of the DNS record that will be created pointing to the LoadBalancer.
+	// hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
+	// If ommited, the value will be infered from the corev1.Service Load balancer type .status.
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')`,message="baseDomain must be a valid base domain (e.g., example.com)"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
 }
 
 // RoutePublishingStrategy specifies options for exposing a service as a Route.
 type RoutePublishingStrategy struct {
-	// Hostname is the name of the DNS record that will be created pointing to the Route.
+	// Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
+	// If ommited, the value will be infered from management ingress.Spec.Domain.
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')`,message="hostname must be a valid domain name (e.g., example.com)"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
 }
 
-// DNSSpec specifies the DNS configuration in the cluster.
+// DNSSpec specifies the DNS configuration for the hosted cluster ingress.
 type DNSSpec struct {
-	// BaseDomain is the base domain of the cluster.
-	//
+	// baseDomain is the base domain of the hosted cluster.
+	// It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+	// If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+	// Once set, this field is immutable.
+	// When the value is the empty string "", the controller might default to a value depending on the platform.
+	// +kubebuilder:validation:XValidation:rule=`oldSelf == "" || self == oldSelf`, message="baseDomain is immutable"
+	// +kubebuilder:validation:MaxLength=253
 	// +immutable
+	// +required
 	BaseDomain string `json:"baseDomain"`
 
-	// BaseDomainPrefix is the base domain prefix of the cluster.
-	// defaults to clusterName if not set. Set it to "" if you don't want a prefix to be prepended to BaseDomain.
-	//
+	// baseDomainPrefix is the base domain prefix for the hosted cluster ingress.
+	// It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+	// If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+	// Set baseDomainPrefix to an empty string "", if you don't want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
+	// This field is immutable.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPrefix is immutable"
+	// +kubebuilder:validation:MaxLength=253
 	// +optional
-	// +immutable
 	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
 
-	// PublicZoneID is the Hosted Zone ID where all the DNS records that are
-	// publicly accessible to the internet exist.
-	//
+	// publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
+	// This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+	// Once set, this value is immutable.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule=`oldSelf == "" || self == oldSelf`, message="publicZoneID is immutable"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
 	// +immutable
 	PublicZoneID string `json:"publicZoneID,omitempty"`
 
-	// PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
-	// available internally to the cluster exist.
-	//
+	// privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
+	// This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+	// Once set, this value is immutable.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule=`oldSelf == "" || self == oldSelf`, message="privateZoneID is immutable"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
 	// +immutable
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
 }
 
-// ClusterNetworking specifies network configuration for a cluster.
+// clusterNetworking specifies network configuration for a cluster.
+// All CIDRs must be unique. Additional validation to check for CIDRs overlap and consistent network stack is perfomed by the controllers.
+// Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.
+// TODO this is available in vanilla kube from 1.31 API servers and in Openshift from 4.16.
+// TODO(alberto): Use CEL cidr library for all these validation when all management clusters are >= 1.31.
+// +kubebuilder:validation:XValidation:rule="(!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s, c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m, self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m, self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c, self.serviceNetwork.all(s, c.cidr != s.cidr)))))",message="CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping"
 type ClusterNetworking struct {
-	// MachineNetwork is the list of IP address pools for machines.
-	//
+	// machineNetwork is the list of IP address pools for machines.
+	// This might be used among other things to generate appropriate networking security groups in some clouds providers.
+	// Currently only one entry or two for dual stack is supported.
+	// This field is immutable.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="machineNetwork is immutable and cannot be modified once set."
+	// +kubebuilder:validation:MaxItems=2
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:ListType=atomic
 	// +immutable
 	// +optional
 	MachineNetwork []MachineNetworkEntry `json:"machineNetwork,omitempty"`
 
-	// ClusterNetwork is the list of IP address pools for pods.
-	//
+	// clusterNetwork is the list of IP address pools for pods.
+	// Defaults to cidr: "10.132.0.0/14".
+	// Currently only one entry is supported.
+	// This field is immutable.
 	// +immutable
+	// +optional
 	// +kubebuilder:default:={{cidr: "10.132.0.0/14"}}
-	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterNetwork is immutable and cannot be modified once set."
+	// +kubebuilder:validation:MaxItems=2
+	// +kubebuilder:validation:MinItems=1
+	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
 
-	// ServiceNetwork is the list of IP address pools for services.
-	// NOTE: currently only one entry is supported.
-	//
+	// serviceNetwork is the list of IP address pools for services.
+	// Defaults to cidr: "172.31.0.0/16".
+	// Currently only one entry is supported.
+	// This field is immutable.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="serviceNetwork is immutable and cannot be modified once set."
+	// +kubebuilder:validation:MaxItems=2
+	// +kubebuilder:validation:MinItems=1
 	// +optional
 	// +kubebuilder:default:={{cidr: "172.31.0.0/16"}}
-	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork"`
+	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
-	// NetworkType specifies the SDN provider used for cluster networking.
-	//
+	// networkType specifies the SDN provider used for cluster networking.
+	// Defaults to OVNKubernetes.
+	// This field is required and immutable.
+	// kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
+	// +optional
 	// +kubebuilder:default:="OVNKubernetes"
 	// +immutable
-	NetworkType NetworkType `json:"networkType"`
+	NetworkType NetworkType `json:"networkType,omitempty"`
 
-	// APIServer contains advanced network settings for the API server that affect
-	// how the APIServer is exposed inside a cluster node.
+	// apiServer contains advanced network settings for the API server that affect
+	// how the APIServer is exposed inside a hosted cluster node.
 	//
 	// +immutable
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
@@ -787,11 +896,11 @@ type MachineNetworkEntry struct {
 // ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
 // are allocated with size 2^HostSubnetLength.
 type ClusterNetworkEntry struct {
-	// CIDR is the IP block address pool.
+	// cidr is the IP block address pool.
 	CIDR ipnet.IPNet `json:"cidr"`
 
-	// HostPrefix is the prefix size to allocate to each node from the CIDR.
-	// For example, 24 would allocate 2^8=256 adresses to each node. If this
+	// hostPrefix is the prefix size to allocate to each node from the CIDR.
+	// For example, 24 would allocate 2^(32-24)=2^8=256 adresses to each node. If this
 	// field is not used by the plugin, it can be left unset.
 	// +optional
 	HostPrefix int32 `json:"hostPrefix,omitempty"`
@@ -799,7 +908,7 @@ type ClusterNetworkEntry struct {
 
 // ServiceNetworkEntry is a single IP address block for the service network.
 type ServiceNetworkEntry struct {
-	// CIDR is the IP block address pool for services within the cluster.
+	// cidr is the IP block address pool for services within the cluster in CIDR format (e.g., 192.168.1.0/24 or 2001:0db8::/64)
 	CIDR ipnet.IPNet `json:"cidr"`
 }
 
@@ -809,21 +918,27 @@ type CIDRBlock string
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
 // node.
 type APIServerNetworking struct {
-	// AdvertiseAddress is the address that nodes will use to talk to the API
+	// advertiseAddress is the address that pods within the nodes will use to talk to the API
 	// server. This is an address associated with the loopback adapter of each
 	// node. If not specified, the controller will take default values.
 	// The default values will be set as 172.20.0.1 or fd00::1.
+	// This value is immutable.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="advertiseAddress is immutable"
+	// +optional
 	AdvertiseAddress *string `json:"advertiseAddress,omitempty"`
 
-	// Port is the port at which the APIServer is exposed inside a node. Other
+	// port is the port at which the APIServer is exposed inside a node. Other
 	// pods using host networking cannot listen on this port.
-	// If unset 6443 is used.
+	// If ommited 6443 is used.
 	// This is useful to choose a port other than the default one which might interfere with customer environments e.g. https://github.com/openshift/hypershift/pull/356.
 	// Setting this to 443 is possible only for backward compatibility reasons and it's discouraged.
 	// Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.
+	// This value is immutable.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="port is immutable"
+	// +optional
 	Port *int32 `json:"port,omitempty"`
 
-	// AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+	// allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 	// If not specified, traffic is allowed from all addresses.
 	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
 	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
@@ -960,27 +1075,31 @@ type Release struct {
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all
 // NodePools associated with a control plane.
 type ClusterAutoscaling struct {
-	// MaxNodesTotal is the maximum allowable number of nodes across all NodePools
-	// for a HostedCluster. The autoscaler will not grow the cluster beyond this
+	// maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
+	// The autoscaler will not grow the cluster beyond this number.
+	// If omitted, the autoscaler will not have a maximum limit.
 	// number.
 	//
 	// +kubebuilder:validation:Minimum=0
+	// +optional
 	MaxNodesTotal *int32 `json:"maxNodesTotal,omitempty"`
 
-	// MaxPodGracePeriod is the maximum seconds to wait for graceful pod
+	// maxPodGracePeriod is the maximum seconds to wait for graceful pod
 	// termination before scaling down a NodePool. The default is 600 seconds.
 	//
 	// +kubebuilder:validation:Minimum=0
+	// +optional
 	MaxPodGracePeriod *int32 `json:"maxPodGracePeriod,omitempty"`
 
-	// MaxNodeProvisionTime is the maximum time to wait for node provisioning
+	// maxNodeProvisionTime is the maximum time to wait for node provisioning
 	// before considering the provisioning to be unsuccessful, expressed as a Go
 	// duration string. The default is 15 minutes.
 	//
 	// +kubebuilder:validation:Pattern=^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+	// +optional
 	MaxNodeProvisionTime string `json:"maxNodeProvisionTime,omitempty"`
 
-	// PodPriorityThreshold enables users to schedule "best-effort" pods, which
+	// podPriorityThreshold enables users to schedule "best-effort" pods, which
 	// shouldn't trigger autoscaler actions, but only run when there are spare
 	// resources available. The default is -10.
 	//
@@ -1006,21 +1125,26 @@ const (
 )
 
 // EtcdSpec specifies configuration for a control plane etcd cluster.
+// +kubebuilder:validation:XValidation:rule="self.managementType == 'Managed' ? has(self.managed) : !has(self.managed)",message="Only managed configuration must be set when managementType is Managed"
+// +kubebuilder:validation:XValidation:rule="self.managementType == 'Unmanaged' ? has(self.unmanaged) : !has(self.unmanaged)",message="Only unmanaged configuration must be set when managementType is Unmanaged"
 type EtcdSpec struct {
-	// ManagementType defines how the etcd cluster is managed.
-	//
+	// managementType defines how the etcd cluster is managed.
+	// This can be either Managed or Unmanaged.
+	// This field is immutable.
 	// +unionDiscriminator
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="managementType is immutable"
+	// +required
 	// +immutable
 	ManagementType EtcdManagementType `json:"managementType"`
 
-	// Managed specifies the behavior of an etcd cluster managed by HyperShift.
+	// managed specifies the behavior of an etcd cluster managed by HyperShift.
 	//
 	// +optional
 	// +immutable
 	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
 
-	// Unmanaged specifies configuration which enables the control plane to
-	// integrate with an eternally managed etcd cluster.
+	// unmanaged specifies configuration which enables the control plane to
+	// integrate with an externally managed etcd cluster.
 	//
 	// +optional
 	// +immutable
@@ -1030,7 +1154,8 @@ type EtcdSpec struct {
 // ManagedEtcdSpec specifies the behavior of an etcd cluster managed by
 // HyperShift.
 type ManagedEtcdSpec struct {
-	// Storage specifies how etcd data is persisted.
+	// storage specifies how etcd data is persisted.
+	//+required
 	Storage ManagedEtcdStorageSpec `json:"storage"`
 }
 
@@ -1050,13 +1175,14 @@ var (
 
 // ManagedEtcdStorageSpec describes the storage configuration for etcd data.
 type ManagedEtcdStorageSpec struct {
-	// Type is the kind of persistent storage implementation to use for etcd.
-	//
+	// type is the kind of persistent storage implementation to use for etcd.
+	// Only PersistentVolume is supported at the moment.
 	// +immutable
+	// +required
 	// +unionDiscriminator
 	Type ManagedEtcdStorageType `json:"type"`
 
-	// PersistentVolume is the configuration for PersistentVolume etcd storage.
+	// persistentVolume is the configuration for PersistentVolume etcd storage.
 	// With this implementation, a PersistentVolume will be allocated for every
 	// etcd member (either 1 or 3 depending on the HostedCluster control plane
 	// availability configuration).
@@ -1064,7 +1190,7 @@ type ManagedEtcdStorageSpec struct {
 	// +optional
 	PersistentVolume *PersistentVolumeEtcdStorageSpec `json:"persistentVolume,omitempty"`
 
-	// RestoreSnapshotURL allows an optional URL to be provided where
+	// restoreSnapshotURL allows an optional URL to be provided where
 	// an etcd snapshot can be downloaded, for example a pre-signed URL
 	// referencing a storage service.
 	// This snapshot will be restored on initial startup, only when the etcd PV
@@ -1079,16 +1205,17 @@ type ManagedEtcdStorageSpec struct {
 // PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
 // etcd storage.
 type PersistentVolumeEtcdStorageSpec struct {
-	// StorageClassName is the StorageClass of the data volume for each etcd member.
-	//
+	// storageClassName is the StorageClass of the data volume for each etcd member.
 	// See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1.
-	//
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassName is immutable"
 	// +optional
 	// +immutable
+	// TODO(alberto): This shouldn't really be a pointer. There's no real different semantic for nil and empty string. Revisit all pointer vs non-pointer choices.
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
-	// Size is the minimum size of the data volume for each etcd member.
-	//
+	// size is the minimum size of the data volume for each etcd member.
+	// Default is 8Gi.
+	// This field is immutable
 	// +optional
 	// +kubebuilder:default="8Gi"
 	// +immutable
@@ -1099,7 +1226,7 @@ type PersistentVolumeEtcdStorageSpec struct {
 // UnmanagedEtcdSpec specifies configuration which enables the control plane to
 // integrate with an eternally managed etcd cluster.
 type UnmanagedEtcdSpec struct {
-	// Endpoint is the full etcd cluster client endpoint URL. For example:
+	// endpoint is the full etcd cluster client endpoint URL. For example:
 	//
 	//     https://etcd-client:2379
 	//
@@ -1108,7 +1235,8 @@ type UnmanagedEtcdSpec struct {
 	// +kubebuilder:validation:Pattern=`^https://`
 	Endpoint string `json:"endpoint"`
 
-	// TLS specifies TLS configuration for HTTPS etcd client endpoints.
+	// tls specifies TLS configuration for HTTPS etcd client endpoints.
+	//+required
 	TLS EtcdTLSConfig `json:"tls"`
 }
 
@@ -1353,6 +1481,9 @@ type ClusterConfiguration struct {
 	// registries, and policies to block or allow registry hostnames.
 	// When exposing OpenShift's image registry to the public, this also lets cluster
 	// admins specify the external hostname.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
+	// TODO(alberto): elaborate why.
+	// +rollout
 	// +optional
 	Image *configv1.ImageSpec `json:"image,omitempty"`
 
@@ -1386,6 +1517,12 @@ type ClusterConfiguration struct {
 	Scheduler *configv1.SchedulerSpec `json:"scheduler,omitempty"`
 
 	// Proxy holds cluster-wide information on how to configure default proxies for the cluster.
+	// This affects traffic flowing from the hosted cluster data plane.
+	// The controllers will generate a machineConfig with the proxy config for the cluster.
+	// This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
+
+	// +rollout
 	// +optional
 	Proxy *configv1.ProxySpec `json:"proxy,omitempty"`
 }

@@ -1,39 +1,22 @@
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
-  name: azure-services-ignition-route-not-hostname
+  name: base
   namespace: default
 spec:
-  autoscaling: {}
-  configuration: {}
-  controllerAvailabilityPolicy: SingleReplica
-  dns:
-    baseDomain: agarcial.hypershift.devcluster.openshift.com
-    privateZoneID: ID
-    publicZoneID: ID
   etcd:
+    managementType: "Managed"
     managed:
       storage:
+        type: "PersistentVolume"
         persistentVolume:
-          size: 8Gi
-          storageClassName: gp3-csi
-        type: PersistentVolume
-    managementType: Managed
-  fips: false
-  infraID: infraID
-  infrastructureAvailabilityPolicy: SingleReplica
-  issuerURL: https://issuerURL.com
-  networking:
-    clusterNetwork:
-    - cidr: 10.132.0.0/14
-    machineNetwork:
-    - cidr: 10.0.0.0/16
-    networkType: OVNKubernetes
-    serviceNetwork:
-    - cidr: 172.31.0.0/16
-  olmCatalogPlacement: management
+          size: "8Gi"
+  dns:
+    baseDomain: agarcial.hypershift.devcluster.openshift.com
+  serviceAccountSigningKey:
+    name: service-account-signing-key
   platform:
-    type: Azure
+    type: AWS
   pullSecret:
     name: secret
   release:
@@ -62,6 +45,7 @@ spec:
   - service: Ignition
     servicePublishingStrategy:
       type: Route
-      # we don't set hostname here to make validation fail.
-  sshKey:
-    name: sshKey
+      route:
+      
+
+  
