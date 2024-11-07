@@ -53,8 +53,8 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 		return err
 	}
 
-	if auditPolicyConfig(hcp).Profile != configv1.NoneAuditProfileType {
-		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, buildAuditLogsContainer())
+	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
 	}
 
 	// With managed etcd, we should wait for the known etcd client service name to
@@ -267,29 +267,6 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 	)
 }
 
-func buildAuditLogsContainer() corev1.Container {
-	return corev1.Container{
-		Name:            "audit-logs",
-		Image:           "cli",
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/bash"},
-		Args: []string{
-			"-c",
-			RenderAuditLogScript("/var/log/kube-apiserver/audit.log"),
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("5m"),
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-			},
-		},
-		VolumeMounts: []corev1.VolumeMount{{
-			Name:      workLogsVolumeName,
-			MountPath: "/var/log/kube-apiserver",
-		}},
-	}
-}
-
 func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) corev1.Volume {
 	v := corev1.Volume{
 		Name: auditWebhookConfigFileVolumeName,
@@ -297,24 +274,6 @@ func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectRef
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = auditWebhookRef.Name
 	return v
-}
-
-func RenderAuditLogScript(auditLogFilePath string) string {
-	var script = `
-set -o errexit
-set -o nounset
-set -o pipefail
-
-function cleanup() {
-	kill -- -$$
-	wait
-}
-trap cleanup SIGTERM
-
-/usr/bin/tail -c+1 -F %s &
-wait $!
-`
-	return fmt.Sprintf(script, auditLogFilePath)
 }
 
 const (

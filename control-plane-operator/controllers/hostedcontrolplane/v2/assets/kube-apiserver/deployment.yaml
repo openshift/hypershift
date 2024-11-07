@@ -207,6 +207,33 @@ spec:
           name: konnectivity-ca
         - mountPath: /etc/konnectivity/server
           name: server-certs
+      - args:
+        - -c
+        - |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          function cleanup() {
+            kill -- -$$
+            wait
+          }
+          trap cleanup SIGTERM
+
+          /usr/bin/tail -c+1 -F /var/log/kube-apiserver/audit.log &
+          wait $!
+        command:
+        - /bin/bash
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: audit-logs
+        resources:
+          requests:
+            cpu: 5m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /var/log/kube-apiserver
+          name: logs
       initContainers:
       - args:
         - -c

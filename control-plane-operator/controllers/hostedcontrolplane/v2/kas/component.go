@@ -66,7 +66,7 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		WithManifestAdapter(
 			"audit-config.yaml",
-			component.WithAdaptFunction(adaptAuditConfig),
+			component.WithAdaptFunction(AdaptAuditConfig),
 		).
 		WithManifestAdapter(
 			"auth-config.yaml",

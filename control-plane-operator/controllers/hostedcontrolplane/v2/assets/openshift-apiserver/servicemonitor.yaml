@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openshift-apiserver
+spec:
+  endpoints:
+  - metricRelabelings:
+    - action: keep
+      regex: (apiserver_storage_objects|apiserver_request_total|apiserver_current_inflight_requests)
+      sourceLabels:
+      - __name__
+    scheme: https
+    targetPort: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: metrics-client
+      keySecret:
+        key: tls.key
+        name: metrics-client
+      serverName: openshift-apiserver
+  selector:
+    matchLabels:
+      app: openshift-apiserver
