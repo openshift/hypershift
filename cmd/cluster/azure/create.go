@@ -514,19 +514,20 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 	}
 
 	return azureinfra.CreateInfraOptions{
-		Name:                        opts.Name,
-		Location:                    azureOpts.Location,
-		InfraID:                     opts.InfraID,
-		CredentialsFile:             azureOpts.CredentialsFile,
-		BaseDomain:                  opts.BaseDomain,
-		RHCOSImage:                  rhcosImage,
-		VnetID:                      azureOpts.VnetID,
-		ResourceGroupName:           azureOpts.ResourceGroupName,
-		NetworkSecurityGroupID:      azureOpts.NetworkSecurityGroupID,
-		ResourceGroupTags:           azureOpts.ResourceGroupTags,
-		SubnetID:                    azureOpts.SubnetID,
-		ManagedIdentityKeyVaultName: azureOpts.KeyVaultInfo.KeyVaultName,
-		TechPreviewEnabled:          azureOpts.TechPreviewEnabled,
+		Name:                            opts.Name,
+		Location:                        azureOpts.Location,
+		InfraID:                         opts.InfraID,
+		CredentialsFile:                 azureOpts.CredentialsFile,
+		BaseDomain:                      opts.BaseDomain,
+		RHCOSImage:                      rhcosImage,
+		VnetID:                          azureOpts.VnetID,
+		ResourceGroupName:               azureOpts.ResourceGroupName,
+		NetworkSecurityGroupID:          azureOpts.NetworkSecurityGroupID,
+		ResourceGroupTags:               azureOpts.ResourceGroupTags,
+		SubnetID:                        azureOpts.SubnetID,
+		ManagedIdentityKeyVaultName:     azureOpts.KeyVaultInfo.KeyVaultName,
+		ManagedIdentityKeyVaultTenantID: azureOpts.KeyVaultInfo.KeyVaultTenantID,
+		TechPreviewEnabled:              azureOpts.TechPreviewEnabled,
 	}, nil
 }
 
