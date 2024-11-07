@@ -23,9 +23,10 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"k8s.io/utils/ptr"
-	utilSSH "sigs.k8s.io/cluster-api-provider-azure/util/ssh"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	utilSSH "sigs.k8s.io/cluster-api-provider-azure/util/ssh"
 )
 
 const (
