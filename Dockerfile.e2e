@@ -4,4 +4,7 @@ WORKDIR /hypershift
 
 COPY . .
 
+RUN yum -y install azure-cli && \
+    yum clean all
+
 RUN make e2e
