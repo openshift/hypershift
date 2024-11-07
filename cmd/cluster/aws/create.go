@@ -362,6 +362,7 @@ func DefaultOptions() *RawCreateOptions {
 func BindOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	bindCoreOptions(opts, flags)
 	opts.Credentials.BindProductFlags(flags)
+	opts.VPCOwnerCredentials.BindVPCOwnerFlags(flags)
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
