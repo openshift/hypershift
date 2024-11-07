@@ -300,6 +300,11 @@ const (
 	// one on the NodePool takes precedence. The value is a go duration string with a number and a unit (ie. 8m, 1h, etc)
 	MachineHealthCheckTimeoutAnnotation = "hypershift.openshift.io/machine-health-check-timeout"
 
+	// MachineHealthCheckNodeStartupTimeoutAnnotation allows overriding the default machine health check timeout for
+	// node startup on nodepools. The annotation can be set in either the HostedCluster or the NodePool. If set on both, the
+	// one on the NodePool takes precedence. The value is a go duration string with a number and a unit (ie. 8m, 1h, etc)
+	MachineHealthCheckNodeStartupTimeoutAnnotation = "hypershift.openshift.io/machine-health-check-node-startup-timeout"
+
 	// MachineHealthCheckMaxUnhealthyAnnotation allows overriding the max unhealthy value of the machine
 	// health check created for a NodePool. The annotation can be set in either the HostedCluster or the NodePool.
 	// If set on both, the one on the NodePool takes precedence. The value can be a number or a percentage value.
