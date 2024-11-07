@@ -467,9 +467,9 @@ func (p *KubeAPIServerParams) ServiceAccountIssuerURL() string {
 
 func (p *KubeAPIServerParams) FeatureGates() []string {
 	if p.FeatureGate != nil {
-		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
+		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
 	} else {
-		return config.FeatureGates(&configv1.FeatureGateSelection{
+		return config.FeatureGates(configv1.FeatureGateSelection{
 			FeatureSet: configv1.Default,
 		})
 	}

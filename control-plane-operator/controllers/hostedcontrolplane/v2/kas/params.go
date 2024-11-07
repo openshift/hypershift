@@ -69,7 +69,7 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams 
 		DefaultNodeSelector:          defaultNodeSelector(hcp.Spec.Configuration),
 		AdvertiseAddress:             util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address),
 		ServiceAccountIssuerURL:      serviceAccountIssuerURL(hcp),
-		FeatureGates:                 featureGates(hcp.Spec.Configuration),
+		FeatureGates:                 config.FeatureGates(hcp.Spec.Configuration.GetFeatureGateSelection()),
 		NodePortRange:                serviceNodePortRange(hcp.Spec.Configuration),
 		ConsolePublicURL:             fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 		DisableProfiling:             util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
@@ -167,16 +167,6 @@ func serviceAccountIssuerURL(hcp *hyperv1.HostedControlPlane) string {
 		return hcp.Spec.IssuerURL
 	} else {
 		return config.DefaultServiceAccountIssuer
-	}
-}
-
-func featureGates(configuration *hyperv1.ClusterConfiguration) []string {
-	if configuration != nil && configuration.FeatureGate != nil {
-		return config.FeatureGates(&configuration.FeatureGate.FeatureGateSelection)
-	} else {
-		return config.FeatureGates(&configv1.FeatureGateSelection{
-			FeatureSet: configv1.Default,
-		})
 	}
 }
 

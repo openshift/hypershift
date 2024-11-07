@@ -82,9 +82,9 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 
 func (p *KubeSchedulerParams) FeatureGates() []string {
 	if p.FeatureGate != nil {
-		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
+		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
 	} else {
-		return config.FeatureGates(&configv1.FeatureGateSelection{FeatureSet: configv1.Default})
+		return config.FeatureGates(configv1.FeatureGateSelection{FeatureSet: configv1.Default})
 	}
 }
 
