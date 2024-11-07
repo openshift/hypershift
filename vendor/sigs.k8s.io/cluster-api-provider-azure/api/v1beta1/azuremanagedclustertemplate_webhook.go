@@ -19,11 +19,12 @@ package v1beta1
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"sigs.k8s.io/cluster-api-provider-azure/feature"
 )
 
 // SetupWebhookWithManager sets up and registers the webhook with the manager.
