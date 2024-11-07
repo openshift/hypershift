@@ -76,6 +76,7 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
@@ -207,6 +208,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
 		oapiv2.NewComponent(),
+		oauthapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		ocmv2.NewComponent(),
 		routecmv2.NewComponent(),
@@ -1165,10 +1167,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	if util.HCPOAuthEnabled(hostedControlPlane) {
-		// Reconcile openshift oauth apiserver
-		r.Log.Info("Reconciling OpenShift OAuth API Server")
-		if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+		if !r.IsCPOV2 {
+			// Reconcile openshift oauth apiserver
+			r.Log.Info("Reconciling OpenShift OAuth API Server")
+			if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+			}
 		}
 
 		// Reconcile oauth server

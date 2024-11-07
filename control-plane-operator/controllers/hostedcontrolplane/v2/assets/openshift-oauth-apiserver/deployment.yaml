@@ -1,0 +1,152 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openshift-oauth-apiserver
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: openshift-oauth-apiserver
+  strategy:
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: openshift-oauth-apiserver
+    spec:
+      containers:
+      - args:
+        - start
+        - --authorization-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --authentication-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --secure-port=8443
+        - --audit-log-path=/var/log/openshift-oauth-apiserver/audit.log
+        - --audit-log-format=json
+        - --audit-log-maxsize=10
+        - --audit-log-maxbackup=1
+        - --etcd-cafile=/etc/kubernetes/certs/etcd-client-ca/ca.crt
+        - --etcd-keyfile=/etc/kubernetes/certs/etcd-client/etcd-client.key
+        - --etcd-certfile=/etc/kubernetes/certs/etcd-client/etcd-client.crt
+        - --shutdown-delay-duration=15s
+        - --tls-private-key-file=/etc/kubernetes/certs/serving/tls.key
+        - --tls-cert-file=/etc/kubernetes/certs/serving/tls.crt
+        - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
+        - --cors-allowed-origins='//127\.0\.0\.1(:|$)'
+        - --cors-allowed-origins='//localhost(:|$)'
+        - --v=2
+        - --requestheader-client-ca-file=/etc/kubernetes/certs/aggregator-client-ca/ca.crt
+        - --requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator
+        - --requestheader-username-headers=X-Remote-User
+        - --requestheader-group-headers=X-Remote-Group
+        - --requestheader-extra-headers-prefix=X-Remote-Extra-
+        - --client-ca-file=/etc/kubernetes/certs/client-ca/ca.crt
+        command:
+        - /usr/bin/oauth-apiserver
+        image: oauth-apiserver
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: openshift-oauth-apiserver
+        readinessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: readyz
+            port: 8443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 150m
+            memory: 80Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/certs/aggregator-client-ca
+          name: aggregator-ca
+        - mountPath: /etc/kubernetes/audit-config
+          name: audit-config
+        - mountPath: /etc/kubernetes/certs/client-ca
+          name: client-ca
+        - mountPath: /etc/kubernetes/certs/etcd-client-ca
+          name: etcd-client-ca
+        - mountPath: /etc/kubernetes/certs/etcd-client
+          name: etcd-client-cert
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/certs/serving
+          name: serving-cert
+        - mountPath: /var/log/openshift-oauth-apiserver
+          name: work-logs
+        workingDir: /var/log/openshift-oauth-apiserver
+      - args:
+        - -c
+        - |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          function cleanup() {
+            kill -- -$$
+            wait
+          }
+          trap cleanup SIGTERM
+
+          /usr/bin/tail -c+1 -F /var/log/openshift-oauth-apiserver/audit.log &
+          wait $!
+        command:
+        - /bin/bash
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: audit-logs
+        resources:
+          requests:
+            cpu: 5m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /var/log/openshift-oauth-apiserver
+          name: work-logs
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - emptyDir: {}
+        name: work-logs
+      - configMap:
+          defaultMode: 420
+          name: openshift-oauth-apiserver-audit
+        name: audit-config
+      - configMap:
+          defaultMode: 420
+          name: aggregator-client-ca
+        name: aggregator-ca
+      - configMap:
+          defaultMode: 420
+          name: etcd-ca
+        name: etcd-client-ca
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: openshift-oauth-apiserver-cert
+      - name: etcd-client-cert
+        secret:
+          defaultMode: 416
+          secretName: etcd-client-tls
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: client-ca
