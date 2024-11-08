@@ -29,9 +29,9 @@ type HostedClusterSpecApplyConfiguration struct {
 	Release                          *ReleaseApplyConfiguration                           `json:"release,omitempty"`
 	ControlPlaneRelease              *ReleaseApplyConfiguration                           `json:"controlPlaneRelease,omitempty"`
 	ClusterID                        *string                                              `json:"clusterID,omitempty"`
+	InfraID                          *string                                              `json:"infraID,omitempty"`
 	UpdateService                    *v1.URL                                              `json:"updateService,omitempty"`
 	Channel                          *string                                              `json:"channel,omitempty"`
-	InfraID                          *string                                              `json:"infraID,omitempty"`
 	Platform                         *PlatformSpecApplyConfiguration                      `json:"platform,omitempty"`
 	ControllerAvailabilityPolicy     *hypershiftv1beta1.AvailabilityPolicy                `json:"controllerAvailabilityPolicy,omitempty"`
 	InfrastructureAvailabilityPolicy *hypershiftv1beta1.AvailabilityPolicy                `json:"infrastructureAvailabilityPolicy,omitempty"`
@@ -86,6 +86,14 @@ func (b *HostedClusterSpecApplyConfiguration) WithClusterID(value string) *Hoste
 	return b
 }
 
+// WithInfraID sets the InfraID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the InfraID field is set to the value of the last call.
+func (b *HostedClusterSpecApplyConfiguration) WithInfraID(value string) *HostedClusterSpecApplyConfiguration {
+	b.InfraID = &value
+	return b
+}
+
 // WithUpdateService sets the UpdateService field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the UpdateService field is set to the value of the last call.
@@ -99,14 +107,6 @@ func (b *HostedClusterSpecApplyConfiguration) WithUpdateService(value v1.URL) *H
 // If called multiple times, the Channel field is set to the value of the last call.
 func (b *HostedClusterSpecApplyConfiguration) WithChannel(value string) *HostedClusterSpecApplyConfiguration {
 	b.Channel = &value
-	return b
-}
-
-// WithInfraID sets the InfraID field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the InfraID field is set to the value of the last call.
-func (b *HostedClusterSpecApplyConfiguration) WithInfraID(value string) *HostedClusterSpecApplyConfiguration {
-	b.InfraID = &value
 	return b
 }
 

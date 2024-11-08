@@ -16,6 +16,8 @@ var nullBytes = []byte(nullString)
 // IPNet wraps net.IPNet to get CIDR serialization.
 //
 // +kubebuilder:validation:Type=string
+// +kubebuilder:validation:MaxLength=43
+// +kubebuilder:validation:XValidation:rule=`self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$') || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')`,message="cidr must be a valid IPv4 or IPv6 CIDR notation (e.g., 192.168.1.0/24 or 2001:db8::/64)"
 type IPNet net.IPNet
 
 type IPNets []IPNet

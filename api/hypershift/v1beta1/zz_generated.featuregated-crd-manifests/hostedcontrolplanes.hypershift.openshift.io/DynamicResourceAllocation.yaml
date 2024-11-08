@@ -85,29 +85,30 @@ spec:
                 properties:
                   maxNodeProvisionTime:
                     description: |-
-                      MaxNodeProvisionTime is the maximum time to wait for node provisioning
+                      maxNodeProvisionTime is the maximum time to wait for node provisioning
                       before considering the provisioning to be unsuccessful, expressed as a Go
                       duration string. The default is 15 minutes.
                     pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                     type: string
                   maxNodesTotal:
                     description: |-
-                      MaxNodesTotal is the maximum allowable number of nodes across all NodePools
-                      for a HostedCluster. The autoscaler will not grow the cluster beyond this
+                      maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
+                      The autoscaler will not grow the cluster beyond this number.
+                      If omitted, the autoscaler will not have a maximum limit.
                       number.
                     format: int32
                     minimum: 0
                     type: integer
                   maxPodGracePeriod:
                     description: |-
-                      MaxPodGracePeriod is the maximum seconds to wait for graceful pod
+                      maxPodGracePeriod is the maximum seconds to wait for graceful pod
                       termination before scaling down a NodePool. The default is 600 seconds.
                     format: int32
                     minimum: 0
                     type: integer
                   podPriorityThreshold:
                     description: |-
-                      PodPriorityThreshold enables users to schedule "best-effort" pods, which
+                      podPriorityThreshold enables users to schedule "best-effort" pods, which
                       shouldn't trigger autoscaler actions, but only run when there are spare
                       resources available. The default is -10.
 
@@ -672,6 +673,7 @@ spec:
                       registries, and policies to block or allow registry hostnames.
                       When exposing OpenShift's image registry to the public, this also lets cluster
                       admins specify the external hostname.
+                      Changing this value will trigger a rollout for all existing NodePools in the cluster.
                     properties:
                       additionalTrustedCA:
                         description: |-
@@ -1851,8 +1853,7 @@ spec:
                         type: array
                     type: object
                   proxy:
-                    description: Proxy holds cluster-wide information on how to configure
-                      default proxies for the cluster.
+                    description: ProxySpec contains cluster proxy creation configuration.
                     properties:
                       httpProxy:
                         description: httpProxy is the URL of the proxy for HTTP requests.  Empty
@@ -2009,31 +2010,63 @@ spec:
                 description: |-
                   ControllerAvailabilityPolicy specifies the availability policy applied to
                   critical control plane components. The default value is SingleReplica.
+                enum:
+                - HighlyAvailable
+                - SingleReplica
                 type: string
                 x-kubernetes-validations:
                 - message: ControllerAvailabilityPolicy is immutable
                   rule: self == oldSelf
               dns:
-                description: DNSSpec specifies the DNS configuration in the cluster.
+                description: DNSSpec specifies the DNS configuration for the hosted
+                  cluster ingress.
                 properties:
                   baseDomain:
-                    description: BaseDomain is the base domain of the cluster.
+                    description: |-
+                      baseDomain is the base domain of the hosted cluster.
+                      It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+                      If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+                      Once set, this field is immutable.
+                      When the value is the empty string "", the controller might default to a value depending on the platform.
+                    maxLength: 253
                     type: string
+                    x-kubernetes-validations:
+                    - message: baseDomain is immutable
+                      rule: oldSelf == "" || self == oldSelf
                   baseDomainPrefix:
                     description: |-
-                      BaseDomainPrefix is the base domain prefix of the cluster.
-                      defaults to clusterName if not set. Set it to "" if you don't want a prefix to be prepended to BaseDomain.
+                      baseDomainPrefix is the base domain prefix for the hosted cluster ingress.
+                      It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+                      If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+                      Set baseDomainPrefix to an empty string "", if you don't want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
+                      This field is immutable.
+                    maxLength: 253
                     type: string
+                    x-kubernetes-validations:
+                    - message: baseDomainPrefix is immutable
+                      rule: self == oldSelf
                   privateZoneID:
                     description: |-
-                      PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
-                      available internally to the cluster exist.
+                      privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
+                      This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+                      Once set, this value is immutable.
+                    maxLength: 253
+                    minLength: 1
                     type: string
+                    x-kubernetes-validations:
+                    - message: privateZoneID is immutable
+                      rule: oldSelf == "" || self == oldSelf
                   publicZoneID:
                     description: |-
-                      PublicZoneID is the Hosted Zone ID where all the DNS records that are
-                      publicly accessible to the internet exist.
+                      publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
+                      This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+                      Once set, this value is immutable.
+                    maxLength: 253
+                    minLength: 1
                     type: string
+                    x-kubernetes-validations:
+                    - message: publicZoneID is immutable
+                      rule: oldSelf == "" || self == oldSelf
                 required:
                 - baseDomain
                 type: object
@@ -2043,15 +2076,15 @@ spec:
                   use to store data.
                 properties:
                   managed:
-                    description: Managed specifies the behavior of an etcd cluster
+                    description: managed specifies the behavior of an etcd cluster
                       managed by HyperShift.
                     properties:
                       storage:
-                        description: Storage specifies how etcd data is persisted.
+                        description: storage specifies how etcd data is persisted.
                         properties:
                           persistentVolume:
                             description: |-
-                              PersistentVolume is the configuration for PersistentVolume etcd storage.
+                              persistentVolume is the configuration for PersistentVolume etcd storage.
                               With this implementation, a PersistentVolume will be allocated for every
                               etcd member (either 1 or 3 depending on the HostedCluster control plane
                               availability configuration).
@@ -2061,8 +2094,10 @@ spec:
                                 - type: integer
                                 - type: string
                                 default: 8Gi
-                                description: Size is the minimum size of the data
-                                  volume for each etcd member.
+                                description: |-
+                                  size is the minimum size of the data volume for each etcd member.
+                                  Default is 8Gi.
+                                  This field is immutable
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true
                                 x-kubernetes-validations:
@@ -2070,14 +2105,16 @@ spec:
                                   rule: self == oldSelf
                               storageClassName:
                                 description: |-
-                                  StorageClassName is the StorageClass of the data volume for each etcd member.
-
+                                  storageClassName is the StorageClass of the data volume for each etcd member.
                                   See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1.
                                 type: string
+                                x-kubernetes-validations:
+                                - message: storageClassName is immutable
+                                  rule: self == oldSelf
                             type: object
                           restoreSnapshotURL:
                             description: |-
-                              RestoreSnapshotURL allows an optional URL to be provided where
+                              restoreSnapshotURL allows an optional URL to be provided where
                               an etcd snapshot can be downloaded, for example a pre-signed URL
                               referencing a storage service.
                               This snapshot will be restored on initial startup, only when the etcd PV
@@ -2090,8 +2127,9 @@ spec:
                                 1 entry
                               rule: self.size() <= 1
                           type:
-                            description: Type is the kind of persistent storage implementation
-                              to use for etcd.
+                            description: |-
+                              type is the kind of persistent storage implementation to use for etcd.
+                              Only PersistentVolume is supported at the moment.
                             enum:
                             - PersistentVolume
                             type: string
@@ -2102,19 +2140,25 @@ spec:
                     - storage
                     type: object
                   managementType:
-                    description: ManagementType defines how the etcd cluster is managed.
+                    description: |-
+                      managementType defines how the etcd cluster is managed.
+                      This can be either Managed or Unmanaged.
+                      This field is immutable.
                     enum:
                     - Managed
                     - Unmanaged
                     type: string
+                    x-kubernetes-validations:
+                    - message: managementType is immutable
+                      rule: self == oldSelf
                   unmanaged:
                     description: |-
-                      Unmanaged specifies configuration which enables the control plane to
-                      integrate with an eternally managed etcd cluster.
+                      unmanaged specifies configuration which enables the control plane to
+                      integrate with an externally managed etcd cluster.
                     properties:
                       endpoint:
                         description: |-
-                          Endpoint is the full etcd cluster client endpoint URL. For example:
+                          endpoint is the full etcd cluster client endpoint URL. For example:
 
                               https://etcd-client:2379
 
@@ -2122,7 +2166,7 @@ spec:
                         pattern: ^https://
                         type: string
                       tls:
-                        description: TLS specifies TLS configuration for HTTPS etcd
+                        description: tls specifies TLS configuration for HTTPS etcd
                           client endpoints.
                         properties:
                           clientSecret:
@@ -2155,6 +2199,15 @@ spec:
                 required:
                 - managementType
                 type: object
+                x-kubernetes-validations:
+                - message: Only managed configuration must be set when managementType
+                    is Managed
+                  rule: 'self.managementType == ''Managed'' ? has(self.managed) :
+                    !has(self.managed)'
+                - message: Only unmanaged configuration must be set when managementType
+                    is Unmanaged
+                  rule: 'self.managementType == ''Unmanaged'' ? has(self.unmanaged)
+                    : !has(self.unmanaged)'
               fips:
                 description: FIPS specifies if the nodes for the cluster will be running
                   in FIPS mode
@@ -2192,6 +2245,9 @@ spec:
                   InfrastructureAvailabilityPolicy specifies the availability policy applied
                   to infrastructure services which run on cluster nodes. The default value is
                   SingleReplica.
+                enum:
+                - HighlyAvailable
+                - SingleReplica
                 type: string
               issuerURL:
                 description: |-
@@ -2219,19 +2275,23 @@ spec:
                 properties:
                   apiServer:
                     description: |-
-                      APIServer contains advanced network settings for the API server that affect
-                      how the APIServer is exposed inside a cluster node.
+                      apiServer contains advanced network settings for the API server that affect
+                      how the APIServer is exposed inside a hosted cluster node.
                     properties:
                       advertiseAddress:
                         description: |-
-                          AdvertiseAddress is the address that nodes will use to talk to the API
+                          advertiseAddress is the address that pods within the nodes will use to talk to the API
                           server. This is an address associated with the loopback adapter of each
                           node. If not specified, the controller will take default values.
                           The default values will be set as 172.20.0.1 or fd00::1.
+                          This value is immutable.
                         type: string
+                        x-kubernetes-validations:
+                        - message: advertiseAddress is immutable
+                          rule: self == oldSelf
                       allowedCIDRBlocks:
                         description: |-
-                          AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+                          allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
                           If not specified, traffic is allowed from all addresses.
                           This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
                         items:
@@ -2240,42 +2300,64 @@ spec:
                         type: array
                       port:
                         description: |-
-                          Port is the port at which the APIServer is exposed inside a node. Other
+                          port is the port at which the APIServer is exposed inside a node. Other
                           pods using host networking cannot listen on this port.
-                          If unset 6443 is used.
+                          If ommited 6443 is used.
                           This is useful to choose a port other than the default one which might interfere with customer environments e.g. https://github.com/openshift/hypershift/pull/356.
                           Setting this to 443 is possible only for backward compatibility reasons and it's discouraged.
                           Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.
+                          This value is immutable.
                         format: int32
                         type: integer
+                        x-kubernetes-validations:
+                        - message: port is immutable
+                          rule: self == oldSelf
                     type: object
                   clusterNetwork:
                     default:
                     - cidr: 10.132.0.0/14
-                    description: ClusterNetwork is the list of IP address pools for
-                      pods.
+                    description: |-
+                      clusterNetwork is the list of IP address pools for pods.
+                      Defaults to cidr: "10.132.0.0/14".
+                      Currently only one entry is supported.
+                      This field is immutable.
                     items:
                       description: |-
                         ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
                         are allocated with size 2^HostSubnetLength.
                       properties:
                         cidr:
-                          description: CIDR is the IP block address pool.
+                          description: cidr is the IP block address pool.
+                          maxLength: 43
                           type: string
+                          x-kubernetes-validations:
+                          - message: cidr must be a valid IPv4 or IPv6 CIDR notation
+                              (e.g., 192.168.1.0/24 or 2001:db8::/64)
+                            rule: self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$')
+                              || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')
                         hostPrefix:
                           description: |-
-                            HostPrefix is the prefix size to allocate to each node from the CIDR.
-                            For example, 24 would allocate 2^8=256 adresses to each node. If this
+                            hostPrefix is the prefix size to allocate to each node from the CIDR.
+                            For example, 24 would allocate 2^(32-24)=2^8=256 adresses to each node. If this
                             field is not used by the plugin, it can be left unset.
                           format: int32
                           type: integer
                       required:
                       - cidr
                       type: object
+                    maxItems: 2
+                    minItems: 1
                     type: array
+                    x-kubernetes-validations:
+                    - message: clusterNetwork is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                   machineNetwork:
-                    description: MachineNetwork is the list of IP address pools for
-                      machines.
+                    description: |-
+                      machineNetwork is the list of IP address pools for machines.
+                      This might be used among other things to generate appropriate networking security groups in some clouds providers.
+                      Currently only one entry or two for dual stack is supported.
+                      This field is immutable.
                     items:
                       description: MachineNetworkEntry is a single IP address block
                         for node IP blocks.
@@ -2283,15 +2365,30 @@ spec:
                         cidr:
                           description: CIDR is the IP block address pool for machines
                             within the cluster.
+                          maxLength: 43
                           type: string
+                          x-kubernetes-validations:
+                          - message: cidr must be a valid IPv4 or IPv6 CIDR notation
+                              (e.g., 192.168.1.0/24 or 2001:db8::/64)
+                            rule: self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$')
+                              || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')
                       required:
                       - cidr
                       type: object
+                    maxItems: 2
+                    minItems: 1
                     type: array
+                    x-kubernetes-validations:
+                    - message: machineNetwork is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                   networkType:
                     default: OVNKubernetes
-                    description: NetworkType specifies the SDN provider used for cluster
-                      networking.
+                    description: |-
+                      networkType specifies the SDN provider used for cluster networking.
+                      Defaults to OVNKubernetes.
+                      This field is required and immutable.
+                      kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
                     enum:
                     - OpenShiftSDN
                     - Calico
@@ -2302,24 +2399,44 @@ spec:
                     default:
                     - cidr: 172.31.0.0/16
                     description: |-
-                      ServiceNetwork is the list of IP address pools for services.
-                      NOTE: currently only one entry is supported.
+                      serviceNetwork is the list of IP address pools for services.
+                      Defaults to cidr: "172.31.0.0/16".
+                      Currently only one entry is supported.
+                      This field is immutable.
                     items:
                       description: ServiceNetworkEntry is a single IP address block
                         for the service network.
                       properties:
                         cidr:
-                          description: CIDR is the IP block address pool for services
-                            within the cluster.
+                          description: cidr is the IP block address pool for services
+                            within the cluster in CIDR format (e.g., 192.168.1.0/24
+                            or 2001:0db8::/64)
+                          maxLength: 43
                           type: string
+                          x-kubernetes-validations:
+                          - message: cidr must be a valid IPv4 or IPv6 CIDR notation
+                              (e.g., 192.168.1.0/24 or 2001:db8::/64)
+                            rule: self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$')
+                              || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')
                       required:
                       - cidr
                       type: object
+                    maxItems: 2
+                    minItems: 1
                     type: array
-                required:
-                - clusterNetwork
-                - networkType
+                    x-kubernetes-validations:
+                    - message: serviceNetwork is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                 type: object
+                x-kubernetes-validations:
+                - message: CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork
+                    must be unique and non-overlapping
+                  rule: (!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s,
+                    c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m,
+                    self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m,
+                    self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c,
+                    self.serviceNetwork.all(s, c.cidr != s.cidr)))))
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -3606,11 +3723,16 @@ spec:
                   in the management cluster.
                 items:
                   description: |-
-                    ServicePublishingStrategyMapping specifies how individual control plane
-                    services are published from the hosting cluster of a control plane.
+                    ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
+                    This includes APIServer;OAuthServer;Konnectivity;Ignition.
+                    If a given service is not present in this list, it will be exposed publicly by default.
                   properties:
                     service:
-                      description: Service identifies the type of service being published.
+                      description: |-
+                        service identifies the type of service being published.
+                        It can be APIServer;OAuthServer;Konnectivity;Ignition
+                        OVNSbDb;OIDC are no-op and kept for backward compatibility.
+                        This field is immutable.
                       enum:
                       - APIServer
                       - OAuthServer
@@ -3620,29 +3742,44 @@ spec:
                       - OVNSbDb
                       type: string
                     servicePublishingStrategy:
-                      description: ServicePublishingStrategy specifies how to publish
-                        Service.
+                      description: servicePublishingStrategy specifies how to publish
+                        a service endpoint.
                       properties:
                         loadBalancer:
-                          description: LoadBalancer configures exposing a service
-                            using a LoadBalancer.
+                          description: loadBalancer configures exposing a service
+                            using a dedicated LoadBalancer.
                           properties:
                             hostname:
-                              description: Hostname is the name of the DNS record
-                                that will be created pointing to the LoadBalancer.
+                              description: |-
+                                hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
+                                If ommited, the value will be infered from the corev1.Service Load balancer type .status.
+                              maxLength: 253
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: baseDomain must be a valid base domain (e.g.,
+                                  example.com)
+                                rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
                           type: object
                         nodePort:
-                          description: NodePort configures exposing a service using
+                          description: nodePort configures exposing a service using
                             a NodePort.
                           properties:
                             address:
-                              description: Address is the host/ip that the NodePort
+                              description: address is the host/ip that the NodePort
                                 service is exposed over.
+                              maxLength: 253
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: address must be a valid hostname, IPv4, or
+                                  IPv6 address
+                                rule: self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$')
+                                  || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$')
+                                  || self.matches('^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$')
                             port:
                               description: |-
-                                Port is the port of the NodePort service. If <=0, the port is dynamically
+                                port is the port of the NodePort service. If <=0, the port is dynamically
                                 assigned when the service is created.
                               format: int32
                               type: integer
@@ -3650,17 +3787,26 @@ spec:
                           - address
                           type: object
                         route:
-                          description: Route configures exposing a service using a
-                            Route.
+                          description: |-
+                            route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
+                            The specifics of the setup are platform dependent.
                           properties:
                             hostname:
-                              description: Hostname is the name of the DNS record
-                                that will be created pointing to the Route.
+                              description: |-
+                                Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
+                                If ommited, the value will be infered from management ingress.Spec.Domain.
+                              maxLength: 253
+                              minLength: 1
                               type: string
+                              x-kubernetes-validations:
+                              - message: hostname must be a valid domain name (e.g.,
+                                  example.com)
+                                rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
                           type: object
                         type:
-                          description: Type is the publishing strategy used for the
-                            service.
+                          description: |-
+                            type is the publishing strategy used for the service.
+                            It can be LoadBalancer;NodePort;Route;None;S3
                           enum:
                           - LoadBalancer
                           - NodePort
@@ -3671,10 +3817,32 @@ spec:
                       required:
                       - type
                       type: object
+                      x-kubernetes-validations:
+                      - message: nodePort is required when type is NodePort, and forbidden
+                          otherwise
+                        rule: 'self.type == ''NodePort'' ? has(self.nodePort) : !has(self.nodePort)'
+                      - message: only route is allowed when type is Route, and forbidden
+                          otherwise
+                        rule: 'self.type == ''Route'' ? !has(self.nodePort) && !has(self.loadBalancer)
+                          : !has(self.route)'
+                      - message: only loadBalancer is required when type is LoadBalancer,
+                          and forbidden otherwise
+                        rule: 'self.type == ''LoadBalancer'' ? !has(self.nodePort)
+                          && !has(self.route) : !has(self.loadBalancer)'
+                      - message: None does not allowed any configuration for loadBalancer,
+                          nodePort, or route
+                        rule: 'self.type == ''None'' ? !has(self.nodePort) && !has(self.route)
+                          && !has(self.loadBalancer) : true'
+                      - message: S3 does not allowed any configuration for loadBalancer,
+                          nodePort, or route
+                        rule: 'self.type == ''S3'' ? !has(self.nodePort) && !has(self.route)
+                          && !has(self.loadBalancer) : true'
                   required:
                   - service
                   - servicePublishingStrategy
                   type: object
+                maxItems: 6
+                minItems: 4
                 type: array
               sshKey:
                 description: |-

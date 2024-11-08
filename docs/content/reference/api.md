@@ -165,10 +165,13 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the desired OCP release payload for the hosted cluster.</p>
-<p>Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.</p>
+<p>release specifies the desired OCP release payload for all the hosted cluster components.
+This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
+The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
+Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
+Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Changing this field will trigger a rollout of the control plane components.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -182,12 +185,14 @@ Release
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControlPlaneRelease specifies the desired OCP release payload for
-control plane components running on the management cluster.
-Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.
-If not defined, Release is used</p>
+<p>controlPlaneRelease is like spec.release but only for the components running on the management cluster.
+This excludes any operand which will land in the hosted cluster data plane.
+It is useful when you need to apply patch management side like a CVE, transparently for the hosted cluster.
+Version input for this field is free, no validation is performed against spec.release or maximum and minimum is performed.
+If defined, it will dicate the version of the components running management side, while spec.release will dictate the version of the components landing in the hosted cluster data plane.
+If not defined, spec.release is used for both.
+Changing this field will trigger a rollout of the control plane.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -199,15 +204,29 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ClusterID uniquely identifies this cluster. This is expected to be
-an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
-hexadecimal values).
-As with a Kubernetes metadata.uid, this ID uniquely identifies this
-cluster in space and time.
-This value identifies the cluster in metrics pushed to telemetry and
-metrics produced by the control plane operators. If a value is not
-specified, an ID is generated. After initial creation, the value is
-immutable.</p>
+<p>clusterID uniquely identifies this cluster. This is expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal digits).
+As with a Kubernetes metadata.uid, this ID uniquely identifies this cluster in space and time.
+This value identifies the cluster in metrics pushed to telemetry and metrics produced by the control plane operators.
+If a value is not specified, a random clusterID will be generated and set by the controller.
+Once set, this value is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>infraID is a globally unique identifier for the cluster.
+It must consist of lowercase alphanumeric characters and hyphens (&lsquo;-&rsquo;) only, and start and end with an alphanumeric character.
+It must be no more than 253 characters in length.
+This identifier will be used to associate various cloud resources with the HostedCluster and its associated NodePools.
+infraID is used to compute and tag created resources with &ldquo;kubernetes.io/cluster/&rdquo;+hcluster.Spec.InfraID which has contractual meaning for the cloud provider implementations.
+If a value is not specified, a random infraID will be generated and set by the controller.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -222,7 +241,8 @@ github.com/openshift/api/config/v1.URL
 <td>
 <em>(Optional)</em>
 <p>updateService may be used to specify the preferred upstream update service.
-By default it will use the appropriate update service for the cluster and region.</p>
+If ommitted we will use the appropriate update service for the cluster and region.
+This is used by the control plane operator to determine and signal the appropriate available upgrades in the hostedCluster.status.</p>
 </td>
 </tr>
 <tr>
@@ -234,23 +254,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>channel is an identifier for explicitly requesting that a non-default
-set of updates be applied to this cluster. The default channel will be
-contain stable updates that are appropriate for production clusters.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>InfraID is a globally unique identifier for the cluster. This identifier
-will be used to associate various cloud resources with the HostedCluster
-and its associated NodePools.</p>
+<p>channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
+If ommited no particular upgrades are suggested.
+TODO(alberto): Consider the backend to use the default channel by default. Default channel will contain stable updates that are appropriate for production clusters.</p>
 </td>
 </tr>
 <tr>
@@ -263,7 +269,7 @@ PlatformSpec
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the cluster
+<p>platform specifies the underlying infrastructure provider for the cluster
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -278,8 +284,8 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is HighlyAvailable.</p>
+<p>controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
+Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>
@@ -293,9 +299,8 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
-to infrastructure services which run on cluster nodes. The default value is
-SingleReplica.</p>
+<p>infrastructureAvailabilityPolicy specifies the availability policy applied to infrastructure services which run on the hosted cluster data plane like the ingress controller and image registry controller.
+Possible values are HighlyAvailable and SingleReplica. The default value is SingleReplica.</p>
 </td>
 </tr>
 <tr>
@@ -308,7 +313,8 @@ DNSSpec
 </em>
 </td>
 <td>
-<p>DNS specifies DNS configuration for the cluster.</p>
+<em>(Optional)</em>
+<p>dns specifies the DNS configuration for the hosted cluster ingress.</p>
 </td>
 </tr>
 <tr>
@@ -321,7 +327,8 @@ ClusterNetworking
 </em>
 </td>
 <td>
-<p>Networking specifies network configuration for the cluster.</p>
+<p>networking specifies network configuration for the hosted cluster.
+Defaults to OVNKubernetes with a cluster network of cidr: &ldquo;10.132.0.0/14&rdquo; and a service network of cidr: &ldquo;172.31.0.0/16&rdquo;.</p>
 </td>
 </tr>
 <tr>
@@ -335,8 +342,8 @@ ClusterAutoscaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
-associated with the control plane.</p>
+<p>autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with this HostedCluster.</p>
 </td>
 </tr>
 <tr>
@@ -349,8 +356,8 @@ EtcdSpec
 </em>
 </td>
 <td>
-<p>Etcd specifies configuration for the control plane etcd cluster. The
-default ManagementType is Managed. Once set, the ManagementType cannot be
+<p>etcd specifies configuration for the control plane etcd cluster. The
+default managementType is Managed. Once set, the managementType cannot be
 changed.</p>
 </td>
 </tr>
@@ -364,10 +371,10 @@ changed.</p>
 </em>
 </td>
 <td>
-<p>Services specifies how individual control plane services are published from
-the hosting cluster of the control plane.</p>
-<p>If a given service is not present in this list, it will be exposed publicly
-by default.</p>
+<p>services specifies how individual control plane services endpoints are published for consumption.
+This requires APIServer;OAuthServer;Konnectivity;Ignition.
+This field is immutable for all platforms but IBMCloud.
+Max is 6 to account for OIDC;OVNSbDb for backward compability though they are no-op.</p>
 </td>
 </tr>
 <tr>
@@ -380,9 +387,14 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>PullSecret references a pull secret to be injected into the container
-runtime of all cluster nodes. The secret must have a key named
-&ldquo;.dockerconfigjson&rdquo; whose value is the pull secret JSON.</p>
+<p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
+and it will be injected into the container runtime of all NodePools.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.
+Changing the content of the secret inplace will not trigger a rollout and might result in unpredicatble behaviour.
+TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
 </td>
 </tr>
 <tr>
@@ -395,9 +407,13 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>SSHKey references an SSH key to be injected into all cluster node sshd
-servers. The secret must have a single key &ldquo;id_rsa.pub&rdquo; whose value is the
-public part of an SSH key.</p>
+<em>(Optional)</em>
+<p>sshKey is a local reference to a Secret that must have a &ldquo;id_rsa.pub&rdquo; key whose content must be the public part of 1..N SSH keys.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+When sshKey is set, the controllers will generate a machineConfig with the sshAuthorizedKeys <a href="https://coreos.github.io/ignition/configuration-v3_2/">https://coreos.github.io/ignition/configuration-v3_2/</a> populated with this value.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -409,10 +425,14 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
-ServiceAccount tokens generated by the control plane API server. The
-default value is kubernetes.default.svc, which only works for in-cluster
-validation.</p>
+<p>issuerURL is an OIDC issuer URL which will be used as the issuer in all
+ServiceAccount tokens generated by the control plane API server via &ndash;service-account-issuer kube api server flag.
+<a href="https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/">https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/</a>
+<a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection">https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection</a>
+The default value is kubernetes.default.svc, which only works for in-cluster
+validation.
+If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
+The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.</p>
 </td>
 </tr>
 <tr>
@@ -426,11 +446,13 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceAccountSigningKey is a reference to a secret containing the private key
-used by the service account token issuer. The secret is expected to contain
-a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
-be generated automatically for the cluster. When specifying a service account
-signing key, a IssuerURL must also be specified.</p>
+<p>serviceAccountSigningKey is a local reference to a secret that must have a &ldquo;key&rdquo; key whose content must be the private key
+used by the service account token issuer.
+If not specified, a service account signing key will
+be generated automatically for the cluster.
+When specifying a service account signing key, an IssuerURL must also be specified.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.</p>
 </td>
 </tr>
 <tr>
@@ -479,8 +501,11 @@ name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources specifies image mirrors that can be used by cluster
-nodes to pull content.</p>
+<p>imageContentSources specifies image mirrors that can be used by cluster
+nodes to pull content.
+When imageContentSources is set, the controllers will generate a machineConfig.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -494,8 +519,12 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalTrustBundle is a reference to a ConfigMap containing a
-PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes</p>
+<p>additionalTrustBundle is a local reference to a ConfigMap that must have a &ldquo;ca-bundle.crt&rdquo; key
+whose content must be a PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -509,7 +538,7 @@ SecretEncryptionSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretEncryption specifies a Kubernetes secret encryption strategy for the
+<p>secretEncryption specifies a Kubernetes secret encryption strategy for the
 control plane.</p>
 </td>
 </tr>
@@ -522,7 +551,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>FIPS indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
+<p>fips indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
 If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
@@ -536,8 +565,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -568,7 +597,10 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+<p>NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
+Changes to this field will propagate to existing Deployments and StatefulSets.
+TODO(alberto): add additional validation for the map key/values.</p>
 </td>
 </tr>
 <tr>
@@ -690,7 +722,8 @@ machine properties (e.g. an AMI on the AWS platform).
 It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
 Attempting to use a release with a bigger skew might result in unpredictable behaviour.
 Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.</p>
+Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -773,7 +806,8 @@ with one or more serialized machineconfiguration.openshift.io resources:</p>
 <li>ImageContentSourcePolicy</li>
 <li>ImageDigestMirrorSet</li>
 </ul>
-<p>This is validated in the backend and signaled back via validMachineConfig condition.</p>
+<p>This is validated in the backend and signaled back via validMachineConfig condition.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -788,7 +822,8 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
-The default value is 0, meaning that the node can retry drain without any time limitations.</p>
+The default value is 0, meaning that the node can retry drain without any time limitations.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -804,7 +839,8 @@ Kubernetes meta/v1.Duration
 <em>(Optional)</em>
 <p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.</p>
+After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -867,7 +903,8 @@ nodes in the NodePool. The Tuned API is defined here:</p>
 <p>The PerformanceProfile API is defined here:
 <a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuning&rdquo; whose value is the
-JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -974,10 +1011,12 @@ string
 </em>
 </td>
 <td>
-<p>AdvertiseAddress is the address that nodes will use to talk to the API
+<em>(Optional)</em>
+<p>advertiseAddress is the address that pods within the nodes will use to talk to the API
 server. This is an address associated with the loopback adapter of each
 node. If not specified, the controller will take default values.
-The default values will be set as 172.20.0.1 or fd00::1.</p>
+The default values will be set as 172.20.0.1 or fd00::1.
+This value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -988,12 +1027,14 @@ int32
 </em>
 </td>
 <td>
-<p>Port is the port at which the APIServer is exposed inside a node. Other
+<em>(Optional)</em>
+<p>port is the port at which the APIServer is exposed inside a node. Other
 pods using host networking cannot listen on this port.
-If unset 6443 is used.
+If ommited 6443 is used.
 This is useful to choose a port other than the default one which might interfere with customer environments e.g. <a href="https://github.com/openshift/hypershift/pull/356">https://github.com/openshift/hypershift/pull/356</a>.
 Setting this to 443 is possible only for backward compatibility reasons and it&rsquo;s discouraged.
-Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.</p>
+Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.
+This value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -1006,7 +1047,7 @@ Doing so, it would result in the controller overriding the KAS endpoint in the g
 </em>
 </td>
 <td>
-<p>AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+<p>allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 If not specified, traffic is allowed from all addresses.
 This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
 </td>
@@ -2482,7 +2523,7 @@ string
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>AvailabilityPolicy specifies a high level availability policy for components.</p>
+<p>availabilityPolicy specifies a high level availability policy for components.</p>
 </p>
 <table>
 <thead>
@@ -3319,8 +3360,10 @@ int32
 </em>
 </td>
 <td>
-<p>MaxNodesTotal is the maximum allowable number of nodes across all NodePools
-for a HostedCluster. The autoscaler will not grow the cluster beyond this
+<em>(Optional)</em>
+<p>maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
+The autoscaler will not grow the cluster beyond this number.
+If omitted, the autoscaler will not have a maximum limit.
 number.</p>
 </td>
 </tr>
@@ -3332,7 +3375,8 @@ int32
 </em>
 </td>
 <td>
-<p>MaxPodGracePeriod is the maximum seconds to wait for graceful pod
+<em>(Optional)</em>
+<p>maxPodGracePeriod is the maximum seconds to wait for graceful pod
 termination before scaling down a NodePool. The default is 600 seconds.</p>
 </td>
 </tr>
@@ -3344,7 +3388,8 @@ string
 </em>
 </td>
 <td>
-<p>MaxNodeProvisionTime is the maximum time to wait for node provisioning
+<em>(Optional)</em>
+<p>maxNodeProvisionTime is the maximum time to wait for node provisioning
 before considering the provisioning to be unsuccessful, expressed as a Go
 duration string. The default is 15 minutes.</p>
 </td>
@@ -3358,7 +3403,7 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>PodPriorityThreshold enables users to schedule &ldquo;best-effort&rdquo; pods, which
+<p>podPriorityThreshold enables users to schedule &ldquo;best-effort&rdquo; pods, which
 shouldn&rsquo;t trigger autoscaler actions, but only run when there are spare
 resources available. The default is -10.</p>
 <p>See the following for more details:
@@ -3449,7 +3494,9 @@ for external registries. It allows cluster admins to configure which registries
 OpenShift is allowed to import images from, extra CA trust bundles for external
 registries, and policies to block or allow registry hostnames.
 When exposing OpenShift&rsquo;s image registry to the public, this also lets cluster
-admins specify the external hostname.</p>
+admins specify the external hostname.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.
+TODO(alberto): elaborate why.</p>
 </td>
 </tr>
 <tr>
@@ -3540,7 +3587,6 @@ github.com/openshift/api/config/v1.ProxySpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Proxy holds cluster-wide information on how to configure default proxies for the cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -3572,7 +3618,7 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 </em>
 </td>
 <td>
-<p>CIDR is the IP block address pool.</p>
+<p>cidr is the IP block address pool.</p>
 </td>
 </tr>
 <tr>
@@ -3584,8 +3630,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>HostPrefix is the prefix size to allocate to each node from the CIDR.
-For example, 24 would allocate 2^8=256 adresses to each node. If this
+<p>hostPrefix is the prefix size to allocate to each node from the CIDR.
+For example, 24 would allocate 2^(32-24)=2^8=256 adresses to each node. If this
 field is not used by the plugin, it can be left unset.</p>
 </td>
 </tr>
@@ -3598,7 +3644,11 @@ field is not used by the plugin, it can be left unset.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>ClusterNetworking specifies network configuration for a cluster.</p>
+<p>clusterNetworking specifies network configuration for a cluster.
+All CIDRs must be unique. Additional validation to check for CIDRs overlap and consistent network stack is perfomed by the controllers.
+Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.
+TODO this is available in vanilla kube from 1.31 API servers and in Openshift from 4.16.
+TODO(alberto): Use CEL cidr library for all these validation when all management clusters are &gt;= 1.31.</p>
 </p>
 <table>
 <thead>
@@ -3619,7 +3669,10 @@ field is not used by the plugin, it can be left unset.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>MachineNetwork is the list of IP address pools for machines.</p>
+<p>machineNetwork is the list of IP address pools for machines.
+This might be used among other things to generate appropriate networking security groups in some clouds providers.
+Currently only one entry or two for dual stack is supported.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3632,7 +3685,11 @@ field is not used by the plugin, it can be left unset.</p>
 </em>
 </td>
 <td>
-<p>ClusterNetwork is the list of IP address pools for pods.</p>
+<em>(Optional)</em>
+<p>clusterNetwork is the list of IP address pools for pods.
+Defaults to cidr: &ldquo;10.132.0.0/14&rdquo;.
+Currently only one entry is supported.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3646,8 +3703,10 @@ field is not used by the plugin, it can be left unset.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceNetwork is the list of IP address pools for services.
-NOTE: currently only one entry is supported.</p>
+<p>serviceNetwork is the list of IP address pools for services.
+Defaults to cidr: &ldquo;172.31.0.0/16&rdquo;.
+Currently only one entry is supported.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3660,7 +3719,11 @@ NetworkType
 </em>
 </td>
 <td>
-<p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<em>(Optional)</em>
+<p>networkType specifies the SDN provider used for cluster networking.
+Defaults to OVNKubernetes.
+This field is required and immutable.
+kubebuilder:validation:XValidation:rule=&ldquo;self == oldSelf&rdquo;, message=&ldquo;networkType is immutable&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -3673,8 +3736,8 @@ APIServerNetworking
 </em>
 </td>
 <td>
-<p>APIServer contains advanced network settings for the API server that affect
-how the APIServer is exposed inside a cluster node.</p>
+<p>apiServer contains advanced network settings for the API server that affect
+how the APIServer is exposed inside a hosted cluster node.</p>
 </td>
 </tr>
 </tbody>
@@ -4330,7 +4393,7 @@ ManagedIdentity
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>DNSSpec specifies the DNS configuration in the cluster.</p>
+<p>DNSSpec specifies the DNS configuration for the hosted cluster ingress.</p>
 </p>
 <table>
 <thead>
@@ -4348,7 +4411,11 @@ string
 </em>
 </td>
 <td>
-<p>BaseDomain is the base domain of the cluster.</p>
+<p>baseDomain is the base domain of the hosted cluster.
+It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+Once set, this field is immutable.
+When the value is the empty string &ldquo;&rdquo;, the controller might default to a value depending on the platform.</p>
 </td>
 </tr>
 <tr>
@@ -4360,8 +4427,11 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>BaseDomainPrefix is the base domain prefix of the cluster.
-defaults to clusterName if not set. Set it to &ldquo;&rdquo; if you don&rsquo;t want a prefix to be prepended to BaseDomain.</p>
+<p>baseDomainPrefix is the base domain prefix for the hosted cluster ingress.
+It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
+Set baseDomainPrefix to an empty string &ldquo;&rdquo;, if you don&rsquo;t want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -4373,8 +4443,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PublicZoneID is the Hosted Zone ID where all the DNS records that are
-publicly accessible to the internet exist.</p>
+<p>publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
+This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -4386,8 +4457,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
-available internally to the cluster exist.</p>
+<p>privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
+This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 </tbody>
@@ -4491,7 +4563,9 @@ EtcdManagementType
 </em>
 </td>
 <td>
-<p>ManagementType defines how the etcd cluster is managed.</p>
+<p>managementType defines how the etcd cluster is managed.
+This can be either Managed or Unmanaged.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -4505,7 +4579,7 @@ ManagedEtcdSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Managed specifies the behavior of an etcd cluster managed by HyperShift.</p>
+<p>managed specifies the behavior of an etcd cluster managed by HyperShift.</p>
 </td>
 </tr>
 <tr>
@@ -4519,8 +4593,8 @@ UnmanagedEtcdSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Unmanaged specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+<p>unmanaged specifies configuration which enables the control plane to
+integrate with an externally managed etcd cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -4706,10 +4780,13 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the desired OCP release payload for the hosted cluster.</p>
-<p>Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.</p>
+<p>release specifies the desired OCP release payload for all the hosted cluster components.
+This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
+The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
+Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
+Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Changing this field will trigger a rollout of the control plane components.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -4723,12 +4800,14 @@ Release
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControlPlaneRelease specifies the desired OCP release payload for
-control plane components running on the management cluster.
-Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.
-If not defined, Release is used</p>
+<p>controlPlaneRelease is like spec.release but only for the components running on the management cluster.
+This excludes any operand which will land in the hosted cluster data plane.
+It is useful when you need to apply patch management side like a CVE, transparently for the hosted cluster.
+Version input for this field is free, no validation is performed against spec.release or maximum and minimum is performed.
+If defined, it will dicate the version of the components running management side, while spec.release will dictate the version of the components landing in the hosted cluster data plane.
+If not defined, spec.release is used for both.
+Changing this field will trigger a rollout of the control plane.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -4740,15 +4819,29 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ClusterID uniquely identifies this cluster. This is expected to be
-an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
-hexadecimal values).
-As with a Kubernetes metadata.uid, this ID uniquely identifies this
-cluster in space and time.
-This value identifies the cluster in metrics pushed to telemetry and
-metrics produced by the control plane operators. If a value is not
-specified, an ID is generated. After initial creation, the value is
-immutable.</p>
+<p>clusterID uniquely identifies this cluster. This is expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal digits).
+As with a Kubernetes metadata.uid, this ID uniquely identifies this cluster in space and time.
+This value identifies the cluster in metrics pushed to telemetry and metrics produced by the control plane operators.
+If a value is not specified, a random clusterID will be generated and set by the controller.
+Once set, this value is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>infraID is a globally unique identifier for the cluster.
+It must consist of lowercase alphanumeric characters and hyphens (&lsquo;-&rsquo;) only, and start and end with an alphanumeric character.
+It must be no more than 253 characters in length.
+This identifier will be used to associate various cloud resources with the HostedCluster and its associated NodePools.
+infraID is used to compute and tag created resources with &ldquo;kubernetes.io/cluster/&rdquo;+hcluster.Spec.InfraID which has contractual meaning for the cloud provider implementations.
+If a value is not specified, a random infraID will be generated and set by the controller.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -4763,7 +4856,8 @@ github.com/openshift/api/config/v1.URL
 <td>
 <em>(Optional)</em>
 <p>updateService may be used to specify the preferred upstream update service.
-By default it will use the appropriate update service for the cluster and region.</p>
+If ommitted we will use the appropriate update service for the cluster and region.
+This is used by the control plane operator to determine and signal the appropriate available upgrades in the hostedCluster.status.</p>
 </td>
 </tr>
 <tr>
@@ -4775,23 +4869,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>channel is an identifier for explicitly requesting that a non-default
-set of updates be applied to this cluster. The default channel will be
-contain stable updates that are appropriate for production clusters.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>InfraID is a globally unique identifier for the cluster. This identifier
-will be used to associate various cloud resources with the HostedCluster
-and its associated NodePools.</p>
+<p>channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
+If ommited no particular upgrades are suggested.
+TODO(alberto): Consider the backend to use the default channel by default. Default channel will contain stable updates that are appropriate for production clusters.</p>
 </td>
 </tr>
 <tr>
@@ -4804,7 +4884,7 @@ PlatformSpec
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the cluster
+<p>platform specifies the underlying infrastructure provider for the cluster
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -4819,8 +4899,8 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is HighlyAvailable.</p>
+<p>controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
+Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>
@@ -4834,9 +4914,8 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
-to infrastructure services which run on cluster nodes. The default value is
-SingleReplica.</p>
+<p>infrastructureAvailabilityPolicy specifies the availability policy applied to infrastructure services which run on the hosted cluster data plane like the ingress controller and image registry controller.
+Possible values are HighlyAvailable and SingleReplica. The default value is SingleReplica.</p>
 </td>
 </tr>
 <tr>
@@ -4849,7 +4928,8 @@ DNSSpec
 </em>
 </td>
 <td>
-<p>DNS specifies DNS configuration for the cluster.</p>
+<em>(Optional)</em>
+<p>dns specifies the DNS configuration for the hosted cluster ingress.</p>
 </td>
 </tr>
 <tr>
@@ -4862,7 +4942,8 @@ ClusterNetworking
 </em>
 </td>
 <td>
-<p>Networking specifies network configuration for the cluster.</p>
+<p>networking specifies network configuration for the hosted cluster.
+Defaults to OVNKubernetes with a cluster network of cidr: &ldquo;10.132.0.0/14&rdquo; and a service network of cidr: &ldquo;172.31.0.0/16&rdquo;.</p>
 </td>
 </tr>
 <tr>
@@ -4876,8 +4957,8 @@ ClusterAutoscaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
-associated with the control plane.</p>
+<p>autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with this HostedCluster.</p>
 </td>
 </tr>
 <tr>
@@ -4890,8 +4971,8 @@ EtcdSpec
 </em>
 </td>
 <td>
-<p>Etcd specifies configuration for the control plane etcd cluster. The
-default ManagementType is Managed. Once set, the ManagementType cannot be
+<p>etcd specifies configuration for the control plane etcd cluster. The
+default managementType is Managed. Once set, the managementType cannot be
 changed.</p>
 </td>
 </tr>
@@ -4905,10 +4986,10 @@ changed.</p>
 </em>
 </td>
 <td>
-<p>Services specifies how individual control plane services are published from
-the hosting cluster of the control plane.</p>
-<p>If a given service is not present in this list, it will be exposed publicly
-by default.</p>
+<p>services specifies how individual control plane services endpoints are published for consumption.
+This requires APIServer;OAuthServer;Konnectivity;Ignition.
+This field is immutable for all platforms but IBMCloud.
+Max is 6 to account for OIDC;OVNSbDb for backward compability though they are no-op.</p>
 </td>
 </tr>
 <tr>
@@ -4921,9 +5002,14 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>PullSecret references a pull secret to be injected into the container
-runtime of all cluster nodes. The secret must have a key named
-&ldquo;.dockerconfigjson&rdquo; whose value is the pull secret JSON.</p>
+<p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
+and it will be injected into the container runtime of all NodePools.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.
+Changing the content of the secret inplace will not trigger a rollout and might result in unpredicatble behaviour.
+TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
 </td>
 </tr>
 <tr>
@@ -4936,9 +5022,13 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>SSHKey references an SSH key to be injected into all cluster node sshd
-servers. The secret must have a single key &ldquo;id_rsa.pub&rdquo; whose value is the
-public part of an SSH key.</p>
+<em>(Optional)</em>
+<p>sshKey is a local reference to a Secret that must have a &ldquo;id_rsa.pub&rdquo; key whose content must be the public part of 1..N SSH keys.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+When sshKey is set, the controllers will generate a machineConfig with the sshAuthorizedKeys <a href="https://coreos.github.io/ignition/configuration-v3_2/">https://coreos.github.io/ignition/configuration-v3_2/</a> populated with this value.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -4950,10 +5040,14 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
-ServiceAccount tokens generated by the control plane API server. The
-default value is kubernetes.default.svc, which only works for in-cluster
-validation.</p>
+<p>issuerURL is an OIDC issuer URL which will be used as the issuer in all
+ServiceAccount tokens generated by the control plane API server via &ndash;service-account-issuer kube api server flag.
+<a href="https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/">https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/</a>
+<a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection">https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection</a>
+The default value is kubernetes.default.svc, which only works for in-cluster
+validation.
+If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
+The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.</p>
 </td>
 </tr>
 <tr>
@@ -4967,11 +5061,13 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceAccountSigningKey is a reference to a secret containing the private key
-used by the service account token issuer. The secret is expected to contain
-a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
-be generated automatically for the cluster. When specifying a service account
-signing key, a IssuerURL must also be specified.</p>
+<p>serviceAccountSigningKey is a local reference to a secret that must have a &ldquo;key&rdquo; key whose content must be the private key
+used by the service account token issuer.
+If not specified, a service account signing key will
+be generated automatically for the cluster.
+When specifying a service account signing key, an IssuerURL must also be specified.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.</p>
 </td>
 </tr>
 <tr>
@@ -5020,8 +5116,11 @@ name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources specifies image mirrors that can be used by cluster
-nodes to pull content.</p>
+<p>imageContentSources specifies image mirrors that can be used by cluster
+nodes to pull content.
+When imageContentSources is set, the controllers will generate a machineConfig.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -5035,8 +5134,12 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalTrustBundle is a reference to a ConfigMap containing a
-PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes</p>
+<p>additionalTrustBundle is a local reference to a ConfigMap that must have a &ldquo;ca-bundle.crt&rdquo; key
+whose content must be a PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -5050,7 +5153,7 @@ SecretEncryptionSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretEncryption specifies a Kubernetes secret encryption strategy for the
+<p>secretEncryption specifies a Kubernetes secret encryption strategy for the
 control plane.</p>
 </td>
 </tr>
@@ -5063,7 +5166,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>FIPS indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
+<p>fips indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
 If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
@@ -5077,8 +5180,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -5109,7 +5212,10 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+<p>NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
+Changes to this field will propagate to existing Deployments and StatefulSets.
+TODO(alberto): add additional validation for the map key/values.</p>
 </td>
 </tr>
 <tr>
@@ -7356,7 +7462,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Hostname is the name of the DNS record that will be created pointing to the LoadBalancer.</p>
+<p>hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
+If ommited, the value will be infered from the corev1.Service Load balancer type .status.</p>
 </td>
 </tr>
 </tbody>
@@ -7459,7 +7566,7 @@ ManagedEtcdStorageSpec
 </em>
 </td>
 <td>
-<p>Storage specifies how etcd data is persisted.</p>
+<p>storage specifies how etcd data is persisted.</p>
 </td>
 </tr>
 </tbody>
@@ -7490,7 +7597,8 @@ ManagedEtcdStorageType
 </em>
 </td>
 <td>
-<p>Type is the kind of persistent storage implementation to use for etcd.</p>
+<p>type is the kind of persistent storage implementation to use for etcd.
+Only PersistentVolume is supported at the moment.</p>
 </td>
 </tr>
 <tr>
@@ -7504,7 +7612,7 @@ PersistentVolumeEtcdStorageSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>PersistentVolume is the configuration for PersistentVolume etcd storage.
+<p>persistentVolume is the configuration for PersistentVolume etcd storage.
 With this implementation, a PersistentVolume will be allocated for every
 etcd member (either 1 or 3 depending on the HostedCluster control plane
 availability configuration).</p>
@@ -7519,7 +7627,7 @@ availability configuration).</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>RestoreSnapshotURL allows an optional URL to be provided where
+<p>restoreSnapshotURL allows an optional URL to be provided where
 an etcd snapshot can be downloaded, for example a pre-signed URL
 referencing a storage service.
 This snapshot will be restored on initial startup, only when the etcd PV
@@ -8197,7 +8305,8 @@ machine properties (e.g. an AMI on the AWS platform).
 It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
 Attempting to use a release with a bigger skew might result in unpredictable behaviour.
 Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.</p>
+Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -8280,7 +8389,8 @@ with one or more serialized machineconfiguration.openshift.io resources:</p>
 <li>ImageContentSourcePolicy</li>
 <li>ImageDigestMirrorSet</li>
 </ul>
-<p>This is validated in the backend and signaled back via validMachineConfig condition.</p>
+<p>This is validated in the backend and signaled back via validMachineConfig condition.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -8295,7 +8405,8 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
-The default value is 0, meaning that the node can retry drain without any time limitations.</p>
+The default value is 0, meaning that the node can retry drain without any time limitations.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -8311,7 +8422,8 @@ Kubernetes meta/v1.Duration
 <em>(Optional)</em>
 <p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.</p>
+After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -8374,7 +8486,8 @@ nodes in the NodePool. The Tuned API is defined here:</p>
 <p>The PerformanceProfile API is defined here:
 <a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuning&rdquo; whose value is the
-JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -8488,7 +8601,7 @@ string
 </em>
 </td>
 <td>
-<p>Address is the host/ip that the NodePort service is exposed over.</p>
+<p>address is the host/ip that the NodePort service is exposed over.</p>
 </td>
 </tr>
 <tr>
@@ -8499,7 +8612,7 @@ int32
 </em>
 </td>
 <td>
-<p>Port is the port of the NodePort service. If &lt;=0, the port is dynamically
+<p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
 assigned when the service is created.</p>
 </td>
 </tr>
@@ -8851,8 +8964,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>StorageClassName is the StorageClass of the data volume for each etcd member.</p>
-<p>See <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1">https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1</a>.</p>
+<p>storageClassName is the StorageClass of the data volume for each etcd member.
+See <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1">https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1</a>.
+TODO(alberto): This shouldn&rsquo;t really be a pointer. There&rsquo;s no real different semantic for nil and empty string. Revisit all pointer vs non-pointer choices.</p>
 </td>
 </tr>
 <tr>
@@ -8866,7 +8980,9 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 </td>
 <td>
 <em>(Optional)</em>
-<p>Size is the minimum size of the data volume for each etcd member.</p>
+<p>size is the minimum size of the data volume for each etcd member.
+Default is 8Gi.
+This field is immutable</p>
 </td>
 </tr>
 </tbody>
@@ -9821,7 +9937,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Hostname is the name of the DNS record that will be created pointing to the Route.</p>
+<p>Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
+If ommited, the value will be infered from management ingress.Spec.Domain.</p>
 </td>
 </tr>
 </tbody>
@@ -10051,7 +10168,7 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 </em>
 </td>
 <td>
-<p>CIDR is the IP block address pool for services within the cluster.</p>
+<p>cidr is the IP block address pool for services within the cluster in CIDR format (e.g., 192.168.1.0/24 or 2001:0db8::/64)</p>
 </td>
 </tr>
 </tbody>
@@ -10062,7 +10179,6 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 <a href="#hypershift.openshift.io/v1beta1.ServicePublishingStrategyMapping">ServicePublishingStrategyMapping</a>)
 </p>
 <p>
-<p>ServicePublishingStrategy specfies how to publish a ServiceType.</p>
 </p>
 <table>
 <thead>
@@ -10082,7 +10198,8 @@ PublishingStrategyType
 </em>
 </td>
 <td>
-<p>Type is the publishing strategy used for the service.</p>
+<p>type is the publishing strategy used for the service.
+It can be LoadBalancer;NodePort;Route;None;S3</p>
 </td>
 </tr>
 <tr>
@@ -10095,7 +10212,8 @@ NodePortPublishingStrategy
 </em>
 </td>
 <td>
-<p>NodePort configures exposing a service using a NodePort.</p>
+<em>(Optional)</em>
+<p>nodePort configures exposing a service using a NodePort.</p>
 </td>
 </tr>
 <tr>
@@ -10108,7 +10226,8 @@ LoadBalancerPublishingStrategy
 </em>
 </td>
 <td>
-<p>LoadBalancer configures exposing a service using a LoadBalancer.</p>
+<em>(Optional)</em>
+<p>loadBalancer configures exposing a service using a dedicated LoadBalancer.</p>
 </td>
 </tr>
 <tr>
@@ -10121,7 +10240,9 @@ RoutePublishingStrategy
 </em>
 </td>
 <td>
-<p>Route configures exposing a service using a Route.</p>
+<em>(Optional)</em>
+<p>route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
+The specifics of the setup are platform dependent.</p>
 </td>
 </tr>
 </tbody>
@@ -10133,8 +10254,9 @@ RoutePublishingStrategy
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>ServicePublishingStrategyMapping specifies how individual control plane
-services are published from the hosting cluster of a control plane.</p>
+<p>ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
+This includes APIServer;OAuthServer;Konnectivity;Ignition.
+If a given service is not present in this list, it will be exposed publicly by default.</p>
 </p>
 <table>
 <thead>
@@ -10154,7 +10276,10 @@ ServiceType
 </em>
 </td>
 <td>
-<p>Service identifies the type of service being published.</p>
+<p>service identifies the type of service being published.
+It can be APIServer;OAuthServer;Konnectivity;Ignition
+OVNSbDb;OIDC are no-op and kept for backward compatibility.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -10167,7 +10292,7 @@ ServicePublishingStrategy
 </em>
 </td>
 <td>
-<p>ServicePublishingStrategy specifies how to publish Service.</p>
+<p>servicePublishingStrategy specifies how to publish a service endpoint.</p>
 </td>
 </tr>
 </tbody>
@@ -10486,7 +10611,7 @@ string
 </em>
 </td>
 <td>
-<p>Endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
 <pre><code>https://etcd-client:2379
 </code></pre>
 <p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
@@ -10502,7 +10627,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>TLS specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
 </td>
 </tr>
 </tbody>
