@@ -3,6 +3,7 @@ package openstack
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -19,11 +20,11 @@ const (
 // ReconcileCloudConfigSecret reconciles the cloud config secret.
 // For some controllers (e.g. Manila CSI, CNCC, etc), the cloud config needs to be stored in a secret.
 // In the hosted cluster config operator, we create the secrets needed by these controllers.
-func ReconcileCloudConfigSecret(externalNetworkID *string, secret *corev1.Secret, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, secret *corev1.Secret, credentialsSecret *corev1.Secret, caCertData []byte) error {
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(platformSpec, credentialsSecret, caCertData)
 	if caCertData != nil {
 		secret.Data[CABundleKey] = caCertData
 	}
@@ -34,11 +35,11 @@ func ReconcileCloudConfigSecret(externalNetworkID *string, secret *corev1.Secret
 
 // ReconcileCloudConfigConfigMap reconciles the cloud config configmap.
 // In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
-func ReconcileCloudConfigConfigMap(externalNetworkID *string, cm *corev1.ConfigMap, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigConfigMap(platformSpec *hyperv1.OpenStackPlatformSpec, cm *corev1.ConfigMap, credentialsSecret *corev1.Secret, caCertData []byte) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(platformSpec, credentialsSecret, caCertData)
 	if caCertData != nil {
 		cm.Data[CABundleKey] = string(caCertData)
 	}
@@ -48,20 +49,23 @@ func ReconcileCloudConfigConfigMap(externalNetworkID *string, cm *corev1.ConfigM
 }
 
 // getCloudConfig returns the cloud config.
-func getCloudConfig(externalNetworkID *string, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) string {
+func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecret *corev1.Secret, caCertData []byte) string {
 	config := string(credentialsSecret.Data[CredentialsFile])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
 	config += "clouds-file=" + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
-	config += "cloud=" + cloudName + "\n"
+	config += "cloud=" + platformSpec.IdentityRef.CloudName + "\n"
 	// This takes priority over the 'cacert' value in 'clouds.yaml' and we therefore
 	// unset then when creating the initial secret.
 	if caCertData != nil {
 		config += "ca-file=" + CaDir + "/" + CABundleKey + "\n"
 	}
 	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
-	if externalNetworkID != nil && *externalNetworkID != "" {
-		config += "floating-network-id = " + *externalNetworkID + "\n"
+	if platformSpec.ExternalNetwork != nil {
+		externalNetworkID := ptr.Deref(platformSpec.ExternalNetwork.ID, "")
+		if externalNetworkID != "" {
+			config += "floating-network-id = " + externalNetworkID + "\n"
+		}
 	}
 
 	return config

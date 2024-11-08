@@ -293,7 +293,7 @@ func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, cr
 	}
 
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
-		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack.ExternalNetwork.ID, cloudNetworkConfigCreds, hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData)
+		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack, cloudNetworkConfigCreds, credentialsSecret, caCertData)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
 	}
