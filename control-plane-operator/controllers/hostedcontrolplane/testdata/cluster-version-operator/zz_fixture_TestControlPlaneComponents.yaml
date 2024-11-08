@@ -132,6 +132,9 @@ spec:
           rm /var/payload/manifests/*_deployment.yaml
           rm /var/payload/manifests/*_servicemonitor.yaml
           cp -R /release-manifests /var/payload/
+          rm -f /var/payload/manifests/*-CustomNoUpgrade*.yaml
+          rm -f /var/payload/manifests/*-DevPreviewNoUpgrade*.yaml
+          rm -f /var/payload/manifests/*-TechPreviewNoUpgrade*.yaml
           rm /var/payload/release-manifests/0000_50_olm_00-pprof-config.yaml
           rm /var/payload/release-manifests/0000_50_olm_00-pprof-rbac.yaml
           rm /var/payload/release-manifests/0000_50_olm_00-pprof-secret.yaml
