@@ -146,6 +146,7 @@ spec:
                   * ContainerRuntimeConfig
                   * MachineConfig
                   * ClusterImagePolicy
+                  * ImagePolicy
                   * ImageContentSourcePolicy
                   * ImageDigestMirrorSet
 

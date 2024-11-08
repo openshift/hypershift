@@ -803,6 +803,7 @@ with one or more serialized machineconfiguration.openshift.io resources:</p>
 <li>ContainerRuntimeConfig</li>
 <li>MachineConfig</li>
 <li>ClusterImagePolicy</li>
+<li>ImagePolicy</li>
 <li>ImageContentSourcePolicy</li>
 <li>ImageDigestMirrorSet</li>
 </ul>
@@ -8417,6 +8418,7 @@ with one or more serialized machineconfiguration.openshift.io resources:</p>
 <li>ContainerRuntimeConfig</li>
 <li>MachineConfig</li>
 <li>ClusterImagePolicy</li>
+<li>ImagePolicy</li>
 <li>ImageContentSourcePolicy</li>
 <li>ImageDigestMirrorSet</li>
 </ul>

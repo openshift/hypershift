@@ -138,6 +138,7 @@ type NodePoolSpec struct {
 	// * ContainerRuntimeConfig
 	// * MachineConfig
 	// * ClusterImagePolicy
+	// * ImagePolicy
 	// * ImageContentSourcePolicy
 	// * ImageDigestMirrorSet
 	//
