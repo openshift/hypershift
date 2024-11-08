@@ -443,7 +443,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 				"network-operator",
 			},
 			Name:  "remove-old-cno",
-			Image: params.Images.CLI,
+			Image: params.Images.CLIControlPlane,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
@@ -490,7 +490,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 			Command: []string{"/bin/bash"},
 			Args:    []string{"-c", startScript},
 			Name:    "rewrite-config",
-			Image:   params.Images.CLI,
+			Image:   params.Images.CLIControlPlane,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
@@ -521,7 +521,7 @@ sc=$(kubectl --kubeconfig $kc get --ignore-not-found validatingwebhookconfigurat
 if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validatingwebhookconfiguration multus.openshift.io; fi`,
 			},
 			Name:  "remove-old-multus-validating-webhook-configuration",
-			Image: params.Images.CLI,
+			Image: params.Images.CLIControlPlane,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
