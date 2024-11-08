@@ -10,7 +10,7 @@ import (
 const (
 	CloudConfigDir      = "/etc/openstack/config"
 	CloudCredentialsDir = "/etc/openstack/secret"
-	CredentialsFile     = "cloud.conf"
+	CloudConfigKey      = "cloud.conf"
 	CADir               = "/etc/pki/ca-trust/extracted/pem"
 	CABundleKey         = "ca-bundle.pem"
 	Provider            = "openstack"
@@ -29,7 +29,7 @@ func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, sec
 	if caCertData != nil {
 		secret.Data[CABundleKey] = caCertData
 	}
-	secret.Data[CredentialsFile] = []byte(config)
+	secret.Data[CloudConfigKey] = []byte(config)
 
 	return nil
 }
@@ -44,14 +44,14 @@ func ReconcileCloudConfigConfigMap(platformSpec *hyperv1.OpenStackPlatformSpec, 
 	if caCertData != nil {
 		cm.Data[CABundleKey] = string(caCertData)
 	}
-	cm.Data[CredentialsFile] = config
+	cm.Data[CloudConfigKey] = config
 
 	return nil
 }
 
 // getCloudConfig returns the cloud config.
 func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) string {
-	config := string(credentialsSecret.Data[CredentialsFile])
+	config := string(credentialsSecret.Data[CloudConfigKey])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
 	config += "clouds-file = " + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"

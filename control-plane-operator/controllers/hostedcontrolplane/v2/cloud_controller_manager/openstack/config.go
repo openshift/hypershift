@@ -16,7 +16,7 @@ import (
 
 const (
 	CloudCredentialsDir = "/etc/openstack/secret"
-	CredentialsFile     = "cloud.conf"
+	CloudConfigKey      = "cloud.conf"
 	CloudsSecretKey     = "clouds.yaml"
 	CABundleKey         = "ca-bundle.pem"
 )
@@ -48,7 +48,7 @@ func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) 
 		cm.Data[CABundleKey] = string(caCertData)
 	}
 
-	cm.Data[CredentialsFile] = getCloudConfig(cpContext.HCP.Spec, credentialsSecret)
+	cm.Data[CloudConfigKey] = getCloudConfig(cpContext.HCP.Spec, credentialsSecret)
 	return nil
 }
 
@@ -56,7 +56,7 @@ func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) 
 func getCloudConfig(hcpSpec hyperv1.HostedControlPlaneSpec, credentialsSecret *corev1.Secret) string {
 	caCertData := GetCACertFromCredentialsSecret(credentialsSecret)
 
-	config := string(credentialsSecret.Data[CredentialsFile])
+	config := string(credentialsSecret.Data[CloudConfigKey])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
 	config += "clouds-file = " + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"

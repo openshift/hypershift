@@ -1798,7 +1798,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cmCPC.Data == nil {
 				cmCPC.Data = map[string]string{}
 			}
-			cmCPC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			cmCPC.Data[openstack.CloudConfigKey] = reference.Data[openstack.CloudConfigKey]
 			if reference.Data[openstack.CABundleKey] != "" {
 				cmCPC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
 			}
@@ -1818,7 +1818,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cmKCC.Data == nil {
 				cmKCC.Data = map[string]string{}
 			}
-			cmKCC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			cmKCC.Data[openstack.CloudConfigKey] = reference.Data[openstack.CloudConfigKey]
 			if reference.Data[openstack.CABundleKey] != "" {
 				cmKCC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
 			}

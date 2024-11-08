@@ -26,7 +26,7 @@ func TestGetCloudConfig(t *testing.T) {
 			},
 			credentialsSecret: &corev1.Secret{
 				Data: map[string][]byte{
-					CredentialsFile: []byte(""),
+					CloudConfigKey: []byte(""),
 				},
 			},
 			machineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.0.0/24")}},
@@ -55,7 +55,7 @@ address-sort-order = 192.168.0.0/24
 			},
 			credentialsSecret: &corev1.Secret{
 				Data: map[string][]byte{
-					CredentialsFile: []byte(""),
+					CloudConfigKey: []byte(""),
 				},
 			},
 			machineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.0.0/24")}},
