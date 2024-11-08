@@ -51,21 +51,22 @@ const (
 )
 
 type CreateInfraOptions struct {
-	Name                        string
-	BaseDomain                  string
-	Location                    string
-	InfraID                     string
-	CredentialsFile             string
-	Credentials                 *util.AzureCreds
-	OutputFile                  string
-	RHCOSImage                  string
-	ResourceGroupName           string
-	VnetID                      string
-	NetworkSecurityGroupID      string
-	ResourceGroupTags           map[string]string
-	SubnetID                    string
-	ManagedIdentityKeyVaultName string
-	TechPreviewEnabled          bool
+	Name                            string
+	BaseDomain                      string
+	Location                        string
+	InfraID                         string
+	CredentialsFile                 string
+	Credentials                     *util.AzureCreds
+	OutputFile                      string
+	RHCOSImage                      string
+	ResourceGroupName               string
+	VnetID                          string
+	NetworkSecurityGroupID          string
+	ResourceGroupTags               map[string]string
+	SubnetID                        string
+	ManagedIdentityKeyVaultName     string
+	ManagedIdentityKeyVaultTenantID string
+	TechPreviewEnabled              bool
 }
 
 type CreateInfraOutput struct {
@@ -218,6 +219,9 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	if o.TechPreviewEnabled {
+		result.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.Name = o.ManagedIdentityKeyVaultName
+		result.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.TenantID = o.ManagedIdentityKeyVaultTenantID
+
 		// Create ServicePrincipals with backing certificates
 		cmdStr := buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ingress, o.InfraID, o.ManagedIdentityKeyVaultName)
 		clientID, err := createServicePrincipalWithCertificate(cmdStr)
