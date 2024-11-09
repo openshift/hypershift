@@ -172,6 +172,7 @@ cluster-api-provider-azure: $(CONTROLLER_GEN)
 cluster-api-provider-openstack: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-openstack/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-openstack/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-openstack
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/k-orc/openstack-resource-controller/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-openstack
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
