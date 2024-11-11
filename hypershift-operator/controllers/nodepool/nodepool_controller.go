@@ -1,9 +1,7 @@
 package nodepool
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -18,7 +16,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -993,29 +990,6 @@ func aggregateMachineMessages(msgs []string) string {
 	}
 
 	return builder.String()
-}
-
-func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
-	// 1. - Reconcile conditions according to current state of the world.
-	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
-
-	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
-	// It is included directly by the ignition server.  However, we need to detect the change
-	// here to trigger a nodepool update.
-	image := globalconfig.ImageConfig()
-	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
-
-	// Serialize proxy and image into a single string to use in the token secret hash.
-	globalConfigBytes := bytes.NewBuffer(nil)
-	enc := json.NewEncoder(globalConfigBytes)
-	if err := enc.Encode(proxy); err != nil {
-		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
-	}
-	if err := enc.Encode(image); err != nil {
-		return "", fmt.Errorf("failed to encode image global config: %w", err)
-	}
-	return globalConfigBytes.String(), nil
 }
 
 func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string, controlPlaneNamespace string) error {
