@@ -3,7 +3,6 @@ package controlplanecomponent
 import (
 	"fmt"
 	"path"
-	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -32,11 +31,49 @@ type KonnectivityContainerOptions struct {
 	// defaults to 'kubeconfig'
 	KubeconfingVolumeName string
 
-	// socks5 proxy mode args
-	ConnectDirectlyToCloudAPIs      bool
-	ResolveFromGuestClusterDNS      bool
-	ResolveFromManagementClusterDNS bool
-	DisableResolver                 bool
+	HTTPSOptions  HTTPSOptions
+	Socks5Options Socks5Options
+}
+
+type HTTPSOptions struct {
+	// KonnectivityHost is the host name of the Konnectivity server proxy.
+	KonnectivityHost string
+	// KonnectivityPort is the port of the Konnectivity server proxy.
+	KonnectivityPort uint32
+	// The port that https proxy should serve on.
+	ServingPort uint32
+	// ConnectDirectlyToCloudAPIs specifies whether cloud APIs should be bypassed
+	// by the proxy. This is used by the ingress operator to be able to create DNS records
+	// before worker nodes are present in the cluster.
+	// See https://github.com/openshift/hypershift/pull/1601
+	ConnectDirectlyToCloudAPIs *bool
+}
+
+type Socks5Options struct {
+	// KonnectivityHost is the host name of the Konnectivity server proxy.
+	KonnectivityHost string
+	// KonnectivityPort is the port of the Konnectivity server proxy.
+	KonnectivityPort uint32
+	// The port that socks5 proxy should serve on.
+	ServingPort uint32
+	// ConnectDirectlyToCloudAPIs specifies whether cloud APIs should be bypassed
+	// by the proxy. This is used by the ingress operator to be able to create DNS records
+	// before worker nodes are present in the cluster.
+	// See https://github.com/openshift/hypershift/pull/1601
+	ConnectDirectlyToCloudAPIs *bool
+	// ResolveFromManagementClusterDNS tells the dialer to fallback to the management
+	// cluster's DNS (and direct dialer) initially until the konnectivity tunnel is available.
+	// Once the konnectivity tunnel is available, it no longer falls back on the management
+	// cluster. This is used by the OAuth server to allow quicker initialization of identity
+	// providers while worker nodes have not joined.
+	// See https://github.com/openshift/hypershift/pull/2261
+	ResolveFromManagementClusterDNS *bool
+	// ResolveFromGuestClusterDNS tells the dialer to resolve names using the guest
+	// cluster's coreDNS service. Used by oauth and ingress operator.
+	ResolveFromGuestClusterDNS *bool
+	// DisableResolver disables any name resolution by the resolver. This is used by the CNO.
+	// See https://github.com/openshift/hypershift/pull/3986
+	DisableResolver *bool
 }
 
 func (opts *KonnectivityContainerOptions) injectKonnectivityContainer(cpContext ControlPlaneContext, podSpec *corev1.PodSpec) {
@@ -101,12 +138,41 @@ func (opts *KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedCont
 			args = append(args, "--https-proxy", proxyConfig.HTTPSProxy)
 			args = append(args, "--no-proxy", noProxy)
 		}
+		if host := opts.HTTPSOptions.KonnectivityHost; host != "" {
+			args = append(args, fmt.Sprintf("--konnectivity-hostname=%s", host))
+		}
+		if port := opts.HTTPSOptions.KonnectivityPort; port != 0 {
+			args = append(args, fmt.Sprintf("--konnectivity-port=%d", port))
+		}
+		if servingPort := opts.HTTPSOptions.ServingPort; servingPort != 0 {
+			args = append(args, fmt.Sprintf("--serving-port=%d", servingPort))
+		}
+		if value := opts.HTTPSOptions.ConnectDirectlyToCloudAPIs; value != nil {
+			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
+		}
 	case Socks5:
 		command = append(command, "konnectivity-socks5-proxy")
-		args = append(args, "--connect-directly-to-cloud-apis", strconv.FormatBool(opts.ConnectDirectlyToCloudAPIs))
-		args = append(args, "--resolve-from-guest-cluster-dns", strconv.FormatBool(opts.ResolveFromGuestClusterDNS))
-		args = append(args, "--resolve-from-management-cluster-dns", strconv.FormatBool(opts.ResolveFromManagementClusterDNS))
-		args = append(args, "--disable-resolver", strconv.FormatBool(opts.DisableResolver))
+		if host := opts.Socks5Options.KonnectivityHost; host != "" {
+			args = append(args, fmt.Sprintf("--konnectivity-hostname=%s", host))
+		}
+		if port := opts.Socks5Options.KonnectivityPort; port != 0 {
+			args = append(args, fmt.Sprintf("--konnectivity-port=%d", port))
+		}
+		if servingPort := opts.Socks5Options.ServingPort; servingPort != 0 {
+			args = append(args, fmt.Sprintf("--serving-port=%d", servingPort))
+		}
+		if value := opts.Socks5Options.ConnectDirectlyToCloudAPIs; value != nil {
+			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
+		}
+		if value := opts.Socks5Options.ResolveFromGuestClusterDNS; value != nil {
+			args = append(args, fmt.Sprintf("--resolve-from-guest-cluster-dns=%t", *value))
+		}
+		if value := opts.Socks5Options.ResolveFromManagementClusterDNS; value != nil {
+			args = append(args, fmt.Sprintf("--resolve-from-management-cluster-dns=%t", *value))
+		}
+		if value := opts.Socks5Options.DisableResolver; value != nil {
+			args = append(args, fmt.Sprintf("--disable-resolver=%t", *value))
+		}
 	}
 
 	kubeconfingVolumeName := opts.KubeconfingVolumeName
