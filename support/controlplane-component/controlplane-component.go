@@ -393,6 +393,7 @@ var (
 		"kube-apiserver",
 		"openshift-apiserver",
 		"openshift-oauth-apiserver",
+		"oauth-openshift",
 	)
 )
 

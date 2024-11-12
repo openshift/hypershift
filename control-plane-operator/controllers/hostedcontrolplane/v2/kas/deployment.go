@@ -152,7 +152,7 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 			}
 		}
 
-		for i, namedCert := range namedCertificates(hcp.Spec.Configuration) {
+		for i, namedCert := range hcp.Spec.Configuration.GetNamedCertificates() {
 			volumeName := fmt.Sprintf("named-cert-%d", i+1)
 			podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
 				Name: volumeName,
