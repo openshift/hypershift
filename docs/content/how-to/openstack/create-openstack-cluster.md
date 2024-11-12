@@ -1,37 +1,46 @@
-# Create a OpenStack cluster
+# Create an OpenStack cluster
 
-Install an OCP cluster running on VMs within a management OCP cluster
+This document explains how to create HostedClusters and Nodepools using the OpenStack platform.
+
+## Overview
+
+When you create a HostedCluster with the OpenStack platform, HyperShift will install the [OpenStack CAPI
+provider](https://github.com/kubernetes-sigs/cluster-api-provider-openstack) in the Hosted Control Plane (HCP) namespace.
+Upon scaling up a NodePool, a Machine will be created, and the CAPI provider will create the necessary resources in OpenStack.
 
 ## Limitations
 
-* The HyperShift Operator with OpenStack support is currently in development and is not intended for production use.
-* OpenStack CSI (Cinder and Manila) are not functional.
-* Operators running in the workload cluster (e.g. console) won't be operational on day 1 and a manual and documented
-  action is required to make them work on day 2.
+* Although the HyperShift Operator with OpenStack support is currently in development and is not intended for production use,
+  it is possible to create and manage clusters for development and testing purposes and it's expected to work as described in this document.
+* OpenStack CSI (Cinder and Manila) are not functional yet but are [expected](https://issues.redhat.com/browse/OSASINFRA-3536) to work in the 4.18 release and fully supported in future releases.
+* A few operators running in the workload cluster (e.g. console) won't be operational on day 1 because the floating IP used
+  for Ingress isn't automatically configured in the DNS. This is a manual and documented step that needs to be done after the
+  cluster is created. We are [working](https://issues.redhat.com/browse/OSASINFRA-3489) on allowing customers to pre-create the DNS records before the cluster is created by using
+  a pre-created floating IP.
 
 ## Prerequisites
 
 * Admin access to an OpenShift cluster (version 4.17+) specified by the `KUBECONFIG` environment variable.
+  This cluster is referred to as the Management OCP cluster.
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
-* The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
+* The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`) must be installed.
+* The `hcp` CLI CLI must be installed.
+* The HyperShift Operator must be installed in the Management OCP cluster.
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
-* OpenStack Octavia service must be running if Ingress is configured with an Octavia load balancer.
+* OpenStack Octavia service must be running in the cloud hosting the guest cluster when ingress is configured with an Octavia load balancer.
+  In the future, we'll explore other Ingress options like MetalLB.
+* The default external network (on which the kube-apiserver LoadBalancer type service is created) of the Management OCP cluster must be reachable from the guest cluster.
+* The RHCOS image must be uploaded to OpenStack.
 
-## Installing HyperShift Operator and cli tooling
+### Install the HyperShift and HCP CLI
 
-Before creating a guest cluster, the hcp cli, hypershift cli, and HyperShift
-Operator must be installed.
-
-The `hypershift` cli tool is a development tool that is used to install
-developer builds of the HyperShift Operator.
-
-The `hcp` cli tool is used to manage the creation and destruction of guest
+The `hcp` CLI tool is used to manage the creation and destruction of guest
 clusters.
 
-### Build the HyperShift and HCP CLI
-
+The `hypershift` CLI tool is a development tool that is used to install
+developer builds of the HyperShift Operator.
 The command below builds latest hypershift and hcp cli tools from source and
-places the cli tool within the /usr/local/bin directory.
+places the CLI tool within the `/usr/local/bin` directory.
 
 !!! note
 
@@ -52,7 +61,7 @@ rm $PWD/hypershift
 rm $PWD/hcp
 ```
 
-## Deploy the HyperShift Operator
+### Deploy the HyperShift Operator
 
 Use the hypershift cli tool to install the HyperShift operator into the
 management cluster.
@@ -64,9 +73,10 @@ hypershift install --tech-preview-no-upgrade
 !!! note
 
     Hypershift on OpenStack is possible behind a feature gate, which is why we have
-    to install the operator with `--tech-preview-no-upgrade`.
+    to install the operator with `--tech-preview-no-upgrade`. Once the platform
+    is GA, the operator will be able to be installed without that flag.
 
-You will see the operator running in the `hypershift` namespace:
+Once installed, you should see the operator running in the `hypershift` namespace:
 
 ```shell
 oc -n hypershift get pods
@@ -76,22 +86,26 @@ operator-755d587f44-lrtrq   1/1     Running   0          114s
 operator-755d587f44-qj6pz   1/1     Running   0          114s
 ```
 
-## Upload RHCOS image in OpenStack
+### Upload RHCOS image in OpenStack
 
 For now, we need to manually push an RHCOS image that will be used when deploying the node pools
-on OpenStack. In the future, the CAPI provider (CAPO) will handle the RHCOS image lifecycle by using
-the image available in the chosen release payload.
+on OpenStack. In the [future](https://issues.redhat.com/browse/OSASINFRA-3492), the CAPI provider (CAPO) will handle the RHCOS image
+lifecycle by using the image available in the chosen release payload.
 
 Here is an example of how to upload an RHCOS image to OpenStack:
 
 ```shell
-openstack image create --disk-format qcow2 --file rhcos-417.94.202407080309-0-openstack.x86_64.qcow2 rhcos
+openstack image create --disk-format qcow2 --file rhcos-openstack.x86_64.qcow2 rhcos
 ```
+
+!!! note
+
+    The `rhcos-openstack.x86_64.qcow2` file is the RHCOS image that was downloaded from the OpenShift mirror.
+    You can download the latest RHCOS image from the [Red Hat OpenShift Container Platform mirror](https://mirror.openshift.com/pub/openshift-v4/dependencies/rhcos/).
 
 ## Create a HostedCluster
 
-Once all the [prerequisites](#prerequisites) are met, and the HyperShift
-operator is installed, it is now possible to create a guest cluster.
+Once all the [prerequisites](#prerequisites) are met, it is now possible to create a guest cluster.
 
 Below is an example of how to create a guest cluster using environment
 variables and the `hcp` cli tool.
@@ -100,8 +114,9 @@ variables and the `hcp` cli tool.
 
     The --release-image flag could be used to provision the HostedCluster with a specific OpenShift Release (the hypershift operator has a support matrix of releases supported by a given version of the operator)
 
-```shell linenums="1"
+```shell
 export CLUSTER_NAME=example
+export BASE_DOMAIN=hypershift.lab
 export PULL_SECRET="$HOME/pull-secret"
 export WORKER_COUNT="2"
 
@@ -114,43 +129,50 @@ export IMAGE_NAME="rhcos"
 export FLAVOR="m1.large"
 
 # Optional flags:
-# External network to use for the API and Ingress endpoints.
-export EXTERNAL_ID="5387f86a-a10e-47fe-91c6-41ac131f9f30"
+# External network to use for the Ingress endpoint.
+export EXTERNAL_NETWORK_ID="5387f86a-a10e-47fe-91c6-41ac131f9f30"
 
 # CA certificate path to use for the OpenStack API if using self-signed certificates.
+# In 4.18, this is not required as the CA cert found in clouds.yaml will be used.
 export CA_CERT_PATH="$HOME/ca.crt"
+
+# In 4.18, this is not required as the file will be discovered.
+export CLOUDS_YAML="$HOME/clouds.yaml"
 
 # SSH Key for the nodepool VMs
 export SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
 hcp create cluster openstack \
 --name $CLUSTER_NAME \
+--base-domain $BASE_DOMAIN \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
 --ssh-key $SSH_KEY \
+--openstack-credentials-file $CLOUDS_YAML \
 --openstack-ca-cert-file $CA_CERT_PATH \
---openstack-external-network-id $EXTERNAL_ID \
+--openstack-external-network-id $EXTERNAL_NETWORK_ID \
 --openstack-node-image-name $IMAGE_NAME \
 --openstack-node-flavor $FLAVOR
 ```
 
 !!! note
 
-    A default NodePool will be created for the cluster with 2 vm worker replicas
+    A default NodePool will be created for the cluster with 2 VM worker replicas
     per the `--node-pool-replicas` flag.
 
 !!! note
 
-    To enable HA, the `--control-plane-availability-policy` flag can be set to `HighlyAvailable`.
-    This requires at least 3 worker nodes in the management cluster.
+    When using `hcp` CLI, High Availability will be enabled by default.
     Pods will be scheduled across different nodes to ensure that the control plane is highly available.
     When the management cluster worker nodes are spread across different availability zones,
-    the hosted control plane will be spread across different availability zones as well in `PreferredDuringSchedulingIgnoredDuringExecution` mode for
-    `PodAntiAffinity`.
+    the hosted control plane will be spread across different availability zones as well in
+    `PreferredDuringSchedulingIgnoredDuringExecution` mode for `PodAntiAffinity`.
+    If your management cluster doesn't have enough workers (less than 3), which is not recommended nor supported,
+    you'll need to specify the `--control-plane-availability-policy` flag to `SingleReplica`.
 
 After a few moments we should see our hosted control plane pods up and running:
 
-~~~sh
+```shell
 oc -n clusters-$CLUSTER_NAME get pods
 
 NAME                                                  READY   STATUS    RESTARTS   AGE
@@ -162,20 +184,15 @@ cluster-api-6bbc867966-l4dwl                          1/1     Running   0       
 .
 .
 redhat-operators-catalog-9d5fd4d44-z8qqk              1/1     Running   0          66s
-~~~
+```
 
 A guest cluster backed by OpenStack virtual machines typically takes around 10-15
-minutes to fully provision. The status of the guest cluster can be seen by
-viewing the corresponding HostedCluster resource. For example, the output below
-reflects what a fully provisioned HostedCluster object looks like.
+minutes to fully provision.
 
-```shell linenums="1"
+!!! note
 
-oc get --namespace clusters hostedclusters
-
-NAME            VERSION   KUBECONFIG                       PROGRESS   AVAILABLE   PROGRESSING   MESSAGE
-example         4.17.0    example-admin-kubeconfig         Completed  True        False         The hosted control plane is available
-```
+    The HostedCluster will not finish the deployment (will remain in `Partial` progress) as we saw in the Limitations section.
+    Please follow the next steps to finish the deployment as for now a manual step is required to configure the Ingress and DNS.
 
 ## Accessing the HostedCluster
 
@@ -208,23 +225,47 @@ version   4.17.0        True        False         5m39s   Cluster version is 4.1
 
 ## Ingress and DNS
 
+As mentioned in the Limitations section, the Ingress and DNS configuration is a manual step that needs to be done after the cluster is created.
+This will be automated in the future.
+
 Once the workload cluster is deploying, the Ingress controller will be installed
 and a router named `router-default` will be created in the `openshift-ingress` namespace.
 
 You'll need to update your DNS with the external IP of that router so Ingress (and dependent operators like console) can work.
-You can run this command to get the external IP:
+
+Once the HostedCluster is created, you need to wait for the `router-default` service to get an external IP:
 
 ```shell
-oc --kubeconfig $CLUSTER_NAME-kubeconfig -n openshift-ingress get service/router-default -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+oc -w --kubeconfig $CLUSTER_NAME-kubeconfig -n openshift-ingress get service/router-default -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
-Now you need to create a DNS A record for `*.apps.<cluster-name>.<base-domain>` that matches the returned IP address.
+When the external IP exists, you can now create a DNS A record for `*.apps.<cluster-name>.<base-domain>` that matches the returned IP address.
+Once this is done, the Ingress operator will become healthy and the console will be accessible shortly after.
+
+!!! note
+
+    The DNS propagation time can vary so you might need to wait a few minutes before your HostedCluster becomes healthy.
+
+At this point, you should be able to access the OpenShift console by navigating to `https://console-openshift-console.apps.<cluster-name>.<base-domain>` in your browser.
+
+To get the `kubeadmin` password, you can run this command:
+```shell
+oc get --namespace clusters Secret/${CLUSTER_NAME}-kubeadmin-password -o jsonpath='{.data.password|base64decode}'
+```
+
+Also, the HostedCluster will be marked as `Completed`:
+```shell
+oc get --namespace clusters hostedclusters
+
+NAME            VERSION   KUBECONFIG                       PROGRESS   AVAILABLE   PROGRESSING   MESSAGE
+example         4.17.0    example-admin-kubeconfig         Completed  True        False         The hosted control plane is available
+```
 
 ## Scaling an existing NodePool
 
 Manually scale a NodePool using the `oc scale` command:
 
-```shell linenums="1"
+```shell
 NODEPOOL_NAME=$CLUSTER_NAME
 NODEPOOL_REPLICAS=5
 
@@ -247,12 +288,12 @@ example-twxns         Ready    worker   88s     v1.27.4+18eadca
 ## Adding Additional NodePools
 
 Create additional NodePools for a guest cluster by specifying a name, number of
-replicas, and any additional information such as memory and cpu requirements.
+replicas, and any additional information such as availability zones, or platform-specific information.
 
-For example, let's create a NodePool with more CPUs assigned to the VMs (4 vs 2):
+For example, let's create a new NodePool with 2 replicas in the `az1` availability zone:
 
-```shell linenums="1"
-export NODEPOOL_NAME=$CLUSTER_NAME-extra-cpu
+```shell
+export NODEPOOL_NAME=$CLUSTER_NAME-extra-az
 export WORKER_COUNT="2"
 export IMAGE_NAME="rhcos"
 export FLAVOR="m1.xlarge"
@@ -274,8 +315,8 @@ namespace:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.17.0                                       
-example-extra-cpu         example         2                               False         False                  True              True             Minimum availability requires 2 replicas, current 0 available
+example                   example         5               5               False         False        4.17.0
+example-extra-az          example         2                               False         False                  True              True             Minimum availability requires 2 replicas, current 0 available
 ```
 
 After a while, in our hosted cluster this is what we will see:
@@ -289,8 +330,8 @@ example-n6prw             Ready    worker   116m    v1.27.4+18eadca
 example-nc6g4             Ready    worker   117m    v1.27.4+18eadca
 example-thp29             Ready    worker   4m17s   v1.27.4+18eadca
 example-twxns             Ready    worker   88s     v1.27.4+18eadca
-example-extra-cpu-zh9l5   Ready    worker   2m6s    v1.27.4+18eadca
-example-extra-cpu-zr8mj   Ready    worker   102s    v1.27.4+18eadca
+example-extra-az-zh9l5    Ready    worker   2m6s    v1.27.4+18eadca
+example-extra-az-zr8mj    Ready    worker   102s    v1.27.4+18eadca
 ```
 
 And the nodepool will be in the desired state:
@@ -299,8 +340,8 @@ And the nodepool will be in the desired state:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.17.0                                       
-example-extra-cpu         example         2               2               False         False        4.17.0  
+example                   example         5               5               False         False        4.17.0
+example-extra-az          example         2               2               False         False        4.17.0
 ```
 
 ## Delete a HostedCluster
@@ -310,3 +351,5 @@ To delete a HostedCluster:
 ```shell
 hcp destroy cluster openstack --name $CLUSTER_NAME
 ```
+
+The process will take a few minutes to complete and will destroy all resources associated with the HostedCluster including OpenStack resources.
