@@ -438,6 +438,14 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 				},
 			)
 		}
+		if len(os.Getenv("MANAGED_SERVICE")) > 0 {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  "MANAGED_SERVICE",
+					Value: os.Getenv("MANAGED_SERVICE"),
+				})
+		}
+
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
