@@ -392,6 +392,7 @@ var (
 	apiCriticalComponents = sets.New(
 		"kube-apiserver",
 		"openshift-apiserver",
+		"openshift-oauth-apiserver",
 	)
 )
 
