@@ -67,6 +67,7 @@ type CreateInfraOptions struct {
 	ManagedIdentityKeyVaultName     string
 	ManagedIdentityKeyVaultTenantID string
 	TechPreviewEnabled              bool
+	ManagedIdentitiesFile           string
 }
 
 type CreateInfraOutput struct {
@@ -218,9 +219,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		l.Info("Successfully created vnet", "ID", result.VNetID)
 	}
 
-	if o.TechPreviewEnabled {
-		result.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.Name = o.ManagedIdentityKeyVaultName
-		result.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.TenantID = o.ManagedIdentityKeyVaultTenantID
+	if o.TechPreviewEnabled && o.ManagedIdentitiesFile == "" {
+		if o.ManagedIdentityKeyVaultName != "" {
+			result.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.Name = o.ManagedIdentityKeyVaultName
+
+		}
+		if o.ManagedIdentityKeyVaultTenantID != "" {
+			result.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.TenantID = o.ManagedIdentityKeyVaultTenantID
+		}
 
 		// Create ServicePrincipals with backing certificates
 		cmdStr := buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ingress, o.InfraID, o.ManagedIdentityKeyVaultName)
