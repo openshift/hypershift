@@ -75,6 +75,7 @@ import (
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
+	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
@@ -207,6 +208,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		etcdv2.NewComponent(),
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
+		schedulerv2.NewComponent(),
 		oapiv2.NewComponent(),
 		oauthapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
@@ -1047,6 +1049,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("unrecognized etcd management type: %s", hostedControlPlane.Spec.Etcd.ManagementType)
 	}
 
+	r.Log.Info("Looking up observed configuration")
+	observedConfig := &globalconfig.ObservedConfig{}
+	if err := globalconfig.ReadObservedConfig(ctx, r.Client, observedConfig, hostedControlPlane.Namespace); err != nil {
+		return fmt.Errorf("failed to read observed global config: %w", err)
+	}
+
 	if !r.IsCPOV2 {
 		// Reconcile Cloud Provider Config
 		r.Log.Info("Reconciling cloud provider config")
@@ -1067,34 +1075,24 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			r.Log.Info("Waiting for kube apiserver deployment to become ready")
 			return nil
 		}
-	}
 
-	kcmDeployment := manifests.KCMDeployment(hostedControlPlane.Namespace)
-	if !r.IsCPOV2 {
 		// Reconcile kube controller manager
 		r.Log.Info("Reconciling Kube Controller Manager")
+		kcmDeployment := manifests.KCMDeployment(hostedControlPlane.Namespace)
 		if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, kcmDeployment); err != nil {
 			return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
 		}
-	}
 
-	// Reconcile kube scheduler
-	r.Log.Info("Reconciling Kube Scheduler")
-	schedulerDeployment := manifests.SchedulerDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, schedulerDeployment); err != nil {
-		return fmt.Errorf("failed to reconcile kube scheduler: %w", err)
-	}
+		// Reconcile kube scheduler
+		r.Log.Info("Reconciling Kube Scheduler")
+		schedulerDeployment := manifests.SchedulerDeployment(hostedControlPlane.Namespace)
+		if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, schedulerDeployment); err != nil {
+			return fmt.Errorf("failed to reconcile kube scheduler: %w", err)
+		}
 
-	r.Log.Info("Looking up observed configuration")
-	observedConfig := &globalconfig.ObservedConfig{}
-	if err := globalconfig.ReadObservedConfig(ctx, r.Client, observedConfig, hostedControlPlane.Namespace); err != nil {
-		return fmt.Errorf("failed to read observed global config: %w", err)
-	}
-
-	openshiftAPIServerDeployment := manifests.OpenShiftAPIServerDeployment(hostedControlPlane.Namespace)
-	if !r.IsCPOV2 {
 		// Reconcile openshift apiserver
 		r.Log.Info("Reconciling OpenShift API Server")
+		openshiftAPIServerDeployment := manifests.OpenShiftAPIServerDeployment(hostedControlPlane.Namespace)
 		if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate, openshiftAPIServerDeployment); err != nil {
 			return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
 		}
@@ -1104,22 +1102,19 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			r.Log.Info("Waiting for kube controller manager deployment to become ready")
 			return nil
 		}
-	}
 
-	// Block on kube scheduler being rolled out at the desired version
-	if ready := util.IsDeploymentReady(ctx, schedulerDeployment); !ready {
-		r.Log.Info("Waiting for kube scheduler deployment to become ready")
-		return nil
-	}
+		// Block on kube scheduler being rolled out at the desired version
+		if ready := util.IsDeploymentReady(ctx, schedulerDeployment); !ready {
+			r.Log.Info("Waiting for kube scheduler deployment to become ready")
+			return nil
+		}
 
-	if !r.IsCPOV2 {
 		// Block until openshift apiserver is fully ready to enforce upgrade order of version skew policy
 		// https://github.com/openshift/enhancements/blob/master/enhancements/update/eus-upgrades-mvp.md
 		if ready := util.IsDeploymentReady(ctx, openshiftAPIServerDeployment); !ready {
 			r.Log.Info("Waiting for openshift apiserver deployment to become ready")
 			return nil
 		}
-
 	}
 
 	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hostedControlPlane.Namespace); err != nil {

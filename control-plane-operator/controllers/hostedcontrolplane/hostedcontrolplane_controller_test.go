@@ -1736,6 +1736,7 @@ func componentsFakeObjects(namespace string) []client.Object {
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
 		manifests.KubeControllerManagerClientCertSecret(namespace),
+		manifests.KubeSchedulerClientCertSecret(namespace),
 		cloudCredsSecret,
 	}
 }

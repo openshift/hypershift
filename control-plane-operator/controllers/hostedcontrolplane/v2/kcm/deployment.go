@@ -11,8 +11,6 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
-	configv1 "github.com/openshift/api/config/v1"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,7 +34,6 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 		// This value comes from the Cloud Provider Azure documentation: https://cloud-provider-azure.sigs.k8s.io/install/azure-ccm/#kube-controller-manager
 		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 			c.Args = append(c.Args, fmt.Sprintf("--cloud-provider=%s", "external"))
-
 		}
 		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
 			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
@@ -47,7 +44,7 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 		if util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], ComponentName) {
 			c.Args = append(c.Args, "--profiling=false")
 		}
-		for _, f := range featureGates(hcp.Spec.Configuration) {
+		for _, f := range config.FeatureGates(hcp.Spec.Configuration.GetFeatureGateSelection()) {
 			c.Args = append(c.Args, fmt.Sprintf("--feature-gates=%s", f))
 		}
 
@@ -89,14 +86,4 @@ func getServiceServingCA(cpContext component.ControlPlaneContext) (*corev1.Confi
 		return nil, nil
 	}
 	return serviceServingCA, nil
-}
-
-func featureGates(c *hyperv1.ClusterConfiguration) []string {
-	if c != nil && c.FeatureGate != nil {
-		return config.FeatureGates(&c.FeatureGate.FeatureGateSelection)
-	} else {
-		return config.FeatureGates(&configv1.FeatureGateSelection{
-			FeatureSet: configv1.Default,
-		})
-	}
 }

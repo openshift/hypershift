@@ -34,3 +34,10 @@ func (c *ClusterConfiguration) GetAuditPolicyConfig() configv1.Audit {
 	}
 	return configv1.Audit{Profile: configv1.DefaultAuditProfileType}
 }
+
+func (c *ClusterConfiguration) GetFeatureGateSelection() configv1.FeatureGateSelection {
+	if c != nil && c.FeatureGate != nil {
+		return c.FeatureGate.FeatureGateSelection
+	}
+	return configv1.FeatureGateSelection{FeatureSet: configv1.Default}
+}

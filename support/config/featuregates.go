@@ -7,7 +7,7 @@ import (
 	"github.com/openshift/api/features"
 )
 
-func FeatureGates(fg *configv1.FeatureGateSelection) []string {
+func FeatureGates(fg configv1.FeatureGateSelection) []string {
 	result := []string{}
 	var enabled, disabled []configv1.FeatureGateName
 	if fg.FeatureSet == configv1.CustomNoUpgrade {
