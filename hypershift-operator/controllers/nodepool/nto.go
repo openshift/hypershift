@@ -43,15 +43,17 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	// get configs which already mirrored to the HCP namespace
 	existingConfigsList := &corev1.ConfigMapList{}
 	if err := r.List(ctx, existingConfigsList, &client.ListOptions{
-		Namespace:     controlPlaneNamespace,
-		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{mirroredConfigLabel: ""}),
+		Namespace: controlPlaneNamespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
+			NTOMirroredConfigLabel: "true",
+			hyperv1.NodePoolLabel:  nodePool.Name}),
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
 	want := set.Set[string]{}
-	for _, mirrorConfig := range mirroredConfigs {
-		want.Insert(supportutil.ShortenName(mirrorConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
+	for _, mirroredConfig := range mirroredConfigs {
+		want.Insert(supportutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength))
 	}
 	have := set.Set[string]{}
 	for _, configMap := range existingConfigsList.Items {
@@ -70,13 +72,33 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	// delete the redundant configs that are no longer part of the nodepool spec
 	for i := 0; i < len(existingConfigsList.Items); i++ {
 		existingConfig := &existingConfigsList.Items[i]
-		if toDelete.Has(existingConfig.Name) {
-			_, err := supportutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
-			if err != nil {
-				return fmt.Errorf("failed to delete ConfigMap %s/%s: %w", existingConfig.Namespace, existingConfig.Name, err)
-			}
+		if !toDelete.Has(existingConfig.Name) {
+			continue
+		}
+		_, err := supportutil.DeleteIfNeeded(ctx, r.Client, existingConfig)
+		if err != nil {
+			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(existingConfig).String(), err)
 		}
 	}
+	// NTO also generates config in the HCP namespace.
+	ntoGeneratedKubeletConfigs := &corev1.ConfigMapList{}
+	if err := r.List(ctx, ntoGeneratedKubeletConfigs, &client.ListOptions{
+		Namespace: controlPlaneNamespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
+			nodeTuningGeneratedConfigLabel: "true",
+			KubeletConfigConfigMapLabel:    "true",
+			hyperv1.NodePoolLabel:          nodePool.Name,
+		}),
+	}); err != nil {
+		return err
+	}
+	// we need to validate that generated configs and user-provided configs
+	// are not conflicting with each other, before we create the new ones
+	err := validateMirroredConfigs(ntoGeneratedKubeletConfigs.Items, mirroredConfigs, nodePool.Name)
+	if err != nil {
+		return fmt.Errorf("failed to validate mirrored configs: %w", err)
+	}
+
 	// update or create the configs that need to be mirrored into the HCP NS
 	for _, mirroredConfig := range mirroredConfigs {
 		cm := &corev1.ConfigMap{
@@ -91,6 +113,29 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 		} else {
 			logr.Info("Reconciled ConfigMap", "result", result)
 		}
+	}
+	return nil
+}
+
+func validateMirroredConfigs(generatedKubeletConfigs []corev1.ConfigMap, mirroredConfigs []*MirrorConfig, nodePoolName string) error {
+	KubeletConfigConfigMapCount := len(generatedKubeletConfigs)
+
+	for _, mirroredConfig := range mirroredConfigs {
+		if _, ok := mirroredConfig.Labels[KubeletConfigConfigMapLabel]; ok {
+			KubeletConfigConfigMapCount++
+		}
+	}
+	if KubeletConfigConfigMapCount > 1 {
+		// whether the config provided by the user or by NTO, only a single KubeletConfig ConfigMap allow per NodePool
+		var ntoGeneratedKubeletConfigNames, userProvidedConfigNames []string
+		for _, ntoGenerated := range generatedKubeletConfigs {
+			ntoGeneratedKubeletConfigNames = append(ntoGeneratedKubeletConfigNames, ntoGenerated.Name)
+		}
+		for _, mirroredConfig := range mirroredConfigs {
+			userProvidedConfigNames = append(userProvidedConfigNames, mirroredConfig.Name)
+		}
+		return fmt.Errorf("more than a single KubeletConfig ConfigMap is associated with NodePool %s. please delete the redundant configs: NTO generated KubeletConfigs %v user provided KubeletConfigs %v",
+			nodePoolName, ntoGeneratedKubeletConfigNames, userProvidedConfigNames)
 	}
 	return nil
 }
@@ -145,9 +190,8 @@ func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, no
 	if cm.Labels == nil {
 		cm.Labels = make(map[string]string)
 	}
-	cm.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 	cm.Labels[hyperv1.NodePoolLabel] = nodePool.GetName()
-	cm.Labels[mirroredConfigLabel] = ""
+	cm.Labels[NTOMirroredConfigLabel] = "true"
 	cm.Labels = labels.Merge(cm.Labels, mirroredConfig.Labels)
 	cm.Data = mirroredConfig.Data
 	return nil
@@ -326,25 +370,17 @@ func getNTOGeneratedConfig(ctx context.Context, cg *ConfigGenerator) ([]corev1.C
 	return nodeTuningGeneratedConfigs.Items, nil
 }
 
-// BuildMirrorConfigs returns a slice of MirrorConfigs for all the NTO generated config.
+// BuildMirrorConfigs returns a slice of MirrorConfigs for user configs that are supposed
+// to be mirrored to the HCP namespace.
 func BuildMirrorConfigs(ctx context.Context, cg *ConfigGenerator) ([]*MirrorConfig, error) {
-	var configs []corev1.ConfigMap
-	// Look for NTO generated MachineConfigs from the hosted control plane namespace
-	nodeTuningGeneratedConfigs, err := getNTOGeneratedConfig(ctx, cg)
-	if err != nil {
-		return nil, err
-	}
-	configs = append(configs, nodeTuningGeneratedConfigs...)
-
 	userConfig, err := cg.getUserConfigs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	configs = append(configs, userConfig...)
 
 	var errors []error
 	var mirrorConfigs []*MirrorConfig
-	for i, config := range configs {
+	for i, config := range userConfig {
 		cmPayload := config.Data[TokenSecretConfigKey]
 		// ignition config-map payload may contain multiple manifests
 		yamlReader := yaml.NewYAMLReader(bufio.NewReader(strings.NewReader(cmPayload)))
@@ -361,7 +397,7 @@ func BuildMirrorConfigs(ctx context.Context, cg *ConfigGenerator) ([]*MirrorConf
 					continue
 				}
 				if mirrorConfig != nil {
-					mirrorConfig.ConfigMap = &configs[i]
+					mirrorConfig.ConfigMap = &userConfig[i]
 					mirrorConfigs = append(mirrorConfigs, mirrorConfig)
 				}
 			}
@@ -392,7 +428,15 @@ func getMirrorConfigForManifest(manifest []byte) (*MirrorConfig, error) {
 
 	switch cr.(type) {
 	case *mcfgv1.ContainerRuntimeConfig:
-		mirrorConfig = &MirrorConfig{Labels: map[string]string{ContainerRuntimeConfigConfigMapLabel: ""}}
+		mirrorConfig = &MirrorConfig{Labels: map[string]string{
+			ContainerRuntimeConfigConfigMapLabel: "true",
+			NTOMirroredConfigLabel:               "true",
+		}}
+	case *mcfgv1.KubeletConfig:
+		mirrorConfig = &MirrorConfig{Labels: map[string]string{
+			KubeletConfigConfigMapLabel: "true",
+			NTOMirroredConfigLabel:      "true",
+		}}
 	}
 	return mirrorConfig, err
 }
@@ -402,9 +446,23 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 
 	mirroredConfigs, err := BuildMirrorConfigs(ctx, configGenerator)
 	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
 		return fmt.Errorf("failed to build mirror configs: %w", err)
 	}
 	if err := r.reconcileMirroredConfigs(ctx, log, mirroredConfigs, controlPlaneNamespace, nodePool); err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
 		return fmt.Errorf("failed to mirror configs: %w", err)
 	}
 

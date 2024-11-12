@@ -3,6 +3,7 @@ package kas
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -12,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	k8sadmissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -25,11 +27,12 @@ type AdmissionPolicy struct {
 }
 
 const (
-	AdmissionPolicyNameConfig = "config"
-	AdmissionPolicyNameMirror = "mirror"
-	AdmissionPolicyNameICSP   = "icsp"
-	AdmissionPolicyNameInfra  = "infra"
-	cnoSAUser                 = "system:serviceaccount:openshift-network-operator:cluster-network-operator"
+	AdmissionPolicyNameConfig             = "config"
+	AdmissionPolicyNameMirror             = "mirror"
+	AdmissionPolicyNameICSP               = "icsp"
+	AdmissionPolicyNameInfra              = "infra"
+	AdmissionPolicyNameNTOMirroredConfigs = "ntomirroredconfigmaps"
+	cnoSAUser                             = "system:serviceaccount:openshift-network-operator:cluster-network-operator"
 
 	BaseCelExpression = "has(object.spec) && has(oldObject.spec) && object.spec == oldObject.spec"
 )
@@ -66,6 +69,10 @@ func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.H
 
 	if err := reconcileInfraValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Infrastructure Validating Admission Policy: %v", err)
+	}
+
+	if err := reconcileConfigMapsValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile Mirrored Configs Validating Admission Policy: %w", err)
 	}
 
 	return nil
@@ -155,6 +162,23 @@ func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 		return fmt.Errorf("error reconciling ICSP Validating Admission Policy: %v", err)
 	}
 
+	return nil
+}
+
+func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	mirroredConfigsAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameNTOMirroredConfigs}
+	mirroredConfigsAPIVersion := []string{corev1.SchemeGroupVersion.Version}
+	mirroredConfigsAPIGroup := []string{configv1.SchemeGroupVersion.Group}
+	mirroredConfigsResources := []string{"configmaps"}
+
+	HCCOUserValidation.Expression = generateCelExpression(userWhiteList)
+	mirroredConfigsAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
+	mirroredConfigsAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(mirroredConfigsResources, mirroredConfigsAPIVersion, mirroredConfigsAPIGroup, []k8sadmissionv1beta1.OperationType{"UPDATE", "DELETE"})
+	// we want to block changes only for configmaps with "hypershift.openshift.io/mirrored-config" label
+	mirroredConfigsAdmissionPolicy.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchLabels: map[string]string{nodepool.NTOMirroredConfigLabel: "true"}}
+	if err := mirroredConfigsAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("error reconciling mirrored ConfigMaps Validating Admission Policy: %v", err)
+	}
 	return nil
 }
 

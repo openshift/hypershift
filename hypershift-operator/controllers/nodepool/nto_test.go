@@ -496,6 +496,17 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 	 containerRuntimeConfig:
 	   defaultRuntime: crun
 	`
+
+	kubeletConfig1 := `
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    metadata:
+      name: set-max-pods
+    spec:
+      kubeletConfig:
+        maxPods: 100
+`
+
 	hcpNamespace := "hostedcontrolplane-namespace"
 	npNamespace := "nodepool-namespace"
 	npName := "nodepool-test"
@@ -513,6 +524,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 		existingConfigsInHcpNs  []client.Object
 		expectedMirroredConfigs []corev1.ConfigMap
 		configsForDeletion      []corev1.ConfigMap
+		expectedError           bool
 	}{
 		{
 			name:                  "with containerruntime",
@@ -542,11 +554,10 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							mirroredConfigLabel:                  "",
+							NTOMirroredConfigLabel:               "true",
 							nodePoolAnnotation:                   npName,
 							ContainerRuntimeConfigConfigMapLabel: "",
 						},
-						Annotations: map[string]string{nodePoolAnnotation: npNamespace + "/" + npName},
 					},
 					Data: map[string]string{
 						TokenSecretConfigKey: containerRuntimeConfig1,
@@ -592,11 +603,10 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							mirroredConfigLabel:                  "",
+							NTOMirroredConfigLabel:               "true",
 							nodePoolAnnotation:                   npName,
 							ContainerRuntimeConfigConfigMapLabel: "",
 						},
-						Annotations: map[string]string{nodePoolAnnotation: npNamespace + "/" + npName},
 					},
 					Data: map[string]string{
 						TokenSecretConfigKey: containerRuntimeConfig2,
@@ -615,6 +625,84 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                  "with kubeletconfig objects",
+			nodePool:              np,
+			controlPlaneNamespace: hcpNamespace,
+			configsToBeMirrored: []*MirrorConfig{
+				{
+					ConfigMap: &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "bar",
+							Namespace: npNamespace,
+						},
+						Data: map[string]string{
+							TokenSecretConfigKey: kubeletConfig1,
+						},
+					},
+					Labels: map[string]string{
+						KubeletConfigConfigMapLabel: "true",
+					},
+				},
+			},
+			existingConfigsInHcpNs: nil,
+			expectedMirroredConfigs: []corev1.ConfigMap{
+				{
+					Immutable: ptr.To(true),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:          npName,
+							KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+				},
+			},
+		},
+		{
+			name:                  "negative: with multiple kubeletconfig objects expect validation error",
+			nodePool:              np,
+			controlPlaneNamespace: hcpNamespace,
+			configsToBeMirrored: []*MirrorConfig{
+				{
+					ConfigMap: &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "bar",
+							Namespace: npNamespace,
+						},
+						Data: map[string]string{
+							TokenSecretConfigKey: kubeletConfig1,
+						},
+					},
+					Labels: map[string]string{
+						KubeletConfigConfigMapLabel: "true",
+					},
+				},
+			},
+			existingConfigsInHcpNs: []client.Object{
+				&corev1.ConfigMap{
+					Immutable: ptr.To(true),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar-2", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							nodeTuningGeneratedConfigLabel: "true",
+							nodePoolAnnotation:             npName,
+							KubeletConfigConfigMapLabel:    "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+				},
+			},
+			expectedError: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -624,6 +712,10 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 				CreateOrUpdateProvider: upsert.New(true),
 			}
 			err := r.reconcileMirroredConfigs(context.Background(), logr.Discard(), tc.configsToBeMirrored, tc.controlPlaneNamespace, tc.nodePool)
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
 			g.Expect(err).ToNot(HaveOccurred())
 			for _, config := range tc.expectedMirroredConfigs {
 				cm := &corev1.ConfigMap{}

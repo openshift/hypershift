@@ -63,20 +63,20 @@ const (
 	nodePoolAnnotationTaints                  = "hypershift.openshift.io/nodePoolTaints"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
 
-	tuningConfigKey                                  = "tuning"
-	tunedConfigMapLabel                              = "hypershift.openshift.io/tuned-config"
-	nodeTuningGeneratedConfigLabel                   = "hypershift.openshift.io/nto-generated-machine-config"
-	PerformanceProfileConfigMapLabel                 = "hypershift.openshift.io/performanceprofile-config"
-	NodeTuningGeneratedPerformanceProfileStatusLabel = "hypershift.openshift.io/nto-generated-performance-profile-status"
-	ContainerRuntimeConfigConfigMapLabel             = "hypershift.openshift.io/containerruntimeconfig-config"
-
+	tuningConfigKey                                      = "tuning"
+	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"
+	nodeTuningGeneratedConfigLabel                       = "hypershift.openshift.io/nto-generated-machine-config"
+	PerformanceProfileConfigMapLabel                     = "hypershift.openshift.io/performanceprofile-config"
+	NodeTuningGeneratedPerformanceProfileStatusLabel     = "hypershift.openshift.io/nto-generated-performance-profile-status"
+	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
+	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
-	// mirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
-	mirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
+	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
+	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
 )
 
 type NodePoolReconciler struct {
