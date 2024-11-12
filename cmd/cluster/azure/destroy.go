@@ -32,6 +32,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
+	cmd.Flags().BoolVar(&opts.AzurePlatform.SkipServicePrincipalDeletion, "skip-service-principal-deletion", opts.AzurePlatform.SkipServicePrincipalDeletion, "Skip deletion of service principals")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 
@@ -131,6 +132,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	if o.TechPreviewEnabled {
 		destroyInfraOptions.TechPreviewEnabled = o.TechPreviewEnabled
 		destroyInfraOptions.ControlPlaneMIs = o.AzurePlatform.ControlPlaneMIs
+		destroyInfraOptions.SkipServicePrincipalDeletion = o.AzurePlatform.SkipServicePrincipalDeletion
 	}
 	return destroyInfraOptions.Run(ctx, o.Log)
 }
