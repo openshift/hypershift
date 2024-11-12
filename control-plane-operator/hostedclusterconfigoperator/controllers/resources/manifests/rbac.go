@@ -200,3 +200,35 @@ func UserOAuthClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 		},
 	}
 }
+
+func AzureDiskCSIDriverNodeServiceAccountRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa",
+		},
+	}
+}
+
+func AzureDiskCSIDriverNodeServiceAccountRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa",
+		},
+	}
+}
+
+func AzureFileCSIDriverNodeServiceAccountRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa",
+		},
+	}
+}
+
+func AzureFileCSIDriverNodeServiceAccountRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa",
+		},
+	}
+}
