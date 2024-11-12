@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
@@ -354,6 +355,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiopenstackv1beta1.OpenStackCluster{},
 		&capiopenstackv1beta1.OpenStackMachine{},
 		&capiopenstackv1beta1.OpenStackMachineTemplate{},
+		&orcv1alpha1.Image{},
 		&agentv1.AgentMachine{},
 		&agentv1.AgentMachineTemplate{},
 		&agentv1.AgentCluster{},

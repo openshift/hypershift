@@ -29,6 +29,21 @@ metadata:
   namespace: clusters
 type: Opaque
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: capi-provider-role
+  namespace: clusters
+rules:
+- apiGroups:
+  - openstack.k-orc.cloud
+  resources:
+  - images
+  verbs:
+  - list
+  - watch
+---
 apiVersion: v1
 data:
   key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=

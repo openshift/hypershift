@@ -341,6 +341,15 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"ipaddresses", "ipaddresses/status"},
 			Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 		},
+		// The following rule is required for CAPO to watch for the Images resources created by ORC,
+		// which is a dependency since CAPO v0.11.0.
+		// This rule is also defined in the Hypershift Operator and the Hypershift CLI when creating
+		// the cluster.
+		{
+			APIGroups: []string{"openstack.k-orc.cloud"},
+			Resources: []string{"images"},
+			Verbs:     []string{"list", "watch"},
+		},
 	}
 }
 

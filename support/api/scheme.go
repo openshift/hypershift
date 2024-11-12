@@ -3,6 +3,7 @@ package api
 import (
 	"os"
 
+	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
@@ -108,4 +109,5 @@ func init() {
 	capiopenstackv1beta1.AddToScheme(Scheme)
 	secretsstorev1.AddToScheme(Scheme)
 	kcpv1.AddToScheme(Scheme)
+	orcv1alpha1.AddToScheme(Scheme)
 }
