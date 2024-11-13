@@ -24,7 +24,9 @@ Upon scaling up a NodePool, a Machine will be created, and the CAPI provider wil
   This cluster is referred to as the Management OCP cluster.
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`) must be installed.
-* The `hcp` CLI CLI must be installed.
+* The `hcp` CLI must be installed and is the production tool to manage the hosted clusters.
+* The `hypershift` CLI must be installed to deploy the HyperShift Operator. In production, it is not recommended to use that CLI to
+  manage the hosted clusters.
 * The HyperShift Operator must be installed in the Management OCP cluster.
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
 * OpenStack Octavia service must be running in the cloud hosting the guest cluster when ingress is configured with an Octavia load balancer.
@@ -72,7 +74,7 @@ hypershift install --tech-preview-no-upgrade
 
 !!! note
 
-    Hypershift on OpenStack is possible behind a feature gate, which is why we have
+    HyperShift on OpenStack is possible behind a feature gate, which is why we have
     to install the operator with `--tech-preview-no-upgrade`. Once the platform
     is GA, the operator will be able to be installed without that flag.
 
