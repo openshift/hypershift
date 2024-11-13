@@ -252,7 +252,7 @@ At this point, you should be able to access the OpenShift console by navigating 
 
 To get the `kubeadmin` password, you can run this command:
 ```shell
-oc get --namespace clusters Secret/${CLUSTER_NAME}-kubeadmin-password -o jsonpath='{.data.password|base64decode}'
+oc get --namespace clusters Secret/${CLUSTER_NAME}-kubeadmin-password -o jsonpath='{.data.password}' | base64 --decode
 ```
 
 Also, the HostedCluster will be marked as `Completed`:
