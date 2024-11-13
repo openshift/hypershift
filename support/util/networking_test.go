@@ -82,3 +82,38 @@ func TestGetAdvertiseAddress(t *testing.T) {
 		})
 	}
 }
+func TestMachineNetworksToList(t *testing.T) {
+	tests := []struct {
+		name           string
+		machineNetwork []hyperv1.MachineNetworkEntry
+		want           string
+	}{
+		{
+			name: "single CIDR",
+			machineNetwork: []hyperv1.MachineNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")},
+			},
+			want: "192.168.1.0/24",
+		},
+		{
+			name: "multiple CIDRs",
+			machineNetwork: []hyperv1.MachineNetworkEntry{
+				{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")},
+				{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")},
+			},
+			want: "192.168.1.0/24,10.0.0.0/8",
+		},
+		{
+			name:           "no CIDRs",
+			machineNetwork: []hyperv1.MachineNetworkEntry{},
+			want:           "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MachineNetworksToList(tt.machineNetwork); got != tt.want {
+				t.Errorf("MachineNetworksToList() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

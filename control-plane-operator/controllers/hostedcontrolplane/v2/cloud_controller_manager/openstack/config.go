@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,7 +48,7 @@ func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) 
 		cm.Data[CABundleKey] = string(caCertData)
 	}
 
-	cm.Data[CredentialsFile] = getCloudConfig(cpContext.HCP.Spec.Platform.OpenStack, credentialsSecret)
+	cm.Data[CredentialsFile] = getCloudConfig(cpContext.HCP.Spec, credentialsSecret)
 	return nil
 }
 
@@ -64,32 +65,32 @@ func adaptConfigSecret(cpContext component.ControlPlaneContext, secret *corev1.S
 		secret.Data[CABundleKey] = caCertData
 	}
 
-	config := getCloudConfig(cpContext.HCP.Spec.Platform.OpenStack, credentialsSecret)
+	config := getCloudConfig(cpContext.HCP.Spec, credentialsSecret)
 	secret.Data[CredentialsFile] = []byte(config)
 	return nil
 }
 
 // getCloudConfig returns the cloud config.
-func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecret *corev1.Secret) string {
+func getCloudConfig(hcpSpec hyperv1.HostedControlPlaneSpec, credentialsSecret *corev1.Secret) string {
 	caCertData := GetCACertFromCredentialsSecret(credentialsSecret)
 
 	config := string(credentialsSecret.Data[CredentialsFile])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
 	config += "clouds-file=" + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
-	config += "cloud=" + platformSpec.IdentityRef.CloudName + "\n"
-	// This takes priority over the 'cacert' value in 'clouds.yaml' and we therefore
-	// unset then when creating the initial secret.
+	config += "cloud=" + hcpSpec.Platform.OpenStack.IdentityRef.CloudName + "\n"
 	if caCertData != nil {
 		config += "ca-file=" + CaDir + "/" + CABundleKey + "\n"
 	}
 	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
-	if platformSpec.ExternalNetwork != nil {
-		externalNetworkID := ptr.Deref(platformSpec.ExternalNetwork.ID, "")
+	if hcpSpec.Platform.OpenStack.ExternalNetwork != nil {
+		externalNetworkID := ptr.Deref(hcpSpec.Platform.OpenStack.ExternalNetwork.ID, "")
 		if externalNetworkID != "" {
 			config += "floating-network-id = " + externalNetworkID + "\n"
 		}
 	}
+	config += "\n[Networking]\n"
+	config += "address-sort-order = " + util.MachineNetworksToList(hcpSpec.Networking.MachineNetwork) + "\n"
 
 	return config
 }

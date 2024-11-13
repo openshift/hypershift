@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -16,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
 	corev1 "k8s.io/api/core/v1"
@@ -162,6 +164,13 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 	}
 
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
+
+	// MachineNetwork has no default in Hypershift but it's convenient to have one for OpenStack:
+	// * To specifiy the subnet that CAPO will manage.
+	// * To inform CCM the prefered subnet for kubelet's NodeIPs.
+	if len(cluster.Spec.Networking.MachineNetwork) == 0 {
+		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(config.DefaultMachineNetwork)}}
+	}
 
 	return nil
 }

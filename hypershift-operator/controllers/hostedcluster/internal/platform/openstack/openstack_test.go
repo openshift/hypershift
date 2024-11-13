@@ -24,6 +24,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 		name                         string
 		hostedCluster                *hyperv1.HostedCluster
 		expectedOpenStackClusterSpec capo.OpenStackClusterSpec
+		wantErr                      bool
 	}{
 		{
 			name: "CAPO provisioned network and subnet",
@@ -70,7 +71,9 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"10.0.0.0/24"}),
 				},
-			}},
+			},
+			wantErr: false,
+		},
 		{
 			name: "User provided network and subnet by ID on hosted cluster",
 			hostedCluster: &hyperv1.HostedCluster{
@@ -113,6 +116,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},
 			},
+			wantErr: false,
 		},
 		{
 			name: "User provided network and subnet by tag on hosted cluster",
@@ -168,6 +172,39 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},
 			},
+			wantErr: false,
+		},
+		{
+			name: "Missing machine networks",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						OpenStack: &hyperv1.OpenStackPlatformSpec{
+							IdentityRef: hyperv1.OpenStackIdentityReference{
+								Name:      "openstack-credentials",
+								CloudName: "openstack",
+							},
+							Network: &hyperv1.NetworkParam{
+								Filter: &hyperv1.NetworkFilter{
+									FilterByNeutronTags: hyperv1.FilterByNeutronTags{
+										Tags: []hyperv1.NeutronTag{"test"},
+									}},
+							},
+							Subnets: []hyperv1.SubnetParam{
+								{Filter: &hyperv1.SubnetFilter{
+									FilterByNeutronTags: hyperv1.FilterByNeutronTags{
+										Tags: []hyperv1.NeutronTag{"test"},
+									},
+								}},
+							},
+						}}}},
+			expectedOpenStackClusterSpec: capo.OpenStackClusterSpec{
+				IdentityRef: capo.OpenStackIdentityReference{
+					Name:      "openstack-credentials",
+					CloudName: "openstack",
+				},
+			},
+			wantErr: true,
 		},
 	}
 
@@ -179,7 +216,10 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					CloudName: "openstack",
 				},
 			}
-			reconcileOpenStackClusterSpec(tc.hostedCluster, &initialOpenStackClusterSpec, apiEndpoint)
+			err := reconcileOpenStackClusterSpec(tc.hostedCluster, &initialOpenStackClusterSpec, apiEndpoint)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("reconcileOpenStackClusterSpec() error = %v, wantErr %v", err, tc.wantErr)
+			}
 			if diff := cmp.Diff(initialOpenStackClusterSpec, tc.expectedOpenStackClusterSpec); diff != "" {
 				t.Errorf("reconciled OpenStack cluster spec differs from expcted OpenStack cluster spec: %s", diff)
 			}

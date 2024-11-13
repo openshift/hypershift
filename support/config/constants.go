@@ -54,4 +54,7 @@ const (
 	// management cluster. This managed identity is used to pull secrets and certificates out of Azure Key Vaults in the
 	// management cluster's resource group in Azure.
 	AROHCPKeyVaultManagedIdentityClientID = "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
+
+	// DefaultMachineNetwork is the default network CIDR for the machine network.
+	DefaultMachineNetwork = "10.0.0.0/16"
 )
