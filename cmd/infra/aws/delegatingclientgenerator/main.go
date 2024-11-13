@@ -92,6 +92,8 @@ func main() {
 import (
 	"fmt"
 
+    awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -99,8 +101,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/{{$service}}"
 	"github.com/aws/aws-sdk-go/service/{{$service}}/{{$service}}iface"
 {{- end}}
-
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
 // NewDelegatingClient creates a new set of AWS service clients that delegate individual calls to the right credentials.
