@@ -11,11 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/cmd/log"
-	"golang.org/x/net/http/httpproxy"
-
-	"github.com/spf13/cobra"
 
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -34,7 +30,10 @@ import (
 	"github.com/IBM/networking-go-sdk/transitgatewayapisv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/go-logr/logr"
 	regionutils "github.com/ppc64le-cloud/powervs-utils"
+	"github.com/spf13/cobra"
+	"golang.org/x/net/http/httpproxy"
 )
 
 const (

@@ -1,11 +1,11 @@
 package create
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/product-cli/cmd/cluster"
 	"github.com/openshift/hypershift/product-cli/cmd/kubeconfig"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCommand() *cobra.Command {

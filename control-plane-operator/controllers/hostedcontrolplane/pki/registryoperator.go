@@ -1,9 +1,9 @@
 package pki
 
 import (
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/openshift/hypershift/support/config"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 const metricsHostname = "cluster-image-registry-operator"

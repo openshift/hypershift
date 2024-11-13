@@ -12,9 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
-	"golang.org/x/time/rate"
-
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema1"
@@ -24,6 +21,8 @@ import (
 	"github.com/docker/distribution/registry/client/auth/challenge"
 	"github.com/docker/distribution/registry/client/transport"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/net/context"
+	"golang.org/x/time/rate"
 )
 
 // RepositoryRetriever fetches a Docker distribution.Repository.

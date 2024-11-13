@@ -3,9 +3,10 @@ package kas
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
-	. "github.com/onsi/gomega"
 )
 
 func TestGenerateCelExpression(t *testing.T) {

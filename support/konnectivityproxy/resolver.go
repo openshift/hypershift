@@ -8,12 +8,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/armon/go-socks5"
-	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/armon/go-socks5"
+	"github.com/go-logr/logr"
 )
 
 // guestClusterResolver uses the Konnectivity dialer to perform a DNS lookup using

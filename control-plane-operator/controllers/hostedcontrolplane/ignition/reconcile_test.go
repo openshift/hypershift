@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/openshift/hypershift/support/testutil"
+
 	k8syaml "sigs.k8s.io/yaml"
 )
 

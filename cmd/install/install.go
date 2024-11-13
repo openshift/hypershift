@@ -23,8 +23,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/install/assets"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/cmd/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
+
+	configv1 "github.com/openshift/api/config/v1"
+	imageapi "github.com/openshift/api/image/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -36,19 +45,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	configv1 "github.com/openshift/api/config/v1"
-	imageapi "github.com/openshift/api/image/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
-	"github.com/openshift/hypershift/cmd/install/assets"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
-	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/rhobsmonitoring"
+	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 const (

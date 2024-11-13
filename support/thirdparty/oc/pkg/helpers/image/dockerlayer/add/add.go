@@ -1,9 +1,9 @@
 package add
 
 import (
-	"github.com/docker/distribution"
-
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+
+	"github.com/docker/distribution"
 )
 
 func AddLayerToConfig(config *dockerv1client.DockerImageConfig, layer distribution.Descriptor, diffID string) {

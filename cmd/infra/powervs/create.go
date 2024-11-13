@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
+	hypershiftLog "github.com/openshift/hypershift/cmd/log"
 
-	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
@@ -29,9 +28,9 @@ import (
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/go-logr/logr"
 	regionutils "github.com/ppc64le-cloud/powervs-utils"
-
-	hypershiftLog "github.com/openshift/hypershift/cmd/log"
+	"github.com/spf13/cobra"
 )
 
 const (

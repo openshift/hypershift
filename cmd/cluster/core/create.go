@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/log"
@@ -28,9 +26,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
-	"github.com/go-logr/logr"
-	"github.com/spf13/pflag"
-	"golang.org/x/crypto/ssh"
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,8 +35,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/pflag"
+	"golang.org/x/crypto/ssh"
 )
 
 func DefaultOptions() *RawCreateOptions {

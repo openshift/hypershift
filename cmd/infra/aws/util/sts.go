@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"k8s.io/utils/ptr"
 
-	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"k8s.io/utils/ptr"
 )
 
 func NewSTSSession(agent, rolenArn, region string, assumeRoleCreds *credentials.Credentials) (*session.Session, error) {

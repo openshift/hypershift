@@ -12,9 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/clarketm/json"
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
@@ -24,7 +21,9 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
-	"github.com/vincent-petithory/dataurl"
+
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -33,7 +32,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/clarketm/json"
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/vincent-petithory/dataurl"
 )
 
 const (

@@ -7,11 +7,14 @@ import (
 
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/spf13/cobra"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
 )
 
 type Outputs string

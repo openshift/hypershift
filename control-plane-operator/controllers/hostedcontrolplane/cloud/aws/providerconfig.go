@@ -3,11 +3,10 @@ package aws
 import (
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
-
-	"github.com/openshift/hypershift/support/util"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (

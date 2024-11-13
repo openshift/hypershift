@@ -2,6 +2,7 @@ package dump
 
 import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
+
 	"github.com/spf13/cobra"
 )
 

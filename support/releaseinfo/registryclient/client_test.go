@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
-	. "github.com/onsi/gomega"
 )
 
 const (

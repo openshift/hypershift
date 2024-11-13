@@ -6,16 +6,17 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/client/clientset/clientset/scheme"
-	"gopkg.in/yaml.v2"
+
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
-	kubevirtv1 "kubevirt.io/api/core/v1"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,7 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/onsi/gomega/format"
+	"gopkg.in/yaml.v2"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
 func TestReconcileDefaultIngressEndpoints(t *testing.T) {

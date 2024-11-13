@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/http/httpproxy"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
@@ -36,6 +34,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"golang.org/x/net/http/httpproxy"
 )
 
 const (

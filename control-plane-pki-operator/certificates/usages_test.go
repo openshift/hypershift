@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-
 	certificatesv1 "k8s.io/api/certificates/v1"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestKeyUsagesFromStrings(t *testing.T) {

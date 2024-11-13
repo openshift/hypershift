@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	"k8s.io/apimachinery/pkg/runtime"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 var (

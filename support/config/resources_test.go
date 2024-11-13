@@ -2,16 +2,16 @@ package config
 
 import (
 	"bytes"
-
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/api"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/openshift/hypershift/support/api"
 )
 
 func TestSetResources(t *testing.T) {

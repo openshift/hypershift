@@ -1,11 +1,11 @@
 package manifests
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	oauthv1 "github.com/openshift/api/oauth/v1"
+
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func OAuthCABundle() *corev1.ConfigMap {

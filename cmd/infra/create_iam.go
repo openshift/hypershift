@@ -1,9 +1,9 @@
 package infra
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/infra/aws"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateIAMCommand() *cobra.Command {

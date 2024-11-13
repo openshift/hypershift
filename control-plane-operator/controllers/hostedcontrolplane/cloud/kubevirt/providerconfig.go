@@ -2,8 +2,10 @@ package kubevirt
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"gopkg.in/yaml.v2"
+
 	"k8s.io/utils/ptr"
+
+	"gopkg.in/yaml.v2"
 )
 
 const (

@@ -7,9 +7,10 @@ import (
 	"math"
 	"time"
 
-	"github.com/go-logr/logr"
-	"go.etcd.io/etcd/api/v3/etcdserverpb"
-	clientv3 "go.etcd.io/etcd/client/v3"
+	"github.com/openshift/hypershift/pkg/etcdcli"
+	"github.com/openshift/hypershift/support/upsert"
+
+	"github.com/openshift/library-go/pkg/operator/events"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -17,9 +18,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/openshift/hypershift/pkg/etcdcli"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/go-logr/logr"
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 const (

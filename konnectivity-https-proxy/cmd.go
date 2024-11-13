@@ -9,19 +9,22 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/elazarl/goproxy"
-	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
-	"golang.org/x/net/http/httpproxy"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/elazarl/goproxy"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/http/httpproxy"
 )
 
 func NewStartCommand() *cobra.Command {

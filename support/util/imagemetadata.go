@@ -5,13 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/docker/distribution"
-
-	"github.com/blang/semver"
-	"github.com/docker/distribution/registry/client/transport"
-	"github.com/golang/groupcache/lru"
-	"k8s.io/client-go/rest"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -19,7 +12,15 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
+
+	"k8s.io/client-go/rest"
+
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/blang/semver"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/registry/client/transport"
+	"github.com/golang/groupcache/lru"
 )
 
 var (

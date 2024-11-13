@@ -21,17 +21,21 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-logr/logr"
-	configapi "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/spf13/cobra"
+
+	configapi "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 func NewInitCommand() *cobra.Command {

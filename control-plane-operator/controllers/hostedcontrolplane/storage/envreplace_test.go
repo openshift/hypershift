@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
+
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 

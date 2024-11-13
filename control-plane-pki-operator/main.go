@@ -6,12 +6,13 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-pki-operator/topology"
 	hypershiftversion "github.com/openshift/hypershift/pkg/version"
-	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/version"
-
-	"k8s.io/component-base/cli"
 
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+
+	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/component-base/cli"
+
+	"github.com/spf13/cobra"
 )
 
 func main() {

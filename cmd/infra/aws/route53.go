@@ -7,13 +7,16 @@ import (
 	"strings"
 	"time"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/go-logr/logr"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
+
+	"github.com/go-logr/logr"
 )
 
 func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API) (string, error) {

@@ -8,10 +8,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blang/semver"
 	imageapi "github.com/openshift/api/image/v1"
+
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/blang/semver"
 )
 
 // Provider knows how to find the release image metadata for an image referred

@@ -5,8 +5,11 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

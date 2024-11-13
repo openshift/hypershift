@@ -8,15 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func defaultOptions() *EventuallyOptions {

@@ -16,16 +16,17 @@ import (
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {

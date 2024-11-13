@@ -6,14 +6,14 @@ import (
 	"strings"
 	"text/template"
 
+	credreqv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
+	cco "github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud"
+	ccoibmcloud "github.com/openshift/cloud-credential-operator/pkg/ibmcloud"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
-
-	credreqv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
-	cco "github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud"
-	ccoibmcloud "github.com/openshift/cloud-credential-operator/pkg/ibmcloud"
 )
 
 type PolicyParams struct {

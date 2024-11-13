@@ -6,16 +6,7 @@ import (
 	"path"
 	"strings"
 
-	configv1 "github.com/openshift/api/config/v1"
-	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	podsecurityadmissionv1beta1 "k8s.io/pod-security-admission/admission/api/v1beta1"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -26,6 +17,15 @@ import (
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	podsecurityadmissionv1beta1 "k8s.io/pod-security-admission/admission/api/v1beta1"
 )
 
 const (
