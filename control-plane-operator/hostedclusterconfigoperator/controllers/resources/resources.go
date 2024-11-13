@@ -2524,8 +2524,10 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 	case hyperv1.AWSPlatform:
 		driverNames = []operatorv1.CSIDriverName{operatorv1.AWSEBSCSIDriver}
 	case hyperv1.OpenStackPlatform:
-		// TODO(stephenfin): Add Manila here once it supports Hypershift
-		driverNames = []operatorv1.CSIDriverName{operatorv1.CinderCSIDriver}
+		driverNames = []operatorv1.CSIDriverName{
+			operatorv1.CinderCSIDriver,
+			operatorv1.ManilaCSIDriver,
+		}
 	}
 	for _, driverName := range driverNames {
 		driver := manifests.ClusterCSIDriver(driverName)

@@ -259,6 +259,11 @@ func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, cr
 		return err
 	}
 
+	// Sync Manila CSI driver secret
+	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "manila-cloud-credentials"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
