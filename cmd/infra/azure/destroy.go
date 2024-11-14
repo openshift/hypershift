@@ -18,14 +18,15 @@ import (
 )
 
 type DestroyInfraOptions struct {
-	Name               string
-	Location           string
-	InfraID            string
-	CredentialsFile    string
-	Credentials        *util.AzureCreds
-	ResourceGroupName  string
-	TechPreviewEnabled bool
-	ControlPlaneMIs    hyperv1.AzureResourceManagedIdentities
+	Name                         string
+	Location                     string
+	InfraID                      string
+	CredentialsFile              string
+	Credentials                  *util.AzureCreds
+	ResourceGroupName            string
+	TechPreviewEnabled           bool
+	ControlPlaneMIs              hyperv1.AzureResourceManagedIdentities
+	SkipServicePrincipalDeletion bool
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -111,7 +112,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		}
 	}
 
-	if o.TechPreviewEnabled {
+	if o.TechPreviewEnabled && !o.SkipServicePrincipalDeletion {
 		// Destroy created service principals
 		logger.Info("Destroying service principals")
 		err = destroyServicePrincipals(o)

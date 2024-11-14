@@ -55,10 +55,11 @@ type AWSPlatformDestroyOptions struct {
 }
 
 type AzurePlatformDestroyOptions struct {
-	CredentialsFile   string
-	Location          string
-	ResourceGroupName string
-	ControlPlaneMIs   hyperv1.AzureResourceManagedIdentities
+	CredentialsFile              string
+	Location                     string
+	ResourceGroupName            string
+	ControlPlaneMIs              hyperv1.AzureResourceManagedIdentities
+	SkipServicePrincipalDeletion bool
 }
 
 type PowerVSPlatformDestroyOptions struct {
