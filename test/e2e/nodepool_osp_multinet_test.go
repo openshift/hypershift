@@ -51,6 +51,11 @@ func (o OpenStackMultinetTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.OpenStackPlatform {
 		t.Skip("test only supported on platform OpenStack")
 	}
+
+	// The feature that is being tested here is only available in 4.18+
+	if e2eutil.IsLessThan(e2eutil.Version418) {
+		t.Skip("test only applicable for 4.18+")
+	}
 }
 
 func (o OpenStackMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1.Node) {
