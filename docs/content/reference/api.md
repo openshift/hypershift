@@ -2594,17 +2594,25 @@ toleration of full disruption of the component.</p>
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;PremiumSSD&#34;</p></td>
-<td><p>PremiumSSDStorageAccountType is the premium SSD storage account type.</p>
+<tbody><tr><td><p>&#34;Premium_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesPremiumLRS - Premium SSD locally redundant storage. Best for production and performance sensitive
+workloads.</p>
 </td>
-</tr><tr><td><p>&#34;StandardSSD&#34;</p></td>
-<td><p>StandardSSDStorageAccountType is the standard SSD storage account type.</p>
+</tr><tr><td><p>&#34;PremiumV2_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesPremiumV2LRS - Premium SSD v2 locally redundant storage. Best for production and performance-sensitive
+workloads that consistently require low latency and high IOPS and throughput.</p>
 </td>
-</tr><tr><td><p>&#34;Standard&#34;</p></td>
-<td><p>StandardStorageAccountType is the standard HDD storage account type.</p>
+</tr><tr><td><p>&#34;Standard_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesStandardLRS - Standard HDD locally redundant storage. Best for backup, non-critical, and infrequent
+access.</p>
 </td>
-</tr><tr><td><p>&#34;UltraSSD&#34;</p></td>
-<td><p>UltraSSDStorageAccountType is the ultra SSD storage account type.</p>
+</tr><tr><td><p>&#34;StandardSSD_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesStandardSSDLRS - Standard SSD locally redundant storage. Best for web servers, lightly used enterprise
+applications and dev/test.</p>
+</td>
+</tr><tr><td><p>&#34;UltraSSD_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesUltraSSDLRS - Ultra SSD locally redundant storage. Best for IO-intensive workloads such as SAP HANA,
+top tier databases (for example, SQL, Oracle), and other transaction-heavy workloads.</p>
 </td>
 </tr></tbody>
 </table>
@@ -2816,7 +2824,7 @@ int32
 <td>
 <em>(Optional)</em>
 <p>SizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
-This should be between 16 and 65,536 when using the UltraSSD storage account type and between 16 and 32,767 when using any other storage account type.
+This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
 When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default is 30.</p>
 </td>
@@ -2832,13 +2840,13 @@ AzureDiskStorageAccountType
 </td>
 <td>
 <em>(Optional)</em>
-<p>storageAccountType is the disk storage account type to use.
-Valid values are Standard, StandardSSD, PremiumSSD and UltraSSD and omitted.
+<p>diskStorageAccountType is the disk storage account type to use.
+Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS, UltraSSD_LRS.
 Note that Standard means a HDD.
 The disk performance is tied to the disk type, please refer to the Azure documentation for further details
 <a href="https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a>.
 When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-The current default is PremiumSSD.</p>
+The current default is Premium SSD LRS.</p>
 </td>
 </tr>
 <tr>
