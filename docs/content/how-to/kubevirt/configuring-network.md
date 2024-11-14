@@ -54,7 +54,7 @@ hcp create cluster kubevirt \
 --pull-secret $PULL_SECRET \
 --memory $MEM \
 --cores $CPU \
---attach-default-network false \
+--attach-default-network=false \
 --additional-network name:my-namespace/network1 \
 ```
 
