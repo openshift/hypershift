@@ -44,14 +44,15 @@ type DestroyOptions struct {
 }
 
 type AWSPlatformDestroyOptions struct {
-	Credentials         awsutil.AWSCredentialsOptions
-	BaseDomain          string
-	BaseDomainPrefix    string
-	PreserveIAM         bool
-	Region              string
-	PostDeleteAction    func()
-	AwsInfraGracePeriod time.Duration
-	VPCOwnerCredentials awsutil.AWSCredentialsOptions
+	Credentials                  awsutil.AWSCredentialsOptions
+	BaseDomain                   string
+	BaseDomainPrefix             string
+	PreserveIAM                  bool
+	Region                       string
+	PostDeleteAction             func()
+	AwsInfraGracePeriod          time.Duration
+	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
 }
 
 type AzurePlatformDestroyOptions struct {

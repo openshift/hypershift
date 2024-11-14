@@ -37,6 +37,7 @@ type CreateIAMOptions struct {
 	KMSKeyARN                       string
 	AdditionalTags                  []string
 	VPCOwnerCredentialsOpts         awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount    bool
 
 	CredentialsSecretData *util.CredentialsSecretData
 
@@ -79,6 +80,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.LocalZoneID, "local-zone-id", opts.LocalZoneID, "The id of the clusters local route53 zone")
 	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
+	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
@@ -193,7 +195,15 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 			return nil, err
 		}
 		vpcOwnerIAMClient := iam.New(vpcOwnerAWSSession, awsConfig)
-		if err := o.CreateSharedVPCRoles(vpcOwnerIAMClient, logger, results); err != nil {
+
+		route53RoleClient := vpcOwnerIAMClient
+		if o.PrivateZonesInClusterAccount {
+			route53RoleClient = iamClient
+		}
+		if results.SharedIngressRoleARN, err = o.CreateSharedVPCRoute53Role(route53RoleClient, logger, results.Roles.IngressARN, results.Roles.ControlPlaneOperatorARN); err != nil {
+			return nil, err
+		}
+		if results.SharedControlPlaneRoleARN, err = o.CreateSharedVPCEndpointRole(vpcOwnerIAMClient, logger, results.Roles.ControlPlaneOperatorARN); err != nil {
 			return nil, err
 		}
 	}

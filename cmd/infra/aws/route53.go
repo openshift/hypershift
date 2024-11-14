@@ -52,7 +52,7 @@ func LookupZone(ctx context.Context, client route53iface.Route53API, name string
 	return cleanZoneID(*res.Id), nil
 }
 
-func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API, name, vpcID string) (string, error) {
+func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API, name, vpcID string, authorizeAssociation bool, vpcOwnerClient route53iface.Route53API, initialVPC string) (string, error) {
 	id, err := LookupZone(ctx, client, name, true)
 	if err == nil {
 		logger.Info("Found existing private zone", "name", name, "id", id)
@@ -66,7 +66,7 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 	var res *route53.CreateHostedZoneOutput
 	if err := retryRoute53WithBackoff(ctx, func() error {
 		callRef := fmt.Sprintf("%d", time.Now().Unix())
-		if output, err := client.CreateHostedZoneWithContext(ctx, &route53.CreateHostedZoneInput{
+		createRequest := &route53.CreateHostedZoneInput{
 			CallerReference: aws.String(callRef),
 			Name:            aws.String(name),
 			HostedZoneConfig: &route53.HostedZoneConfig{
@@ -76,7 +76,11 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 				VPCId:     aws.String(vpcID),
 				VPCRegion: aws.String(o.Region),
 			},
-		}); err != nil {
+		}
+		if authorizeAssociation {
+			createRequest.VPC.VPCId = aws.String(initialVPC)
+		}
+		if output, err := client.CreateHostedZoneWithContext(ctx, createRequest); err != nil {
 			return err
 		} else {
 			res = output
@@ -96,6 +100,41 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 		return "", err
 	}
 
+	if authorizeAssociation {
+		if _, err := client.CreateVPCAssociationAuthorization(&route53.CreateVPCAssociationAuthorizationInput{
+			HostedZoneId: aws.String(id),
+			VPC: &route53.VPC{
+				VPCId:     aws.String(vpcID),
+				VPCRegion: aws.String(o.Region),
+			},
+		}); err != nil {
+			return "", fmt.Errorf("failed to create vpc association authorization: %w", err)
+		}
+		logger.Info("Created hosted zone vpc association authorization", "id", id, "vpc", vpcID)
+
+		if _, err := vpcOwnerClient.AssociateVPCWithHostedZone(&route53.AssociateVPCWithHostedZoneInput{
+			HostedZoneId: aws.String(id),
+			VPC: &route53.VPC{
+				VPCId:     aws.String(vpcID),
+				VPCRegion: aws.String(o.Region),
+			},
+		}); err != nil {
+			return "", fmt.Errorf("failed to associate VPC with hosted zone: %w", err)
+		}
+		logger.Info("Associated VPC with hosted zone", "vpc", vpcID, "hosted-zone", id)
+
+		if _, err := client.DisassociateVPCFromHostedZone(&route53.DisassociateVPCFromHostedZoneInput{
+			HostedZoneId: aws.String(id),
+			VPC: &route53.VPC{
+				VPCId:     aws.String(initialVPC),
+				VPCRegion: aws.String(o.Region),
+			},
+		}); err != nil {
+			return "", fmt.Errorf("failed to remove initial VPC association with hosted zone: %w", err)
+		}
+		logger.Info("Removed initial VPC association with hosted zone", "vpc", initialVPC, "hosted-zone", id)
+	}
+
 	return id, nil
 }
 
@@ -105,10 +144,10 @@ func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client route53ifac
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, client route53iface.Route53API, vpcID *string) []error {
+func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClient, recordsClient route53iface.Route53API, vpcID *string) []error {
 	var output *route53.ListHostedZonesByVPCOutput
 	if err := retryRoute53WithBackoff(ctx, func() (err error) {
-		output, err = client.ListHostedZonesByVPCWithContext(ctx, &route53.ListHostedZonesByVPCInput{VPCId: vpcID, VPCRegion: aws.String(o.Region)})
+		output, err = listClient.ListHostedZonesByVPCWithContext(ctx, &route53.ListHostedZonesByVPCInput{VPCId: vpcID, VPCRegion: aws.String(o.Region)})
 		return err
 	}); err != nil {
 		return []error{fmt.Errorf("failed to list hosted zones for vpc %s: %w", *vpcID, err)}
@@ -117,7 +156,7 @@ func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, client ro
 	var errs []error
 	for _, zone := range output.HostedZoneSummaries {
 		id := cleanZoneID(*zone.HostedZoneId)
-		if err := deleteZone(ctx, id, client, o.Log); err != nil {
+		if err := deleteZone(ctx, id, recordsClient, o.Log); err != nil {
 			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", *vpcID, err)}
 		}
 		o.Log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)

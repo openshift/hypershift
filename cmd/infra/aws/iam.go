@@ -25,9 +25,9 @@ type policyBinding struct {
 }
 
 type sharedVPCPolicyBinding struct {
-	name        string
-	policy      string
-	allowedRole string
+	name         string
+	policy       string
+	allowedRoles []string
 }
 
 const allowAssumeRolePolicy = `{
@@ -478,8 +478,8 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 	}
 }
 
-func sharedVPCIngressRole(privateHostedZoneID string, ingressRoleARN string) sharedVPCPolicyBinding {
-	policyTemplate := `{
+func sharedVPCRoute53Role(allowedRoles []string) sharedVPCPolicyBinding {
+	policy := `{
     "Version": "2012-10-17",
     "Statement": [
         {
@@ -494,30 +494,22 @@ func sharedVPCIngressRole(privateHostedZoneID string, ingressRoleARN string) sha
                 "route53:ListTagsForResource",
                 "route53:UpdateHostedZoneComment",
                 "tag:GetResources",
-                "tag:UntagResources"
-            ],
-            "Resource": "*"
-        },
-		{
-			"Effect": "Allow",
-			"Action": [
+                "tag:UntagResources",
 				"route53:ChangeResourceRecordSets",
 				"route53:ListResourceRecordSets"
-			],
-			"Resource": "arn:aws:route53:::hostedzone/%s"
-		}
+            ],
+            "Resource": "*"
+        }
     ]
 }`
-	policy := fmt.Sprintf(policyTemplate, privateHostedZoneID)
-
 	return sharedVPCPolicyBinding{
-		name:        "shared-vpc-ingress",
-		policy:      policy,
-		allowedRole: ingressRoleARN,
+		name:         "shared-vpc-route53",
+		policy:       policy,
+		allowedRoles: allowedRoles,
 	}
 }
 
-func sharedVPCControlPlaneRole(controlPlaneRoleARN string) sharedVPCPolicyBinding {
+func sharedVPCEndpointRole(controlPlaneRoleARN string) sharedVPCPolicyBinding {
 	policy := `{
 			"Version": "2012-10-17",
 			"Statement": [
@@ -529,7 +521,6 @@ func sharedVPCControlPlaneRole(controlPlaneRoleARN string) sharedVPCPolicyBindin
 						"ec2:ModifyVpcEndpoint",
 						"ec2:DeleteVpcEndpoints",
 						"ec2:CreateTags",
-						"route53:ListHostedZones",
 						"ec2:CreateSecurityGroup",
 						"ec2:AuthorizeSecurityGroupIngress",
 						"ec2:AuthorizeSecurityGroupEgress",
@@ -537,18 +528,16 @@ func sharedVPCControlPlaneRole(controlPlaneRoleARN string) sharedVPCPolicyBindin
 						"ec2:RevokeSecurityGroupIngress",
 						"ec2:RevokeSecurityGroupEgress",
 						"ec2:DescribeSecurityGroups",
-						"ec2:DescribeVpcs",
-						"route53:ChangeResourceRecordSets",
-						"route53:ListResourceRecordSets"
+						"ec2:DescribeVpcs"
 					],
 					"Resource": "*"
 				}
 			]
 		}`
 	return sharedVPCPolicyBinding{
-		name:        "shared-vpc-control-plane",
-		policy:      policy,
-		allowedRole: controlPlaneRoleARN,
+		name:         "shared-vpc-endpoint",
+		policy:       policy,
+		allowedRoles: []string{controlPlaneRoleARN},
 	}
 }
 
@@ -872,33 +861,34 @@ func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, l
 	return arn, nil
 }
 
-func (o *CreateIAMOptions) CreateSharedVPCRoles(iamClient iamiface.IAMAPI, logger logr.Logger, output *CreateIAMOutput) error {
-	bindings := map[*string]sharedVPCPolicyBinding{
-		&output.SharedIngressRoleARN:      sharedVPCIngressRole(o.PrivateZoneID, output.Roles.IngressARN),
-		&output.SharedControlPlaneRoleARN: sharedVPCControlPlaneRole(output.Roles.ControlPlaneOperatorARN),
-	}
+func (o *CreateIAMOptions) CreateSharedVPCEndpointRole(iamClient iamiface.IAMAPI, logger logr.Logger, controlPlaneRole string) (string, error) {
+	return o.createSharedVPCRole(iamClient, logger, sharedVPCEndpointRole(controlPlaneRole))
+}
 
-	for into, binding := range bindings {
-		trustPolicy := sharedVPCRoleTrustPolicy(binding.allowedRole)
-		backoff := wait.Backoff{
-			Steps:    10,
-			Duration: 10 * time.Second,
-			Factor:   1.0,
-			Jitter:   0.1,
-		}
-		if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
-			var err error
-			arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, false, logger)
-			if err != nil {
-				return err
-			}
-			*into = arn
-			return nil
-		}); err != nil {
+func (o *CreateIAMOptions) CreateSharedVPCRoute53Role(iamClient iamiface.IAMAPI, logger logr.Logger, ingressRole, controlPlaneRole string) (string, error) {
+	return o.createSharedVPCRole(iamClient, logger, sharedVPCRoute53Role([]string{ingressRole, controlPlaneRole}))
+}
+
+func (o *CreateIAMOptions) createSharedVPCRole(iamClient iamiface.IAMAPI, logger logr.Logger, binding sharedVPCPolicyBinding) (string, error) {
+	trustPolicy := sharedVPCRoleTrustPolicy(binding.allowedRoles)
+	backoff := wait.Backoff{
+		Steps:    10,
+		Duration: 10 * time.Second,
+		Factor:   1.0,
+		Jitter:   0.1,
+	}
+	var arn string
+	if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
+		var err error
+		arn, err = o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, false, logger)
+		if err != nil {
 			return err
 		}
+		return nil
+	}); err != nil {
+		return "", err
 	}
-	return nil
+	return arn, nil
 }
 
 func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
@@ -1002,7 +992,17 @@ func oidcTrustPolicy(providerARN, providerName string, serviceAccounts ...string
 	return b.String()
 }
 
-func sharedVPCRoleTrustPolicy(allowedRoleARN string) string {
+func sharedVPCRoleTrustPolicy(trustedRoles []string) string {
+	var allowedString string
+	switch len(trustedRoles) {
+	case 1:
+		allowedString = fmt.Sprintf("%q", trustedRoles[0])
+	case 2:
+		allowedString = fmt.Sprintf("[ %q, %q ]", trustedRoles[0], trustedRoles[1])
+	default:
+		panic("not supported")
+	}
+
 	policy := `{
   "Version": "2012-10-17",
   "Statement": [
@@ -1010,11 +1010,11 @@ func sharedVPCRoleTrustPolicy(allowedRoleARN string) string {
 	  "Sid": "Statement1",
 	  "Effect": "Allow",
 	  "Principal": {
-	  	"AWS": "%s"
+	  	"AWS": %s
 	  },
 	  "Action": "sts:AssumeRole"
 	}
   ]
 }`
-	return fmt.Sprintf(policy, allowedRoleARN)
+	return fmt.Sprintf(policy, allowedString)
 }
