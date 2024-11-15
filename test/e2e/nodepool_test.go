@@ -126,6 +126,10 @@ func TestNodePool(t *testing.T) {
 						test: NewOpenStackAZTest(ctx, mgtClient, hostedCluster),
 					},
 					{
+						name: "OpenStackImageTest",
+						test: NewOpenStackImageTest(ctx, mgtClient, hostedCluster),
+					},
+					{
 						name: "TestMirrorConfigs",
 						test: NewMirrorConfigsTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},

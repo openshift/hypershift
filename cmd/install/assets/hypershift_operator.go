@@ -1171,14 +1171,14 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"ipaddresses", "ipaddresses/status"},
 				Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 			},
-			// The following rule is required for CAPO to watch for the Images resources created by ORC,
+			// The following rule is required for CAPO to reconcile for the Images resources created by ORC,
 			// which is a dependency since CAPO v0.11.0.
 			// This rule is also defined in the Hypershift HostedCluster controller and the Hypershift CLI when creating
 			// the cluster.
 			{
 				APIGroups: []string{"openstack.k-orc.cloud"},
-				Resources: []string{"images"},
-				Verbs:     []string{"list", "watch"},
+				Resources: []string{"images", "images/status"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.
 				APIGroups: []string{"subresources.kubevirt.io"},

@@ -71,6 +71,13 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		return err
 	}
 
+	// Reconcile ORC resources
+	if nodePool.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+		if err := c.reconcileORCResources(ctx); err != nil {
+			return err
+		}
+	}
+
 	//  Reconcile (Platform)MachineTemplate.
 	template, mutateTemplate, _, err := c.machineTemplateBuilders()
 	if err != nil {
@@ -1319,4 +1326,8 @@ func (r *NodePoolReconciler) getMachinesForNodePool(ctx context.Context, nodePoo
 	}
 
 	return sortedByCreationTimestamp(machinesForNodePool), nil
+}
+
+func (c *CAPI) reconcileORCResources(ctx context.Context) error {
+	return openstack.ReconcileOpenStackImageCR(ctx, c.Client, c.CreateOrUpdate, c.hostedCluster, c.releaseImage)
 }

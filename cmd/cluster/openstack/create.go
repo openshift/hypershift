@@ -218,15 +218,15 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 			Namespace: o.namespace,
 			Name:      "capi-provider-role",
 		},
-		// The following rule is required for CAPO to watch for the Images resources created by ORC,
+		// The following rule is required for CAPO to reconcile for the Images resources created by ORC,
 		// which is a dependency since CAPO v0.11.0.
 		// This rule is also defined in the Hypershift HostedCluster controller and the Hypershift Operator when creating
 		// the cluster.
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"openstack.k-orc.cloud"},
-				Resources: []string{"images"},
-				Verbs:     []string{"list", "watch"},
+				Resources: []string{"images", "images/status"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 		},
 	})

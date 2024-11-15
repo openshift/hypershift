@@ -225,7 +225,6 @@ func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 		NodePoolOpts: &openstacknodepool.RawOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
 				Flavor:         p.ConfigurableClusterOptions.OpenStackNodeFlavor,
-				ImageName:      p.ConfigurableClusterOptions.OpenStackNodeImageName,
 				AvailabityZone: p.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone,
 			},
 		},
