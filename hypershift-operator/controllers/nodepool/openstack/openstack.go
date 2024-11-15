@@ -1,11 +1,18 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	orc "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 	"github.com/openshift/hypershift/support/openstackutil"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
 	"k8s.io/utils/ptr"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 )
@@ -20,12 +27,9 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 			Name: ptr.To(nodePool.Spec.Platform.OpenStack.ImageName),
 		}
 	} else {
-		// TODO(emilien): Add support for using the image from the release payload.
-		// This will be possible when CAPO supports managing images in the OpenStack cluster:
-		// https://github.com/kubernetes-sigs/cluster-api-provider-openstack/pull/2130
-		// For 4.17 we might leave this as is and let the user provide the image name as
-		// we plan to deliver the OpenStack provider as a dev preview.
-		return nil, fmt.Errorf("image name is required")
+		openStackMachineTemplate.Template.Spec.Image.ImageRef = &capiopenstackv1beta1.ResourceReference{
+			Name: "rhcos-" + hcluster.Name,
+		}
 	}
 
 	// TODO: add support for BYO network/subnet
@@ -71,4 +75,63 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 		openStackMachineTemplate.Template.Spec.Ports = append(openStackMachineTemplate.Template.Spec.Ports, additionalPorts...)
 	}
 	return openStackMachineTemplate, nil
+}
+
+func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage) error {
+	openStackImage := orc.Image{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "rhcos-" + hcluster.Name,
+			Namespace: hcluster.Namespace,
+			// TODO: add proper cleanup in CAPI resources cleanup
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: hcluster.APIVersion,
+					Kind:       hcluster.Kind,
+					Name:       hcluster.Name,
+					UID:        hcluster.UID,
+				},
+			},
+		},
+		Spec: orc.ImageSpec{},
+	}
+
+	if _, err := createOrUpdate(ctx, client, &openStackImage, func() error {
+		err := reconcileOpenStackImageSpec(hcluster, &openStackImage.Spec, release)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func reconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImageSpec *orc.ImageSpec, release *releaseinfo.ReleaseImage) error {
+	imageURL, imageHash, err := releaseinfo.UnsupportedOpenstackDefaultImage(release)
+	if err != nil {
+		return fmt.Errorf("failed to lookup RHCOS image: %w", err)
+	}
+
+	openStackImageSpec.CloudCredentialsRef = orc.CloudCredentialsReference{
+		SecretName: hcluster.Spec.Platform.OpenStack.IdentityRef.Name,
+		CloudName:  hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName,
+	}
+
+	openStackImageSpec.Resource = &orc.ImageResourceSpec{
+		Name: "rhcos-" + hcluster.Name,
+		Content: &orc.ImageContent{
+			DiskFormat: "qcow2",
+			Download: &orc.ImageContentSourceDownload{
+				URL:        imageURL,
+				Decompress: ptr.To(orc.ImageCompressionGZ),
+				Hash: &orc.ImageHash{
+					Algorithm: "sha256",
+					Value:     imageHash,
+				},
+			},
+		},
+	}
+
+	return nil
 }

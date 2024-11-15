@@ -561,8 +561,7 @@ func (p *options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 		OpenStackExternalNetworkID: p.configurableClusterOptions.OpenStackExternalNetworkID,
 		NodePoolOpts: &openstacknodepool.RawOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
-				Flavor:    p.configurableClusterOptions.OpenStackNodeFlavor,
-				ImageName: p.configurableClusterOptions.OpenStackNodeImageName,
+				Flavor: p.configurableClusterOptions.OpenStackNodeFlavor,
 			},
 		},
 	}

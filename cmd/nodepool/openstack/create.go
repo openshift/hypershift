@@ -69,15 +69,6 @@ func (o *RawOpenStackPlatformCreateOptions) Validate() (*ValidatedOpenStackPlatf
 		return nil, fmt.Errorf("flavor is required")
 	}
 
-	// TODO(emilien): Remove that validation once we support using the image from the release payload.
-	// This will be possible when CAPO supports managing images in the OpenStack cluster:
-	// https://github.com/kubernetes-sigs/cluster-api-provider-openstack/pull/2130
-	// For 4.17 we might leave this as is and let the user provide the image name as
-	// we plan to deliver the OpenStack provider as a dev preview.
-	if o.ImageName == "" {
-		return nil, fmt.Errorf("image name is required")
-	}
-
 	additionalports, err := convertAdditionalPorts(o.AdditionalPorts)
 	if err != nil {
 		return nil, err
@@ -99,7 +90,7 @@ func BindOptions(opts *RawOpenStackPlatformCreateOptions, flags *pflag.FlagSet) 
 
 func bindCoreOptions(opts *RawOpenStackPlatformCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Flavor, "openstack-node-flavor", opts.Flavor, "The flavor to use for the nodepool (required)")
-	flags.StringVar(&opts.ImageName, "openstack-node-image-name", opts.ImageName, "The image name to use for the nodepool (required)")
+	flags.StringVar(&opts.ImageName, "openstack-node-image-name", opts.ImageName, "The image name to use for the nodepool (optional)")
 	flags.StringVar(&opts.AvailabityZone, "openstack-node-availability-zone", opts.AvailabityZone, "The availability zone to use for the nodepool (optional)")
 	flags.StringArrayVar(&opts.AdditionalPorts, "openstack-node-additional-port", opts.AdditionalPorts, fmt.Sprintf(`Specify additional port that should be attached to the nodes, the "network-id" field should point to an existing neutron network ID and the "vnic-type" is the type of the port to create, it can be specified multiple times to attach to multiple ports. Supported parameters: %s, example: "network-id:40a355cb-596d-495c-8766-419d98cadd57,vnic-type:direct"`, cmdutil.Supported(PortSpec{})))
 }

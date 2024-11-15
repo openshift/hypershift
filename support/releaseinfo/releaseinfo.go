@@ -355,3 +355,24 @@ func (v ComponentVersions) DisplayNameLabel() string {
 	}
 	return buf.String()
 }
+
+func UnsupportedOpenstackDefaultImage(releaseImage *ReleaseImage) (string, string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	openStack, exists := arch.Artifacts["openstack"]
+	if !exists {
+		return "", "", fmt.Errorf("couldn't find OS metadata for openstack")
+	}
+	artifact, exists := openStack.Formats["qcow2.gz"]
+	if !exists {
+		return "", "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
+	}
+	disk, exists := artifact["disk"]
+	if !exists {
+		return "", "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
+	}
+
+	return disk.Location, disk.SHA256, nil
+}

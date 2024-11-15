@@ -15,20 +15,9 @@ func TestRawOpenStackPlatformCreateOptions_Validate(t *testing.T) {
 		{
 			name: "should fail if flavor is missing",
 			input: RawOpenStackPlatformCreateOptions{
-				OpenStackPlatformOptions: &OpenStackPlatformOptions{
-					ImageName: "rhcos",
-				},
+				OpenStackPlatformOptions: &OpenStackPlatformOptions{},
 			},
 			expectedError: "flavor is required",
-		},
-		{
-			name: "should fail if image name is missing",
-			input: RawOpenStackPlatformCreateOptions{
-				OpenStackPlatformOptions: &OpenStackPlatformOptions{
-					Flavor: "flavor",
-				},
-			},
-			expectedError: "image name is required",
 		},
 		{
 			name: "should pass when AZ is provided",
