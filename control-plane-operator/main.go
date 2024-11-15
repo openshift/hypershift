@@ -400,6 +400,7 @@ func NewStartCommand() *cobra.Command {
 			ComponentImages: componentImages,
 		}
 
+		// It should be used to lookup spec.releaseImage.
 		userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 				Delegate:          coreReleaseProvider,
@@ -408,6 +409,7 @@ func NewStartCommand() *cobra.Command {
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
+		// It should be used to lookup spec.controlPlaneReleaseImage.
 		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 				Delegate:          coreReleaseProvider,

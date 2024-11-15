@@ -150,6 +150,7 @@ spec:
                   * ImageDigestMirrorSet
 
                   This is validated in the backend and signaled back via validMachineConfig condition.
+                  Changing this field will trigger a NodePool rollout.
                 items:
                   description: |-
                     LocalObjectReference contains enough information to let you locate the
@@ -306,6 +307,7 @@ spec:
                 description: |-
                   nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
                   The default value is 0, meaning that the node can retry drain without any time limitations.
+                  Changing this field propagate inplace into existing Nodes.
                 type: string
               nodeLabels:
                 additionalProperties:
@@ -319,6 +321,7 @@ spec:
                   nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
                   The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
                   After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+                  Changing this field propagate inplace into existing Nodes.
                 type: string
               pausedUntil:
                 description: |-
@@ -1366,6 +1369,7 @@ spec:
                   Attempting to use a release with a bigger skew might result in unpredictable behaviour.
                   Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
                   Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+                  Changing this field will trigger a NodePool rollout.
                 properties:
                   image:
                     description: |-
@@ -1445,6 +1449,7 @@ spec:
 
                   Each ConfigMap must have a single key named "tuning" whose value is the
                   JSON or YAML of a serialized Tuned or PerformanceProfile.
+                  Changing this field will trigger a NodePool rollout.
                 items:
                   description: |-
                     LocalObjectReference contains enough information to let you locate the

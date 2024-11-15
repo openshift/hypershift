@@ -6,12 +6,14 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/assets"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
@@ -33,29 +35,613 @@ func TestOnCreateAPIUX(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
 
 		testCases := []struct {
-			name                   string
-			file                   string
-			expectedErrorSubstring string
+			name        string
+			file        string
+			validations []struct {
+				name                   string
+				mutateInput            func(*hyperv1.HostedCluster)
+				expectedErrorSubstring string
+			}
 		}{
 			{
-				name:                   "Azure requires services publishing strategy with route and hostname",
-				file:                   "azure-services-ignition-route-not-hostname.yaml",
-				expectedErrorSubstring: "Azure platform requires Ignition Route service with a hostname to be defined",
+				name: "when feature gated fields are used it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "When OpenStack value is set as platform type it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.OpenStackPlatform
+						},
+						expectedErrorSubstring: "Unsupported value: \"OpenStack\"",
+					},
+				},
 			},
 			{
-				name:                   "HostedCluster should fail if OpenStack value is set as platform type and no TechPreviewNoUpgrade",
-				file:                   "openstack-platform-enum.yaml",
-				expectedErrorSubstring: "spec.platform.type: Unsupported value: \"OpenStack\"",
+				name: "when infraID or clusterID are not valid input it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when clusterID is not RFC4122 UUID it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.ClusterID = "foo"
+						},
+						expectedErrorSubstring: "clusterID must be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal digits)",
+					},
+					{
+						name: "when infraID is not RFC4122 UUID it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.InfraID = "@"
+						},
+						expectedErrorSubstring: "infraID must consist of lowercase alphanumeric characters or '-', start and end with an alphanumeric character, and be between 1 and 253 characters",
+					},
+					{
+						name: "when infraID and clusterID it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.ClusterID = "123e4567-e89b-12d3-a456-426614174000"
+							hc.Spec.InfraID = "infra-id"
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when updateService is not a valid url it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when updateService is not a complete URL it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.UpdateService = "foo"
+						},
+						expectedErrorSubstring: "updateService must be a valid absolute URL",
+					},
+					{
+						name: "when updateService is a valid URL it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.UpdateService = "https://custom-updateservice.com"
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when availabilityPolicy is not HighlyAvailable or SingleReplica it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when controllerAvailabilityPolicy is not HighlyAvailable or SingleReplica it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.ControllerAvailabilityPolicy = "foo"
+						},
+						expectedErrorSubstring: "Unsupported value: \"foo\": supported values: \"HighlyAvailable\", \"SingleReplica\"",
+					},
+					{
+						name: "when infrastructureAvailabilityPolicy is not HighlyAvailable or SingleReplica it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.InfrastructureAvailabilityPolicy = "foo"
+						},
+						expectedErrorSubstring: "Unsupported value: \"foo\": supported values: \"HighlyAvailable\", \"SingleReplica\"",
+					},
+				},
+			},
+			{
+				name: "when networking is not configured properly it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when networkType is not one of OpenShiftSDN;Calico;OVNKubernetes;Other it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: "foo",
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"foo\": supported values: \"OpenShiftSDN\", \"Calico\", \"OVNKubernetes\", \"Other\"",
+					},
+					{
+						name: "when the cidr is not valid it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								// We can't not use a yaml file to pass the bad CIDR as a string atm
+								// because the ipnet.IPNet wrapper unmarshall will fail to un marshal here before we get to apply the resource.
+								// Instead, we pass an IP without a mask in the unmarshalled resource here which results in ipnet.IPNet marshal returning a string as "<nil>".
+								// So this validation ultimately uses "<nil>" as the marshaled resource input to test the CRD validation.
+								ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+									{
+										CIDR: ipnet.IPNet{
+											IP: net.IPv4(10, 128, 0, 0),
+										},
+										HostPrefix: 0,
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "cidr must be a valid IPv4 or IPv6 CIDR notation (e.g., 192.168.1.0/24 or 2001:db8::/64)",
+					},
+					{
+						name: "when a cidr in clusterNetwork and serviceNetwork is duplicated it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+									{
+										CIDR: ipnet.IPNet{
+											IP:   net.IPv4(10, 128, 0, 0),
+											Mask: net.CIDRMask(32, 32),
+										},
+										HostPrefix: 0,
+									},
+								},
+								ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+									{
+										CIDR: ipnet.IPNet{
+											IP:   net.IPv4(10, 128, 0, 0),
+											Mask: net.CIDRMask(32, 32),
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping",
+					},
+					{
+						name: "when a cidr in machineNetwork and serviceNetwork is duplicated it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								MachineNetwork: []hyperv1.MachineNetworkEntry{
+									{
+										CIDR: ipnet.IPNet{
+											IP:   net.IPv4(10, 128, 0, 0),
+											Mask: net.CIDRMask(32, 32),
+										},
+									},
+								},
+								ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+									{
+										CIDR: ipnet.IPNet{
+											IP:   net.IPv4(10, 128, 0, 0),
+											Mask: net.CIDRMask(32, 32),
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping",
+					},
+					{
+						name: "when a cidr in machineNetwork and ClusterNetwork is duplicated it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								MachineNetwork: []hyperv1.MachineNetworkEntry{
+									{
+										CIDR: ipnet.IPNet{
+											IP:   net.IPv4(10, 128, 0, 0),
+											Mask: net.CIDRMask(32, 32),
+										},
+									},
+								},
+								ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+									{
+										CIDR: ipnet.IPNet{
+											IP:   net.IPv4(10, 128, 0, 0),
+											Mask: net.CIDRMask(32, 32),
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping",
+					},
+				},
+			},
+			{
+				name: "when etcd is not configured properly it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when managementType is managed with unmanaged configuration it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Etcd = hyperv1.EtcdSpec{
+								ManagementType: hyperv1.Managed,
+								Unmanaged: &hyperv1.UnmanagedEtcdSpec{
+									Endpoint: "https://etcd.example.com:2379",
+								},
+							}
+						},
+						expectedErrorSubstring: "Only managed configuration must be set when managementType is Managed",
+					},
+					{
+						name: "when managementType is unmanaged with managed configuration it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Etcd = hyperv1.EtcdSpec{
+								ManagementType: hyperv1.Unmanaged,
+								Managed: &hyperv1.ManagedEtcdSpec{
+									Storage: hyperv1.ManagedEtcdStorageSpec{
+										Type: hyperv1.PersistentVolumeEtcdStorage,
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "Only unmanaged configuration must be set when managementType is Unmanaged",
+					},
+				},
+			},
+			{
+				name: "when services is not configured properly it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when serviceType is 'APIServer' and publishing strategy is 'Route' and hostname is not set it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set",
+					},
+					{
+						name: "when less than 4 services are set it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "3: spec.services in body should have at least 4 items",
+					},
+					{
+						name: "when any of the required services is missing it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OVNSbDb,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types",
+					},
+					{
+						name: "when there is a duplicated hostname in routes it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "api.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "api.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "Each route publishingStrategy 'hostname' must be unique within the Services list",
+					},
+					{
+						name: "when there is a duplicated nodePort entries it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "api.example.com",
+											Port:    3030,
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "api.example.com",
+											Port:    3030,
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list",
+					},
+					{
+						name: "when a type Route set with the nodePort configuration it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "api.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.Route,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "ignition.example.com",
+											Port:    3030,
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "nodePort is required when type is NodePort, and forbidden otherwise",
+					},
+					{
+						name: "when a type NodePort set with the route configuration it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "api.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "ignition.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "only route is allowed when type is Route, and forbidden otherwise",
+					},
+					{
+						name: "when platform is Azure and not all services are route with hostname it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "api.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "ignition.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{
+											Hostname: "konnectivity.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type:  hyperv1.Route,
+										Route: &hyperv1.RoutePublishingStrategy{},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "Azure platform requires Ignition Route service with a hostname to be defined",
+					},
+				},
+			},
+			{
+				name: "when serviceAccountSigningKey and issuerURL are not configured properly it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when issuerURL is not a valid URL it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.IssuerURL = "foo"
+						},
+						expectedErrorSubstring: "issuerURL must be a valid absolute URL",
+					},
+				},
 			},
 		}
 
 		for _, tc := range testCases {
-			hc := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
-			defer client.Delete(ctx, hc)
-			err = client.Create(ctx, hc)
-			g.Expect(err).To(HaveOccurred())
-			g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+			for _, v := range tc.validations {
+				t.Logf("Running validation %q", v.name)
+				hostedCluster := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
+				defer client.Delete(ctx, hostedCluster)
+				v.mutateInput(hostedCluster)
+
+				err = client.Create(ctx, hostedCluster)
+				if v.expectedErrorSubstring != "" {
+					g.Expect(err).To(HaveOccurred())
+					g.Expect(err.Error()).To(ContainSubstring(v.expectedErrorSubstring))
+				} else {
+					g.Expect(err).ToNot(HaveOccurred())
+				}
+				client.Delete(ctx, hostedCluster)
+			}
 		}
+
 	})
 
 	t.Run("NodePool creation", func(t *testing.T) {

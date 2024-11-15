@@ -99,13 +99,13 @@ type NodePoolSpec struct {
 	// Attempting to use a release with a bigger skew might result in unpredictable behaviour.
 	// Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
 	// Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+	// Changing this field will trigger a NodePool rollout.
+	// +rollout
 	// +required
 	Release Release `json:"release"`
 
 	// platform specifies the underlying infrastructure provider for the NodePool
 	// and is used to configure platform specific behavior.
-	//
-	// +immutable
 	// +required
 	Platform NodePoolPlatform `json:"platform"`
 
@@ -142,17 +142,21 @@ type NodePoolSpec struct {
 	// * ImageDigestMirrorSet
 	//
 	// This is validated in the backend and signaled back via validMachineConfig condition.
+	// Changing this field will trigger a NodePool rollout.
+	// +rollout
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
 	// nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
 	// The default value is 0, meaning that the node can retry drain without any time limitations.
+	// Changing this field propagate inplace into existing Nodes.
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 
 	// nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 	// The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
 	// After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+	// Changing this field propagate inplace into existing Nodes.
 	// +optional
 	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 
@@ -188,6 +192,7 @@ type NodePoolSpec struct {
 	//
 	// Each ConfigMap must have a single key named "tuning" whose value is the
 	// JSON or YAML of a serialized Tuned or PerformanceProfile.
+	// Changing this field will trigger a NodePool rollout.
 	// +kubebuilder:validation:Optional
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 
