@@ -81,14 +81,12 @@ After creating the PerformanceProfile, we can create a Nodepool that will use th
 
 ```shell
 export NODEPOOL_NAME=$CLUSTER_NAME-cnf
-export IMAGE_NAME="rhcos"
 export FLAVOR="m1.xlarge.nfv"
 
 hcp create nodepool openstack \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
   --node-count 0 \
-  --openstack-node-image-name $IMAGE_NAME \
   --openstack-node-flavor $FLAVOR
 ```
 

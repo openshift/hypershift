@@ -272,6 +272,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 				"--namespace=$(MY_NAMESPACE)",
 				"--leader-elect",
 				"--health-probe-bind-address=:8081",
+				"--zap-log-level=4",
 			},
 			SecurityContext: &corev1.SecurityContext{
 				AllowPrivilegeEscalation: &allowPrivilegeEscalation,
@@ -416,14 +417,12 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"ipaddresses", "ipaddresses/status"},
 			Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 		},
-		// The following rule is required for CAPO to watch for the Images resources created by ORC,
-		// which is a dependency since CAPO v0.11.0.
-		// This rule is also defined in the Hypershift Operator and the Hypershift CLI when creating
-		// the cluster.
+		// We deploy ORC in the same namespace as the CAPI provider, so we need to create the
+		// necessary RBAC policy rules for ORC to manage the OpenStack resources.
 		{
 			APIGroups: []string{"openstack.k-orc.cloud"},
-			Resources: []string{"images"},
-			Verbs:     []string{"list", "watch"},
+			Resources: []string{"images", "images/status"},
+			Verbs:     []string{rbacv1.VerbAll},
 		},
 	}
 }
