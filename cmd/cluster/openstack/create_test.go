@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
@@ -308,4 +309,40 @@ func TestExtractCloud(t *testing.T) {
 		assert.Nil(t, err)
 	})
 
+}
+func TestValidateRetentionPolicy(t *testing.T) {
+	testCases := []struct {
+		name          string
+		policy        hyperv1.RetentionPolicy
+		expectedError string
+	}{
+		{
+			name: "empty policy",
+		},
+		{
+			name:          "invalid policy",
+			policy:        "invalid",
+			expectedError: "invalid retention policy: invalid",
+		},
+		{
+			name:   "orphan policy",
+			policy: "Orphan",
+		},
+		{
+			name:   "prune policy",
+			policy: "Prune",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateRetentionPolicy(tc.policy)
+			if tc.expectedError == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedError)
+			}
+		})
+	}
 }

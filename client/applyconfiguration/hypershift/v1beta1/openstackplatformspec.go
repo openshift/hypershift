@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // OpenStackPlatformSpecApplyConfiguration represents an declarative configuration of the OpenStackPlatformSpec type for use
 // with apply.
 type OpenStackPlatformSpecApplyConfiguration struct {
@@ -30,6 +34,7 @@ type OpenStackPlatformSpecApplyConfiguration struct {
 	DisableExternalNetwork *bool                                         `json:"disableExternalNetwork,omitempty"`
 	Tags                   []string                                      `json:"tags,omitempty"`
 	IngressFloatingIP      *string                                       `json:"ingressFloatingIP,omitempty"`
+	ImageRetentionPolicy   *hypershiftv1beta1.RetentionPolicy            `json:"imageRetentionPolicy,omitempty"`
 }
 
 // OpenStackPlatformSpecApplyConfiguration constructs an declarative configuration of the OpenStackPlatformSpec type for use with
@@ -127,5 +132,13 @@ func (b *OpenStackPlatformSpecApplyConfiguration) WithTags(values ...string) *Op
 // If called multiple times, the IngressFloatingIP field is set to the value of the last call.
 func (b *OpenStackPlatformSpecApplyConfiguration) WithIngressFloatingIP(value string) *OpenStackPlatformSpecApplyConfiguration {
 	b.IngressFloatingIP = &value
+	return b
+}
+
+// WithImageRetentionPolicy sets the ImageRetentionPolicy field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageRetentionPolicy field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithImageRetentionPolicy(value hypershiftv1beta1.RetentionPolicy) *OpenStackPlatformSpecApplyConfiguration {
+	b.ImageRetentionPolicy = &value
 	return b
 }

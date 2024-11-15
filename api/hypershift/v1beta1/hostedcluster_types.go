@@ -356,6 +356,21 @@ const (
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
 )
 
+// RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.
+//
+// +kubebuilder:validation:Enum:=Orphan;Prune
+type RetentionPolicy string
+
+const (
+	// OrphanRetentionPolicy will keep the resources associated with the cluster
+	// when the cluster is deleted.
+	OrphanRetentionPolicy RetentionPolicy = "Orphan"
+
+	// PruneRetentionPolicy will delete the resources associated with the cluster
+	// when the cluster is deleted.
+	PruneRetentionPolicy RetentionPolicy = "Prune"
+)
+
 // +kubebuilder:validation:Enum=ImageRegistry
 type OptionalCapability string
 

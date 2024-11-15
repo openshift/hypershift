@@ -444,6 +444,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 									"--namespace=$(MY_NAMESPACE)",
 									"--leader-elect",
 									"--health-probe-bind-address=:8081",
+									"--zap-log-level=4",
 								},
 								SecurityContext: &corev1.SecurityContext{
 									AllowPrivilegeEscalation: ptr.To(false),

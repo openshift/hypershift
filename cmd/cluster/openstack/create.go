@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,7 +28,10 @@ const (
 )
 
 func DefaultOptions() *RawCreateOptions {
-	return &RawCreateOptions{NodePoolOpts: openstacknodepool.DefaultOptions()}
+	return &RawCreateOptions{
+		OpenStackImageRetentionPolicy: hyperv1.PruneRetentionPolicy,
+		NodePoolOpts:                  openstacknodepool.DefaultOptions(),
+	}
 }
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -45,15 +47,17 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
 	flags.StringSliceVar(&opts.OpenStackDNSNameservers, "openstack-dns-nameservers", opts.OpenStackDNSNameservers, "List of DNS nameservers to use for the cluster (optional)")
+	flags.Var(&opts.OpenStackImageRetentionPolicy, "openstack-image-retention-policy", "OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'. By default images are pruned. (optional)")
 }
 
 type RawCreateOptions struct {
-	OpenStackCredentialsFile   string
-	OpenStackCloud             string
-	OpenStackCACertFile        string
-	OpenStackExternalNetworkID string
-	OpenStackIngressFloatingIP string
-	OpenStackDNSNameservers    []string
+	OpenStackCredentialsFile      string
+	OpenStackCloud                string
+	OpenStackCACertFile           string
+	OpenStackExternalNetworkID    string
+	OpenStackIngressFloatingIP    string
+	OpenStackDNSNameservers       []string
+	OpenStackImageRetentionPolicy hyperv1.RetentionPolicy
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
@@ -134,6 +138,10 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
+	if err := validateRetentionPolicy(o.OpenStackImageRetentionPolicy); err != nil {
+		return nil, err
+	}
+
 	if opts.ExternalDNSDomain != "" {
 		err := fmt.Errorf("--external-dns-domain is not supported on OpenStack")
 		opts.Log.Error(err, "Failed to create cluster")
@@ -194,6 +202,8 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(config.DefaultMachineNetwork)}}
 	}
 
+	cluster.Spec.Platform.OpenStack.ImageRetentionPolicy = hyperv1.RetentionPolicy(o.OpenStackImageRetentionPolicy)
+
 	return nil
 }
 
@@ -224,27 +234,6 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 
 	resources = append(resources, credentialsSecret)
 
-	resources = append(resources, &rbacv1.Role{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Role",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.namespace,
-			Name:      "capi-provider-role",
-		},
-		// The following rule is required for CAPO to watch for the Images resources created by ORC,
-		// which is a dependency since CAPO v0.11.0.
-		// This rule is also defined in the Hypershift HostedCluster controller and the Hypershift Operator when creating
-		// the cluster.
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"openstack.k-orc.cloud"},
-				Resources: []string{"images"},
-				Verbs:     []string{"list", "watch"},
-			},
-		},
-	})
 	return resources, nil
 }
 
@@ -377,4 +366,18 @@ func extractCloud(cloudsYAMLPath, caCertPath, cloudName string) ([]byte, []byte,
 	}
 
 	return cloudsYAML, caCert, nil
+}
+
+// validateRetentionPolicy validates the retention policy is valid
+func validateRetentionPolicy(policy hyperv1.RetentionPolicy) error {
+	if policy == "" {
+		return nil
+	}
+
+	switch policy {
+	case hyperv1.OrphanRetentionPolicy, hyperv1.PruneRetentionPolicy:
+		return nil
+	default:
+		return fmt.Errorf("invalid retention policy: %s", policy)
+	}
 }

@@ -15,7 +15,6 @@
 * OpenStack Octavia service must be running in the cloud hosting the guest cluster when ingress is configured with an Octavia load balancer.
   In the future, we'll explore other Ingress options like MetalLB.
 * The default external network (on which the kube-apiserver LoadBalancer type service is created) of the Management OCP cluster must be reachable from the guest cluster.
-* The RHCOS image must be uploaded to OpenStack (explained later).
 
 ## Install the HyperShift and HCP CLI
 
@@ -71,11 +70,19 @@ operator-755d587f44-lrtrq   1/1     Running   0          114s
 operator-755d587f44-qj6pz   1/1     Running   0          114s
 ```
 
-## Upload RHCOS image in OpenStack
+## Prepare the management cluster to store etcd locally
 
-For now, we need to manually push an RHCOS image that will be used when deploying the node pools
-on OpenStack. In the [future](https://issues.redhat.com/browse/OSASINFRA-3492), the CAPI provider (CAPO) will handle the RHCOS image
-lifecycle by using the image available in the chosen release payload.
+HostedClusters will have pod(s) for etcd and its performance is essential for the cluster health.
+In production environments, it's required to put etcd data on fast storage and in the case of OpenStack it'll be local storage.
+Follow this [procedure](etcd-local-storage.md) to leverage a well-known and tested solution.
+
+## Upload RHCOS image in OpenStack (optional)
+
+The user can specify which RHCOS image to use when deploying the node pools
+on OpenStack by uploading the image to the OpenStack cloud. If the image is not
+uploaded to OpenStack, [OpenStack Resource Controller (ORC)](https://github.com/k-orc/openstack-resource-controller) will
+manage the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when it's no longer needed
+or left as an orphan image that can be re-used by other clusters and deleted when it's no longer needed.
 
 Here is an example of how to upload an RHCOS image to OpenStack:
 
@@ -87,12 +94,6 @@ openstack image create --disk-format qcow2 --file rhcos-openstack.x86_64.qcow2 r
 
     The `rhcos-openstack.x86_64.qcow2` file is the RHCOS image that was downloaded from the OpenShift mirror.
     You can download the latest RHCOS image from the [Red Hat OpenShift Container Platform mirror](https://mirror.openshift.com/pub/openshift-v4/dependencies/rhcos/).
-
-## Prepare the management cluster to store etcd locally
-
-HostedClusters will have pod(s) for etcd and its performance is essential for the cluster health.
-In production environments, it's required to put etcd data on fast storage and in the case of OpenStack it'll be local storage.
-Follow this [procedure](etcd-local-storage.md) to leverage a well-known and tested solution.
 
 ## Create a floating IP for the Ingress (optional)
 
