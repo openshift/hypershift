@@ -190,8 +190,9 @@ type AWSEndpointServiceReconciler struct {
 	ec2Client     ec2iface.EC2API
 	route53Client route53iface.Route53API
 	upsert.CreateOrUpdateProvider
-	AssumeRoleARN *string
-	LocalZoneID   *string
+	AssumeEndpointRoleARN *string
+	AssumeRoute53RoleARN  *string
+	LocalZoneID           *string
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -209,16 +210,21 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.Client = mgr.GetClient()
 
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
-	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
-	if r.AssumeRoleARN != nil {
-		awsSession.Config.WithCredentials(stscreds.NewCredentials(awsSession, *r.AssumeRoleARN))
+	awsEndpointSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
+	if r.AssumeEndpointRoleARN != nil {
+		awsEndpointSession.Config.WithCredentials(stscreds.NewCredentials(awsEndpointSession, *r.AssumeEndpointRoleARN))
 	}
+	awsRoute53Session := awsutil.NewSession("control-plane-operator", "", "", "", "")
+	if r.AssumeRoute53RoleARN != nil {
+		awsRoute53Session.Config.WithCredentials(stscreds.NewCredentials(awsRoute53Session, *r.AssumeRoute53RoleARN))
+	}
+
 	awsConfig := aws.NewConfig()
-	r.ec2Client = ec2.New(awsSession, awsConfig)
+	r.ec2Client = ec2.New(awsEndpointSession, awsConfig)
 	route53Config := aws.NewConfig()
 	// Hardcode region for route53 config
 	route53Config.Region = aws.String("us-east-1")
-	r.route53Client = route53.New(awsSession, route53Config)
+	r.route53Client = route53.New(awsRoute53Session, route53Config)
 
 	return nil
 }
