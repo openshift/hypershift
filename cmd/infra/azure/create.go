@@ -265,7 +265,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 
 		// Create ServicePrincipals with backing certificates
-		cmdStr := buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ingress, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr := buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ingress, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err := createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -274,7 +274,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.ControlPlaneMIs.ControlPlane.Ingress.CertificateName = fmt.Sprintf("%s-%s", ingress, o.InfraID)
 		l.Info("Successfully created ingress service principal", "ID", clientID)
 
-		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cncc, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cncc, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err = createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -283,7 +283,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.ControlPlaneMIs.ControlPlane.Network.CertificateName = fmt.Sprintf("%s-%s", cncc, o.InfraID)
 		l.Info("Successfully created cncc service principal", "ID", clientID)
 
-		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, azureDisk, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, azureDisk, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err = createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -292,7 +292,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.ControlPlaneMIs.ControlPlane.Disk.CertificateName = fmt.Sprintf("%s-%s", azureDisk, o.InfraID)
 		l.Info("Successfully created azure-disk service principal", "ID", clientID)
 
-		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, azureFile, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, azureFile, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err = createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -301,7 +301,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.ControlPlaneMIs.ControlPlane.File.CertificateName = fmt.Sprintf("%s-%s", azureFile, o.InfraID)
 		l.Info("Successfully created azure-file service principal", "ID", clientID)
 
-		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cloudProvider, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cloudProvider, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err = createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -310,7 +310,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.ControlPlaneMIs.ControlPlane.CloudProvider.CertificateName = fmt.Sprintf("%s-%s", cloudProvider, o.InfraID)
 		l.Info("Successfully created cloud provider service principal", "ID", clientID)
 
-		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, nodePoolMgmt, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, nodePoolMgmt, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err = createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -319,7 +319,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.ControlPlaneMIs.ControlPlane.NodePoolManagement.CertificateName = fmt.Sprintf("%s-%s", nodePoolMgmt, o.InfraID)
 		l.Info("Successfully created nodepool management service principal", "ID", clientID)
 
-		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cpo, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, cpo, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err = createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -328,7 +328,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.CertificateName = fmt.Sprintf("%s-%s", cpo, o.InfraID)
 		l.Info("Successfully created cpo service principal", "ID", clientID)
 
-		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ciro, o.InfraID, o.ManagedIdentityKeyVaultName)
+		cmdStr = buildCreateServicePrincipalCommand(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, ciro, o.InfraID, o.ManagedIdentityKeyVaultName, o.DNSZoneRG)
 		clientID, err = createServicePrincipalWithCertificate(cmdStr)
 		if err != nil {
 			return nil, err
@@ -414,7 +414,7 @@ func createServicePrincipalWithCertificate(cmdStr string) (string, error) {
 }
 
 // buildCreateServicePrincipalCommand builds the command string to create a service principal, output the results in a JSON format to get the client ID, and strips off the quotes.
-func buildCreateServicePrincipalCommand(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, component, infraID, managedIdentityKeyVaultName string) string {
+func buildCreateServicePrincipalCommand(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, component, infraID, managedIdentityKeyVaultName, dnsZoneRGName string) string {
 	// Create a name with the component and infraID; this is used for both the service principal name and its certificate name.
 	name := fmt.Sprintf("%s-%s", component, infraID)
 
@@ -423,12 +423,13 @@ func buildCreateServicePrincipalCommand(subscriptionID, managedResourceGroupName
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
 	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneRGName)
 	scopes := managedRG
 	switch component {
 	case cloudProvider:
 		scopes = fmt.Sprintf("%s %s", scopes, nsgRG)
 	case ingress:
-		scopes = fmt.Sprintf("%s %s", scopes, vnetRG)
+		scopes = fmt.Sprintf("%s %s %s", scopes, vnetRG, dnsZoneRG)
 	}
 
 	// The command creates a Service Principal with a role(s) over resource group(s), create a new certificate for it, and store it in an existing keyvault

@@ -33,6 +33,7 @@ func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions,
 		Location:           "eastus",
 		TechPreviewEnabled: false,
 		NodePoolOpts:       azurenodepool.DefaultOptions(),
+		DNSZoneRGName:      "os4-common",
 	}
 
 	if client == nil {
