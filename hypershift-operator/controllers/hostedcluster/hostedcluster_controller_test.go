@@ -128,6 +128,14 @@ func TestHasBeenAvailable(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}}, // Needed or some reconcile checks will fail
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
 				},
 			}
 
@@ -3202,6 +3210,14 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
 				},
 			},
 			secretName:     "kubevirt" + etcdEncKeyPostfix,
@@ -3244,6 +3260,14 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
 				},
 			},
 			secretName:     "kubevirt" + etcdEncKeyPostfix,
@@ -3277,6 +3301,14 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
 							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3316,6 +3348,14 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
 				},
 			},
 			secretName:     "kubevirt" + etcdEncKeyPostfix,
@@ -3352,6 +3392,14 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
 							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3396,6 +3444,14 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							AdvertiseAddress: ptr.To("1.2.3.4"),
 						},
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
 				},
 			},
 			secretName:     "custom-name",
@@ -3428,6 +3484,14 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
 							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
