@@ -16,7 +16,6 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"go.uber.org/zap/zaptest"
@@ -65,7 +64,9 @@ func TestSecretJanitor_Reconcile(t *testing.T) {
 				{Name: "machineconfig-1"},
 			},
 		},
-		Status: hyperv1.NodePoolStatus{Version: supportedversion.LatestSupportedVersion.String()},
+		//We need the np.Status.Version to stay at 4.18 so that the token doesnt get updated when bumping releases,
+		// this protects us from possibly hiding other factors that might be causing the token to be updated
+		Status: hyperv1.NodePoolStatus{Version: semver.MustParse("4.18.0").String()},
 	}
 
 	coreMachineConfig := `
@@ -151,8 +152,10 @@ spec:
 	).Build()
 	r := secretJanitor{
 		NodePoolReconciler: &NodePoolReconciler{
-			Client:          c,
-			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: supportedversion.LatestSupportedVersion.String()},
+			Client: c,
+			//We need the ReleaseProvider to stay at 4.18 so that the token doesnt get updated when bumping releases,
+			// this protects us from possibly hiding other factors that might be causing the token to be updated
+			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
 			ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
 				Labels: map[string]string{},
 			}}},
