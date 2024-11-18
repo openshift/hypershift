@@ -1630,6 +1630,13 @@ func TestControlPlaneComponents(t *testing.T) {
 		},
 	}
 
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-credential-information",
+			Namespace: "hcp-namespace",
+		},
+	}
+
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                  context.Background(),
 		CreateOrUpdateProviderV2: upsert.NewV2(false),
@@ -1642,6 +1649,7 @@ func TestControlPlaneComponents(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
 			WithObjects(componentsFakeObjects(hcp.Namespace)...).
 			WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
+			WithObjects(secret).
 			Build()
 		cpContext.Client = fakeClient
 

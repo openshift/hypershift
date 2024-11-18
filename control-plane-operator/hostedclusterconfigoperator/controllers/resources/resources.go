@@ -1426,7 +1426,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			}
 		}
 	case hyperv1.AzurePlatform:
-		referenceCredentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		referenceCredentialsSecret := cpomanifests.AzureCredentialInformation(hcp.Namespace)
 		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(referenceCredentialsSecret), referenceCredentialsSecret); err != nil {
 			return []error{fmt.Errorf("failed to get cloud credentials secret in hcp namespace: %w", err)}
 		}
