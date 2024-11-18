@@ -83,6 +83,7 @@ spec:
         - name: CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE
         - name: TOKEN_MINTER_IMAGE
         - name: CLI_IMAGE
+        - name: CLI_CONTROL_PLANE_IMAGE
         - name: SOCKS5_PROXY_IMAGE
         - name: OPENSHIFT_RELEASE_IMAGE
         imagePullPolicy: IfNotPresent

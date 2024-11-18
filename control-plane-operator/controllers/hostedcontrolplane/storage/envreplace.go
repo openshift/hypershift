@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"k8s.io/utils/strings/slices"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -51,6 +52,7 @@ var (
 		"AZURE_DISK_DRIVER_CONTROL_PLANE_IMAGE":           "azure-disk-csi-driver",
 		"AZURE_FILE_DRIVER_CONTROL_PLANE_IMAGE":           "azure-file-csi-driver",
 		"LIVENESS_PROBE_CONTROL_PLANE_IMAGE":              "csi-livenessprobe",
+		"KUBE_RBAC_PROXY_CONTROL_PLANE_IMAGE":             "kube-rbac-proxy",
 		"TOOLS_IMAGE":                                     "tools",
 	}
 )
@@ -68,8 +70,16 @@ func (er *environmentReplacer) setOperatorImageReferences(images map[string]stri
 	// `operatorImageRefs` is map from env. var name -> payload image name
 	// `images` is map from payload image name -> image URL
 	// Create map from env. var name -> image URL
+
+	dataPlaneImageRefs := []string{
+		"NODE_DRIVER_REGISTRAR_IMAGE",
+		"LIVENESS_PROBE_IMAGE",
+		"CLUSTER_CLOUD_CONTROLLER_MANAGER_OPERATOR_IMAGE",
+		"KUBE_RBAC_PROXY_IMAGE",
+	}
+
 	for envVar, payloadName := range operatorImageRefs {
-		if envVar == "NODE_DRIVER_REGISTRAR_IMAGE" || envVar == "LIVENESS_PROBE_IMAGE" || strings.HasSuffix(envVar, "_DRIVER_IMAGE") {
+		if slices.Contains(dataPlaneImageRefs, envVar) || strings.HasSuffix(envVar, "_DRIVER_IMAGE") {
 			if imageURL, ok := userImages[payloadName]; ok {
 				er.values[envVar] = imageURL
 			}
