@@ -152,7 +152,11 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		return fmt.Errorf("failed to get secret %s: %w", name, err)
 	}
 
-	// Reconcile the user cloud-credentials secret contents into the control plane version of the same secret, azure-credential-information
+	// Reconcile the user cloud-credentials secret contents into the control plane version of the same secret,
+	// azure-credential-information. This secret is primarily used in retrieving the tenant ID, which is needed anytime
+	// an HCP component needs to authenticate with Azure Cloud. The operators needing this information are ingress
+	// cluster network config controller, azure disk/file CSI drivers, CAPZ, cloud provider, control plane operator, and
+	// KMS.
 	azureCredsInfo := manifests.AzureCredentialInformation(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, azureCredsInfo, func() error {
 		if azureCredsInfo.Data == nil {

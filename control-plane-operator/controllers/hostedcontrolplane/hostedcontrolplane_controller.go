@@ -5,7 +5,6 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"math/big"
 	"net/http"
 	"os"
@@ -3765,7 +3764,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 			return fmt.Errorf("failed to reconcile ingress operator secret provider class: %w", err)
 		}
 
-		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
 		}
