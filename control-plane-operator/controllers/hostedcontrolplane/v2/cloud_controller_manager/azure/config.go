@@ -3,8 +3,8 @@ package azure
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
@@ -52,7 +52,7 @@ func azureConfig(cpContext component.ControlPlaneContext, withCredentials bool) 
 	hcp := cpContext.HCP
 	azureplatform := hcp.Spec.Platform.Azure
 
-	credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+	credentialsSecret := manifests.AzureCredentialInformation(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 		return AzureConfig{}, fmt.Errorf("failed to get Azure credentials secret: %w", err)
 	}

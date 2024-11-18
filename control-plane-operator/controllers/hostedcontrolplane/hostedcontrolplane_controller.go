@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	azureutil "github.com/Azure/go-autorest/autorest/azure"
@@ -3815,7 +3813,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 			return fmt.Errorf("failed to reconcile ingress operator secret provider class: %w", err)
 		}
 
-		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
 		}
