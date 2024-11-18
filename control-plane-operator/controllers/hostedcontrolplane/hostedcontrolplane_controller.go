@@ -72,6 +72,7 @@ import (
 	openstackccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack"
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
+	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
@@ -212,6 +213,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		oapiv2.NewComponent(),
 		oauthapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
+		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
 		ocmv2.NewComponent(),
 		routecmv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
@@ -1197,10 +1199,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
 	}
 
-	// Reconcile cluster version operator
-	r.Log.Info("Reconciling Cluster Version Operator")
-	if err := r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
+	if !r.IsCPOV2 {
+		// Reconcile cluster version operator
+		r.Log.Info("Reconciling Cluster Version Operator")
+		if err := r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
+		}
 	}
 
 	r.Log.Info("Reconciling ClusterNetworkOperator")

@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cluster-version-operator
+spec:
+  endpoints:
+  - metricRelabelings:
+    - action: keep
+      regex: (cluster_version|cluster_version_available_updates|cluster_operator_up|cluster_operator_conditions|cluster_version_payload|cluster_installer)
+      sourceLabels:
+      - __name__
+    scheme: https
+    targetPort: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert: {}
+      serverName: cluster-version-operator
+  selector:
+    matchLabels:
+      app: cluster-version-operator
+      k8s-app: cluster-version-operator
