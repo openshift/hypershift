@@ -584,6 +584,10 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 		return nil, err
 	}
 
+	if _, exists := hostedCluster.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
+		return ReleaseImage, nil
+	}
+
 	wantedVersion, err := semver.Parse(ReleaseImage.Version())
 	if err != nil {
 		return nil, err
