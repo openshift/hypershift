@@ -4986,6 +4986,11 @@ spec:
                   This requires APIServer;OAuthServer;Konnectivity;Ignition.
                   This field is immutable for all platforms but IBMCloud.
                   Max is 6 to account for OIDC;OVNSbDb for backward compability though they are no-op.
+
+                  -kubebuilder:validation:XValidation:rule="self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route') || has(s.servicePublishingStrategy.route.hostname))",message="If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"
+                  -kubebuilder:validation:XValidation:rule="['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
+                  -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'Route' && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'Route' && (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname) && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() <= 1)",message="Each route publishingStrategy 'hostname' must be unique within the Services list."
+                  -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'NodePort' && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address) && has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort) && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port) && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() <= 1)",message="Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list."
                 items:
                   description: |-
                     ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
@@ -5109,33 +5114,6 @@ spec:
                 maxItems: 6
                 minItems: 4
                 type: array
-                x-kubernetes-validations:
-                - message: If serviceType is 'APIServer' and publishing strategy is
-                    'Route', then hostname must be set
-                  rule: self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type
-                    == 'Route') || has(s.servicePublishingStrategy.route.hostname))
-                - message: Services list must contain at least 'APIServer', 'OAuthServer',
-                    'Konnectivity', and 'Ignition' service types
-                  rule: '[''APIServer'', ''OAuthServer'', ''Konnectivity'', ''Ignition''].all(requiredType,
-                    self.exists(s, s.service == requiredType))'
-                - message: Each route publishingStrategy 'hostname' must be unique
-                    within the Services list.
-                  rule: self.filter(s, s.servicePublishingStrategy.type == 'Route'
-                    && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x,
-                    self.filter(y, y.servicePublishingStrategy.type == 'Route' &&
-                    (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname)
-                    && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size()
-                    <= 1)
-                - message: Each nodePort publishingStrategy 'nodePort' and 'hostname'
-                    must be unique within the Services list.
-                  rule: self.filter(s, s.servicePublishingStrategy.type == 'NodePort'
-                    && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address)
-                    && has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y,
-                    y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort)
-                    && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address
-                    == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port)
-                    && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port
-                    )).size() <= 1)
               sshKey:
                 description: |-
                   sshKey is a local reference to a Secret that must have a "id_rsa.pub" key whose content must be the public part of 1..N SSH keys.
