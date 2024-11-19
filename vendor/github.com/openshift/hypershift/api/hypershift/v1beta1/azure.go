@@ -243,21 +243,27 @@ type UserManagedDiagnostics struct {
 	StorageAccountURI string `json:"storageAccountURI,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Standard;StandardSSD;PremiumSSD;UltraSSD
+// +kubebuilder:validation:Enum=Premium_LRS;PremiumV2_LRS;Standard_LRS;StandardSSD_LRS;UltraSSD_LRS
 type AzureDiskStorageAccountType string
 
+// Values copied from https://github.com/openshift/cluster-api-provider-azure/blob/release-4.18/vendor/github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5/constants.go#L614
+// excluding zone redundant storage(ZRS) types as they are not available in all regions.
 const (
-	// StandardStorageAccountType is the standard HDD storage account type.
-	StandardStorageAccountType AzureDiskStorageAccountType = "Standard"
-
-	// StandardSSDStorageAccountType is the standard SSD storage account type.
-	StandardSSDStorageAccountType AzureDiskStorageAccountType = "StandardSSD"
-
-	// PremiumSSDStorageAccountType is the premium SSD storage account type.
-	PremiumSSDStorageAccountType AzureDiskStorageAccountType = "PremiumSSD"
-
-	// UltraSSDStorageAccountType is the ultra SSD storage account type.
-	UltraSSDStorageAccountType AzureDiskStorageAccountType = "UltraSSD"
+	// DiskStorageAccountTypesPremiumLRS - Premium SSD locally redundant storage. Best for production and performance sensitive
+	// workloads.
+	DiskStorageAccountTypesPremiumLRS AzureDiskStorageAccountType = "Premium_LRS"
+	// DiskStorageAccountTypesPremiumV2LRS - Premium SSD v2 locally redundant storage. Best for production and performance-sensitive
+	// workloads that consistently require low latency and high IOPS and throughput.
+	DiskStorageAccountTypesPremiumV2LRS AzureDiskStorageAccountType = "PremiumV2_LRS"
+	// DiskStorageAccountTypesStandardLRS - Standard HDD locally redundant storage. Best for backup, non-critical, and infrequent
+	// access.
+	DiskStorageAccountTypesStandardLRS AzureDiskStorageAccountType = "Standard_LRS"
+	// DiskStorageAccountTypesStandardSSDLRS - Standard SSD locally redundant storage. Best for web servers, lightly used enterprise
+	// applications and dev/test.
+	DiskStorageAccountTypesStandardSSDLRS AzureDiskStorageAccountType = "StandardSSD_LRS"
+	// DiskStorageAccountTypesUltraSSDLRS - Ultra SSD locally redundant storage. Best for IO-intensive workloads such as SAP HANA,
+	// top tier databases (for example, SQL, Oracle), and other transaction-heavy workloads.
+	DiskStorageAccountTypesUltraSSDLRS AzureDiskStorageAccountType = "UltraSSD_LRS"
 )
 
 // +kubebuilder:validation:Enum=Persistent;Ephemeral
@@ -271,10 +277,10 @@ const (
 	EphemeralDiskPersistence AzureDiskPersistence = "Ephemeral"
 )
 
-// +kubebuilder:validation:XValidation:rule="!has(self.diskStorageAccountType) || self.diskStorageAccountType != 'UltraSSD' || self.sizeGiB <= 32767",message="When not using storageAccountType UltraSSD, the SizeGB value must be less than or equal to 32,767"
+// +kubebuilder:validation:XValidation:rule="!has(self.diskStorageAccountType) || self.diskStorageAccountType != 'UltraSSD_LRS' || self.sizeGiB <= 32767",message="When not using diskStorageAccountType UltraSSD_LRS, the SizeGB value must be less than or equal to 32,767"
 type AzureNodePoolOSDisk struct {
 	// SizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
-	// This should be between 16 and 65,536 when using the UltraSSD storage account type and between 16 and 32,767 when using any other storage account type.
+	// This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
 	// When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 	// The current default is 30.
 	//
@@ -283,13 +289,13 @@ type AzureNodePoolOSDisk struct {
 	// +optional
 	SizeGiB int32 `json:"sizeGiB,omitempty"`
 
-	// storageAccountType is the disk storage account type to use.
-	// Valid values are Standard, StandardSSD, PremiumSSD and UltraSSD and omitted.
+	// diskStorageAccountType is the disk storage account type to use.
+	// Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS, UltraSSD_LRS.
 	// Note that Standard means a HDD.
 	// The disk performance is tied to the disk type, please refer to the Azure documentation for further details
 	// https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison.
 	// When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-	// The current default is PremiumSSD.
+	// The current default is Premium SSD LRS.
 	//
 	// +optional
 	DiskStorageAccountType AzureDiskStorageAccountType `json:"diskStorageAccountType,omitempty"`
