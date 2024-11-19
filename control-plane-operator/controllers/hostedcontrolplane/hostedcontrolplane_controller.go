@@ -77,6 +77,7 @@ import (
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
@@ -213,6 +214,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		oauthapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		ocmv2.NewComponent(),
+		oauthv2.NewComponent(),
 		routecmv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 		awsccmv2.NewComponent(),
@@ -1168,12 +1170,17 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
 				return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 			}
+
+			// Reconcile oauth server
+			r.Log.Info("Reconciling OAuth Server")
+			if err := r.reconcileOAuthServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+			}
 		}
 
-		// Reconcile oauth server
-		r.Log.Info("Reconciling OAuth Server")
-		if err := r.reconcileOAuthServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+		// TODO: move this up with the rest of conditions reconciliation logic?
+		if err := r.reconcileValidIDPConfigurationCondition(ctx, hostedControlPlane, releaseImageProvider, infraStatus.OAuthHost, infraStatus.OAuthPort); err != nil {
+			return fmt.Errorf("failed to reconcile ValidIDPConfiguration condition: %w", err)
 		}
 	}
 
@@ -3426,6 +3433,12 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
 
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, oauthHost string, oauthPort int32) error {
+	p := oauth.NewOAuthServerParams(hcp, releaseImageProvider, oauthHost, oauthPort, r.SetDefaultSecurityContext)
+
 	// Report any IDP configuration errors as a condition on the HCP
 	new := metav1.Condition{
 		Type:    string(hyperv1.ValidIDPConfiguration),
@@ -3449,7 +3462,6 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 			return fmt.Errorf("failed to update valid IDP configuration condition: %w", err)
 		}
 	}
-
 	return nil
 }
 

@@ -1,0 +1,43 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: oauth-openshift
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: oauth-openshift Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: oauth-openshift Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: oauth-openshift-audit
+  - group: ""
+    kind: ConfigMap
+    name: oauth-openshift
+  - group: ""
+    kind: Secret
+    name: oauth-openshift-default-error-template
+  - group: ""
+    kind: Secret
+    name: oauth-openshift-default-login-template
+  - group: ""
+    kind: Secret
+    name: oauth-openshift-default-provider-selection-template
+  - group: policy
+    kind: PodDisruptionBudget
+    name: oauth-openshift
+  - group: ""
+    kind: Secret
+    name: oauth-openshift-session
+  version: "4.18"

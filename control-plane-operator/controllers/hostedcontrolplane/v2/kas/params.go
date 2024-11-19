@@ -60,7 +60,7 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams 
 		ExternalIPConfig:             externalIPConfig(hcp.Spec.Configuration),
 		ClusterNetwork:               util.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork),
 		ServiceNetwork:               util.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork),
-		NamedCertificates:            namedCertificates(hcp.Spec.Configuration),
+		NamedCertificates:            hcp.Spec.Configuration.GetNamedCertificates(),
 		KASPodPort:                   util.KASPodPort(hcp),
 		TLSSecurityProfile:           tlsSecurityProfile(hcp.Spec.Configuration),
 		AdditionalCORSAllowedOrigins: additionalCORSAllowedOrigins(hcp.Spec.Configuration),
@@ -175,14 +175,6 @@ func serviceNodePortRange(configuration *hyperv1.ClusterConfiguration) string {
 		return configuration.Network.ServiceNodePortRange
 	} else {
 		return config.DefaultServiceNodePortRange
-	}
-}
-
-func namedCertificates(configuration *hyperv1.ClusterConfiguration) []configv1.APIServerNamedServingCert {
-	if configuration != nil && configuration.APIServer != nil {
-		return configuration.APIServer.ServingCerts.NamedCertificates
-	} else {
-		return []configv1.APIServerNamedServingCert{}
 	}
 }
 

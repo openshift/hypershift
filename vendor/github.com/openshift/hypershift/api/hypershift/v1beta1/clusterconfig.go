@@ -41,3 +41,10 @@ func (c *ClusterConfiguration) GetFeatureGateSelection() configv1.FeatureGateSel
 	}
 	return configv1.FeatureGateSelection{FeatureSet: configv1.Default}
 }
+
+func (c *ClusterConfiguration) GetNamedCertificates() []configv1.APIServerNamedServingCert {
+	if c != nil && c.APIServer != nil {
+		return c.APIServer.ServingCerts.NamedCertificates
+	}
+	return []configv1.APIServerNamedServingCert{}
+}
