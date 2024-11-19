@@ -270,13 +270,18 @@ func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneC
 }
 
 func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32, existingResources map[string]corev1.ResourceRequirements) (*config.DeploymentConfig, error) {
-	podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(c.NeedsManagementKASAccess())
+	if _, exist := podTemplateSpec.Annotations[config.NeedMetricsServerAccessLabel]; exist || c.NeedsManagementKASAccess() {
+		podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(true)
+	} else {
+		podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(false)
+	}
+
 	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
 
-	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, podTemplateSpec.Spec.Containers); err != nil {
+	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, cpContext.HCP, podTemplateSpec.Spec.Containers); err != nil {
 		return nil, err
 	}
-	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, podTemplateSpec.Spec.InitContainers); err != nil {
+	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, cpContext.HCP, podTemplateSpec.Spec.InitContainers); err != nil {
 		return nil, err
 	}
 
@@ -374,7 +379,7 @@ func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
 	}
 }
 
-func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, containers []corev1.Container) error {
+func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, hcp *hyperv1.HostedControlPlane, containers []corev1.Container) error {
 	for i, container := range containers {
 		if container.Image == "" {
 			return fmt.Errorf("container %s has no image key specified", container.Name)
@@ -382,6 +387,10 @@ func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageP
 		key := container.Image
 		if payloadImage, exist := imageProvider.ImageExist(key); exist {
 			containers[i].Image = payloadImage
+		} else if key == "cluster-version-operator" {
+			// fallback to hcp releaseImage if "cluster-version-operator" image is not available.
+			// This could happen for example in local dev enviroments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
+			containers[i].Image = util.HCPControlPlaneReleaseImage(hcp)
 		}
 	}
 
