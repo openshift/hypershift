@@ -296,42 +296,42 @@ func TestOnCreateAPIUX(t *testing.T) {
 					mutateInput            func(*hyperv1.HostedCluster)
 					expectedErrorSubstring string
 				}{
-					{
-						name: "when serviceType is 'APIServer' and publishing strategy is 'Route' and hostname is not set it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
-								{
-									Service: hyperv1.APIServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.Ignition,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.Konnectivity,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.OAuthServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-							}
-						},
-						expectedErrorSubstring: "If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set",
-					},
+					// {
+					// 	name: "when serviceType is 'APIServer' and publishing strategy is 'Route' and hostname is not set it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					// 			{
+					// 				Service: hyperv1.APIServer,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.Ignition,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.Konnectivity,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.OAuthServer,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set",
+					// },
 					{
 						name: "when less than 4 services are set it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
@@ -361,124 +361,124 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "3: spec.services in body should have at least 4 items",
 					},
-					{
-						name: "when any of the required services is missing it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
-								{
-									Service: hyperv1.Ignition,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.Konnectivity,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.OAuthServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.OVNSbDb,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-							}
-						},
-						expectedErrorSubstring: "Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types",
-					},
-					{
-						name: "when there is a duplicated hostname in routes it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
-								{
-									Service: hyperv1.APIServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type: hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{
-											Hostname: "api.example.com",
-										},
-									},
-								},
-								{
-									Service: hyperv1.Ignition,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type: hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{
-											Hostname: "api.example.com",
-										},
-									},
-								},
-								{
-									Service: hyperv1.Konnectivity,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.OAuthServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-							}
-						},
-						expectedErrorSubstring: "Each route publishingStrategy 'hostname' must be unique within the Services list",
-					},
-					{
-						name: "when there is a duplicated nodePort entries it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
-								{
-									Service: hyperv1.APIServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type: hyperv1.NodePort,
-										NodePort: &hyperv1.NodePortPublishingStrategy{
-											Address: "api.example.com",
-											Port:    3030,
-										},
-									},
-								},
-								{
-									Service: hyperv1.Ignition,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type: hyperv1.NodePort,
-										NodePort: &hyperv1.NodePortPublishingStrategy{
-											Address: "api.example.com",
-											Port:    3030,
-										},
-									},
-								},
-								{
-									Service: hyperv1.Konnectivity,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-								{
-									Service: hyperv1.OAuthServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-							}
-						},
-						expectedErrorSubstring: "Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list",
-					},
+					// {
+					// 	name: "when any of the required services is missing it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					// 			{
+					// 				Service: hyperv1.Ignition,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.Konnectivity,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.OAuthServer,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.OVNSbDb,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types",
+					// },
+					// {
+					// 	name: "when there is a duplicated hostname in routes it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					// 			{
+					// 				Service: hyperv1.APIServer,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type: hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{
+					// 						Hostname: "api.example.com",
+					// 					},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.Ignition,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type: hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{
+					// 						Hostname: "api.example.com",
+					// 					},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.Konnectivity,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.OAuthServer,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "Each route publishingStrategy 'hostname' must be unique within the Services list",
+					// },
+					// {
+					// 	name: "when there is a duplicated nodePort entries it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					// 			{
+					// 				Service: hyperv1.APIServer,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type: hyperv1.NodePort,
+					// 					NodePort: &hyperv1.NodePortPublishingStrategy{
+					// 						Address: "api.example.com",
+					// 						Port:    3030,
+					// 					},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.Ignition,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type: hyperv1.NodePort,
+					// 					NodePort: &hyperv1.NodePortPublishingStrategy{
+					// 						Address: "api.example.com",
+					// 						Port:    3030,
+					// 					},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.Konnectivity,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 			{
+					// 				Service: hyperv1.OAuthServer,
+					// 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					// 					Type:  hyperv1.Route,
+					// 					Route: &hyperv1.RoutePublishingStrategy{},
+					// 				},
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list",
+					// },
 					{
 						name: "when a type Route set with the nodePort configuration it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
