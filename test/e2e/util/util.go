@@ -275,7 +275,8 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 				Status: metav1.ConditionTrue,
 			}),
 		},
-		WithTimeout(30*time.Second),
+		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
+		WithTimeout(1*time.Minute),
 	)
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finsih config update", np.Namespace, np.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
