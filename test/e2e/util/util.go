@@ -1960,3 +1960,27 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 		)
 	})
 }
+
+func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCustomLabels", func(t *testing.T) {
+		AtLeast(t, Version418)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		podList := &corev1.PodList{}
+		if err := client.List(ctx, podList, crclient.InNamespace(hcpNamespace)); err != nil {
+			t.Fatalf("error listing hcp pods: %v", err)
+		}
+
+		var podsWithoutLabel []string
+		for _, pod := range podList.Items {
+			// Ensure that each pod in the HCP has the custom label
+			if value, exist := pod.Labels["hypershift-e2e-test-label"]; !exist || value != "test" {
+				podsWithoutLabel = append(podsWithoutLabel, pod.Name)
+			}
+		}
+
+		if len(podsWithoutLabel) > 0 {
+			t.Fatalf("expected pods [%s] to have label %s=%s", strings.Join(podsWithoutLabel, ", "), "hypershift-e2e-test-label", "test")
+		}
+	})
+}

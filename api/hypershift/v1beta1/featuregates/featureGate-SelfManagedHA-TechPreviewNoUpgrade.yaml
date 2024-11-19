@@ -30,6 +30,9 @@
                     },
                     {
                         "name": "OpenStack"
+                    },
+                    {
+                        "name": "HCPPodsLabels"
                     }
                 ],
                 "version": ""

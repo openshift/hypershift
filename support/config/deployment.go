@@ -457,6 +457,13 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZon
 	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(util.HCPControlPlaneReleaseImage(hcp))
+
+	if c.AdditionalLabels == nil {
+		c.AdditionalLabels = map[string]string{}
+	}
+	for key, value := range hcp.Spec.Labels {
+		c.AdditionalLabels[key] = value
+	}
 }
 
 func resourceRequestOverrides(hcp *hyperv1.HostedControlPlane) ResourceOverrides {

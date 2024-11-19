@@ -27,7 +27,6 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 	}
 	p.OwnerRef = config.ControllerOwnerRef(hcp)
 
-	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		ccmContainer().Name: {
 			Requests: corev1.ResourceList{
@@ -41,6 +40,7 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
+	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	return p
