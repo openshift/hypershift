@@ -44,6 +44,102 @@ func TestOnCreateAPIUX(t *testing.T) {
 			}
 		}{
 			{
+				name: "when based domain is not valid it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when baseDomain has invalid chars it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomain = "@foo"
+						},
+						expectedErrorSubstring: "baseDomain must be a valid domain name (e.g., example, example.com, sub.example.com)",
+					},
+					{
+						name: "when baseDomain is a valid hierarchical domain with two levels it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomain = "foo.bar"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when baseDomain is a valid hierarchical domain it with 3 levels should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomain = "123.foo.bar"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when baseDomain is a single subdomain it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomain = "foo"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when baseDomain is empty it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomain = ""
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when baseDomainPrefix has invalid chars it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomainPrefix = ptr.To("@foo")
+						},
+						expectedErrorSubstring: "baseDomainPrefix must be a valid domain name (e.g., example, example.com, sub.example.com)",
+					},
+					{
+						name: "when baseDomainPrefix is a valid hierarchical domain with two levels it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomainPrefix = ptr.To("foo.bar")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when baseDomainPrefix is a valid hierarchical domain it with 3 levels should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomainPrefix = ptr.To("123.foo.bar")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when baseDomainPrefix is a single subdomain it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomainPrefix = ptr.To("foo")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when baseDomainPrefix is empty it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.BaseDomainPrefix = ptr.To("")
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when publicZoneID and privateZoneID are empty it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.PublicZoneID = ""
+							hc.Spec.DNS.PrivateZoneID = ""
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when publicZoneID and privateZoneID are set it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.DNS.PublicZoneID = "123"
+							hc.Spec.DNS.PrivateZoneID = "123"
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
 				name: "when feature gated fields are used it should fail",
 				file: "hostedcluster-base.yaml",
 				validations: []struct {
