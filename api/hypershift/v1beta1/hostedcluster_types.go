@@ -773,7 +773,7 @@ type NodePortPublishingStrategy struct {
 type LoadBalancerPublishingStrategy struct {
 	// hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
 	// If ommited, the value will be infered from the corev1.Service Load balancer type .status.
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')`,message="baseDomain must be a valid base domain (e.g., example.com)"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')`,message="hostname must be a valid base domain (e.g., example.com)"
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:MinLength=1
 	// +optional
@@ -798,6 +798,7 @@ type DNSSpec struct {
 	// If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
 	// Once set, this field is immutable.
 	// When the value is the empty string "", the controller might default to a value depending on the platform.
+	// +kubebuilder:validation:XValidation:rule=`self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')`,message="baseDomain must be a valid domain (e.g., example, example.com, sub.example.com)"
 	// +kubebuilder:validation:XValidation:rule=`oldSelf == "" || self == oldSelf`, message="baseDomain is immutable"
 	// +kubebuilder:validation:MaxLength=253
 	// +immutable
@@ -808,6 +809,7 @@ type DNSSpec struct {
 	// It will be used to confgure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
 	// If baseDomainPrefix is ommitted, the hostedCluster.name will be used as the subdomain.
 	// Set baseDomainPrefix to an empty string "", if you don't want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
+	// +kubebuilder:validation:XValidation:rule=`self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')`,message="baseDomainPrefix must be a valid domain (e.g., example, example.com, sub.example.com)"
 	// This field is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPrefix is immutable"
 	// +kubebuilder:validation:MaxLength=253
