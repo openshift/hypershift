@@ -2069,6 +2069,9 @@ spec:
                     maxLength: 253
                     type: string
                     x-kubernetes-validations:
+                    - message: baseDomain must be a valid domain (e.g., example, example.com,
+                        sub.example.com)
+                      rule: self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')
                     - message: baseDomain is immutable
                       rule: oldSelf == "" || self == oldSelf
                   baseDomainPrefix:
@@ -2081,6 +2084,9 @@ spec:
                     maxLength: 253
                     type: string
                     x-kubernetes-validations:
+                    - message: baseDomainPrefix must be a valid domain (e.g., example,
+                        example.com, sub.example.com)
+                      rule: self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')
                     - message: baseDomainPrefix is immutable
                       rule: self == oldSelf
                   privateZoneID:
@@ -4137,7 +4143,7 @@ spec:
                               minLength: 1
                               type: string
                               x-kubernetes-validations:
-                              - message: baseDomain must be a valid base domain (e.g.,
+                              - message: hostname must be a valid base domain (e.g.,
                                   example.com)
                                 rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
                           type: object
