@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -87,9 +88,11 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 				Scope: loadBalancerScope,
 				ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
 					Type: operatorv1.OpenStackLoadBalancerProvider,
-					OpenStack: &operatorv1.OpenStackLoadBalancerParameters{
-						FloatingIP: loadBalancerIP,
-					},
+					// TODO(emilien): add the field once bumped openshift/api and also remove `ReconcileDefaultIngressControllerWithUnstructured`.
+					// https://github.com/openshift/hypershift/pull/4927
+					// OpenStack: &operatorv1.OpenStackLoadBalancerParameters{
+					// 	FloatingIP: loadBalancerIP,
+					// },
 				},
 			},
 		}
@@ -109,6 +112,32 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 			Type:    operatorv1.PrivateStrategyType,
 			Private: &operatorv1.PrivateStrategy{},
 		}
+	}
+	return nil
+}
+
+// ReconcileDefaultIngressControllerWithUnstructured reconciles the default ingress controller with an unstructured object
+// that has custom fields set per platform.
+func ReconcileOpenStackDefaultIngressController(ingressController *unstructured.Unstructured, ingressSubdomain string, replicas int32, isPrivate bool, loadBalancerScope operatorv1.LoadBalancerScope, loadBalancerIP string) error {
+	// If ingress controller already exists, skip reconciliation to allow day-2 configuration
+	if ingressController.GetResourceVersion() != "" {
+		return nil
+	}
+
+	unstructured.SetNestedField(ingressController.Object, ingressSubdomain, "spec", "domain")
+	unstructured.SetNestedField(ingressController.Object, string(operatorv1.LoadBalancerServiceStrategyType), "spec", "endpointPublishingStrategy", "type")
+	unstructured.SetNestedField(ingressController.Object, int64(replicas), "spec", "replicas")
+
+	unstructured.SetNestedField(ingressController.Object, string(loadBalancerScope), "spec", "endpointPublishingStrategy", "loadBalancer", "scope")
+	unstructured.SetNestedField(ingressController.Object, string(operatorv1.OpenStackLoadBalancerProvider), "spec", "endpointPublishingStrategy", "loadBalancer", "providerParameters", "type")
+	if loadBalancerIP != "" {
+		unstructured.SetNestedField(ingressController.Object, loadBalancerIP, "spec", "endpointPublishingStrategy", "loadBalancer", "providerParameters", "openstack", "floatingIP")
+	}
+	unstructured.SetNestedField(ingressController.Object, manifests.IngressDefaultIngressControllerCert().Name, "spec", "defaultCertificate", "name")
+
+	if isPrivate {
+		unstructured.SetNestedField(ingressController.Object, operatorv1.PrivateStrategyType, "spec", "endpointPublishingStrategy", "type")
+		unstructured.SetNestedMap(ingressController.Object, map[string]interface{}{}, "spec", "endpointPublishingStrategy", "private")
 	}
 	return nil
 }

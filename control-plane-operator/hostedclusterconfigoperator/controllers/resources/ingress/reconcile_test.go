@@ -3,12 +3,16 @@ package ingress
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileDefaultIngressController(t *testing.T) {
@@ -285,37 +289,6 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
-		{
-			name:                   "OpenStack uses Loadbalancer publishing strategy with a floating IP",
-			inputIngressController: manifests.IngressDefaultIngressController(),
-			inputIngressDomain:     fakeIngressDomain,
-			inputPlatformType:      hyperv1.OpenStackPlatform,
-			inputReplicas:          fakeInputReplicas,
-			inputIsIBMCloudUPI:     false,
-			inputIsPrivate:         false,
-			inputLoadBalancerIP:    "1.2.3.4",
-			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
-				Spec: operatorv1.IngressControllerSpec{
-					Domain:   fakeIngressDomain,
-					Replicas: &fakeInputReplicas,
-					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
-						Type: operatorv1.LoadBalancerServiceStrategyType,
-						LoadBalancer: &operatorv1.LoadBalancerStrategy{
-							ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
-								Type: operatorv1.OpenStackLoadBalancerProvider,
-								OpenStack: &operatorv1.OpenStackLoadBalancerParameters{
-									FloatingIP: "1.2.3.4",
-								},
-							},
-						},
-					},
-					DefaultCertificate: &corev1.LocalObjectReference{
-						Name: manifests.IngressDefaultIngressControllerCert().Name,
-					},
-				},
-			},
-		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -324,5 +297,46 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			g.Expect(err).To(BeNil())
 			g.Expect(tc.inputIngressController).To(BeEquivalentTo(tc.expectedIngressController))
 		})
+	}
+}
+
+func TestReconcileOpenStackDefaultIngressController(t *testing.T) {
+	ingressController := manifests.IngressDefaultIngressControllerAsUnstructured()
+	if err := ReconcileOpenStackDefaultIngressController(ingressController, "example.com", 1, false, operatorv1.ExternalLoadBalancer, "1.2.3.4"); err != nil {
+		t.Errorf("unexpected: %v", err)
+	}
+	typedIngressController := &operatorv1.IngressController{}
+	expected := &operatorv1.IngressController{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "IngressController",
+			APIVersion: operatorv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      manifests.IngressDefaultIngressController().Name,
+			Namespace: manifests.IngressDefaultIngressController().Namespace,
+		},
+		Spec: operatorv1.IngressControllerSpec{
+			Domain:   "example.com",
+			Replicas: ptr.To[int32](1),
+			EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.LoadBalancerServiceStrategyType,
+				LoadBalancer: &operatorv1.LoadBalancerStrategy{
+					Scope: operatorv1.ExternalLoadBalancer,
+				},
+			},
+			DefaultCertificate: &corev1.LocalObjectReference{
+				Name: "default-ingress-cert",
+			},
+		},
+	}
+
+	// Before converting, remove extra field from provider parameters, since it does not exist in type yet
+	unstructured.RemoveNestedField(ingressController.Object, "spec", "endpointPublishingStrategy", "loadBalancer", "providerParameters")
+
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(ingressController.Object, typedIngressController); err != nil {
+		t.Errorf("unexpected: %v", err)
+	}
+	if diff := cmp.Diff(typedIngressController, expected); diff != "" {
+		t.Errorf("IngressController does not match expected:\n%s", diff)
 	}
 }
