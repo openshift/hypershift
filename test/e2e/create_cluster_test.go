@@ -392,6 +392,94 @@ func TestOnCreateAPIUX(t *testing.T) {
 					mutateInput            func(*hyperv1.HostedCluster)
 					expectedErrorSubstring string
 				}{
+					{
+						name: "when servicePublishingStrategy is nodePort and addresses valid hostname, IPv4 and IPv6 it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "kas.example.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "127.0.0.1",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956::14",
+										},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014",
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when servicePublishingStrategy is nodePort and addresses is invalid it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "@foo",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "127.0.0.1",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956::14",
+										},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014",
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "address must be a valid hostname, IPv4, or IPv6 address",
+					},
 					// {
 					// 	name: "when serviceType is 'APIServer' and publishing strategy is 'Route' and hostname is not set it should fail",
 					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
