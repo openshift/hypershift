@@ -21,6 +21,7 @@ PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
+GOWS=GO111MODULE=on GOWORK=$(shell pwd)/hack/workspace/go.work GOFLAGS=-mod=vendor go
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
 GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-extldflags "-static"'
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
@@ -50,7 +51,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
 
 .PHONY: update
-update: api-deps api api-docs deps clients
+update: workspace-sync api-deps api api-docs deps clients
 
 .PHONY: verify
 verify: update staticcheck fmt vet
@@ -240,6 +241,10 @@ api-deps:
 	  $(GO) mod verify && \
 	  $(GO) list -m -mod=readonly -json all > /dev/null
 
+.PHONY: workspace-sync
+workspace-sync:
+	cd hack/workspace && \
+	  $(GOWS) work sync
 
 # Run staticcheck
 # How to ignore failures https://staticcheck.io/docs/configuration#line-based-linter-directives
