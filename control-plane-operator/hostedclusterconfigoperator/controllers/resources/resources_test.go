@@ -8,14 +8,17 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	supportutil "github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/utils/ptr"
 
+	"github.com/opencontainers/go-digest"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -123,6 +126,14 @@ func TestReconcileErrorHandling(t *testing.T) {
 		}
 		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 
+		fakeDigestLister := func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
+			return "", nil
+		}
+
+		imageMetaDataProvider := supportutil.RegistryClientImageMetadataProvider{
+			OpenShiftImageRegistryOverrides: map[string][]string{},
+		}
+
 		r := &reconciler{
 			client:                 fakeClient,
 			uncachedClient:         uncachedClient,
@@ -133,6 +144,8 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			DigestListerFN:         fakeDigestLister,
+			ImageMetaDataProvider:  imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -172,6 +185,10 @@ func TestReconcileOLM(t *testing.T) {
 	fakeCPService.Spec.ClusterIP = "172.30.108.248"
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	ctx := context.Background()
+	pullSecret := fakePullSecret()
+	fakeDigestLister := func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
+		return "", nil
+	}
 
 	testCases := []struct {
 		name                string
@@ -261,10 +278,10 @@ func TestReconcileOLM(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, fakeDigestLister)...)
 			hcp.Spec.Configuration = tc.hcpClusterConfig
 			hcp.Spec.OLMCatalogPlacement = tc.olmCatalogPlacement
-			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, fakeDigestLister)...)
 			g.Expect(errs).To(BeEmpty(), "unexpected errors")
 			hcOpHub := manifests.OperatorHub()
 			err := r.client.Get(ctx, client.ObjectKeyFromObject(hcOpHub), hcOpHub)
@@ -284,6 +301,8 @@ func fakeHCP() *hyperv1.HostedControlPlane {
 	hcp := manifests.HostedControlPlane("bar", "foo")
 	hcp.Status.ControlPlaneEndpoint.Host = "server"
 	hcp.Status.ControlPlaneEndpoint.Port = 1234
+	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: "pull-secret"}
+	hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64"
 	return hcp
 }
 
@@ -299,7 +318,14 @@ func fakeIngressCert() *corev1.Secret {
 func fakePullSecret() *corev1.Secret {
 	s := manifests.PullSecret("bar")
 	s.Data = map[string][]byte{
-		corev1.DockerConfigJsonKey: []byte("data"),
+		corev1.DockerConfigJsonKey: []byte(`{
+		"auths": {
+			"registry.redhat.io/redhat/": {
+				"auth": "dXNlcm5hbWU6cGFzc3dvcmQ=",
+				"email": "user@example.com"
+			}
+		}
+	}`),
 	}
 	return s
 }

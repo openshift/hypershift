@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -120,6 +121,11 @@ const (
 	hcpNotReadyRequeueInterval = 15 * time.Second
 )
 
+var (
+	olmCatalogImagesOnce sync.Once
+	catalogImages        map[string]string
+)
+
 type InfrastructureStatus struct {
 	APIHost                 string
 	APIPort                 int32
@@ -181,6 +187,7 @@ type HostedControlPlaneReconciler struct {
 	awsSession                              *session.Session
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
+	ImageMetadataProvider                   util.ImageMetadataProvider
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -2811,7 +2818,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
 	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
@@ -3513,9 +3520,47 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		}
 	}
 
+	var (
+		controlPlaneReleaseImage string
+		dataPlaneReleaseImage    string
+	)
+	// The CVO prepare-payload script needs the ReleaseImage digest for disconnected environments
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
+	}
+
+	cpRef, err := registryclient.GetCorrectArchImage(ctx, "cluster-version-operator", p.ControlPlaneImage, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider)
+	if err != nil {
+		return fmt.Errorf("failed to parse control plane release image %s: %w", cpRef, err)
+	}
+
+	_, cpReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, cpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("failed to get control plane release image digest %s: %w", cpRef, err)
+	}
+
+	controlPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", cpReleaseImageRef.Registry, cpReleaseImageRef.Namespace, cpReleaseImageRef.NameString())
+
+	if p.ControlPlaneImage != hcp.Spec.ReleaseImage {
+		dpRef, err := registryclient.GetCorrectArchImage(ctx, "cluster-version-operator", hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider)
+		if err != nil {
+			return fmt.Errorf("failed to parse data plane release image %s: %w", dpRef, err)
+		}
+
+		_, dpReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, dpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return fmt.Errorf("failed to get data plane release image digest %s: %w", dpRef, err)
+		}
+
+		dataPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", dpReleaseImageRef.Registry, dpReleaseImageRef.Namespace, dpReleaseImageRef.NameString())
+	} else {
+		dataPlaneReleaseImage = controlPlaneReleaseImage
+	}
+
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.ReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
@@ -3770,11 +3815,28 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 			isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
 
+			pullSecret := common.PullSecret(hcp.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+				return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
+			}
+
+			var getCatalogImagesErr error
+			olmCatalogImagesOnce.Do(func() {
+				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], registryclient.GetListDigest, r.ImageMetadataProvider)
+				if err != nil {
+					getCatalogImagesErr = err
+					return
+				}
+			})
+			if getCatalogImagesErr != nil {
+				return fmt.Errorf("failed to get catalog images: %w", getCatalogImagesErr)
+			}
+
 			if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
 				catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
 				if !overrideImages {
 					if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
+						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides, catalogImages)
 					}); err != nil {
 						return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 					}
@@ -3790,7 +3852,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 						return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 					}
 
-					for name, catalog := range olm.CatalogToImage {
+					for name, catalog := range catalogImages {
 						imageRef, err := reference.Parse(catalog)
 						if err != nil {
 							return fmt.Errorf("failed to parse catalog image %s: %w", catalog, err)

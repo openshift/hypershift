@@ -378,7 +378,6 @@ func NewStartCommand() *cobra.Command {
 			"token-minter":                   tokenMinterImage,
 			util.CPOImageName:                cpoImage,
 			util.CPPKIOImageName:             cpoImage,
-			"cluster-version-operator":       os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		}
 		for name, image := range imageOverrides {
 			componentImages[name] = image
@@ -415,6 +414,10 @@ func NewStartCommand() *cobra.Command {
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
+		imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+		}
+
 		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
 
 		metricsSet, err := metrics.MetricsSetFromEnv()
@@ -437,6 +440,7 @@ func NewStartCommand() *cobra.Command {
 			MetricsSet:                              metricsSet,
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
+			ImageMetadataProvider:                   imageMetaDataProvider,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
