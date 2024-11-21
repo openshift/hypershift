@@ -5,7 +5,6 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"math/big"
 	"net/http"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
@@ -173,6 +174,7 @@ type HostedControlPlaneReconciler struct {
 	awsSession                              *session.Session
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
+	ImageMetadataProvider                   util.ImageMetadataProvider
 
 	IsCPOV2 bool
 }
@@ -3607,9 +3609,47 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		}
 	}
 
+	var (
+		controlPlaneReleaseImage string
+		dataPlaneReleaseImage    string
+	)
+	// The CVO prepare-payload script needs the ReleaseImage digest for disconnected environments
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
+	}
+
+	cpRef, err := registryclient.GetCorrectArchImage(ctx, "cluster-version-operator", p.ControlPlaneImage, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider)
+	if err != nil {
+		return fmt.Errorf("failed to parse control plane release image %s: %w", cpRef, err)
+	}
+
+	_, cpReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, cpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("failed to get control plane release image digest %s: %w", cpRef, err)
+	}
+
+	controlPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", cpReleaseImageRef.Registry, cpReleaseImageRef.Namespace, cpReleaseImageRef.NameString())
+
+	if p.ControlPlaneImage != hcp.Spec.ReleaseImage {
+		dpRef, err := registryclient.GetCorrectArchImage(ctx, "cluster-version-operator", hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider)
+		if err != nil {
+			return fmt.Errorf("failed to parse data plane release image %s: %w", dpRef, err)
+		}
+
+		_, dpReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, dpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return fmt.Errorf("failed to get data plane release image digest %s: %w", dpRef, err)
+		}
+
+		dataPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", dpReleaseImageRef.Registry, dpReleaseImageRef.Namespace, dpReleaseImageRef.NameString())
+	} else {
+		dataPlaneReleaseImage = controlPlaneReleaseImage
+	}
+
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.ReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
@@ -3871,7 +3911,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 			var getCatalogImagesErr error
 			olmCatalogImagesOnce.Do(func() {
-				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], registryclient.GetListDigest)
+				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], registryclient.GetListDigest, r.ImageMetadataProvider)
 				if err != nil {
 					getCatalogImagesErr = err
 					return

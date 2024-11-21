@@ -29,7 +29,7 @@ spec:
     metadata:
       annotations:
         component.hypershift.openshift.io/config-hash: 57c9c948
-        hypershift.openshift.io/release-image: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
         app: openshift-route-controller-manager

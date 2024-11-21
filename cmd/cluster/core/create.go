@@ -648,7 +648,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		if err != nil {
 			return nil, fmt.Errorf("could not retrieve kube clientset: %w", err)
 		}
-		if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc); err != nil {
+		if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc, &hyperutil.RegistryClientImageMetadataProvider{}); err != nil {
 			return nil, err
 		}
 	}
@@ -1012,7 +1012,7 @@ func parseTolerationString(str string) (*corev1.Toleration, error) {
 // validateMgmtClusterAndNodePoolCPUArchitectures checks if a multi-arch release image or release stream was provided.
 // If none were provided, checks to make sure the NodePool CPU arch and the management cluster CPU arch match; if they
 // do not, the CLI will return an error since the NodePool will fail to complete during runtime.
-func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *RawCreateOptions, kc kubeclient.Interface) error {
+func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *RawCreateOptions, kc kubeclient.Interface, imageMetadataProvider hyperutil.ImageMetadataProvider) error {
 	validMultiArchImage := false
 
 	// Check if the release image is multi-arch
@@ -1021,8 +1021,7 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 		if err != nil {
 			return fmt.Errorf("failed to read pull secret file: %w", err)
 		}
-
-		validMultiArchImage, err = registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
+		validMultiArchImage, err = registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret, imageMetadataProvider)
 		if err != nil {
 			return err
 		}

@@ -131,6 +131,7 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
+	ImageMetaDataProvider     util.RegistryClientImageMetadataProvider
 	registryclient.DigestListerFN
 }
 
@@ -190,6 +191,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		DigestListerFN:            registryclient.GetListDigest,
+		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -1687,7 +1689,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 
 	olmCatalogImagesOnce.Do(func() {
 		var err error
-		p, err = olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, digestLister)
+		p, err = olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, digestLister, &r.ImageMetaDataProvider)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to create OperatorLifecycleManagerParams: %w", err))
 			return

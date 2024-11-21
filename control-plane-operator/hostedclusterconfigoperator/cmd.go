@@ -259,6 +259,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
+	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
 	apiReadingClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
@@ -299,6 +303,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OAuthPort:             o.OAuthPort,
 		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		EnableCIDebugOutput:   o.enableCIDebugOutput,
+		ImageMetaDataProvider: *imageMetaDataProvider,
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)

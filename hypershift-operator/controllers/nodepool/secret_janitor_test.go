@@ -151,9 +151,11 @@ spec:
 	).Build()
 	r := secretJanitor{
 		NodePoolReconciler: &NodePoolReconciler{
-			Client:          c,
-			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: supportedversion.LatestSupportedVersion.String()},
-			ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
+			Client: c,
+			//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
+			// this protects us from possibly hiding other factors that might be causing the token to be updated
+			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+			ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
 				Labels: map[string]string{},
 			}}},
 		},

@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        hypershift.openshift.io/release-image: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
         app: cloud-controller-manager

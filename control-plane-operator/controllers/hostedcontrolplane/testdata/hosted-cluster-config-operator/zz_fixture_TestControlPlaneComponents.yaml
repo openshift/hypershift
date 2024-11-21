@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        hypershift.openshift.io/release-image: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
         app: hosted-cluster-config-operator
@@ -89,6 +89,7 @@ spec:
         - name: KUBERNETES_VERSION
           value: "1.30"
         - name: OPERATE_ON_RELEASE_IMAGE
+          value: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         - name: OPENSHIFT_IMG_OVERRIDES
           value: =
         image: hosted-cluster-config-operator
