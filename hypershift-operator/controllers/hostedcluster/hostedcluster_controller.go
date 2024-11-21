@@ -769,9 +769,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
+		// Copy the platform status from the hostedcontrolplane
 		hcluster.Status.Platform = hcp.Status.Platform
+
+		// Copy the oldestKubeletVersion status from the hostedcontrolplane
+		hcluster.Status.OldestKubeletVersion = hcp.Status.OldestKubeletVersion
 	}
 
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
