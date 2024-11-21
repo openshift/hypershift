@@ -1,0 +1,25 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: cluster-policy-controller
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: cluster-policy-controller Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: cluster-policy-controller Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: cluster-policy-controller-config
+  version: "4.18"

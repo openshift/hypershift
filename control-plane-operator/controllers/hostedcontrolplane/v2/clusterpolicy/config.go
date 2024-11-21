@@ -1,4 +1,4 @@
-package routecm
+package clusterpolicy
 
 import (
 	"fmt"
@@ -20,18 +20,18 @@ const (
 
 func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
 	if configStr, exists := cm.Data[configKey]; !exists || len(configStr) == 0 {
-		return fmt.Errorf("expected an existing openshift route controller manager configuration")
+		return fmt.Errorf("expected an existing openshift cluster policy controller configuration")
 	}
 
 	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
 	if err := util.DeserializeResource(cm.Data[configKey], config, api.Scheme); err != nil {
-		return fmt.Errorf("unable to decode existing openshift route controller manager configuration: %w", err)
+		return fmt.Errorf("unable to decode existing openshift cluster policy controller configuration: %w", err)
 	}
 
 	adaptConfig(config, cpContext.HCP.Spec.Configuration)
 	configStr, err := util.SerializeResource(config, api.Scheme)
 	if err != nil {
-		return fmt.Errorf("failed to serialize openshift route controller manager configuration: %w", err)
+		return fmt.Errorf("failed to serialize openshift cluster policy controller configuration: %w", err)
 	}
 
 	cm.Data[configKey] = configStr
@@ -39,11 +39,7 @@ func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMa
 }
 
 func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration) {
-	// network config
-	if cidrs := configuration.GetAutoAssignCIDRs(); len(cidrs) > 0 {
-		cfg.Ingress.IngressIPNetworkCIDR = cidrs[0]
-	}
-
+	cfg.FeatureGates = config.FeatureGates(configuration.GetFeatureGateSelection())
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
 	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
 }
