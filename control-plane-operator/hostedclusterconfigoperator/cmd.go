@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/featuregate"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
@@ -59,14 +60,15 @@ func NewCommand() *cobra.Command {
 }
 
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
-	"controller-manager-ca":  cmca.Setup,
-	resources.ControllerName: resources.Setup,
-	"inplaceupgrader":        inplaceupgrader.Setup,
-	"node":                   node.Setup,
-	nodecount.ControllerName: nodecount.Setup,
-	"machine":                machine.Setup,
-	"drainer":                drainer.Setup,
-	hcpstatus.ControllerName: hcpstatus.Setup,
+	"controller-manager-ca":    cmca.Setup,
+	resources.ControllerName:   resources.Setup,
+	"inplaceupgrader":          inplaceupgrader.Setup,
+	"node":                     node.Setup,
+	nodecount.ControllerName:   nodecount.Setup,
+	featuregate.ControllerName: featuregate.Setup,
+	"machine":                  machine.Setup,
+	"drainer":                  drainer.Setup,
+	hcpstatus.ControllerName:   hcpstatus.Setup,
 }
 
 type HostedClusterConfigOperator struct {
