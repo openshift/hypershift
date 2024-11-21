@@ -6,7 +6,9 @@ title: Contribute to HyperShift
 Thanks for your interest in contributing to HyperShift. Here are some guidelines that help make the process more straightforward for everyone.
 
 ## Prior to Submitting a Pull Request
-1. Prior to committing your code, run `make pre-commit`. This updates all Golang and API dependencies, builds the source code, builds the e2e tests, verifies source code format, and runs all unit tests. This will help catch issues before committing so that the verify and unit test CI jobs will not fail on your PR. 
+1. Prior to committing your code
+   1. Install `precommit`. The HyperShift repo is set up to run `codespell` on your commits through `precommit`. Instructions for installing `precommit` can be found [here](https://pre-commit.com/#install).
+   2. Run `make pre-commit`. This updates all Golang and API dependencies, builds the source code, builds the e2e tests, verifies source code format, and runs all unit tests. This will help catch issues before committing so that the verify and unit test CI jobs will not fail on your PR. 
 2. Before submitting your pull request on GitHub, look at your changes and try to view them from the eyes of a reviewer. 
     1. Try to find the aspects that might not immediately make sense for someone else and explain them in the pull request description.
 3. Keep commits/changes scoped to one thing and as minimal as possible. 
