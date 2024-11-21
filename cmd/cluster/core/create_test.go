@@ -6,6 +6,8 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
@@ -19,9 +21,13 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 
 	fakeKubeClient := fakekubeclient.NewSimpleClientset()
 	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
-
 	if !ok {
 		t.Fatalf("failed to convert FakeDiscovery")
+	}
+
+	fakeMetadataProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+		Result:   &dockerv1client.DockerImageConfig{},
+		Manifest: fakeimagemetadataprovider.FakeManifest{},
 	}
 
 	// if you want to fake a specific version
@@ -80,7 +86,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, tc.opts, fakeKubeClient)
+			err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, tc.opts, fakeKubeClient, fakeMetadataProvider)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

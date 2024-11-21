@@ -1817,5 +1817,14 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 	}
 
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "hcp-namespace"},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{}`),
+		},
+	}
+
+	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
+
 	return fakeComponents
 }

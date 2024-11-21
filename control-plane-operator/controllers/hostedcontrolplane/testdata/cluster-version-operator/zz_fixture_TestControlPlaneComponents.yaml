@@ -284,6 +284,7 @@ spec:
             annotations:
               include.release.openshift.io/ibm-cloud-managed: "true"
               release.openshift.io/delete: "true"
+          EOF
         command:
         - /bin/bash
         image: cluster-version-operator

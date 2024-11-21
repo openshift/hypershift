@@ -8,9 +8,11 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,11 +39,18 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		featureSet = cpContext.HCP.Spec.Configuration.FeatureGate.FeatureSet
 	}
 
+	// The CVO prepare-payload script needs the ReleaseImage digest for disconnected environments
+	controlPlaneReleaseImage, dataPlaneReleaseImage, err := discoverCVOReleaseImages(cpContext)
+	if err != nil {
+		return fmt.Errorf("failed to discover CVO release images: %w", err)
+	}
+
 	util.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
 			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, util.HCPOAuthEnabled(cpContext.HCP), featureSet),
 		}
+		c.Image = controlPlaneReleaseImage
 	})
 	util.UpdateContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env, corev1.EnvVar{
@@ -53,7 +62,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		util.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "RELEASE_IMAGE",
-			Value: cpContext.HCP.Spec.ReleaseImage,
+			Value: dataPlaneReleaseImage,
 		})
 
 		if updateService := cpContext.HCP.Spec.UpdateService; updateService != "" {
@@ -210,6 +219,7 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 			"    release.openshift.io/delete: \"true\"",
 		)
 	}
+	stmts = append(stmts, "EOF")
 	return strings.Join(stmts, "\n")
 }
 
@@ -238,4 +248,46 @@ func resourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-controller", Namespace: "openshift-cluster-storage-operator"}},
 		}
 	}
+}
+
+func discoverCVOReleaseImages(cpContext component.WorkloadContext) (string, string, error) {
+	var (
+		controlPlaneReleaseImage string
+		dataPlaneReleaseImage    string
+	)
+
+	pullSecret := common.PullSecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext.Context, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return "", "", fmt.Errorf("failed to get pull secret for namespace %s: %w", cpContext.HCP.Namespace, err)
+	}
+
+	cpRef, err := registryclient.GetCorrectArchImage(cpContext.Context, "cluster-version-operator", cpContext.HCP.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey], cpContext.ImageMetadataProvider)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse control plane release image %s: %w", cpRef, err)
+	}
+
+	_, cpReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get control plane release image digest %s: %w", cpRef, err)
+	}
+
+	controlPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", cpReleaseImageRef.Registry, cpReleaseImageRef.Namespace, cpReleaseImageRef.NameString())
+
+	if cpContext.HCP.Spec.ControlPlaneReleaseImage != nil && *cpContext.HCP.Spec.ControlPlaneReleaseImage != cpContext.HCP.Spec.ReleaseImage {
+		dpRef, err := registryclient.GetCorrectArchImage(cpContext.Context, "cluster-version-operator", cpContext.HCP.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey], cpContext.ImageMetadataProvider)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to parse data plane release image %s: %w", dpRef, err)
+		}
+
+		_, dpReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, dpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get data plane release image digest %s: %w", dpRef, err)
+		}
+
+		dataPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", dpReleaseImageRef.Registry, dpReleaseImageRef.Namespace, dpReleaseImageRef.NameString())
+	} else {
+		dataPlaneReleaseImage = controlPlaneReleaseImage
+	}
+
+	return controlPlaneReleaseImage, dataPlaneReleaseImage, nil
 }

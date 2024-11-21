@@ -141,6 +141,9 @@ func TestReconcileErrorHandling(t *testing.T) {
 		fakeDigestLister := func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
 			return "", nil
 		}
+		imageMetaDataProvider := supportutil.RegistryClientImageMetadataProvider{
+			OpenShiftImageRegistryOverrides: map[string][]string{},
+		}
 
 		r := &reconciler{
 			client:                 fakeClient,
@@ -153,6 +156,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			DigestListerFN:         fakeDigestLister,
+			ImageMetaDataProvider:  imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
