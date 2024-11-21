@@ -1873,6 +1873,102 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 
 			expectedResult: errors.New(`[infrastructure kubevirt version is [0.99.0], hypershift kubevirt platform requires kubevirt version [1.0.0] or greater, infrastructure Kubernetes version is [1.26.99], hypershift kubevirt platform requires Kubernetes version [1.27.0] or greater]`),
 		},
+		{
+			name: "MinimumKubeletVersion node object not set",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Node: nil,
+					},
+				}},
+
+			expectedResult: nil,
+		},
+		{
+			name: "MinimumKubeletVersion not set",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Node: &configv1.NodeSpec{},
+					},
+				}},
+
+			expectedResult: nil,
+		},
+		{
+			name: "MinimumKubeletVersion OldestKubeletVersion not set",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Node: &configv1.NodeSpec{
+							MinimumKubeletVersion: "bogus",
+						},
+					},
+				}},
+			expectedResult: fmt.Errorf("invalid minimumKubeletVersion: bogus No Major.Minor.Patch elements found"),
+		},
+		{
+			name: "MinimumKubeletVersion should succeed if new enough value",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Node: &configv1.NodeSpec{
+							MinimumKubeletVersion: "1.30.0",
+						},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					OldestKubeletVersion: ptr.To("1.30.0"),
+				},
+			},
+			expectedResult: nil,
+		},
+		{
+			name: "MinimumKubeletVersion should fail if too old",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: clusterNet,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Node: &configv1.NodeSpec{
+							MinimumKubeletVersion: "1.30.0",
+						},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					OldestKubeletVersion: ptr.To("1.29.0"),
+				},
+			},
+			expectedResult: fmt.Errorf("validating failed for 1.30.0: kubelet version is outdated: kubelet version is 1.29.0, which is lower than minimumKubeletVersion of 1.30.0"),
+		},
 	}
 
 	for _, tc := range testCases {
