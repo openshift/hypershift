@@ -54,6 +54,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	OLMCatalogPlacement              *hypershiftv1beta1.OLMCatalogPlacement               `json:"olmCatalogPlacement,omitempty"`
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
 	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
+	Labels                           map[string]string                                    `json:"labels,omitempty"`
 }
 
 // HostedClusterSpecApplyConfiguration constructs an declarative configuration of the HostedClusterSpec type for use with
@@ -300,6 +301,20 @@ func (b *HostedClusterSpecApplyConfiguration) WithNodeSelector(entries map[strin
 func (b *HostedClusterSpecApplyConfiguration) WithTolerations(values ...corev1.Toleration) *HostedClusterSpecApplyConfiguration {
 	for i := range values {
 		b.Tolerations = append(b.Tolerations, values[i])
+	}
+	return b
+}
+
+// WithLabels puts the entries into the Labels field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the Labels field,
+// overwriting an existing map entries in Labels field with the same key.
+func (b *HostedClusterSpecApplyConfiguration) WithLabels(entries map[string]string) *HostedClusterSpecApplyConfiguration {
+	if b.Labels == nil && len(entries) > 0 {
+		b.Labels = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.Labels[k] = v
 	}
 	return b
 }
