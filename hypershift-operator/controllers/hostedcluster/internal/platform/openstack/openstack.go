@@ -251,24 +251,38 @@ func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, cr
 	}
 
 	// Sync CNCC secret
+	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "cloud-network-config-controller-creds"); err != nil {
+		return err
+	}
+	// Sync Cinder CSI driver secret
+	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "openstack-cloud-credentials"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack cloud config secret.
+func (a OpenStack) reconcileOpenStackCredentialsSecret(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace, name string) error {
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.OpenStack.IdentityRef.Name}}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 		return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
 	}
+
 	caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
-	cloudNetworkConfigCreds := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"},
+	credsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: name},
 		Data:       map[string][]byte{},
 	}
-	cloudNetworkConfigCreds.Data[openstack.CloudsSecretKey] = credentialsSecret.Data[openstack.CloudsSecretKey]
+	credsSecret.Data[openstack.CloudsSecretKey] = credentialsSecret.Data[openstack.CloudsSecretKey]
 	if caCertData != nil {
-		cloudNetworkConfigCreds.Data[openstack.CABundleKey] = caCertData
+		credsSecret.Data[openstack.CABundleKey] = caCertData
 	}
 
-	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
-		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack, cloudNetworkConfigCreds, credentialsSecret, caCertData, hcluster.Spec.Networking.MachineNetwork)
+	if _, err := createOrUpdate(ctx, c, credsSecret, func() error {
+		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack, credsSecret, credentialsSecret, caCertData, hcluster.Spec.Networking.MachineNetwork)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
+		return fmt.Errorf("failed to reconcile OpenStack cloud config for %s: %w", name, err)
 	}
 
 	return nil

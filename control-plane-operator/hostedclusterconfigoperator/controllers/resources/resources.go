@@ -1798,7 +1798,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cmCPC.Data == nil {
 				cmCPC.Data = map[string]string{}
 			}
-			cmCPC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			cmCPC.Data[openstack.CloudConfigKey] = reference.Data[openstack.CloudConfigKey]
 			if reference.Data[openstack.CABundleKey] != "" {
 				cmCPC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
 			}
@@ -1818,7 +1818,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cmKCC.Data == nil {
 				cmKCC.Data = map[string]string{}
 			}
-			cmKCC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			cmKCC.Data[openstack.CloudConfigKey] = reference.Data[openstack.CloudConfigKey]
 			if reference.Data[openstack.CABundleKey] != "" {
 				cmKCC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
 			}
@@ -2519,8 +2519,16 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		errs = append(errs, fmt.Errorf("failed to reconcile Storage : %w", err))
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-		driver := manifests.ClusterCSIDriver(operatorv1.AWSEBSCSIDriver)
+	var driverNames []operatorv1.CSIDriverName
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		driverNames = []operatorv1.CSIDriverName{operatorv1.AWSEBSCSIDriver}
+	case hyperv1.OpenStackPlatform:
+		// TODO(stephenfin): Add Manila here once it supports Hypershift
+		driverNames = []operatorv1.CSIDriverName{operatorv1.CinderCSIDriver}
+	}
+	for _, driverName := range driverNames {
+		driver := manifests.ClusterCSIDriver(driverName)
 		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
 			return nil

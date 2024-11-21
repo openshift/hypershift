@@ -15,7 +15,7 @@ const (
 	secretOCCMVolumeName = "secret-occm"
 	trustedCAVolumeName  = "trusted-ca"
 
-	CaDir       = "/etc/pki/ca-trust/extracted/pem"
+	CADir       = "/etc/pki/ca-trust/extracted/pem"
 	CASecretKey = "cacert"
 )
 
@@ -39,7 +39,7 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 		if hasCACert {
 			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 				Name:      trustedCAVolumeName,
-				MountPath: CaDir,
+				MountPath: CADir,
 				ReadOnly:  true,
 			})
 		}

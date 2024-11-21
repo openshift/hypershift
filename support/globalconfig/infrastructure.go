@@ -87,7 +87,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{}
 		// This ConfigMap is populated by the local ignition provider and given to MCO
 		infra.Spec.CloudConfig.Name = "cloud-provider-config"
-		infra.Spec.CloudConfig.Key = openstack.CredentialsFile
+		infra.Spec.CloudConfig.Key = openstack.CloudConfigKey
 		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
 			CloudName:            "openstack",
 			LoadBalancer:         &configv1.OpenStackPlatformLoadBalancer{Type: configv1.LoadBalancerTypeUserManaged},

@@ -90,7 +90,7 @@ func addCACert(deployment *appsv1.Deployment) {
 	ccmContainer := &deployment.Spec.Template.Spec.Containers[0]
 	ccmContainer.VolumeMounts = append(ccmContainer.VolumeMounts, corev1.VolumeMount{
 		Name:      ccmCloudCA().Name,
-		MountPath: CaDir,
+		MountPath: CADir,
 		ReadOnly:  true,
 	})
 }
@@ -117,7 +117,7 @@ func buildCCMContainer(controllerManagerImage, infraID string) func(c *corev1.Co
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "CLOUD_CONFIG",
-				Value: CloudConfigDir + "/" + CredentialsFile,
+				Value: CloudConfigDir + "/" + CloudConfigKey,
 			},
 			{
 				Name:  "OCP_INFRASTRUCTURE_NAME",
@@ -155,8 +155,8 @@ func buildCCMCloudConfig(v *corev1.Volume) {
 		LocalObjectReference: corev1.LocalObjectReference{Name: manifests.OpenStackProviderConfig("").Name},
 		Items: []corev1.KeyToPath{
 			{
-				Key:  CredentialsFile,
-				Path: CredentialsFile,
+				Key:  CloudConfigKey,
+				Path: CloudConfigKey,
 			},
 		},
 	}

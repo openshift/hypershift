@@ -105,6 +105,8 @@ spec:
           value: quay.io/openshift/origin-aws-ebs-csi-driver:latest
         - name: AZURE_DISK_DRIVER_CONTROL_PLANE_IMAGE
           value: quay.io/openshift/origin-azure-disk-csi-driver-operator:latest
+        - name: OPENSTACK_CINDER_DRIVER_CONTROL_PLANE_IMAGE
+          value: quay.io/openshift/origin-openstack-cinder-csi-driver-operator:latest
         - name: LIVENESS_PROBE_CONTROL_PLANE_IMAGE
           value: quay.io/openshift/origin-csi-livenessprobe:latest
         - name: AZURE_FILE_DRIVER_CONTROL_PLANE_IMAGE

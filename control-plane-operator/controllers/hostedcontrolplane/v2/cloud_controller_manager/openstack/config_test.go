@@ -33,13 +33,13 @@ func TestGetCloudConfig(t *testing.T) {
 			},
 			credentialsSecret: &corev1.Secret{
 				Data: map[string][]byte{
-					CredentialsFile: []byte(""),
+					CloudConfigKey: []byte(""),
 				},
 			},
 			expectedConfig: `[Global]
 use-clouds = true
-clouds-file=/etc/openstack/secret/clouds.yaml
-cloud=test-cloud
+clouds-file = /etc/openstack/secret/clouds.yaml
+cloud = test-cloud
 
 [LoadBalancer]
 max-shared-lb = 1
@@ -69,13 +69,13 @@ address-sort-order = 192.168.0.0/24
 			},
 			credentialsSecret: &corev1.Secret{
 				Data: map[string][]byte{
-					CredentialsFile: []byte(""),
+					CloudConfigKey: []byte(""),
 				},
 			},
 			expectedConfig: `[Global]
 use-clouds = true
-clouds-file=/etc/openstack/secret/clouds.yaml
-cloud=test-cloud
+clouds-file = /etc/openstack/secret/clouds.yaml
+cloud = test-cloud
 
 [LoadBalancer]
 max-shared-lb = 1
