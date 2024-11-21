@@ -12,6 +12,7 @@ import (
 	"github.com/golang/groupcache/lru"
 	"k8s.io/client-go/rest"
 
+	"github.com/opencontainers/go-digest"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -24,10 +25,16 @@ import (
 
 var (
 	imageMetadataCache = lru.New(1000)
+	manifestsCache     = lru.New(1000)
+	digestCache        = lru.New(1000)
 )
 
 type ImageMetadataProvider interface {
 	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error)
+	GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error)
+	GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error)
+	GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error)
+	GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error)
 }
 
 type RegistryClientImageMetadataProvider struct {
@@ -44,14 +51,12 @@ type RegistryClientImageMetadataProvider struct {
 // no further fetching occurs. Only if both cache lookups fail, the image metadata is fetched and
 // stored in the cache.
 func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
-	log := ctrl.LoggerFrom(ctx)
 
 	var (
 		repo           distribution.Repository
 		ref            *reference.DockerImageReference
 		parsedImageRef reference.DockerImageReference
 		err            error
-		overrideFound  bool
 	)
 
 	parsedImageRef, err = reference.Parse(imageRef)
@@ -62,40 +67,17 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	// There are no ICSPs/IDMSs to process.
 	// That means the image reference should be pulled from the external registry
 	if len(r.OpenShiftImageRegistryOverrides) == 0 {
-		parsedImageRef, err = reference.Parse(imageRef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
-		}
-
 		// If the image reference contains a digest, immediately look it up in the cache
 		if parsedImageRef.ID != "" {
 			if imageConfigObject, exists := imageMetadataCache.Get(parsedImageRef.ID); exists {
 				return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
 			}
 		}
-
 		ref = &parsedImageRef
-		repo, err = getRepository(ctx, *ref, pullSecret)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
-	for source, mirrors := range r.OpenShiftImageRegistryOverrides {
-		for _, mirror := range mirrors {
-			ref, overrideFound, err = GetRegistryOverrides(ctx, parsedImageRef, source, mirror)
-			if err != nil {
-				log.Info(fmt.Sprintf("failed to find registry override for image reference %q with source, %s, mirror %s: %s", imageRef, source, mirror, err.Error()))
-				continue
-			}
-			break
-		}
-		// We found a successful source/mirror combo so break continuing any further source/mirror combos
-		if overrideFound {
-			break
-		}
-	}
+	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
 
 	// If the image reference contains a digest, immediately look it up in the cache
 	if ref.ID != "" {
@@ -129,6 +111,248 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	imageMetadataCache.Add(string(location.Manifest), config)
 
 	return config, nil
+}
+
+// GetOverride returns the image reference override based on the source/mirrors in the ICSPs/IDMSs
+func (r *RegistryClientImageMetadataProvider) GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error) {
+
+	var (
+		ref            *reference.DockerImageReference
+		parsedImageRef reference.DockerImageReference
+		err            error
+	)
+
+	parsedImageRef, err = reference.Parse(imageRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+	}
+
+	// There are no ICSPs/IDMSs to process.
+	// That means the image reference should be pulled from the external registry
+	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+		ref = &parsedImageRef
+	}
+
+	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
+
+	return ref, nil
+}
+
+func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
+
+	var (
+		repo           distribution.Repository
+		ref            *reference.DockerImageReference
+		parsedImageRef reference.DockerImageReference
+		err            error
+		srcDigest      digest.Digest
+	)
+
+	parsedImageRef, err = reference.Parse(imageRef)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+	}
+
+	// There are no ICSPs/IDMSs to process.
+	// That means the image reference should be pulled from the external registry
+	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+		// If the image name is in the cache, return early
+		if imageDigest, exists := digestCache.Get(imageRef); exists {
+			parsedImageRef.ID = string(imageDigest.(digest.Digest))
+			return imageDigest.(digest.Digest), &parsedImageRef, nil
+		}
+
+		ref = &parsedImageRef
+	}
+
+	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
+	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
+
+	composedRef := fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.NameString())
+
+	// If the overriden image name is in the cache, return early
+	if imageDigest, exists := digestCache.Get(composedRef); exists {
+		ref.ID = string(imageDigest.(digest.Digest))
+		return imageDigest.(digest.Digest), ref, nil
+	}
+
+	repo, composedParsedRef, err := GetRepoSetup(ctx, composedRef, pullSecret)
+	if err != nil || repo == nil {
+		return "", nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
+	}
+
+	switch {
+	case len(composedParsedRef.ID) > 0:
+		srcDigest = digest.Digest(composedParsedRef.ID)
+
+	case len(composedParsedRef.Tag) > 0:
+		desc, err := repo.Tags(ctx).Get(ctx, composedParsedRef.Tag)
+		if err != nil {
+			return "", nil, err
+		}
+		srcDigest = desc.Digest
+		composedParsedRef.ID = string(srcDigest)
+	}
+
+	digestCache.Add(composedRef, srcDigest)
+	digestCache.Add(imageRef, srcDigest)
+
+	return srcDigest, composedParsedRef, nil
+}
+
+// GetManifest returns the manifest for a given image using the given pull secret
+// to authenticate. This lookup uses a cache based on the image digest. If The
+// reference of the image contains a digest (which is the mainline case for images in a release payload),
+// the digest is parsed from the image reference and then used to lookup the manifest in the
+// cache and return it with the ImageOverrides already included.
+func (r *RegistryClientImageMetadataProvider) GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error) {
+
+	var (
+		ref            *reference.DockerImageReference
+		parsedImageRef reference.DockerImageReference
+		err            error
+		srcDigest      digest.Digest
+	)
+
+	parsedImageRef, err = reference.Parse(imageRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+	}
+
+	// There are no ICSPs/IDMSs to process.
+	// That means the image reference should be pulled from the external registry
+	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+		// If the image reference contains a digest, immediately look it up in the cache
+		if parsedImageRef.ID != "" {
+			if manifest, exists := manifestsCache.Get(parsedImageRef.ID); exists {
+				return manifest.(distribution.Manifest), nil
+			}
+		}
+		ref = &parsedImageRef
+	}
+
+	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
+	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
+
+	// If the image reference contains a digest, immediately look it up in the cache
+	if ref.ID != "" {
+		if manifest, exists := manifestsCache.Get(ref.ID); exists {
+			return manifest.(distribution.Manifest), nil
+		}
+	}
+
+	composedRef := fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.NameString())
+
+	digestsManifest, srcDigest, err := getManifest(ctx, composedRef, pullSecret)
+	if err != nil {
+		return nil, err
+	}
+	manifestsCache.Add(srcDigest, digestsManifest)
+
+	return digestsManifest, nil
+}
+
+func (r *RegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+
+	var (
+		ref            *reference.DockerImageReference
+		parsedImageRef reference.DockerImageReference
+		err            error
+	)
+
+	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+		return getMetadata(ctx, imageRef, pullSecret)
+	}
+
+	parsedImageRef, err = reference.Parse(imageRef)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+	}
+
+	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
+	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
+	composedRef := fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.NameString())
+
+	return getMetadata(ctx, composedRef, pullSecret)
+}
+
+// getManifest gets the manifest from an image
+func getManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, digest.Digest, error) {
+	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var srcDigest digest.Digest
+	if len(ref.Tag) > 0 {
+		desc, err := repo.Tags(ctx).Get(ctx, ref.Tag)
+		if err != nil {
+			return nil, "", err
+		}
+		srcDigest = desc.Digest
+	}
+
+	if len(ref.ID) > 0 {
+		srcDigest = digest.Digest(ref.ID)
+	}
+
+	manifests, err := repo.Manifests(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+
+	digestsManifest, err := manifests.Get(ctx, srcDigest, manifest.PreferManifestList)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return digestsManifest, srcDigest, nil
+}
+
+func getMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
+	}
+	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
+	}
+	imageConfig, layers, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to obtain image layers for %s: %w", imageRef, err)
+	}
+	return imageConfig, layers, repo.Blobs(ctx), nil
+}
+
+// GetRepoSetup connects to a repo and pulls the imageRef's docker image information from the repo. Returns the repo and the docker image.
+func GetRepoSetup(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+	var dockerImageRef *reference.DockerImageReference
+	rt, err := rest.TransportFor(&rest.Config{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create secure transport: %w", err)
+	}
+	insecureRT, err := rest.TransportFor(&rest.Config{TLSClientConfig: rest.TLSClientConfig{Insecure: true}})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create insecure transport: %w", err)
+	}
+	credStore, err := dockercredentials.NewFromBytes(pullSecret)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetRepoSetup - failed to parse docker credentials: %w", err)
+	}
+	registryContext := registryclient.NewContext(rt, insecureRT).WithCredentials(credStore).
+		WithRequestModifiers(transport.NewHeaderRequestModifier(http.Header{http.CanonicalHeaderKey("User-Agent"): []string{rest.DefaultKubernetesUserAgent()}}))
+
+	ref, err := reference.Parse(imageRef)
+	dockerImageRef = &ref
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+	}
+	repo, err := registryContext.Repository(ctx, ref.DockerClientDefaults().RegistryURL(), ref.RepositoryName(), false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
+	}
+	return repo, dockerImageRef, nil
 }
 
 func getRepository(ctx context.Context, ref reference.DockerImageReference, pullSecret []byte) (distribution.Repository, error) {
@@ -170,13 +394,33 @@ func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReferenc
 		return nil, false, fmt.Errorf("failed to parse source image reference %q: %w", source, err)
 	}
 
-	if sourceRef.Namespace == ref.Namespace && sourceRef.Name == ref.Name {
-		log.Info("registry override coincidence found", "original", fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.Name), "mirror", mirror)
-		mirrorRef, err := reference.Parse(mirror)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to parse mirror image reference %q: %w", mirrorRef.Name, err)
+	mirrorRef, err := reference.Parse(mirror)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to parse mirror image reference %q: %w", source, err)
+	}
+
+	// docker lib, by default will empty the Namespace once we pass an override with just a Namespace
+	// and it will asume that is the Name instead
+	if sourceRef.Namespace == "" {
+		if sourceRef.Name == ref.Namespace {
+			composedImage := fmt.Sprintf("%s/%s/%s", mirrorRef.Registry, ref.Namespace, ref.NameString())
+			composedRef, err := reference.Parse(composedImage)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to parse composed image reference (partial match) %q: %w", source, err)
+			}
+			log.Info("registry override coincidence found (namespace)", "original", fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.NameString()), "mirror", mirror, "composed", composedRef)
+			return &composedRef, true, nil
 		}
-		return &mirrorRef, true, nil
+	}
+
+	if ref.Namespace == sourceRef.Namespace && ref.Name == sourceRef.Name {
+		composedImage := fmt.Sprintf("%s/%s/%s", mirrorRef.Registry, mirrorRef.Namespace, ref.NameString())
+		composedRef, err := reference.Parse(composedImage)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to parse composed image reference (exact match) %q: %w", source, err)
+		}
+		log.Info("registry override coincidence found (exact match)", "original", fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.NameString()), "mirror", mirror, "composed", composedRef)
+		return &composedRef, true, nil
 	}
 
 	return &ref, false, nil
@@ -206,4 +450,21 @@ func GetPayloadVersion(ctx context.Context, releaseImageProvider releaseinfo.Pro
 		return nil, fmt.Errorf("failed to parse version (%s): %w", versionStr, err)
 	}
 	return &version, nil
+}
+
+func seekOverride(ctx context.Context, openshiftImageRegistryOverrides map[string][]string, parsedImageReference reference.DockerImageReference) *reference.DockerImageReference {
+	log := ctrl.LoggerFrom(ctx)
+	for source, mirrors := range openshiftImageRegistryOverrides {
+		for _, mirror := range mirrors {
+			ref, overrideFound, err := GetRegistryOverrides(context.Background(), parsedImageReference, source, mirror)
+			if err != nil {
+				log.Info(fmt.Sprintf("failed to find registry override for image reference %q with source, %s, mirror %s: %s", parsedImageReference, source, mirror, err.Error()))
+				continue
+			}
+			if overrideFound {
+				return ref
+			}
+		}
+	}
+	return &parsedImageReference
 }

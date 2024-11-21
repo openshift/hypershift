@@ -394,7 +394,7 @@ func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc 
 		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
 
-	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes, imageMetadataProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to determine if release image multi-arch: %w", err)
 	}
