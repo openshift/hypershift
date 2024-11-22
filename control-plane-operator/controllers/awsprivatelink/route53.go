@@ -11,9 +11,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func lookupZoneID(ctx context.Context, client route53iface.Route53API, name string) (string, error) {
+	log := ctrl.LoggerFrom(ctx)
 	var res *route53.HostedZone
 	f := func(resp *route53.ListHostedZonesOutput, lastPage bool) (shouldContinue bool) {
 		for idx, zone := range resp.HostedZones {
@@ -25,6 +27,7 @@ func lookupZoneID(ctx context.Context, client route53iface.Route53API, name stri
 		return !lastPage
 	}
 	if err := client.ListHostedZonesPagesWithContext(ctx, &route53.ListHostedZonesInput{}, f); err != nil {
+		log.Error(err, "failed to list hosted zones")
 		return "", err
 	}
 	if res == nil {
@@ -33,7 +36,8 @@ func lookupZoneID(ctx context.Context, client route53iface.Route53API, name stri
 	return cleanZoneID(*res.Id), nil
 }
 
-func CreateRecord(ctx context.Context, client route53iface.Route53API, zondID, name, value, recordType string) error {
+func CreateRecord(ctx context.Context, client route53iface.Route53API, zoneID, name, value, recordType string) error {
+	log := ctrl.LoggerFrom(ctx)
 	record := &route53.ResourceRecordSet{
 		Name: aws.String(name),
 		Type: aws.String(recordType),
@@ -55,12 +59,13 @@ func CreateRecord(ctx context.Context, client route53iface.Route53API, zondID, n
 	}
 
 	input := &route53.ChangeResourceRecordSetsInput{
-		HostedZoneId: aws.String(zondID),
+		HostedZoneId: aws.String(zoneID),
 		ChangeBatch:  changeBatch,
 	}
 
 	_, err := client.ChangeResourceRecordSetsWithContext(ctx, input)
 	if awsErr, ok := err.(awserr.Error); ok {
+		log.Error(err, "failed to create records in hosted zone", "zone", zoneID)
 		return errors.New(awsErr.Code())
 	}
 	return err
