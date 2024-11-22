@@ -6,7 +6,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func IngressDefaultIngressController() *operatorv1.IngressController {
@@ -16,16 +15,6 @@ func IngressDefaultIngressController() *operatorv1.IngressController {
 			Namespace: "openshift-ingress-operator",
 		},
 	}
-}
-
-func IngressDefaultIngressControllerAsUnstructured() *unstructured.Unstructured {
-	src := IngressDefaultIngressController()
-	obj := &unstructured.Unstructured{}
-	obj.SetAPIVersion(operatorv1.GroupVersion.String())
-	obj.SetKind("IngressController")
-	obj.SetName(src.Name)
-	obj.SetNamespace(src.Namespace)
-	return obj
 }
 
 func IngressDefaultIngressControllerCert() *corev1.Secret {
