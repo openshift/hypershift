@@ -976,11 +976,23 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 	p := ingress.NewIngressParams(hcp)
-	ingressController := manifests.IngressDefaultIngressController()
-	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
-		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
+
+	// This is a workaround until we bump openshift/api which has the floatingIP field in the IngessControllerSpec
+	// TODO (cewong): Remove this when updated openshift/api is vendored
+	if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+		ingressController := manifests.IngressDefaultIngressControllerAsUnstructured()
+		if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
+			return ingress.ReconcileOpenStackDefaultIngressController(ingressController, p.IngressSubdomain, p.Replicas, p.IsPrivate, p.LoadBalancerScope, p.LoadBalancerIP)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openstack default ingress controller: %w", err))
+		}
+	} else {
+		ingressController := manifests.IngressDefaultIngressController()
+		if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
+			return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope, p.LoadBalancerIP)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
+		}
 	}
 
 	sourceCert := cpomanifests.IngressCert(hcp.Namespace)

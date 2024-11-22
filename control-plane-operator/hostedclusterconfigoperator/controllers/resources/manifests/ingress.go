@@ -3,6 +3,7 @@ package manifests
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -15,6 +16,16 @@ func IngressDefaultIngressController() *operatorv1.IngressController {
 			Namespace: "openshift-ingress-operator",
 		},
 	}
+}
+
+func IngressDefaultIngressControllerAsUnstructured() *unstructured.Unstructured {
+	src := IngressDefaultIngressController()
+	obj := &unstructured.Unstructured{}
+	obj.SetAPIVersion(operatorv1.GroupVersion.String())
+	obj.SetKind("IngressController")
+	obj.SetName(src.Name)
+	obj.SetNamespace(src.Namespace)
+	return obj
 }
 
 func IngressDefaultIngressControllerCert() *corev1.Secret {

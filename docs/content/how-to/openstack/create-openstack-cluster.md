@@ -13,10 +13,6 @@ Upon scaling up a NodePool, a Machine will be created, and the CAPI provider wil
 * Although the HyperShift Operator with OpenStack support is currently in development and is not intended for production use,
   it is possible to create and manage clusters for development and testing purposes and it's expected to work as described in this document.
 * OpenStack CSI (Cinder and Manila) are not functional yet but are [expected](https://issues.redhat.com/browse/OSASINFRA-3536) to work in the 4.18 release and fully supported in future releases.
-* A few operators running in the workload cluster (e.g. console) won't be operational on day 1 because the floating IP used
-  for Ingress isn't automatically configured in the DNS. This is a manual and documented step that needs to be done after the
-  cluster is created. We are [working](https://issues.redhat.com/browse/OSASINFRA-3489) on allowing customers to pre-create the DNS records before the cluster is created by using
-  a pre-created floating IP.
 
 ## Prerequisites
 
@@ -105,6 +101,22 @@ openstack image create --disk-format qcow2 --file rhcos-openstack.x86_64.qcow2 r
     The `rhcos-openstack.x86_64.qcow2` file is the RHCOS image that was downloaded from the OpenShift mirror.
     You can download the latest RHCOS image from the [Red Hat OpenShift Container Platform mirror](https://mirror.openshift.com/pub/openshift-v4/dependencies/rhcos/).
 
+## Create a floating IP for the Ingress (optional)
+
+To get Ingress healthy in a HostedCluster without manual intervention, you need to create a floating IP that will be used by the Ingress service.
+
+```shell
+openstack floating ip create <external-network-id>
+```
+
+If you provide the floating IP to the `--openstack-ingress-floating-ip` flag without pre-creating it, cloud-provider-openstack will create it for you
+only if the Neutron API policy allows a user to create floating IP with a specific IP address.
+
+## Update the DNS record for the Ingress (optional)
+
+If you use a pre-defined floating IP for ingress, you need to create a DNS record for the following wildcard domain that needs to point to the Ingress floating IP:
+`*.apps.<cluster-name>.<base-domain>`
+
 ## Create a HostedCluster
 
 Once all the [prerequisites](#prerequisites) are met, it is now possible to create a guest cluster.
@@ -130,6 +142,9 @@ export IMAGE_NAME="rhcos"
 # Flavor for the nodepool
 export FLAVOR="m1.large"
 
+# Pre-defined floating IP for Ingress
+export INGRESS_FLOATING_IP="<ingress-floating-ip>"
+
 # Optional flags:
 # External network to use for the Ingress endpoint.
 export EXTERNAL_NETWORK_ID="5387f86a-a10e-47fe-91c6-41ac131f9f30"
@@ -154,7 +169,8 @@ hcp create cluster openstack \
 --openstack-ca-cert-file $CA_CERT_PATH \
 --openstack-external-network-id $EXTERNAL_NETWORK_ID \
 --openstack-node-image-name $IMAGE_NAME \
---openstack-node-flavor $FLAVOR
+--openstack-node-flavor $FLAVOR \
+--openstack-ingress-floating-ip $INGRESS_FLOATING_IP
 ```
 
 !!! note
@@ -191,11 +207,6 @@ redhat-operators-catalog-9d5fd4d44-z8qqk              1/1     Running   0       
 A guest cluster backed by OpenStack virtual machines typically takes around 10-15
 minutes to fully provision.
 
-!!! note
-
-    The HostedCluster will not finish the deployment (will remain in `Partial` progress) as we saw in the Limitations section.
-    Please follow the next steps to finish the deployment as for now a manual step is required to configure the Ingress and DNS.
-
 ## Accessing the HostedCluster
 
 CLI access to the guest cluster is gained by retrieving the guest cluster's
@@ -225,10 +236,10 @@ NAME      VERSION       AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.17.0        True        False         5m39s   Cluster version is 4.17.0
 ```
 
-## Ingress and DNS
+## Ingress and DNS (optional)
 
-As mentioned in the Limitations section, the Ingress and DNS configuration is a manual step that needs to be done after the cluster is created.
-This will be automated in the future.
+If you haven't created the HostedCluster with `--openstack-ingress-floating-ip`, you'll need to
+update the DNS record with the floating IP address that was assigned to the `router-default` Service.
 
 Once the workload cluster is deploying, the Ingress controller will be installed
 and a router named `router-default` will be created in the `openshift-ingress` namespace.
@@ -248,14 +259,17 @@ Once this is done, the Ingress operator will become healthy and the console will
 
     The DNS propagation time can vary so you might need to wait a few minutes before your HostedCluster becomes healthy.
 
-At this point, you should be able to access the OpenShift console by navigating to `https://console-openshift-console.apps.<cluster-name>.<base-domain>` in your browser.
+## Access to the guest cluster
+
+Once the HostedCluster is healthy, you should be able to access the OpenShift console by navigating
+to `https://console-openshift-console.apps.<cluster-name>.<base-domain>` in your browser.
 
 To get the `kubeadmin` password, you can run this command:
 ```shell
 oc get --namespace clusters Secret/${CLUSTER_NAME}-kubeadmin-password -o jsonpath='{.data.password}' | base64 --decode
 ```
 
-Also, the HostedCluster will be marked as `Completed`:
+To know whether the HostedCluster is healthy, you can verify with this command:
 ```shell
 oc get --namespace clusters hostedclusters
 
