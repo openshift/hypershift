@@ -1268,6 +1268,16 @@ func TestReconcileRouter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			apiServerService := hyperv1.ServicePublishingStrategyMapping{
+				Service: hyperv1.APIServer,
+			}
+			if tc.exposeAPIServerThroughRouter {
+				apiServerService.Type = hyperv1.Route
+				apiServerService.Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: "example.com",
+				}
+			}
+
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -1280,6 +1290,7 @@ func TestReconcileRouter(t *testing.T) {
 							EndpointAccess: tc.endpointAccess,
 						},
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{apiServerService},
 				},
 			}
 
@@ -1292,8 +1303,16 @@ func TestReconcileRouter(t *testing.T) {
 			}
 
 			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
-			if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate, tc.exposeAPIServerThroughRouter, "privateRouterHost", "publicRouterHost"); err != nil {
-				t.Fatalf("reconcileRouter failed: %v", err)
+			if useHCPRouter(hcp) {
+				if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate); err != nil {
+					t.Fatalf("reconcileRouter failed: %v", err)
+				}
+				if err := r.admitHCPManagedRoutes(ctx, hcp, "privateRouterHost", "publicRouterHost"); err != nil {
+					t.Fatalf("admitHCPManagedRoutes failed: %v", err)
+				}
+				if err := r.cleanupOldRouterResources(ctx, hcp); err != nil {
+					t.Fatalf("cleanupOldRouterResources failed: %v", err)
+				}
 			}
 
 			var deployments appsv1.DeploymentList
