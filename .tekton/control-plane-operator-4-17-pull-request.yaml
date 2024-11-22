@@ -10,7 +10,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "release-4.17"
-      && ( "control-plane-operator/***".pathChanged() || ".tekton/control-plane-operator-4-17-pull-request.yaml".pathChanged() || "/Dockerfile.control-plane-operator".pathChanged() )
+      && ( "control-plane-operator/***".pathChanged() || ".tekton/control-plane-operator-4-17-pull-request.yaml".pathChanged() || "/Containerfile.control-plane-operator".pathChanged() )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: control-plane-operator
@@ -29,7 +29,7 @@ spec:
   - name: image-expires-after
     value: 5d
   - name: dockerfile
-    value: /Dockerfile.control-plane
+    value: /Containerfile.control-plane
   - name: build-platforms
     value:
     - linux/x86_64
@@ -227,8 +227,6 @@ spec:
       - name: BUILD_ARGS
         value:
         - $(params.build-args[*])
-        - EL9_BUILD_IMAGE=brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.22
-        - BASE_IMAGE=registry.redhat.io/rhel9-2-els/rhel:9.2
       - name: BUILD_ARGS_FILE
         value: $(params.build-args-file)
       - name: SOURCE_ARTIFACT
