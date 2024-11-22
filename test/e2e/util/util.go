@@ -1192,6 +1192,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"redhat-operators-catalog":               "app",
 			"redhat-marketplace-catalog":             "app",
 			"openstack-cinder-csi-driver-controller": "app",
+			"manila-csi-driver-controller":           "app",
 		}
 
 		hcpPods := &corev1.PodList{}
@@ -1910,6 +1911,8 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
 				"openstack-cinder-csi-driver-controller",
 				"openstack-cinder-csi-driver-operator",
+				"manila-csi-driver-controller",
+				"openstack-manila-csi-driver-operator",
 			)
 		}
 
