@@ -57,6 +57,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
@@ -1946,6 +1947,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
 	hcp.Spec.NodeSelector = hcluster.Spec.NodeSelector
 	hcp.Spec.Tolerations = hcluster.Spec.Tolerations
+	hcp.Spec.Labels = hcluster.Spec.Labels
 	hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
 
 	// Pass through Platform spec.
@@ -4120,7 +4122,27 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
+	// TODO: remove when API CEL validation is enabled.
+	if err := validateLabels(hc); err != nil {
+		errs = append(errs, err...)
+	}
+
 	return utilerrors.NewAggregate(errs)
+}
+
+func validateLabels(hc *hyperv1.HostedCluster) []error {
+	var errs []error
+	for key, value := range hc.Spec.Labels {
+		if validationErrs := validation.IsQualifiedName(key); len(errs) != 0 {
+			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
+		}
+
+		if validationErrs := validation.IsValidLabelValue(value); len(errs) != 0 {
+			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
+		}
+	}
+
+	return errs
 }
 
 func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster) []error {

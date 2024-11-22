@@ -622,6 +622,24 @@ TODO(alberto): add additional validation for the map key/values.</p>
 <p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>labels when specified, define what custom labels are added to the hcp pods.
+Changing this day 2 will cause a rollout of all hcp pods.
+Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
+TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -5280,6 +5298,24 @@ TODO(alberto): add additional validation for the map key/values.</p>
 <p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>labels when specified, define what custom labels are added to the hcp pods.
+Changing this day 2 will cause a rollout of all hcp pods.
+Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
+TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1beta1.HostedClusterStatus }
@@ -5847,6 +5883,24 @@ map[string]string
 <td>
 <em>(Optional)</em>
 <p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>labels when specified, define what custom labels are added to the hcp pods.
+Changing this day 2 will cause a rollout of all hcp pods.
+Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
+TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
 </td>
 </tr>
 </tbody>

@@ -55,6 +55,7 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
 	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
+	Labels                           map[string]string                                    `json:"labels,omitempty"`
 }
 
 // HostedControlPlaneSpecApplyConfiguration constructs an declarative configuration of the HostedControlPlaneSpec type for use with
@@ -309,6 +310,20 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithNodeSelector(entries map[
 func (b *HostedControlPlaneSpecApplyConfiguration) WithTolerations(values ...corev1.Toleration) *HostedControlPlaneSpecApplyConfiguration {
 	for i := range values {
 		b.Tolerations = append(b.Tolerations, values[i])
+	}
+	return b
+}
+
+// WithLabels puts the entries into the Labels field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the Labels field,
+// overwriting an existing map entries in Labels field with the same key.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithLabels(entries map[string]string) *HostedControlPlaneSpecApplyConfiguration {
+	if b.Labels == nil && len(entries) > 0 {
+		b.Labels = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.Labels[k] = v
 	}
 	return b
 }

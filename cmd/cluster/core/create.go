@@ -96,6 +96,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringArrayVar(&opts.MachineCIDR, "machine-cidr", opts.MachineCIDR, "The CIDR of the machine network. Can be specified multiple times.")
 	flags.BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. Cannot be defined with service-cidr or cluster-cidr flag.")
 	flags.StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
+	flags.StringToStringVar(&opts.PodsLabels, "pods-labels", opts.PodsLabels, "A comma separated list of key=value to use as labels for the Hosted Control Plane pods")
 	flags.StringArrayVar(&opts.Tolerations, "toleration", opts.Tolerations, "A comma separated list of options for a toleration that will be applied to the hcp pods. Valid options are, key, value, operator, effect, tolerationSeconds. E.g. key=node-role.kubernetes.io/master,operator=Exists,effect=NoSchedule. Can be specified multiple times to add multiple tolerations")
 	flags.BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	flags.DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
@@ -154,6 +155,7 @@ type RawCreateOptions struct {
 	ExternalDNSDomain                string
 	Arch                             string
 	NodeSelector                     map[string]string
+	PodsLabels                       map[string]string
 	Tolerations                      []string
 	Wait                             bool
 	Timeout                          time.Duration
@@ -421,6 +423,10 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
+	}
+
+	if opts.PodsLabels != nil {
+		prototype.Cluster.Spec.Labels = opts.PodsLabels
 	}
 
 	for _, tStr := range opts.Tolerations {

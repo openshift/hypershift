@@ -2665,6 +2665,19 @@ spec:
                 - key
                 - name
                 type: object
+              labels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  labels when specified, define what custom labels are added to the hcp pods.
+                  Changing this day 2 will cause a rollout of all hcp pods.
+                  Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+                  Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+
+                  -kubebuilder:validation:XValidation:rule=`self.all(key, size(key) <= 317 && key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))`, message="label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)"
+                  -kubebuilder:validation:XValidation:rule=`self.all(key, size(self[key]) <= 63 && self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))`, message="label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (_) or dots (.), and begin and end with an alphanumeric character"
+                maxProperties: 20
+                type: object
               networking:
                 description: |-
                   Networking specifies network configuration for the cluster.
