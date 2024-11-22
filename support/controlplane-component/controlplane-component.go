@@ -394,6 +394,7 @@ var (
 		"openshift-apiserver",
 		"openshift-oauth-apiserver",
 		"oauth-openshift",
+		"router",
 	)
 )
 

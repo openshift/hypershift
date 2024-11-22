@@ -81,6 +81,7 @@ import (
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
+	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
@@ -211,6 +212,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		kcmv2.NewComponent(),
 		schedulerv2.NewComponent(),
 		oapiv2.NewComponent(),
+		routerv2.NewComponent(),
 		oauthapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		ocmv2.NewComponent(),
@@ -1057,6 +1059,10 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to read observed global config: %w", err)
 	}
 
+	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hostedControlPlane.Namespace); err != nil {
+		return fmt.Errorf("failed to reconcile metrics config: %w", err)
+	}
+
 	if !r.IsCPOV2 {
 		// Reconcile Cloud Provider Config
 		r.Log.Info("Reconciling cloud provider config")
@@ -1117,16 +1123,21 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			r.Log.Info("Waiting for openshift apiserver deployment to become ready")
 			return nil
 		}
-	}
 
-	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hostedControlPlane.Namespace); err != nil {
-		return fmt.Errorf("failed to reconcile metrics config: %w", err)
+		if useHCPRouter(hostedControlPlane) {
+			r.Log.Info("Reconciling router")
+			if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile router: %w", err)
+			}
+		}
 	}
 
 	if useHCPRouter(hostedControlPlane) {
-		r.Log.Info("Reconciling router")
-		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, util.IsRouteKAS(hostedControlPlane), infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
-			return fmt.Errorf("failed to reconcile router: %w", err)
+		if err := r.admitHCPManagedRoutes(ctx, hostedControlPlane, infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
+			return fmt.Errorf("failed to admit HCP managed routes: %w", err)
+		}
+		if err := r.cleanupOldRouterResources(ctx, hostedControlPlane); err != nil {
+			return fmt.Errorf("failed to cleanup old router resources: %w", err)
 		}
 	}
 
@@ -4256,7 +4267,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, exposeKASThroughRouter bool, privateRouterHost, externalRouterHost string) error {
+func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	routeList := &routev1.RouteList{}
 	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to list routes: %w", err)
@@ -4264,48 +4275,55 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 
 	// reconcile the router's configuration
 	svcsNameToIP := make(map[string]string)
-	if util.IsPrivateHCP(hcp) || exposeKASThroughRouter {
-		for _, route := range routeList.Items {
-			svc := &corev1.Service{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      route.Spec.To.Name,
-					Namespace: hcp.Namespace,
-				},
-			}
-			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-				return err
-			}
-
-			svcsNameToIP[route.Spec.To.Name] = svc.Spec.ClusterIP
+	for _, route := range routeList.Items {
+		svc := &corev1.Service{
+			TypeMeta: metav1.TypeMeta{},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      route.Spec.To.Name,
+				Namespace: hcp.Namespace,
+			},
+		}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+			return err
 		}
 
-		routerConfig := manifests.RouterConfigurationConfigMap(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, routerConfig, func() error {
-			return ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(hcp), routerConfig, routeList, svcsNameToIP)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile router configuration: %w", err)
-		}
+		svcsNameToIP[route.Spec.To.Name] = svc.Spec.ClusterIP
+	}
 
-		deployment := manifests.RouterDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return ingress.ReconcileRouterDeployment(deployment,
-				config.OwnerRefFrom(hcp),
-				ingress.HCPRouterConfig(hcp, r.SetDefaultSecurityContext),
-				releaseImageProvider.GetImage(ingress.PrivateRouterImage),
-				routerConfig,
-			)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile router deployment: %w", err)
-		}
+	routerConfig := manifests.RouterConfigurationConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, routerConfig, func() error {
+		return ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(hcp), routerConfig, routeList, svcsNameToIP)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router configuration: %w", err)
+	}
 
-		pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
-			ingress.ReconcileRouterPodDisruptionBudget(pdb, hcp.Spec.ControllerAvailabilityPolicy, config.OwnerRefFrom(hcp))
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
-		}
+	deployment := manifests.RouterDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
+		return ingress.ReconcileRouterDeployment(deployment,
+			config.OwnerRefFrom(hcp),
+			ingress.HCPRouterConfig(hcp, r.SetDefaultSecurityContext),
+			releaseImageProvider.GetImage(ingress.PrivateRouterImage),
+			routerConfig,
+		)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router deployment: %w", err)
+	}
+
+	pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
+		ingress.ReconcileRouterPodDisruptionBudget(pdb, hcp.Spec.ControllerAvailabilityPolicy, config.OwnerRefFrom(hcp))
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) admitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane, privateRouterHost, externalRouterHost string) error {
+	routeList := &routev1.RouteList{}
+	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to list routes: %w", err)
 	}
 
 	// "Admit" routes that we manage so that other code depending on routes continues
@@ -4326,6 +4344,10 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		}
 	}
 
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) cleanupOldRouterResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	oldRouterResources := []client.Object{
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
 		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
