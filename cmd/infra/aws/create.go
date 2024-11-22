@@ -46,7 +46,8 @@ type CreateInfraOptions struct {
 
 	CredentialsSecretData *util.CredentialsSecretData
 
-	VPCOwnerCredentialOpts awsutil.AWSCredentialsOptions
+	VPCOwnerCredentialOpts       awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
 
 	additionalEC2Tags []*ec2.Tag
 }
@@ -109,6 +110,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	cmd.Flags().StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC")
+	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("base-domain")
@@ -186,11 +188,13 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		}
 	}
 
-	var ec2Client *ec2.EC2
+	var clusterCreatorEC2Client, ec2Client *ec2.EC2
 	var vpcOwnerRoute53Client, route53Client *route53.Route53
-	ec2Client = ec2.New(awsSession, awsutil.NewConfig())
+	clusterCreatorEC2Client = ec2.New(awsSession, awsutil.NewConfig())
 	if vpcOwnerAWSSession != nil {
 		ec2Client = ec2.New(vpcOwnerAWSSession, awsutil.NewConfig())
+	} else {
+		ec2Client = clusterCreatorEC2Client
 	}
 	route53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
 	if vpcOwnerAWSSession != nil {
@@ -290,17 +294,34 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 
-	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, vpcOwnerRoute53Client, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID)
+	if vpcOwnerAWSSession != nil {
+		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, awsSession, publicSubnetIDs, result); err != nil {
+			return nil, err
+		}
+	}
+
+	privateZoneClient := vpcOwnerRoute53Client
+	var initialVPC string
+	if o.PrivateZonesInClusterAccount {
+		privateZoneClient = route53Client
+
+		// Create a dummy vpc that we can use to create the private hosted zones
+		if initialVPC, err = o.createVPC(l, clusterCreatorEC2Client); err != nil {
+			return nil, err
+		}
+	}
+
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, privateZoneClient, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID, o.PrivateZonesInClusterAccount, vpcOwnerRoute53Client, initialVPC)
 	if err != nil {
 		return nil, err
 	}
-	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, vpcOwnerRoute53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
+	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, privateZoneClient, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID, o.PrivateZonesInClusterAccount, vpcOwnerRoute53Client, initialVPC)
 	if err != nil {
 		return nil, err
 	}
 
-	if vpcOwnerAWSSession != nil {
-		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, awsSession, publicSubnetIDs, result); err != nil {
+	if initialVPC != "" {
+		if err := o.deleteVPC(l, clusterCreatorEC2Client, initialVPC); err != nil {
 			return nil, err
 		}
 	}

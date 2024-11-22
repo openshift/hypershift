@@ -92,6 +92,16 @@ func (o *CreateInfraOptions) createVPC(l logr.Logger, client ec2iface.EC2API) (s
 	return vpcID, nil
 }
 
+func (o *CreateInfraOptions) deleteVPC(l logr.Logger, client ec2iface.EC2API, vpcID string) error {
+	if _, err := client.DeleteVpc(&ec2.DeleteVpcInput{
+		VpcId: aws.String(vpcID),
+	}); err != nil {
+		return fmt.Errorf("failed to delete VPC %s: %w", vpcID, err)
+	}
+	l.Info("deleted VPC", "id", vpcID)
+	return nil
+}
+
 func (o *CreateInfraOptions) existingVPC(client ec2iface.EC2API, vpcName string) (string, error) {
 	var vpcID string
 	result, err := client.DescribeVpcs(&ec2.DescribeVpcsInput{Filters: o.ec2Filters(vpcName)})

@@ -25,7 +25,8 @@ type DestroyIAMOptions struct {
 	InfraID            string
 	Log                logr.Logger
 
-	VPCOwnerCredentialsOpts awsutil.AWSCredentialsOptions
+	VPCOwnerCredentialsOpts      awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
 
 	CredentialsSecretData *util.CredentialsSecretData
 }
@@ -45,6 +46,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
+	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, delete roles for private hosted zones from cluster account")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
@@ -102,8 +104,8 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		iamClient = iam.New(vpcOwnerAWSSession, awsConfig)
-		if err = o.DestroySharedVPCRoles(ctx, iamClient); err != nil {
+		vpcOwnerIAMClient := iam.New(vpcOwnerAWSSession, awsConfig)
+		if err = o.DestroySharedVPCRoles(ctx, iamClient, vpcOwnerIAMClient); err != nil {
 			return err
 		}
 	}
@@ -271,12 +273,16 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 	return nil
 }
 
-func (o *DestroyIAMOptions) DestroySharedVPCRoles(ctx context.Context, iamClient iamiface.IAMAPI) error {
+func (o *DestroyIAMOptions) DestroySharedVPCRoles(ctx context.Context, iamClient, vpcOwnerIAMClient iamiface.IAMAPI) error {
 	var err error
-	if err = o.DestroyOIDCRole(iamClient, "shared-vpc-ingress", true); err != nil {
+	ingressRoleClient := vpcOwnerIAMClient
+	if o.PrivateZonesInClusterAccount {
+		ingressRoleClient = iamClient
+	}
+	if err = o.DestroyOIDCRole(ingressRoleClient, "shared-vpc-ingress", true); err != nil {
 		return err
 	}
-	if err = o.DestroyOIDCRole(iamClient, "shared-vpc-control-plane", true); err != nil {
+	if err = o.DestroyOIDCRole(vpcOwnerIAMClient, "shared-vpc-control-plane", true); err != nil {
 		return err
 	}
 	return nil

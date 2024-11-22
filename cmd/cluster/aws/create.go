@@ -23,28 +23,29 @@ import (
 )
 
 type RawCreateOptions struct {
-	Credentials                 awsutil.AWSCredentialsOptions
-	CredentialSecretName        string
-	AdditionalTags              []string
-	IAMJSON                     string
-	InstanceType                string
-	IssuerURL                   string
-	PrivateZoneID               string
-	PublicZoneID                string
-	Region                      string
-	RootVolumeIOPS              int64
-	RootVolumeSize              int64
-	RootVolumeType              string
-	RootVolumeEncryptionKey     string
-	EndpointAccess              string
-	Zones                       []string
-	EtcdKMSKeyARN               string
-	EnableProxy                 bool
-	ProxyVPCEndpointServiceName string
-	SingleNATGateway            bool
-	MultiArch                   bool
-	VPCCIDR                     string
-	VPCOwnerCredentials         awsutil.AWSCredentialsOptions
+	Credentials                  awsutil.AWSCredentialsOptions
+	CredentialSecretName         string
+	AdditionalTags               []string
+	IAMJSON                      string
+	InstanceType                 string
+	IssuerURL                    string
+	PrivateZoneID                string
+	PublicZoneID                 string
+	Region                       string
+	RootVolumeIOPS               int64
+	RootVolumeSize               int64
+	RootVolumeType               string
+	RootVolumeEncryptionKey      string
+	EndpointAccess               string
+	Zones                        []string
+	EtcdKMSKeyARN                string
+	EnableProxy                  bool
+	ProxyVPCEndpointServiceName  string
+	SingleNATGateway             bool
+	MultiArch                    bool
+	VPCCIDR                      string
+	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -381,6 +382,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
 	flags.StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC (mask must be 16)")
+	flags.BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
@@ -424,35 +426,37 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOptions) awsinfra.CreateInfraOptions {
 	return awsinfra.CreateInfraOptions{
-		Region:                      awsOpts.Region,
-		InfraID:                     opts.InfraID,
-		AWSCredentialsOpts:          awsOpts.Credentials,
-		Name:                        opts.Name,
-		BaseDomain:                  opts.BaseDomain,
-		BaseDomainPrefix:            opts.BaseDomainPrefix,
-		AdditionalTags:              awsOpts.AdditionalTags,
-		Zones:                       awsOpts.Zones,
-		EnableProxy:                 awsOpts.EnableProxy,
-		ProxyVPCEndpointServiceName: awsOpts.ProxyVPCEndpointServiceName,
-		SSHKeyFile:                  opts.SSHKeyFile,
-		SingleNATGateway:            awsOpts.SingleNATGateway,
-		VPCCIDR:                     awsOpts.VPCCIDR,
-		VPCOwnerCredentialOpts:      awsOpts.VPCOwnerCredentials,
+		Region:                       awsOpts.Region,
+		InfraID:                      opts.InfraID,
+		AWSCredentialsOpts:           awsOpts.Credentials,
+		Name:                         opts.Name,
+		BaseDomain:                   opts.BaseDomain,
+		BaseDomainPrefix:             opts.BaseDomainPrefix,
+		AdditionalTags:               awsOpts.AdditionalTags,
+		Zones:                        awsOpts.Zones,
+		EnableProxy:                  awsOpts.EnableProxy,
+		ProxyVPCEndpointServiceName:  awsOpts.ProxyVPCEndpointServiceName,
+		SSHKeyFile:                   opts.SSHKeyFile,
+		SingleNATGateway:             awsOpts.SingleNATGateway,
+		VPCCIDR:                      awsOpts.VPCCIDR,
+		VPCOwnerCredentialOpts:       awsOpts.VPCOwnerCredentials,
+		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
 	}
 }
 
 func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInfraOutput) awsinfra.CreateIAMOptions {
 	return awsinfra.CreateIAMOptions{
-		Region:                  awsOpts.Region,
-		AWSCredentialsOpts:      awsOpts.Credentials,
-		InfraID:                 infra.InfraID,
-		IssuerURL:               awsOpts.IssuerURL,
-		AdditionalTags:          awsOpts.AdditionalTags,
-		PrivateZoneID:           infra.PrivateZoneID,
-		PublicZoneID:            infra.PublicZoneID,
-		LocalZoneID:             infra.LocalZoneID,
-		KMSKeyARN:               awsOpts.EtcdKMSKeyARN,
-		VPCOwnerCredentialsOpts: awsOpts.VPCOwnerCredentials,
+		Region:                       awsOpts.Region,
+		AWSCredentialsOpts:           awsOpts.Credentials,
+		InfraID:                      infra.InfraID,
+		IssuerURL:                    awsOpts.IssuerURL,
+		AdditionalTags:               awsOpts.AdditionalTags,
+		PrivateZoneID:                infra.PrivateZoneID,
+		PublicZoneID:                 infra.PublicZoneID,
+		LocalZoneID:                  infra.LocalZoneID,
+		KMSKeyARN:                    awsOpts.EtcdKMSKeyARN,
+		VPCOwnerCredentialsOpts:      awsOpts.VPCOwnerCredentials,
+		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
 	}
 }
 
