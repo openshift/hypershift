@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -97,14 +98,17 @@ var (
 )
 
 type Params struct {
-	operatorImage    string
-	tokenMinterImage string
-	platform         hyperv1.PlatformType
-	issuerURL        string
-	releaseVersion   string
-	registryImage    string
-	prunerImage      string
-	deploymentConfig config.DeploymentConfig
+	operatorImage        string
+	tokenMinterImage     string
+	platform             hyperv1.PlatformType
+	issuerURL            string
+	releaseVersion       string
+	registryImage        string
+	prunerImage          string
+	deploymentConfig     config.DeploymentConfig
+	AzureClientID        string
+	AzureTenantID        string
+	AzureCertificateName string
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
@@ -143,6 +147,12 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			},
 		},
 	}
+
+	if azureutil.IsAroHCP() {
+		params.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID
+		params.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName
+	}
+
 	params.deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -191,6 +201,28 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 				Name:      volumeWebIdentityToken().Name,
 				MountPath: "/var/run/secrets/openshift/serviceaccount",
 			},
+		)
+	}
+	// For managed azure deployments, we pass environment variables so we authenticate with Azure API through certificate
+	// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
+	// certificate related to the ARO_HCP_MI_CLIENT_ID and mount it as a volume in the ingress pod in the path,
+	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
+	if azureutil.IsAroHCP() {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName)...)
+
+		if deployment.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
+		}
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureImageRegistrySecretStoreVolumeName),
+		)
+
+		if deployment.Spec.Template.Spec.Volumes == nil {
+			deployment.Spec.Template.Spec.Volumes = []corev1.Volume{}
+		}
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureImageRegistrySecretStoreVolumeName, config.ManagedAzureImageRegistrySecretStoreProviderClassName),
 		)
 	}
 
