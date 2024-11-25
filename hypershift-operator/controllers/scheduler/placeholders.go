@@ -66,12 +66,12 @@ func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 			}
 			return &deployments, nil
 		},
-		listNodes: func(ctx context.Context, opts ...client.ListOption) (*corev1.NodeList, error) {
-			nodes := corev1.NodeList{}
-			if err := mgr.GetClient().List(ctx, &nodes, opts...); err != nil {
-				return nil, fmt.Errorf("could not list nodes: %w", err)
+		listConfigMaps: func(ctx context.Context, opts ...client.ListOption) (*corev1.ConfigMapList, error) {
+			configMaps := corev1.ConfigMapList{}
+			if err := mgr.GetClient().List(ctx, &configMaps, opts...); err != nil {
+				return nil, fmt.Errorf("could not list configmaps: %w", err)
 			}
-			return &nodes, nil
+			return &configMaps, nil
 		},
 	}
 
@@ -82,12 +82,8 @@ func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).
-		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, d client.Object) []reconcile.Request {
-			if d.GetNamespace() != placeholderNamespace {
-				return nil
-			}
-			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "cluster"}}}
-		})).
+		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(equeueClusterSizingConfigForPlaceholderResource)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(equeueClusterSizingConfigForPlaceholderResource)).
 		Named(placeholderControllerName + ".Creator").Complete(&placeholderCreator{
 		client:            kubernetesClient,
 		placeholderLister: lister,
@@ -137,11 +133,18 @@ func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 	return nil
 }
 
+func equeueClusterSizingConfigForPlaceholderResource(ctx context.Context, d client.Object) []reconcile.Request {
+	if d.GetNamespace() != placeholderNamespace {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "cluster"}}}
+}
+
 type placeholderLister struct {
 	getClusterSizingConfiguration func(context.Context) (*schedulingv1alpha1.ClusterSizingConfiguration, error)
 	getDeployment                 func(context.Context, types.NamespacedName) (*appsv1.Deployment, error)
 	listDeployments               func(context.Context, ...client.ListOption) (*appsv1.DeploymentList, error)
-	listNodes                     func(context.Context, ...client.ListOption) (*corev1.NodeList, error)
+	listConfigMaps                func(context.Context, ...client.ListOption) (*corev1.ConfigMapList, error)
 }
 
 type placeholderCreator struct {
@@ -191,15 +194,16 @@ func (r *placeholderCreator) reconcile(
 				return nil, nil
 			}
 
-			// Add a deployment and requeue
-			nodes, err := r.listNodes(ctx, client.HasLabels{HostedClusterNameLabel, OSDFleetManagerPairedNodesLabel})
+			pairLabelsAssignedToHostedClusters := sets.Set[string]{}
+			assignedConfigMaps, err := r.listConfigMaps(ctx, client.HasLabels{pairLabelKey}, client.InNamespace(placeholderNamespace))
 			if err != nil {
 				return nil, err
 			}
-
-			pairedNodesAssignedToHostedClusters := sets.Set[string]{}
-			for _, node := range nodes.Items {
-				pairedNodesAssignedToHostedClusters.Insert(node.ObjectMeta.Labels[OSDFleetManagerPairedNodesLabel])
+			for _, cm := range assignedConfigMaps.Items {
+				pairLabel := cm.Labels[pairLabelKey]
+				if pairLabel != "" {
+					pairLabelsAssignedToHostedClusters.Insert(pairLabel)
+				}
 			}
 
 			// which placeholder are we missing?
@@ -228,7 +232,7 @@ func (r *placeholderCreator) reconcile(
 				return nil, nil
 			}
 
-			return newDeployment(placeholderNamespace, sizeClass.Name, missingIndex, pairedNodesAssignedToHostedClusters.UnsortedList()), nil
+			return newDeployment(placeholderNamespace, sizeClass.Name, missingIndex, pairLabelsAssignedToHostedClusters.UnsortedList()), nil
 		}
 	}
 
@@ -319,24 +323,26 @@ func (r *placeholderUpdater) reconcile(
 		return true, nil, nil
 	}
 
-	nodes, err := r.listNodes(ctx, client.HasLabels{HostedClusterNameLabel, OSDFleetManagerPairedNodesLabel})
+	pairLabelsAssignedToHostedClusters := sets.Set[string]{}
+	assignedConfigMaps, err := r.listConfigMaps(ctx, client.HasLabels{pairLabelKey}, client.InNamespace(placeholderNamespace))
 	if err != nil {
 		return false, nil, err
 	}
-
-	pairedNodesAssignedToHostedClusters := sets.Set[string]{}
-	for _, node := range nodes.Items {
-		pairedNodesAssignedToHostedClusters.Insert(node.ObjectMeta.Labels[OSDFleetManagerPairedNodesLabel])
+	for _, cm := range assignedConfigMaps.Items {
+		pairLabel := cm.Labels[pairLabelKey]
+		if pairLabel != "" {
+			pairLabelsAssignedToHostedClusters.Insert(pairLabel)
+		}
 	}
 
-	existingPairedNodes := sets.Set[string]{}
+	existingPairLabels := sets.Set[string]{}
 	if affinity := deployment.Spec.Template.Spec.Affinity; affinity != nil {
 		if nodeAffinity := affinity.NodeAffinity; nodeAffinity != nil {
 			if selector := nodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution; selector != nil {
 				for _, term := range selector.NodeSelectorTerms {
 					for _, expression := range term.MatchExpressions {
 						if expression.Key == OSDFleetManagerPairedNodesLabel && expression.Operator == corev1.NodeSelectorOpNotIn {
-							existingPairedNodes.Insert(expression.Values...)
+							existingPairLabels.Insert(expression.Values...)
 						}
 					}
 				}
@@ -344,10 +350,10 @@ func (r *placeholderUpdater) reconcile(
 		}
 	}
 
-	if !pairedNodesAssignedToHostedClusters.Equal(existingPairedNodes) {
+	if !pairLabelsAssignedToHostedClusters.Equal(existingPairLabels) {
 		// the set of paired nodes on which hosted clusters have been scheduled has changed, we need to update the
 		// node affinity configuration on the deployment
-		return false, newDeployment(placeholderNamespace, placeholderSize, parsedIndex, pairedNodesAssignedToHostedClusters.UnsortedList()), nil
+		return false, newDeployment(placeholderNamespace, placeholderSize, parsedIndex, pairLabelsAssignedToHostedClusters.UnsortedList()), nil
 	}
 	return false, nil, nil
 }
