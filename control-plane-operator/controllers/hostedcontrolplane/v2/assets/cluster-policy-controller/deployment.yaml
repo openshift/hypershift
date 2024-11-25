@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-policy-controller
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cluster-policy-controller
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: cluster-policy-controller
+    spec:
+      containers:
+      - args:
+        - start
+        - --config
+        - /etc/kubernetes/config/config.yaml
+        - --kubeconfig
+        - /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --namespace=openshift-kube-controller-manager
+        command:
+        - cluster-policy-controller
+        env:
+        - name: POD_NAMESPACE
+          value: openshift-kube-controller-manager
+        image: cluster-policy-controller
+        imagePullPolicy: IfNotPresent
+        name: cluster-policy-controller
+        resources:
+          requests:
+            cpu: 10m
+            memory: 200Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/client-ca
+          name: client-ca
+        - mountPath: /etc/kubernetes/config
+          name: config
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/certs
+          name: serving-cert
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: cluster-policy-controller-config
+        name: config
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: cluster-policy-controller-cert
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: client-ca

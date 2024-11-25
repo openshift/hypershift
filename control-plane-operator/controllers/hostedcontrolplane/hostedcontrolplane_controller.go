@@ -72,6 +72,7 @@ import (
 	kubevirtccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/kubevirt"
 	openstackccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack"
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
+	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
@@ -222,6 +223,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		ocmv2.NewComponent(),
 		oauthv2.NewComponent(),
 		routecmv2.NewComponent(),
+		clusterpolicyv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 		awsccmv2.NewComponent(),
 		azureccmv2.NewComponent(),
@@ -1211,15 +1213,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileOpenShiftRouteControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile openshift route controller manager: %w", err)
 		}
-	}
 
-	// Reconcile cluster policy controller
-	r.Log.Info("Reconciling Cluster Policy Controller")
-	if err := r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
-	}
+		// Reconcile cluster policy controller
+		r.Log.Info("Reconciling Cluster Policy Controller")
+		if err := r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
+		}
 
-	if !r.IsCPOV2 {
 		// Reconcile cluster version operator
 		r.Log.Info("Reconciling Cluster Version Operator")
 		if err := r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
