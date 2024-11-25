@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	azureutil "github.com/Azure/go-autorest/autorest/azure"

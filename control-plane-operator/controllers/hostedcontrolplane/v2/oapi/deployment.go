@@ -32,7 +32,7 @@ const (
 	additionalTrustBundleProjectedVolumeName = "additional-trust-bundle"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	additionalCAs, err := getAdditionalCAs(cpContext)
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func buildAdditionalTrustBundleProjectedVolume(additionalCAs []corev1.VolumeProj
 	return v
 }
 
-func getServiceServingCA(cpContext component.ControlPlaneContext) (*corev1.ConfigMap, error) {
+func getServiceServingCA(cpContext component.WorkloadContext) (*corev1.ConfigMap, error) {
 	serviceServingCA := manifests.ServiceServingCA(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(serviceServingCA), serviceServingCA); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -150,7 +150,7 @@ func getServiceServingCA(cpContext component.ControlPlaneContext) (*corev1.Confi
 	return serviceServingCA, nil
 }
 
-func getAdditionalCAs(cpContext component.ControlPlaneContext) ([]corev1.VolumeProjection, error) {
+func getAdditionalCAs(cpContext component.WorkloadContext) ([]corev1.VolumeProjection, error) {
 	var additionalCAs []corev1.VolumeProjection
 	// if hostedCluster additionalTrustBundle is set, add it to the volumeProjection
 	if cpContext.HCP.Spec.AdditionalTrustBundle != nil {

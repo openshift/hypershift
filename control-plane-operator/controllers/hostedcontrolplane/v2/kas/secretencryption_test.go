@@ -117,7 +117,7 @@ func TestReconcileKMSEncryptionConfigAWS(t *testing.T) {
 				clientBuilder.WithObjects(encryptionConfigFile)
 			}
 
-			cpContext := controlplanecomponent.ControlPlaneContext{
+			cpContext := controlplanecomponent.WorkloadContext{
 				HCP: &hyperv1.HostedControlPlane{
 					Spec: hyperv1.HostedControlPlaneSpec{
 						SecretEncryption: &hyperv1.SecretEncryptionSpec{

@@ -19,7 +19,7 @@ const (
 	CASecretKey = "cacert"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	credentialsSecret, err := getCredentialsSecret(cpContext)
 	if err != nil {
 		return err

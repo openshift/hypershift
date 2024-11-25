@@ -18,7 +18,7 @@ const (
 	auditWebhookConfigFileVolumeName = "oauth-audit-webhook"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		etcdURL := config.DefaultEtcdURL
 		if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {

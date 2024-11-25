@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func adaptOauthMetadata(cpContext component.ControlPlaneContext, cfg *corev1.ConfigMap) error {
+func adaptOauthMetadata(cpContext component.WorkloadContext, cfg *corev1.ConfigMap) error {
 	configuration := cpContext.HCP.Spec.Configuration
 	if configuration != nil && configuration.Authentication != nil && len(configuration.Authentication.OAuthMetadata.Name) > 0 {
 		var userOauthMetadataConfigMap corev1.ConfigMap
@@ -52,7 +52,7 @@ func adaptOauthMetadata(cpContext component.ControlPlaneContext, cfg *corev1.Con
 	return nil
 }
 
-func adaptAuthenticationTokenWebhookConfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptAuthenticationTokenWebhookConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	authenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(authenticatorCertSecret), authenticatorCertSecret); err != nil {
 		return fmt.Errorf("failed to get authenticator cert secret: %w", err)

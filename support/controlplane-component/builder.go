@@ -30,14 +30,14 @@ func NewStatefulSetComponent(name string, opts ComponentOptions) *controlPlaneWo
 	}
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext ControlPlaneContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
-	b.workload.adapt = func(cpContext ControlPlaneContext, obj client.Object) error {
+func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext WorkloadContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
+	b.workload.adapt = func(cpContext WorkloadContext, obj client.Object) error {
 		return adapt(cpContext, obj.(T))
 	}
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) WithPredicate(predicate func(cpContext ControlPlaneContext) (bool, error)) *controlPlaneWorkloadBuilder[T] {
+func (b *controlPlaneWorkloadBuilder[T]) WithPredicate(predicate func(cpContext WorkloadContext) (bool, error)) *controlPlaneWorkloadBuilder[T] {
 	b.workload.predicate = predicate
 	return b
 }

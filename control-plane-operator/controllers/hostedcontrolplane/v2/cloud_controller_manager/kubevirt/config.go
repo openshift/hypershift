@@ -50,7 +50,7 @@ func (c *CloudConfig) serialize() (string, error) {
 	return string(out), nil
 }
 
-func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	data := []byte(cm.Data[CloudConfigKey])
 	cloudConfig := &CloudConfig{}
 	if err := yaml.Unmarshal(data, cloudConfig); err != nil {

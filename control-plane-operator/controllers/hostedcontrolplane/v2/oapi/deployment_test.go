@@ -101,7 +101,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			}
 			hcp.Spec.Configuration = tc.clusterConf
 			hcp.Spec.AdditionalTrustBundle = tc.additionalTrustBundle
-			cpContext := component.ControlPlaneContext{
+			cpContext := component.WorkloadContext{
 				Client: fakeClientBuilder.Build(),
 				HCP:    hcp,
 			}

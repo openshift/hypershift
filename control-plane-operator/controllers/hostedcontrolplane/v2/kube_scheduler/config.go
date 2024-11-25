@@ -18,7 +18,7 @@ const (
 	kubeSchedulerConfigKey = "config.json"
 )
 
-func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	configuration := cpContext.HCP.Spec.Configuration
 	if configuration == nil || configuration.Scheduler == nil || configuration.Scheduler.Profile == "" {
 		return nil

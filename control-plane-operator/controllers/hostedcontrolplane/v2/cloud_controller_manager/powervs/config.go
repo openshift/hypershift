@@ -14,7 +14,7 @@ const (
 	configKey = "ccm-config"
 )
 
-func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	powervsPlatform := cpContext.HCP.Spec.Platform.PowerVS
 	if powervsPlatform == nil {
 		return fmt.Errorf(".spec.platform.powervs is not defined")

@@ -22,7 +22,7 @@ const (
 	configNamespace             = "openshift-config"
 )
 
-func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	if configStr, exists := cm.Data[openshiftAPIServerConfigKey]; !exists || len(configStr) == 0 {
 		return fmt.Errorf("expected an existing openshift apiserver configuration")
 	}

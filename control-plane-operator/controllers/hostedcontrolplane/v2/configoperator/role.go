@@ -9,7 +9,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
-func adaptRole(cpContext component.ControlPlaneContext, role *rbacv1.Role) error {
+func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 	switch cpContext.HCP.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		// By isolating these rules behind the KubevirtPlatform switch case,

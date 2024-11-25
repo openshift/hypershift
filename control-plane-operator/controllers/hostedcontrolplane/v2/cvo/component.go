@@ -67,6 +67,6 @@ func NewComponent(enableCVOManagementClusterMetricsAccess bool) component.Contro
 		Build()
 }
 
-func (cvo *clusterVersionOperator) isManagementClusterMetricsAccessEnabled(cpContext component.ControlPlaneContext) bool {
+func (cvo *clusterVersionOperator) isManagementClusterMetricsAccessEnabled(cpContext component.WorkloadContext) bool {
 	return cvo.enableCVOManagementClusterMetricsAccess
 }

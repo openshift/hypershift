@@ -22,7 +22,7 @@ const (
 	sessionSecretsFileKey = "v4-0-config-system-session"
 )
 
-func adaptSessionSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptSessionSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	// get existing secret if it exist. We need this so we don't regenerate the random strings if we already have.
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(secret), secret); err != nil {
 		if !apierrors.IsNotFound(err) {

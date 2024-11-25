@@ -18,7 +18,7 @@ const (
 	RecyclerPodTemplateKey         = "recycler-pod.yaml"
 )
 
-func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	data := cm.Data[KubeControllerManagerConfigKey]
 	config := &kcpv1.KubeControllerManagerConfig{}
 	if err := util.DeserializeResource(data, config, api.Scheme); err != nil {
@@ -41,7 +41,7 @@ func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) 
 	return nil
 }
 
-func adaptRecyclerConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptRecyclerConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	toolsImage := cpContext.ReleaseImageProvider.GetImage("tools")
 	cm.Data[RecyclerPodTemplateKey] = strings.Replace(cm.Data[RecyclerPodTemplateKey], "{{.tools_image}}", toolsImage, 1)
 	return nil

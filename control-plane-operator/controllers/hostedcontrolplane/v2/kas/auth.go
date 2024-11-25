@@ -17,7 +17,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func adaptAuthConfig(cpContext component.ControlPlaneContext, config *corev1.ConfigMap) error {
+func adaptAuthConfig(cpContext component.WorkloadContext, config *corev1.ConfigMap) error {
 	configuration := cpContext.HCP.Spec.Configuration
 	if configuration == nil || configuration.Authentication == nil || len(configuration.Authentication.OIDCProviders) == 0 {
 		return nil
@@ -39,7 +39,7 @@ func adaptAuthConfig(cpContext component.ControlPlaneContext, config *corev1.Con
 	return nil
 }
 
-func generateAuthConfig(ctx context.Context, c crclient.Client, hcp *hyperv1.HostedControlPlane) (*apiserver.AuthenticationConfiguration, error) {
+func generateAuthConfig(ctx context.Context, c crclient.Reader, hcp *hyperv1.HostedControlPlane) (*apiserver.AuthenticationConfiguration, error) {
 	config := &apiserver.AuthenticationConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AuthenticationConfiguration",

@@ -54,6 +54,35 @@ type ControlPlaneContext struct {
 	SkipPredicate bool
 }
 
+type WorkloadContext struct {
+	context.Context
+
+	// reader client, as workloads should not be creating resources.
+	Client                   client.Reader
+	HCP                      *hyperv1.HostedControlPlane
+	ReleaseImageProvider     imageprovider.ReleaseImageProvider
+	UserReleaseImageProvider imageprovider.ReleaseImageProvider
+
+	InfraStatus               infra.InfrastructureStatus
+	SetDefaultSecurityContext bool
+	EnableCIDebugOutput       bool
+	MetricsSet                metrics.MetricsSet
+}
+
+func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
+	return WorkloadContext{
+		Context:                   cp.Context,
+		Client:                    cp.Client,
+		HCP:                       cp.HCP,
+		ReleaseImageProvider:      cp.ReleaseImageProvider,
+		UserReleaseImageProvider:  cp.UserReleaseImageProvider,
+		InfraStatus:               cp.InfraStatus,
+		SetDefaultSecurityContext: cp.SetDefaultSecurityContext,
+		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
+		MetricsSet:                cp.MetricsSet,
+	}
+}
+
 var _ ControlPlaneComponent = &controlPlaneWorkload{}
 
 type workloadType string
@@ -80,12 +109,12 @@ type controlPlaneWorkload struct {
 	// reconcilation will be blocked until all dependencies are available.
 	dependencies []string
 
-	adapt func(cpContext ControlPlaneContext, obj client.Object) error
+	adapt func(cpContext WorkloadContext, obj client.Object) error
 
 	// adapters for Secret, ConfigMap, Service, ServiceMonitor, etc.
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the begining, the component is disabled if it returns false.
-	predicate func(cpContext ControlPlaneContext) (bool, error)
+	predicate func(cpContext WorkloadContext) (bool, error)
 	// These resources will cause the Deployment/statefulset to rollout when changed.
 	watchedResources []client.Object
 
@@ -102,8 +131,10 @@ func (c *controlPlaneWorkload) Name() string {
 
 // reconcile implements ControlPlaneComponent.
 func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
+	workloadContext := cpContext.workloadContext()
+
 	if !cpContext.SkipPredicate && c.predicate != nil {
-		shouldReconcile, err := c.predicate(cpContext)
+		shouldReconcile, err := c.predicate(workloadContext)
 		if err != nil {
 			return err
 		}
@@ -209,7 +240,7 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 	ownerRef := config.OwnerRefFrom(cpContext.HCP)
 	ownerRef.ApplyTo(workloadObj)
 	if c.adapt != nil {
-		if err := c.adapt(cpContext, workloadObj); err != nil {
+		if err := c.adapt(cpContext.workloadContext(), workloadObj); err != nil {
 			return err
 		}
 	}

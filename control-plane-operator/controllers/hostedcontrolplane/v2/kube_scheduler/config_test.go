@@ -68,7 +68,7 @@ func TestGenerateConfig(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cpContext := component.ControlPlaneContext{
+			cpContext := component.WorkloadContext{
 				HCP: &hyperv1.HostedControlPlane{
 					Spec: hyperv1.HostedControlPlaneSpec{
 						Configuration: &hyperv1.ClusterConfiguration{

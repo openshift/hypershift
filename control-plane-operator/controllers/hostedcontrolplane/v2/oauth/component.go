@@ -84,6 +84,6 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func isOAuthEnabled(cpContext component.ControlPlaneContext) (bool, error) {
+func isOAuthEnabled(cpContext component.WorkloadContext) (bool, error) {
 	return util.HCPOAuthEnabled(cpContext.HCP), nil
 }

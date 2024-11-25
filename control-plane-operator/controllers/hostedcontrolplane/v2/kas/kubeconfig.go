@@ -24,7 +24,7 @@ const (
 	KubeconfigKey = util.KubeconfigKey
 )
 
-func adaptServiceKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptServiceKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	svcURL := InClusterKASURL(cpContext.HCP.Spec.Platform.Type)
 	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), svcURL)
 	if err != nil {
@@ -38,7 +38,7 @@ func adaptServiceKubeconfigSecret(cpContext component.ControlPlaneContext, secre
 	return nil
 }
 
-func adaptCAPIKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptCAPIKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	clusterName := cpContext.HCP.Spec.InfraID
 	// The client used by CAPI machine controller expects the kubeconfig to follow this naming convention
 	// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
@@ -66,7 +66,7 @@ func adaptCAPIKubeconfigSecret(cpContext component.ControlPlaneContext, secret *
 	return nil
 }
 
-func adaptHCCOKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptHCCOKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	svcURL := InClusterKASURL(cpContext.HCP.Spec.Platform.Type)
 	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.HCCOClientCertSecret(cpContext.HCP.Namespace), svcURL)
 	if err != nil {
@@ -80,7 +80,7 @@ func adaptHCCOKubeconfigSecret(cpContext component.ControlPlaneContext, secret *
 	return nil
 }
 
-func adaptLocalhostKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptLocalhostKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	apiServerPort := util.KASPodPort(cpContext.HCP)
 	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
 	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(cpContext.HCP.Namespace), localhostURL)
@@ -95,7 +95,7 @@ func adaptLocalhostKubeconfigSecret(cpContext component.ControlPlaneContext, sec
 	return nil
 }
 
-func adapExternalAdminKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	if cpContext.HCP.Spec.KubeConfig != nil {
 		secret.Name = cpContext.HCP.Spec.KubeConfig.Name
 	}
@@ -116,7 +116,7 @@ func adapExternalAdminKubeconfigSecret(cpContext component.ControlPlaneContext, 
 	return nil
 }
 
-func adaptBootstrapKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	url := externalURL(cpContext.InfraStatus)
 	if util.IsPrivateHCP(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
@@ -133,7 +133,7 @@ func adaptBootstrapKubeconfigSecret(cpContext component.ControlPlaneContext, sec
 	return nil
 }
 
-func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
 		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
@@ -146,7 +146,7 @@ func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.ControlPlane
 	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, "openshift-authentication", "aws-pod-identity-webhook")
 }
 
-func GenerateKubeConfig(cpContext component.ControlPlaneContext, cert *corev1.Secret, url string) ([]byte, error) {
+func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret, url string) ([]byte, error) {
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(cert), cert); err != nil {
 		return nil, fmt.Errorf("failed to get cert secret %s: %w", cert.Name, err)
 	}

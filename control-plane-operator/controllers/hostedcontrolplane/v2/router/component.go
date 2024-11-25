@@ -55,7 +55,7 @@ func NewComponent() component.ControlPlaneComponent {
 // 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
 // which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
 // Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
-func useHCPRouter(cpContext component.ControlPlaneContext) (bool, error) {
+func useHCPRouter(cpContext component.WorkloadContext) (bool, error) {
 	if sharedingress.UseSharedIngress() {
 		return false, nil
 	}

@@ -6,18 +6,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type Predicate func(cpContext ControlPlaneContext) bool
+type Predicate func(cpContext WorkloadContext) bool
 
 type genericAdapter struct {
-	adapt     func(cpContext ControlPlaneContext, resource client.Object) error
+	adapt     func(cpContext WorkloadContext, resource client.Object) error
 	predicate Predicate
 }
 
 type option func(*genericAdapter)
 
-func WithAdaptFunction[T client.Object](adapt func(cpContext ControlPlaneContext, resource T) error) option {
+func WithAdaptFunction[T client.Object](adapt func(cpContext WorkloadContext, resource T) error) option {
 	return func(ga *genericAdapter) {
-		ga.adapt = func(cpContext ControlPlaneContext, resource client.Object) error {
+		ga.adapt = func(cpContext WorkloadContext, resource client.Object) error {
 			return adapt(cpContext, resource.(T))
 		}
 	}
@@ -30,10 +30,11 @@ func WithPredicate(predicate Predicate) option {
 }
 
 func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName string, manifestName string) error {
+	workloadContext := cpContext.workloadContext()
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 
-	if ga.predicate != nil && !ga.predicate(cpContext) {
+	if ga.predicate != nil && !ga.predicate(workloadContext) {
 		return nil
 	}
 
@@ -45,7 +46,7 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName
 	ownerRef.ApplyTo(obj)
 
 	if ga.adapt != nil {
-		if err := ga.adapt(cpContext, obj); err != nil {
+		if err := ga.adapt(workloadContext, obj); err != nil {
 			return err
 		}
 	}

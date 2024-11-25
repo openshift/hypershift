@@ -11,7 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func adaptKubeconfig(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptKubeconfig(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	svcURL := kasv2.InClusterKASURL(cpContext.HCP.Spec.Platform.Type)
 	kubeconfig, err := kasv2.GenerateKubeConfig(cpContext, manifests.KubeSchedulerClientCertSecret(secret.Namespace), svcURL)
 	if err != nil {

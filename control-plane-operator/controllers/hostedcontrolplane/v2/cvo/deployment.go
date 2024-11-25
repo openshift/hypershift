@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
-func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	if cvo.enableCVOManagementClusterMetricsAccess {
 		if deployment.Spec.Template.Labels == nil {
 			deployment.Spec.Template.Labels = map[string]string{}

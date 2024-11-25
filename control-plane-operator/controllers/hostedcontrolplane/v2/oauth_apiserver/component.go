@@ -51,6 +51,6 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func predicate(cpContext component.ControlPlaneContext) (bool, error) {
+func predicate(cpContext component.WorkloadContext) (bool, error) {
 	return util.HCPOAuthEnabled(cpContext.HCP), nil
 }
