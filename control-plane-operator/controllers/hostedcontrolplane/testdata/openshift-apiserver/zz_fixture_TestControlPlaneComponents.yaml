@@ -15,14 +15,14 @@ metadata:
     uid: ""
   resourceVersion: "1"
 spec:
-  replicas: 1
+  replicas: 3
   revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: openshift-apiserver
   strategy:
     rollingUpdate:
-      maxSurge: 3
+      maxSurge: 0
       maxUnavailable: 1
     type: RollingUpdate
   template:
@@ -62,6 +62,20 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: hcp-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: openshift-apiserver
+                hypershift.openshift.io/control-plane-component: openshift-apiserver
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: openshift-apiserver
+                hypershift.openshift.io/control-plane-component: openshift-apiserver
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: false
       containers:
       - args:

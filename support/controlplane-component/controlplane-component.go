@@ -314,18 +314,20 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 		deploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
 
-	var replicas *int
+	replicas := defaultReplicas(c.Name(), cpContext.HCP)
 	if desiredReplicas != nil {
-		replicas = ptr.To(int(*desiredReplicas))
+		replicas = int(*desiredReplicas)
 	}
+
 	var multiZoneSpreadLabels map[string]string
 	if c.MultiZoneSpread() {
 		multiZoneSpreadLabels = podTemplateSpec.ObjectMeta.Labels
 	}
+
 	if c.IsRequestServing() {
-		deploymentConfig.SetRequestServingDefaults(cpContext.HCP, multiZoneSpreadLabels, replicas)
+		deploymentConfig.SetRequestServingDefaults(cpContext.HCP, multiZoneSpreadLabels, ptr.To(replicas))
 	} else {
-		deploymentConfig.SetDefaults(cpContext.HCP, multiZoneSpreadLabels, replicas)
+		deploymentConfig.SetDefaults(cpContext.HCP, multiZoneSpreadLabels, ptr.To(replicas))
 	}
 	deploymentConfig.SetRestartAnnotation(cpContext.HCP.ObjectMeta)
 
@@ -424,4 +426,16 @@ func getPriorityClass(componentName string, hcp *hyperv1.HostedControlPlane) str
 	}
 
 	return priorityClass
+}
+
+func defaultReplicas(componentName string, hcp *hyperv1.HostedControlPlane) int {
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		return 1
+	}
+
+	// HighlyAvailable
+	if componentName == etcdComponentName || apiCriticalComponents.Has(componentName) {
+		return 3
+	}
+	return 2
 }

@@ -17,7 +17,7 @@ spec:
     whenDeleted: Retain
     whenScaled: Retain
   podManagementPolicy: Parallel
-  replicas: 1
+  replicas: 3
   revisionHistoryLimit: 10
   selector:
     matchLabels:
@@ -59,6 +59,22 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: hcp-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: etcd
+                hypershift.openshift.io/control-plane-component: etcd
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: etcd
+                hypershift.openshift.io/control-plane-component: etcd
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: true
       containers:
       - command:

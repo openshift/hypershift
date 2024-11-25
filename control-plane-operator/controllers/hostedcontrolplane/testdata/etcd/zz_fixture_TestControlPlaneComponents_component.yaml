@@ -9,12 +9,12 @@ spec: {}
 status:
   conditions:
   - lastTransitionTime: null
-    message: 'etcd StatefulSet is not available: 0/1 replicas ready'
+    message: 'etcd StatefulSet is not available: 0/3 replicas ready'
     reason: WaitingForAvailable
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'etcd StatefulSet progressing: 0/1 replicas ready'
+    message: 'etcd StatefulSet progressing: 0/3 replicas ready'
     reason: WaitingForAvailable
     status: "True"
     type: Progressing
