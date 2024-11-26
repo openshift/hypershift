@@ -72,7 +72,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 		flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
 		flags.StringVar(&opts.KeyVaultInfo.KeyVaultName, "management-key-vault-name", opts.KeyVaultInfo.KeyVaultName, "The name of the management Azure Key Vault where the managed identity certificates are stored.")
 		flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
-		flags.StringVar(&opts.MangedIdentitiesFile, "managed-identities-file", opts.MangedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
+		flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
+		flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 	}
 }
 
@@ -97,7 +98,8 @@ type RawCreateOptions struct {
 	KMSCertName            string
 	TechPreviewEnabled     bool
 	KeyVaultInfo           ManagementKeyVaultInfo
-	MangedIdentitiesFile   string
+	DNSZoneRGName          string
+	ManagedIdentitiesFile  string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -142,15 +144,15 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 			return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
 		}
 
-		if o.KeyVaultInfo.KeyVaultName == "" && o.MangedIdentitiesFile == "" {
+		if o.KeyVaultInfo.KeyVaultName == "" && o.ManagedIdentitiesFile == "" {
 			return nil, fmt.Errorf("flag --management-key-vault-name is required")
 		}
 
-		if o.KeyVaultInfo.KeyVaultTenantID == "" && o.MangedIdentitiesFile == "" {
+		if o.KeyVaultInfo.KeyVaultTenantID == "" && o.ManagedIdentitiesFile == "" {
 			return nil, fmt.Errorf("flag --management-key-vault-tenant-id is required")
 		}
 
-		if o.MangedIdentitiesFile == "" && o.KeyVaultInfo.KeyVaultName == "" && o.KeyVaultInfo.KeyVaultTenantID == "" {
+		if o.ManagedIdentitiesFile == "" && o.KeyVaultInfo.KeyVaultName == "" && o.KeyVaultInfo.KeyVaultTenantID == "" {
 			return nil, fmt.Errorf("flag --managed-identities-file  or  ( --management-key-vault-name and --management-key-vault-tenant-id ) are required")
 		}
 	}
@@ -244,15 +246,6 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		return nil, fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
 	}
 
-	if o.MangedIdentitiesFile != "" {
-		managedIdentitiesRaw, err := os.ReadFile(o.MangedIdentitiesFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read --managed-identities-file %s: %w", o.MangedIdentitiesFile, err)
-		}
-		if err := yaml.Unmarshal(managedIdentitiesRaw, &output.infra.ControlPlaneMIs.ControlPlane); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal --managed-identities-file: %w", err)
-		}
-	}
 	return output, nil
 }
 
@@ -538,7 +531,8 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		ManagedIdentityKeyVaultName:     azureOpts.KeyVaultInfo.KeyVaultName,
 		ManagedIdentityKeyVaultTenantID: azureOpts.KeyVaultInfo.KeyVaultTenantID,
 		TechPreviewEnabled:              azureOpts.TechPreviewEnabled,
-		ManagedIdentitiesFile:           azureOpts.MangedIdentitiesFile,
+		DNSZoneRG:                       azureOpts.DNSZoneRGName,
+		ManagedIdentitiesFile:           azureOpts.ManagedIdentitiesFile,
 	}, nil
 }
 

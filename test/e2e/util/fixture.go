@@ -248,6 +248,11 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			CredentialsFile: createOpts.AzurePlatform.CredentialsFile,
 			Location:        createOpts.AzurePlatform.Location,
 		}
+
+		if createOpts.AzurePlatform.ManagedIdentitiesFile != "" {
+			opts.AzurePlatform.SkipServicePrincipalDeletion = true
+		}
+
 		return azure.DestroyCluster(ctx, opts)
 	case hyperv1.PowerVSPlatform:
 		opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
