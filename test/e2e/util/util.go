@@ -1913,7 +1913,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 				"openstack-cinder-csi-driver-controller",
 				"openstack-cinder-csi-driver-operator",
 				"manila-csi-driver-controller",
-				"openstack-manila-csi-driver-operator",
+				"manila-csi-driver-operator",
 			)
 		}
 
