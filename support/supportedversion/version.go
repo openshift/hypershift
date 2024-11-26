@@ -17,7 +17,7 @@ import (
 // HyperShift operator.
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
-var LatestSupportedVersion = semver.MustParse("4.18.0")
+var LatestSupportedVersion = semver.MustParse("4.19.0")
 var MinSupportedVersion = semver.MustParse("4.14.0")
 
 func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
