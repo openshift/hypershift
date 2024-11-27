@@ -86,6 +86,18 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
+	flag.StringVar(&globalOpts.HyperShiftOperatorLatestImage, "e2e.hypershift-operator-latest-image", "quay.io/hypershift/hypershift-operator:latest", "The latest HyperShift Operator image to deploy. If e2e.hypershift-operator-initial-image is set (e.g. to run an upgrade test), this image will be considered the latest HyperShift Operator image to upgrade to.")
+	flag.StringVar(&globalOpts.HOInstallationOptions.PrivatePlatform, "e2e.private-platform", "None", "Platform on which private clusters are supported by the HyperShift Operator (supports \"AWS\" or \"None\"). This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.AWSPrivateCredentialsFile, "e2e.aws-private-credentials-file", "/etc/hypershift-pool-aws-credentials/credentials", "path to AWS private credentials. This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.AWSPrivateRegion, "e2e.aws-private-region", "us-east-1", "AWS region where private clusters are supported by the HyperShift Operator. This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.AWSOidcS3Credentials, "e2e.aws-oidc-s3-credentials", "/etc/hypershift-pool-aws-credentials/credentials", "AWS S3 credentials for the setup of the OIDC provider. This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.AWSOidcS3Region, "e2e.aws-oidc-s3-region", "us-east-1", "AWS S3 region for the setup of the OIDC provider. This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.ExternalDNSProvider, "e2e.external-dns-provider", "aws", "Provider to use for managing DNS records using external-dns. This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.ExternalDNSDomainFilter, "e2e.external-dns-domain-filter", "service.ci.hypershift.devcluster.openshift.com", "restrict external-dns to changes within the specified domain. This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.ExternalDNSCredentials, "e2e.external-dns-credentials", "/etc/hypershift-pool-aws-credentials/credentials", "path to credentials file to use for managing DNS records using external-dns. This is a HyperShift Operator installation option")
+	flag.BoolVar(&globalOpts.HOInstallationOptions.EnableCIDebugOutput, "e2e.ho-enable-ci-debug-output", false, "Install the HyperShift Operator with extra CI debug output enabled. This is a HyperShift Operator installation option")
+	flag.StringVar(&globalOpts.HOInstallationOptions.PlatformMonitoring, "e2e.platform-monitoring", "All", "The option for enabling platform cluster monitoring when installing the HyperShift Operator. Valid values are: None, OperatorOnly, All. This is a HyperShift Operator installation option")
+
 
 	// AWS specific flags
 	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")

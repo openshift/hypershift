@@ -62,11 +62,37 @@ type Options struct {
 	// If set, the UpgradeControlPlane test will upgrade control plane without
 	// reconciling PKI.
 	DisablePKIReconciliation bool
+
+	HyperShiftOperatorLatestImage string
+
+	// This is used in tests which include the HyperShift Operator as part of
+	// the test such as the UpgradeHyperShiftOperatorTest
+	HOInstallationOptions HyperShiftOperatorInstallOptions
+}
+
+type HyperShiftOperatorInstallOptions struct {
+	AWSOidcS3BucketName           string
+	AWSOidcS3Credentials          string
+	AWSOidcS3Region               string
+	AWSPrivateCredentialsFile     string
+	AWSPrivateRegion              string
+	EnableCIDebugOutput           bool
+	ExternalDNSCredentials        string
+	ExternalDNSDomain             string
+	ExternalDNSDomainFilter       string
+	ExternalDNSProvider           string
+	HyperShiftOperatorLatestImage string
+	PlatformMonitoring            string
+	PrivatePlatform               string
 }
 
 type ConfigurableClusterOptions struct {
 	AWSCredentialsFile            string
+	AWSEndpointAccess             string
+	AWSKmsKeyAlias                string
 	AWSMultiArch                  bool
+	AWSOidcS3BucketName           string
+	Annotations                   stringMapVar
 	AzureCredentialsFile          string
 	AzureManagedIdentitiesFile    string
 	AzureIssuerURL                        string
@@ -79,50 +105,44 @@ type ConfigurableClusterOptions struct {
 	AzureMarketplacePublisher     string
 	AzureMarketplaceSKU           string
 	AzureMarketplaceVersion       string
-	Region                        string
-	Zone                          stringSliceVar
-	PullSecretFile                string
 	BaseDomain                    string
+	ClusterCIDR                   stringSliceVar
 	ControlPlaneOperatorImage     string
-	AWSEndpointAccess             string
-	AWSOidcS3BucketName           string
-	AWSKmsKeyAlias                string
+	EtcdStorageClass              string
 	ExternalDNSDomain             string
 	KubeVirtContainerDiskImage    string
+	KubeVirtInfraKubeconfigFile   string
+	KubeVirtInfraNamespace        string
+	KubeVirtNodeCores             uint
 	KubeVirtNodeMemory            string
 	KubeVirtRootVolumeSize        uint
 	KubeVirtRootVolumeVolumeMode  string
-	KubeVirtNodeCores             uint
-	KubeVirtInfraKubeconfigFile   string
-	KubeVirtInfraNamespace        string
-	NodePoolReplicas              int
-	SSHKeyFile                    string
 	NetworkType                   string
+	NodePoolReplicas              int
 	OpenStackExternalNetworkID    string
+	OpenStackNodeAvailabilityZone string
 	OpenStackNodeFlavor           string
 	OpenStackNodeImageName        string
-	OpenStackNodeAvailabilityZone string
-	PowerVSResourceGroup          string
-	PowerVSRegion                 string
-	PowerVSZone                   string
-	PowerVSVpcRegion              string
-	PowerVSSysType                string
+	PowerVSCloudConnection        string
+	PowerVSCloudInstanceID        string
+	PowerVSMemory                 int
+	PowerVSPER                    bool
 	PowerVSProcType               hyperv1.PowerVSNodePoolProcType
 	PowerVSProcessors             string
-	PowerVSMemory                 int
-	PowerVSCloudInstanceID        string
-	PowerVSCloudConnection        string
-	PowerVSVPC                    string
-	PowerVSPER                    bool
-	PowerVSTransitGatewayLocation string
+	PowerVSRegion                 string
+	PowerVSResourceGroup          string
+	PowerVSSysType                string
 	PowerVSTransitGateway         string
-	EtcdStorageClass              string
-	Annotations                   stringMapVar
+	PowerVSTransitGatewayLocation string
+	PowerVSVPC                    string
+	PowerVSVpcRegion              string
+	PowerVSZone                   string
+	PullSecretFile                string
+	Region                        string
+	SSHKeyFile                    string
 	ServiceCIDR                   stringSliceVar
-	ClusterCIDR                   stringSliceVar
+	Zone                          stringSliceVar
 }
-
-var nextAWSZoneIndex = 0
 
 func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 	createOption := PlatformAgnosticOptions{
@@ -209,6 +229,8 @@ func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 	return opts
 }
 
+var nextAWSZoneIndex = 0
+
 func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 	opts := hypershiftaws.RawCreateOptions{
 		RootVolumeSize: 64,
@@ -263,12 +285,8 @@ func (o *Options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 
 func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
-		CredentialsFile: o.ConfigurableClusterOptions.AzureCredentialsFile,
-		Location:        o.ConfigurableClusterOptions.AzureLocation,
-		// TODO we will re-enable these as part of HOSTEDCP-1542 but we need to first merge a few prerequisite PRs
-		//IssuerURL:                        o.configurableClusterOptions.AzureIssuerURL,
-		//ServiceAccountTokenIssuerKeyPath: o.configurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,
-		//DataPlaneIdentities: o.configurableClusterOptions.AzureDataPlaneIdentities
+		CredentialsFile:             o.ConfigurableClusterOptions.AzureCredentialsFile,
+		Location:                    o.ConfigurableClusterOptions.AzureLocation,
 		DNSZoneRGName:               "os4-common",
 		AssignServicePrincipalRoles: true,
 
@@ -360,6 +378,18 @@ func (o *Options) Complete() error {
 			// TODO: make this an envvar with change to openshift/release, then change here
 			o.ConfigurableClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
+	}
+
+	if o.HyperShiftOperatorLatestImage != "" {
+		o.HOInstallationOptions.HyperShiftOperatorLatestImage = o.HyperShiftOperatorLatestImage
+	}
+
+	if o.ConfigurableClusterOptions.AWSOidcS3BucketName != "" {
+		o.HOInstallationOptions.AWSOidcS3BucketName = o.ConfigurableClusterOptions.AWSOidcS3BucketName
+	}
+
+	if o.ConfigurableClusterOptions.ExternalDNSDomain != "" {
+		o.HOInstallationOptions.ExternalDNSDomain = o.ConfigurableClusterOptions.ExternalDNSDomain
 	}
 
 	return nil
