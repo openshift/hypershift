@@ -623,6 +623,7 @@ func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
 		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
 		Location:        o.configurableClusterOptions.AzureLocation,
+		DNSZoneRGName:   "os4-common",
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
