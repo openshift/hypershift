@@ -447,7 +447,7 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		if hcp.Spec.Platform.AWS != nil && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+		if hcp.Spec.Platform.Type == hyperv1.AWSPlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
 			controllerName := "PrivateKubeAPIServerServiceObserver"
 			if err := (&awsprivatelink.PrivateServiceObserver{
 				Client:                 mgr.GetClient(),
@@ -476,20 +476,8 @@ func NewStartCommand() *cobra.Command {
 				os.Exit(1)
 			}
 
-			var assumeEndpointRole, assumeRoute53Role *string
-			var localZoneID *string
-
-			if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
-				assumeEndpointRole = &hcp.Spec.Platform.AWS.SharedVPC.RolesRef.ControlPlaneARN
-				assumeRoute53Role = &hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN
-				localZoneID = &hcp.Spec.Platform.AWS.SharedVPC.LocalZoneID
-			}
-
 			if err := (&awsprivatelink.AWSEndpointServiceReconciler{
-				AssumeEndpointRoleARN:  assumeEndpointRole,
-				AssumeRoute53RoleARN:   assumeRoute53Role,
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-				LocalZoneID:            localZoneID,
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
 				os.Exit(1)
