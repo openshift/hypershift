@@ -50,7 +50,8 @@ metadata:
   namespace: clusters
 spec:
   autoscaling: {}
-  configuration: {}
+  configuration:
+    node: null
   controllerAvailabilityPolicy: SingleReplica
   dns:
     baseDomain: example.com

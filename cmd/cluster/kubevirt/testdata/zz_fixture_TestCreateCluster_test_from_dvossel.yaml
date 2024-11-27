@@ -37,7 +37,8 @@ metadata:
   namespace: clusters
 spec:
   autoscaling: {}
-  configuration: {}
+  configuration:
+    node: null
   controllerAvailabilityPolicy: HighlyAvailable
   dns:
     baseDomain: ""
