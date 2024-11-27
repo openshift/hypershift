@@ -110,8 +110,9 @@ type controlPlaneWorkload struct {
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the begining, the component is disabled if it returns false.
 	predicate func(cpContext WorkloadContext) (bool, error)
-	// These resources will cause the Deployment/statefulset to rollout when changed.
-	watchedResources []client.Object
+	// These secrets/configMaps will cause the Deployment/statefulset to rollout when changed.
+	rolloutSecretsNames    []string
+	rolloutConfigMapsNames []string
 
 	// if provided, konnectivity proxy container and required volumes will be injected into the deployment/statefulset.
 	konnectivityContainerOpts *KonnectivityContainerOptions

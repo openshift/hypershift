@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
@@ -95,28 +96,49 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 }
 
 func (c *controlPlaneWorkload) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
-	if c.watchedResources == nil {
+	if c.rolloutSecretsNames == nil && c.rolloutConfigMapsNames == nil {
 		return nil
 	}
+	// remove duplicate entries if any.
+	secretsNames := sets.New(c.rolloutSecretsNames...)
+	configMapsNames := sets.New(c.rolloutConfigMapsNames...)
 
 	var hashedData []string
-	for _, resource := range c.watchedResources {
-		if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: resource.GetName()}, resource); err != nil {
+	for secretName := range secretsNames {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: cpContext.HCP.Namespace,
+			},
+		}
+		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(secret), secret); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
 			return err
 		}
 
-		switch obj := resource.(type) {
-		case *corev1.ConfigMap:
-			for _, value := range obj.Data {
-				hashedData = append(hashedData, util.HashSimple(value))
+		for _, value := range secret.Data {
+			hashedData = append(hashedData, util.HashSimple(value))
+		}
+	}
+
+	for configMapName := range configMapsNames {
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      configMapName,
+				Namespace: cpContext.HCP.Namespace,
+			},
+		}
+		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(configMap), configMap); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
 			}
-		case *corev1.Secret:
-			for _, value := range obj.Data {
-				hashedData = append(hashedData, util.HashSimple(value))
-			}
+			return err
+		}
+
+		for _, value := range configMap.Data {
+			hashedData = append(hashedData, util.HashSimple(value))
 		}
 	}
 	// if not sorted, we could get a different value on each reconcilation loop and cause unneeded rollout.

@@ -4,8 +4,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -50,6 +48,6 @@ func NewComponent() component.ControlPlaneComponent {
 			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		WatchResource(&corev1.ConfigMap{}, configMapName).
+		RolloutOnConfigMapChange(configMapName).
 		Build()
 }

@@ -5,8 +5,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -45,7 +43,7 @@ func NewComponent() component.ControlPlaneComponent {
 			component.AdaptPodDisruptionBudget(),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		WatchResource(&corev1.ConfigMap{}, "router").
+		RolloutOnConfigMapChange("router").
 		Build()
 }
 

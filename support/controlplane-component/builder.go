@@ -55,9 +55,13 @@ func (b *controlPlaneWorkloadBuilder[T]) WithManifestAdapter(manifestName string
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) WatchResource(resource client.Object, name string) *controlPlaneWorkloadBuilder[T] {
-	resource.SetName(name)
-	b.workload.watchedResources = append(b.workload.watchedResources, resource)
+func (b *controlPlaneWorkloadBuilder[T]) RolloutOnSecretChange(name ...string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.rolloutSecretsNames = append(b.workload.rolloutSecretsNames, name...)
+	return b
+}
+
+func (b *controlPlaneWorkloadBuilder[T]) RolloutOnConfigMapChange(name ...string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.rolloutConfigMapsNames = append(b.workload.rolloutSecretsNames, name...)
 	return b
 }
 
