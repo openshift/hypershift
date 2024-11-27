@@ -45,7 +45,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 		config *schedulingv1alpha1.ClusterSizingConfiguration
 
 		listDeployments func(context.Context, ...client.ListOption) (*appsv1.DeploymentList, error)
-		listNodes       func(context.Context, ...client.ListOption) (*corev1.NodeList, error)
+		listConfigMaps  func(context.Context, ...client.ListOption) (*corev1.ConfigMapList, error)
 
 		expected    *appsv1applyconfigurations.DeploymentApplyConfiguration
 		expectedErr bool
@@ -83,8 +83,8 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			listDeployments: func(_ context.Context, _ ...client.ListOption) (*appsv1.DeploymentList, error) {
 				return &appsv1.DeploymentList{Items: []appsv1.Deployment{}}, nil
 			},
-			listNodes: func(_ context.Context, _ ...client.ListOption) (*corev1.NodeList, error) {
-				return &corev1.NodeList{Items: []corev1.Node{}}, nil
+			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
+				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{}}, nil
 			},
 			expected: newDeployment(placeholderNamespace, "small", 0, []string{}),
 		},
@@ -103,8 +103,8 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 					{ObjectMeta: metav1.ObjectMeta{Name: "placeholder-small-0", Labels: map[string]string{"hypershift.openshift.io/hosted-cluster-size": "small"}}},
 				}}, nil
 			},
-			listNodes: func(_ context.Context, _ ...client.ListOption) (*corev1.NodeList, error) {
-				return &corev1.NodeList{Items: []corev1.Node{}}, nil
+			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
+				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{}}, nil
 			},
 			expected: newDeployment(placeholderNamespace, "small", 1, []string{}),
 		},
@@ -123,8 +123,8 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 					{ObjectMeta: metav1.ObjectMeta{Name: "placeholder-small-1", Labels: map[string]string{"hypershift.openshift.io/hosted-cluster-size": "small"}}},
 				}}, nil
 			},
-			listNodes: func(_ context.Context, _ ...client.ListOption) (*corev1.NodeList, error) {
-				return &corev1.NodeList{Items: []corev1.Node{}}, nil
+			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
+				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{}}, nil
 			},
 			expected: newDeployment(placeholderNamespace, "small", 0, []string{}),
 		},
@@ -144,8 +144,8 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 					{ObjectMeta: metav1.ObjectMeta{Name: "placeholder-small-1", Labels: map[string]string{"hypershift.openshift.io/hosted-cluster-size": "small"}}},
 				}}, nil
 			},
-			listNodes: func(_ context.Context, _ ...client.ListOption) (*corev1.NodeList, error) {
-				return &corev1.NodeList{Items: []corev1.Node{}}, nil
+			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
+				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{}}, nil
 			},
 		},
 	} {
@@ -153,7 +153,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			r := &placeholderCreator{
 				placeholderLister: &placeholderLister{
 					listDeployments: testCase.listDeployments,
-					listNodes:       testCase.listNodes,
+					listConfigMaps:  testCase.listConfigMaps,
 				},
 			}
 			action, err := r.reconcile(ctx, testCase.config)
@@ -185,7 +185,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 		config     *schedulingv1alpha1.ClusterSizingConfiguration
 		deployment *appsv1.Deployment
 
-		listNodes func(context.Context, ...client.ListOption) (*corev1.NodeList, error)
+		listConfigMaps func(context.Context, ...client.ListOption) (*corev1.ConfigMapList, error)
 
 		delete      bool
 		expected    *appsv1applyconfigurations.DeploymentApplyConfiguration
@@ -324,12 +324,12 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				},
 				Status: validConfigStatus,
 			},
-			listNodes: func(_ context.Context, _ ...client.ListOption) (*corev1.NodeList, error) {
-				return &corev1.NodeList{Items: []corev1.Node{
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "first"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "first"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "second"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "second"}}},
+			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
+				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "first"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "first"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
 				}}, nil
 			},
 			expected: newDeployment(placeholderNamespace, "small", 1, []string{"first", "second"}),
@@ -372,12 +372,12 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				},
 				Status: validConfigStatus,
 			},
-			listNodes: func(_ context.Context, _ ...client.ListOption) (*corev1.NodeList, error) {
-				return &corev1.NodeList{Items: []corev1.Node{
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "first"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "first"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "second"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "second"}}},
+			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
+				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "first"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "first"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
 				}}, nil
 			},
 			expected: newDeployment(placeholderNamespace, "small", 1, []string{"first", "second"}),
@@ -420,12 +420,12 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 				},
 				Status: validConfigStatus,
 			},
-			listNodes: func(_ context.Context, _ ...client.ListOption) (*corev1.NodeList, error) {
-				return &corev1.NodeList{Items: []corev1.Node{
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "first"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "first"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "second"}}},
-					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{OSDFleetManagerPairedNodesLabel: "second"}}},
+			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
+				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "first"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "first"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
+					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
 				}}, nil
 			},
 		},
@@ -433,7 +433,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			r := &placeholderUpdater{
 				placeholderLister: &placeholderLister{
-					listNodes: testCase.listNodes,
+					listConfigMaps: testCase.listConfigMaps,
 				},
 			}
 			shouldDelete, action, err := r.reconcile(ctx, testCase.deployment, testCase.config)
