@@ -29,6 +29,7 @@ metadata:
 spec:
   autoscaling: {}
   configuration:
+    node: null
     proxy:
       httpProxy: fakeProxyAddr
       httpsProxy: fakeProxyAddr
