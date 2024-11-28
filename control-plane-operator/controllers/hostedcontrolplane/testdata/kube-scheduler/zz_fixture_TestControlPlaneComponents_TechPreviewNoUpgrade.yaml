@@ -92,74 +92,74 @@ spec:
         - --feature-gates=ExternalCloudProviderAzure=true
         - --feature-gates=ExternalCloudProviderGCP=true
         - --feature-gates=ExternalCloudProviderExternal=true
+        - --feature-gates=CSIDriverSharedResource=true
         - --feature-gates=BuildCSIVolumes=true
+        - --feature-gates=MachineAPIProviderOpenStack=true
+        - --feature-gates=InsightsConfigAPI=true
         - --feature-gates=AzureWorkloadIdentity=true
         - --feature-gates=PrivateHostedZoneAWS=true
+        - --feature-gates=SigstoreImageVerification=true
+        - --feature-gates=GCPLabelsTags=true
         - --feature-gates=AlibabaPlatform=true
+        - --feature-gates=VSphereMultiVCenters=true
         - --feature-gates=VSphereStaticIPs=true
+        - --feature-gates=RouteExternalCertificate=true
         - --feature-gates=AdminNetworkPolicy=true
         - --feature-gates=NetworkLiveMigration=true
         - --feature-gates=NetworkDiagnosticsConfig=true
         - --feature-gates=HardwareSpeed=true
+        - --feature-gates=EtcdBackendQuota=true
+        - --feature-gates=AutomatedEtcdBackup=true
+        - --feature-gates=DNSNameResolver=true
         - --feature-gates=VSphereControlPlaneMachineSet=true
+        - --feature-gates=MachineConfigNodes=true
         - --feature-gates=MetricsServer=true
+        - --feature-gates=InstallAlternateInfrastructureAWS=true
+        - --feature-gates=GCPClusterHostedDNS=true
+        - --feature-gates=MixedCPUsAllocation=true
+        - --feature-gates=ManagedBootImages=true
+        - --feature-gates=OnClusterBuild=true
+        - --feature-gates=SignatureStores=true
+        - --feature-gates=PinnedImages=true
+        - --feature-gates=UpgradeStatus=true
         - --feature-gates=ExternalOIDC=true
+        - --feature-gates=Example=true
+        - --feature-gates=PlatformOperators=true
+        - --feature-gates=NewOLM=true
+        - --feature-gates=ExternalRouteCertificate=true
+        - --feature-gates=InsightsOnDemandDataGather=true
         - --feature-gates=BareMetalLoadBalancer=true
+        - --feature-gates=InsightsConfig=true
+        - --feature-gates=ImagePolicy=true
+        - --feature-gates=NodeDisruptionPolicy=true
+        - --feature-gates=MetricsCollectionProfiles=true
         - --feature-gates=VSphereDriverConfiguration=true
         - --feature-gates=ClusterAPIInstallAWS=true
+        - --feature-gates=ClusterAPIInstallGCP=true
         - --feature-gates=ClusterAPIInstallNutanix=true
         - --feature-gates=ClusterAPIInstallOpenStack=true
+        - --feature-gates=ClusterAPIInstallPowerVS=true
         - --feature-gates=ClusterAPIInstallVSphere=true
+        - --feature-gates=ChunkSizeMiB=true
+        - --feature-gates=ServiceAccountTokenNodeBindingValidation=true
+        - --feature-gates=ServiceAccountTokenNodeBinding=true
+        - --feature-gates=ServiceAccountTokenPodNodeInfo=true
         - --feature-gates=ValidatingAdmissionPolicy=true
+        - --feature-gates=NodeSwap=true
+        - --feature-gates=DynamicResourceAllocation=true
+        - --feature-gates=MaxUnavailableStatefulSet=true
         - --feature-gates=CloudDualStackNodeIPs=true
         - --feature-gates=DisableKubeletCloudCredentialProviders=true
         - --feature-gates=KMSv1=true
+        - --feature-gates=TranslateStreamCloseWebsocketRequests=true
+        - --feature-gates=VolumeGroupSnapshot=true
         - --feature-gates=GatewayAPI=false
-        - --feature-gates=CSIDriverSharedResource=false
-        - --feature-gates=MachineAPIProviderOpenStack=false
-        - --feature-gates=InsightsConfigAPI=false
-        - --feature-gates=SigstoreImageVerification=false
-        - --feature-gates=GCPLabelsTags=false
-        - --feature-gates=VSphereMultiVCenters=false
-        - --feature-gates=RouteExternalCertificate=false
-        - --feature-gates=EtcdBackendQuota=false
-        - --feature-gates=AutomatedEtcdBackup=false
         - --feature-gates=MachineAPIOperatorDisableMachineHealthCheckController=false
-        - --feature-gates=DNSNameResolver=false
-        - --feature-gates=MachineConfigNodes=false
         - --feature-gates=ClusterAPIInstall=false
-        - --feature-gates=InstallAlternateInfrastructureAWS=false
-        - --feature-gates=GCPClusterHostedDNS=false
-        - --feature-gates=MixedCPUsAllocation=false
-        - --feature-gates=ManagedBootImages=false
-        - --feature-gates=OnClusterBuild=false
-        - --feature-gates=SignatureStores=false
-        - --feature-gates=PinnedImages=false
-        - --feature-gates=UpgradeStatus=false
-        - --feature-gates=Example=false
-        - --feature-gates=PlatformOperators=false
-        - --feature-gates=NewOLM=false
-        - --feature-gates=ExternalRouteCertificate=false
-        - --feature-gates=InsightsOnDemandDataGather=false
-        - --feature-gates=InsightsConfig=false
-        - --feature-gates=ImagePolicy=false
-        - --feature-gates=NodeDisruptionPolicy=false
-        - --feature-gates=MetricsCollectionProfiles=false
         - --feature-gates=ClusterAPIInstallAzure=false
-        - --feature-gates=ClusterAPIInstallGCP=false
         - --feature-gates=ClusterAPIInstallIBMCloud=false
-        - --feature-gates=ClusterAPIInstallPowerVS=false
-        - --feature-gates=ChunkSizeMiB=false
         - --feature-gates=MachineAPIMigration=false
-        - --feature-gates=ServiceAccountTokenNodeBindingValidation=false
-        - --feature-gates=ServiceAccountTokenNodeBinding=false
-        - --feature-gates=ServiceAccountTokenPodNodeInfo=false
-        - --feature-gates=NodeSwap=false
-        - --feature-gates=DynamicResourceAllocation=false
-        - --feature-gates=MaxUnavailableStatefulSet=false
         - --feature-gates=EventedPLEG=false
-        - --feature-gates=TranslateStreamCloseWebsocketRequests=false
-        - --feature-gates=VolumeGroupSnapshot=false
         command:
         - hyperkube
         - kube-scheduler
