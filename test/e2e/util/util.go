@@ -518,6 +518,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
+			// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
+			if strings.HasPrefix(pod.Name, "openstack-manila-csi-controllerplugin-") {
+				continue
+			}
+
 			// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
 			if strings.HasPrefix(pod.Name, "kubevirt-csi") {
 				continue
