@@ -7,6 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	supportutil "github.com/openshift/hypershift/support/util"
+	"k8s.io/apimachinery/pkg/util/validation"
+
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -60,6 +64,7 @@ var initialObjects = []client.Object{
 	},
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
+	manifests.OpenShiftUserCABundle(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 	fakeOperatorHub(),
 }
