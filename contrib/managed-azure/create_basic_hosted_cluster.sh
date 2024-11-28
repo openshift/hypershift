@@ -4,6 +4,9 @@ set -x
 # This creates an Azure HostedCluster with the VNET in its own RG and the NSG in its own NSG.
 # The MANAGED_RG_NAME contains all the cloud resources created by the HC creation.
 
+# Prerequisites:
+# 1. JSON file containing control plane service principals, see steps 5 & 6 in setup_dev_environment.md
+
 # Constants
 PREFIX="<your-prefix>"
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release-nightly@sha256:96a2ae25ddc2f291de4f143ce2ba84b94c6c6fb48c34fdedc45f22a20838c752
@@ -22,8 +25,9 @@ AZURE_CREDS=/Users/your-username/.azure/credentials
 AZURE_BASE_DOMAIN=blah-blah.openshift.com
 PULL_SECRET=/Users/your-username/all-the-pull-secrets.json
 HYPERSHIFT_BINARY_PATH="/Users/your-username/hypershift_ws/hypershift/bin"
-KEY_VAULT_TENANT_ID="<your-key-vault-tenant-id-here>"
-KEY_VAULT_NAME="<your-key-vault-name-here>"
+MANAGED_IDENTITIES_FILE="/Users/your-username/azure/mi-file.json"
+DNS_ZONE_RG_NAME="<NAME_OF_THE_RG_OF_THE_DNS_ZONE>"
+
 
 # Delete any previous instances of the resource groups
 az group delete -n "${MANAGED_RG_NAME}" --yes
@@ -76,8 +80,9 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
 --network-security-group-id "${GetNsgID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
 --control-plane-operator-image=<YOUR_REPO>:"${TAG}" \
---management-key-vault-name ${KEY_VAULT_NAME} \
---management-key-vault-tenant-id ${KEY_VAULT_TENANT_ID} \
+--managed-identities-file ${MANAGED_IDENTITIES_FILE} \
+--assign-service-principal-roles \
+--dns-zone-rg-name ${DNS_ZONE_RG_NAME} \
 --fips=true \
 --marketplace-publisher azureopenshift \
 --marketplace-offer aro4 \
