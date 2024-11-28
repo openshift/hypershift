@@ -3,12 +3,13 @@ package resources
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
-	supportutil "github.com/openshift/hypershift/support/util"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	supportutil "github.com/openshift/hypershift/support/util"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -65,6 +66,7 @@ var initialObjects = []client.Object{
 	},
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
+	manifests.OpenShiftUserCABundle(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameConfig),
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameMirror),
