@@ -76,7 +76,7 @@ type Socks5Options struct {
 	DisableResolver *bool
 }
 
-func (opts *KonnectivityContainerOptions) injectKonnectivityContainer(cpContext ControlPlaneContext, podSpec *corev1.PodSpec) {
+func (opts KonnectivityContainerOptions) injectKonnectivityContainer(cpContext ControlPlaneContext, podSpec *corev1.PodSpec) {
 	if opts.Mode == "" {
 		// programmer error.
 		panic("Konnectivity proxy mode must be specified!")
@@ -121,7 +121,7 @@ func (opts *KonnectivityContainerOptions) injectKonnectivityContainer(cpContext 
 
 const certsTrustPath = "/etc/pki/tls/certs"
 
-func (opts *KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, image string, proxyAdditionalCAs []corev1.VolumeProjection) corev1.Container {
+func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, image string, proxyAdditionalCAs []corev1.VolumeProjection) corev1.Container {
 	var proxyConfig *configv1.ProxySpec
 	if hcp.Spec.Configuration != nil {
 		proxyConfig = hcp.Spec.Configuration.Proxy
@@ -227,7 +227,7 @@ func (opts *KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedCont
 	return container
 }
 
-func (opts *KonnectivityContainerOptions) buildVolumes(proxyAdditionalCAs []corev1.VolumeProjection) []corev1.Volume {
+func (opts KonnectivityContainerOptions) buildVolumes(proxyAdditionalCAs []corev1.VolumeProjection) []corev1.Volume {
 	volumes := []corev1.Volume{
 		{
 			Name: "konnectivity-proxy-cert",

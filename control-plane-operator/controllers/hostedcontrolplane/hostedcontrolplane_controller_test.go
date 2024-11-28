@@ -1672,8 +1672,11 @@ func TestControlPlaneComponents(t *testing.T) {
 			Build()
 		cpContext.Client = fakeClient
 
-		if err := component.Reconcile(cpContext); err != nil {
-			t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+		// Reconcile multiple times to make sure multiple runs don't produce different results.
+		for i := 0; i < 2; i++ {
+			if err := component.Reconcile(cpContext); err != nil {
+				t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+			}
 		}
 
 		var deployments appsv1.DeploymentList
