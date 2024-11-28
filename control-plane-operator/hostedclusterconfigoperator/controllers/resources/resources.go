@@ -356,39 +356,57 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile rbac: %w", err))
 	}
 
-	log.Info("reconciling registry config")
 	registryConfig := manifests.Registry()
-	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-		registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+	var registryConfigExists bool
+	// Check if the registry config exists
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get registry config: %w", err)
+		}
+	} else {
+		registryConfigExists = true
 	}
-	if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
-		log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
-		ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
-		if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
-			if ocmConfigMap.Data == nil {
-				// CPO has not created the configmap yet, wait for create
-				// This should not happen as we are started by the CPO after the configmap should be created
-				return nil
-			}
-			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-			if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
-				err := util.DeserializeResource(configStr, config, api.Scheme)
-				if err != nil {
-					return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
-				}
-			}
-			config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
-			configStr, err := util.SerializeResource(config, api.Scheme)
-			if err != nil {
-				return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
-			}
-			ocmConfigMap.Data[ocm.ConfigKey] = configStr
+
+	// For platforms where cluster-image-registry-operator (CIRO) needs a PVC to be created, bootstrap needs to happen
+	// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
+	// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
+	// exist at this point.
+	if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
+		log.Info("skipping registry config to let CIRO bootstrap")
+	} else {
+		log.Info("reconciling registry config")
+		if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+			registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
 			return nil
 		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
+			errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+		}
+		if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
+			log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
+			ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
+			if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
+				if ocmConfigMap.Data == nil {
+					// CPO has not created the configmap yet, wait for create
+					// This should not happen as we are started by the CPO after the configmap should be created
+					return nil
+				}
+				config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+				if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+					err := util.DeserializeResource(configStr, config, api.Scheme)
+					if err != nil {
+						return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+					}
+				}
+				config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+				configStr, err := util.SerializeResource(config, api.Scheme)
+				if err != nil {
+					return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
+				}
+				ocmConfigMap.Data[ocm.ConfigKey] = configStr
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
+			}
 		}
 	}
 
@@ -2732,4 +2750,14 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 	}
 
 	return errs
+}
+
+// imageRegistryPlatformWithPVC returns true if the platform requires a PVC for the image registry.
+func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
+	switch platform {
+	case hyperv1.OpenStackPlatform:
+		return true
+	default:
+		return false
+	}
 }
