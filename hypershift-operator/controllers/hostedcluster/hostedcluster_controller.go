@@ -4282,19 +4282,24 @@ func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) e
 		}
 	}
 
-	servicePublishingStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
-	if servicePublishingStrategy == nil {
+	kasPublishingStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
+	if kasPublishingStrategy == nil {
 		errs = append(errs, fmt.Errorf("service type %v not found", hyperv1.APIServer))
+		return utilerrors.NewAggregate(errs)
+	}
+
+	if kasPublishingStrategy.Type == hyperv1.Route && !hyperutil.UseDedicatedDNSForKASByHC(hc) {
+		errs = append(errs, fmt.Errorf("if serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"))
+		return utilerrors.NewAggregate(errs)
 	}
 
 	if hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
-		if servicePublishingStrategy != nil && servicePublishingStrategy.Type != hyperv1.Route && servicePublishingStrategy.Type != hyperv1.LoadBalancer {
-			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route", hyperv1.APIServer, servicePublishingStrategy.Type))
+		if kasPublishingStrategy.Type != hyperv1.Route && kasPublishingStrategy.Type != hyperv1.LoadBalancer {
+			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route", hyperv1.APIServer, kasPublishingStrategy.Type))
 		}
-
 	} else {
-		if !hyperutil.UseDedicatedDNSForKASByHC(hc) && servicePublishingStrategy.Type != hyperv1.LoadBalancer {
-			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route or Loadbalancer", hyperv1.APIServer, servicePublishingStrategy.Type))
+		if !hyperutil.UseDedicatedDNSForKASByHC(hc) && kasPublishingStrategy.Type != hyperv1.LoadBalancer {
+			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route or LoadBalancer", hyperv1.APIServer, kasPublishingStrategy.Type))
 		}
 	}
 
