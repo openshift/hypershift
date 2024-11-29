@@ -16,7 +16,7 @@ const (
 	configKey = "cloud.conf"
 )
 
-func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	cfg, err := azureConfig(cpContext, false)
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) 
 	return nil
 }
 
-func adaptConfigSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	cfg, err := azureConfig(cpContext, true)
 	if err != nil {
 		return err
@@ -48,11 +48,11 @@ func adaptConfigSecret(cpContext component.ControlPlaneContext, secret *corev1.S
 	return nil
 }
 
-func azureConfig(cpContext component.ControlPlaneContext, withCredentials bool) (AzureConfig, error) {
+func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (AzureConfig, error) {
 	hcp := cpContext.HCP
 	azureplatform := hcp.Spec.Platform.Azure
 
-	credentialsSecret := manifests.AzureCredentialInformation(cpContext.HCP.Namespace)
+	credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 		return AzureConfig{}, fmt.Errorf("failed to get Azure credentials secret: %w", err)
 	}

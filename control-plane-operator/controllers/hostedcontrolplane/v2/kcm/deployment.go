@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 	serviceServingCA, err := getServiceServingCA(cpContext)
 	if err != nil {
@@ -77,7 +77,7 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 	return nil
 }
 
-func getServiceServingCA(cpContext component.ControlPlaneContext) (*corev1.ConfigMap, error) {
+func getServiceServingCA(cpContext component.WorkloadContext) (*corev1.ConfigMap, error) {
 	serviceServingCA := manifests.ServiceServingCA(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(serviceServingCA), serviceServingCA); err != nil {
 		if !apierrors.IsNotFound(err) {

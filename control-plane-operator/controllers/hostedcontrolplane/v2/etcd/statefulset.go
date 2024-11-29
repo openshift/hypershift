@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-func adaptStatefulSet(cpContext component.ControlPlaneContext, sts *appsv1.StatefulSet) error {
+func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulSet) error {
 	hcp := cpContext.HCP
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
 

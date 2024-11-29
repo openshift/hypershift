@@ -35,13 +35,13 @@ type ConfigOverride struct {
 	Challenge *bool               `json:"challenge,omitempty"`
 }
 
-func adaptAuditConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptAuditConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	auditConfig := cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig()
 	cm.Data[auditPolicyProfileMapKey] = string(auditConfig.Profile)
 	return nil
 }
 
-func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	if configStr, exists := cm.Data[oauthServerConfigKey]; !exists || len(configStr) == 0 {
 		return fmt.Errorf("expected an existing oauth server configuration")
 	}
@@ -60,7 +60,7 @@ func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMa
 	return nil
 }
 
-func adaptOAuthConfig(cpContext component.ControlPlaneContext, cfg *osinv1.OsinServerConfig) {
+func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServerConfig) {
 	configuration := cpContext.HCP.Spec.Configuration
 
 	cfg.GenericAPIServerConfig.ServingInfo.NamedCertificates = globalconfig.GetConfigNamedCertificates(configuration.GetNamedCertificates(), oauthNamedCertificateMountPathPrefix)

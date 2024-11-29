@@ -23,11 +23,11 @@ const (
 	secretEncryptionConfigFileVolumeName = "kas-secret-encryption-config"
 )
 
-func secretEncryptionConfigPredicate(cpContext component.ControlPlaneContext) bool {
+func secretEncryptionConfigPredicate(cpContext component.WorkloadContext) bool {
 	return cpContext.HCP.Spec.SecretEncryption != nil
 }
 
-func adaptSecretEncryptionConfig(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptSecretEncryptionConfig(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	var data []byte
 	secretEncryption := cpContext.HCP.Spec.SecretEncryption
 	switch secretEncryption.Type {
@@ -90,7 +90,7 @@ func adaptSecretEncryptionConfig(cpContext component.ControlPlaneContext, secret
 
 // getKMSAPIVersion returns the KMS API version from the given EncryptionConfig secret.
 // If the current state is using the IdentityProvider, the function returns v2 as the default version to start with.
-func getKMSAPIVersion(cpContext component.ControlPlaneContext, secret *corev1.Secret) (string, error) {
+func getKMSAPIVersion(cpContext component.WorkloadContext, secret *corev1.Secret) (string, error) {
 	apiVersion := "v2"
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(secret), secret); err != nil {
 		if apierrors.IsNotFound(err) {

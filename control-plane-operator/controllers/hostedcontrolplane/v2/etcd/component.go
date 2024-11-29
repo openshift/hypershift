@@ -57,7 +57,7 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func isManagedETCD(cpContext component.ControlPlaneContext) (bool, error) {
+func isManagedETCD(cpContext component.WorkloadContext) (bool, error) {
 	managed := cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Managed
 	return managed, nil
 }
@@ -65,6 +65,6 @@ func isManagedETCD(cpContext component.ControlPlaneContext) (bool, error) {
 // Only deploy etcd-defrag-controller in HA mode.
 // When we perform defragmentation it takes the etcd instance offline for a short amount of time.
 // Therefore we only want to do this when there are multiple etcd instances.
-func defragControllerPredicate(cpContext component.ControlPlaneContext) bool {
+func defragControllerPredicate(cpContext component.WorkloadContext) bool {
 	return cpContext.HCP.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable
 }

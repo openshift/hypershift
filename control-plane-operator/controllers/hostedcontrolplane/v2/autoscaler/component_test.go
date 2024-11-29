@@ -9,7 +9,6 @@ import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/upsert"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -69,16 +68,15 @@ func TestPredicate(t *testing.T) {
 			}
 			client := clientBuilder.Build()
 
-			cpContext := controlplanecomponent.ControlPlaneContext{
-				Context:                  context.Background(),
-				Client:                   client,
-				CreateOrUpdateProviderV2: upsert.NewV2(false),
-				HCP:                      hcp,
+			cpContext := controlplanecomponent.WorkloadContext{
+				Context: context.Background(),
+				Client:  client,
+				HCP:     hcp,
 			}
 
 			g := NewGomegaWithT(t)
 
-			result, err := Predicate(cpContext)
+			result, err := predicate(cpContext)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected))
 		})
@@ -133,7 +131,7 @@ func TestAdaptDeployment(t *testing.T) {
 			hcp.Annotations = tc.hcpAnnotations
 			hcp.Spec.Autoscaling = tc.AutoscalerOptions
 
-			cpContext := controlplanecomponent.ControlPlaneContext{
+			cpContext := controlplanecomponent.WorkloadContext{
 				HCP: hcp,
 			}
 
@@ -142,7 +140,7 @@ func TestAdaptDeployment(t *testing.T) {
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			err = AdaptDeployment(cpContext, deployment)
+			err = adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(deployment.Spec.Replicas).To(HaveValue(Equal(tc.expectedReplicas)))

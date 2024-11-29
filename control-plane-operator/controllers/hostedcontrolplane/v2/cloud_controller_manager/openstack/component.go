@@ -44,6 +44,6 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func predicate(cpContext component.ControlPlaneContext) (bool, error) {
+func predicate(cpContext component.WorkloadContext) (bool, error) {
 	return cpContext.HCP.Spec.Platform.Type == hyperv1.OpenStackPlatform, nil
 }

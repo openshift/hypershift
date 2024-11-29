@@ -3,8 +3,6 @@ package scheduler
 import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -42,7 +40,7 @@ func NewComponent() component.ControlPlaneComponent {
 			"kubeconfig.yaml",
 			component.WithAdaptFunction(adaptKubeconfig),
 		).
-		WatchResource(&corev1.ConfigMap{}, "kube-scheduler").
+		RolloutOnConfigMapChange("kube-scheduler").
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
 }

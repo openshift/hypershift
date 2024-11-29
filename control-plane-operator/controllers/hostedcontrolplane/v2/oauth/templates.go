@@ -22,19 +22,19 @@ func readTemplate(name string) ([]byte, error) {
 	return templateContent.ReadFile(path.Join("templates", name))
 }
 
-func adaptLoginTemplateSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptLoginTemplateSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	data, err := readTemplate(loginTemplateKey)
 	secret.Data[loginTemplateKey] = data
 	return err
 }
 
-func adaptProviderSelectionTemplateSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptProviderSelectionTemplateSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	data, err := readTemplate(providerSelectionTemplateKey)
 	secret.Data[providerSelectionTemplateKey] = data
 	return err
 }
 
-func adaptErrorTemplateSecret(cpContext component.ControlPlaneContext, secret *corev1.Secret) error {
+func adaptErrorTemplateSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	data, err := readTemplate(errorsTemplateKey)
 	secret.Data[errorsTemplateKey] = data
 	return err

@@ -5,7 +5,6 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -68,7 +67,7 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptErrorTemplateSecret),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		WatchResource(&corev1.ConfigMap{}, "oauth-openshift").
+		RolloutOnConfigMapChange("oauth-openshift").
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.Dual,
 			Socks5Options: component.Socks5Options{
@@ -84,6 +83,6 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func isOAuthEnabled(cpContext component.ControlPlaneContext) (bool, error) {
+func isOAuthEnabled(cpContext component.WorkloadContext) (bool, error) {
 	return util.HCPOAuthEnabled(cpContext.HCP), nil
 }

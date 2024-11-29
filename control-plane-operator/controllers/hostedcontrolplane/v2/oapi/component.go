@@ -5,8 +5,6 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -52,9 +50,7 @@ func NewComponent() component.ControlPlaneComponent {
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
 		).
-		WatchResource(&corev1.ConfigMap{}, "openshift-apiserver").
-		WatchResource(&corev1.ConfigMap{}, "openshift-apiserver-audit").
-		WatchResource(&corev1.ConfigMap{}, manifests.ServiceServingCA("").Name).
+		RolloutOnConfigMapChange("openshift-apiserver", "openshift-apiserver-audit", manifests.ServiceServingCA("").Name).
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.HTTPS,
 		}).

@@ -87,7 +87,7 @@ const (
 	clusterSignerCAVolumeName = "cluster-signer-ca"
 )
 
-func (h *HCCO) AdaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func (h *HCCO) AdaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	versions, err := cpContext.ReleaseImageProvider.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)

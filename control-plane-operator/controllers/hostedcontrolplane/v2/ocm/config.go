@@ -22,7 +22,7 @@ const (
 	configKey = "config.yaml"
 )
 
-func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	if configStr, exists := cm.Data[configKey]; !exists || len(configStr) == 0 {
 		return fmt.Errorf("expected an existing openshift controller manager configuration")
 	}

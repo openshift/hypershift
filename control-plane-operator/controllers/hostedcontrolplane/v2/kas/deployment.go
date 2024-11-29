@@ -31,7 +31,7 @@ const (
 	awsPodIdentityWebhookKubeconfigVolumeName  = "aws-pod-identity-webhook-kubeconfig"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 

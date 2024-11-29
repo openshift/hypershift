@@ -87,7 +87,7 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	return path.Join(i.VolumeMounts[i.Container][v.Name], key)
 }
 
-func ConvertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
+func ConvertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Reader, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
 	converted := make([]osinv1.IdentityProvider, 0, len(identityProviders))
 	errs := []error{}
 	volumeMountInfo := &IDPVolumeMountInfo{
@@ -143,7 +143,7 @@ func convertProviderConfigToIDPData(
 	configOverride *ConfigOverride,
 	i int,
 	idpVolumeMounts *IDPVolumeMountInfo,
-	kclient crclient.Client,
+	kclient crclient.Reader,
 	namespace string,
 	skipKonnectivityDialer bool,
 ) (*idpData, error) {
@@ -439,7 +439,7 @@ const (
 	kubeconfigDataKey             = "kubeconfig"
 )
 
-func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, namespace string) (konnectivityproxy.ProxyDialer, error) {
+func buildKonnectivityDialer(ctx context.Context, kclient crclient.Reader, namespace string) (konnectivityproxy.ProxyDialer, error) {
 	konnectivityClientSecret := manifests.KonnectivityClientSecret(namespace)
 	if err := kclient.Get(ctx, crclient.ObjectKeyFromObject(konnectivityClientSecret), konnectivityClientSecret); err != nil {
 		return nil, fmt.Errorf("failed to get konnectivity client secret: %w", err)
@@ -505,7 +505,7 @@ func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, names
 
 // discoverOpenIDURLs retrieves basic information about an OIDC server with hostname
 // given by the `issuer` argument
-func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, key, namespace string, ca configv1.ConfigMapNameReference, skipKonnectivityDialer bool) (*osinv1.OpenIDURLs, error) {
+func discoverOpenIDURLs(ctx context.Context, kclient crclient.Reader, issuer, key, namespace string, ca configv1.ConfigMapNameReference, skipKonnectivityDialer bool) (*osinv1.OpenIDURLs, error) {
 	issuer = strings.TrimRight(issuer, "/") // TODO make impossible via validation and remove
 	wellKnown := issuer + "/.well-known/openid-configuration"
 
@@ -575,7 +575,7 @@ func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, ke
 }
 
 func checkOIDCPasswordGrantFlow(ctx context.Context,
-	kclient crclient.Client,
+	kclient crclient.Reader,
 	tokenURL, clientID,
 	namespace string,
 	caRererence configv1.ConfigMapNameReference,
@@ -680,7 +680,7 @@ func isValidURL(rawurl string, optional bool) bool {
 	return u.Scheme == "https" && len(u.Host) > 0 && len(u.Fragment) == 0
 }
 
-func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, caName, caKey string, skipKonnectivityDialer bool) (http.RoundTripper, error) {
+func transportForCARef(ctx context.Context, kclient crclient.Reader, namespace, caName, caKey string, skipKonnectivityDialer bool) (http.RoundTripper, error) {
 	var konnectivityDialer konnectivityproxy.ProxyDialer
 	var userProxyConfig *httpproxy.Config
 	var userProxyTrustedCA string

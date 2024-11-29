@@ -4,8 +4,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -102,9 +100,7 @@ func NewComponent() component.ControlPlaneComponent {
 			component.EnableForPlatform(hyperv1.AWSPlatform),
 			component.WithAdaptFunction(adaptAWSPodIdentityWebhookKubeconfigSecret),
 		).
-		WatchResource(&corev1.ConfigMap{}, "kas-config").
-		WatchResource(&corev1.ConfigMap{}, "kas-audit-config").
-		WatchResource(&corev1.ConfigMap{}, "auth-config").
-		WatchResource(&corev1.Secret{}, "kas-secret-encryption-config").
+		RolloutOnConfigMapChange("kas-config", "kas-audit-config", "auth-config").
+		RolloutOnSecretChange("kas-secret-encryption-config").
 		Build()
 }

@@ -65,10 +65,11 @@ func (c *controlPlaneWorkload) checkDependencies(cpContext ControlPlaneContext) 
 }
 
 func (c *controlPlaneWorkload) reconcileComponentStatus(cpContext ControlPlaneContext, component *hyperv1.ControlPlaneComponent, unavailableDependencies []string, reconcilationError error) error {
+	workloadContrext := cpContext.workloadContext()
 	component.Status.Resources = []hyperv1.ComponentResource{}
 	if err := assets.ForEachManifest(c.Name(), func(manifestName string) error {
 		adapter, exist := c.manifestsAdapters[manifestName]
-		if exist && adapter.predicate != nil && !adapter.predicate(cpContext) {
+		if exist && adapter.predicate != nil && !adapter.predicate(workloadContrext) {
 			return nil
 		}
 

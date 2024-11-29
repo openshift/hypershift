@@ -3,13 +3,10 @@ package controlplanecomponent
 import (
 	"context"
 	"fmt"
-	"slices"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -21,8 +18,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -54,6 +49,35 @@ type ControlPlaneContext struct {
 	SkipPredicate bool
 }
 
+type WorkloadContext struct {
+	context.Context
+
+	// reader client, as workloads should not be creating resources.
+	Client                   client.Reader
+	HCP                      *hyperv1.HostedControlPlane
+	ReleaseImageProvider     imageprovider.ReleaseImageProvider
+	UserReleaseImageProvider imageprovider.ReleaseImageProvider
+
+	InfraStatus               infra.InfrastructureStatus
+	SetDefaultSecurityContext bool
+	EnableCIDebugOutput       bool
+	MetricsSet                metrics.MetricsSet
+}
+
+func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
+	return WorkloadContext{
+		Context:                   cp.Context,
+		Client:                    cp.Client,
+		HCP:                       cp.HCP,
+		ReleaseImageProvider:      cp.ReleaseImageProvider,
+		UserReleaseImageProvider:  cp.UserReleaseImageProvider,
+		InfraStatus:               cp.InfraStatus,
+		SetDefaultSecurityContext: cp.SetDefaultSecurityContext,
+		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
+		MetricsSet:                cp.MetricsSet,
+	}
+}
+
 var _ ControlPlaneComponent = &controlPlaneWorkload{}
 
 type workloadType string
@@ -80,14 +104,15 @@ type controlPlaneWorkload struct {
 	// reconcilation will be blocked until all dependencies are available.
 	dependencies []string
 
-	adapt func(cpContext ControlPlaneContext, obj client.Object) error
+	adapt func(cpContext WorkloadContext, obj client.Object) error
 
 	// adapters for Secret, ConfigMap, Service, ServiceMonitor, etc.
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the begining, the component is disabled if it returns false.
-	predicate func(cpContext ControlPlaneContext) (bool, error)
-	// These resources will cause the Deployment/statefulset to rollout when changed.
-	watchedResources []client.Object
+	predicate func(cpContext WorkloadContext) (bool, error)
+	// These secrets/configMaps will cause the Deployment/statefulset to rollout when changed.
+	rolloutSecretsNames    []string
+	rolloutConfigMapsNames []string
 
 	// if provided, konnectivity proxy container and required volumes will be injected into the deployment/statefulset.
 	konnectivityContainerOpts *KonnectivityContainerOptions
@@ -102,8 +127,10 @@ func (c *controlPlaneWorkload) Name() string {
 
 // reconcile implements ControlPlaneComponent.
 func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
+	workloadContext := cpContext.workloadContext()
+
 	if !cpContext.SkipPredicate && c.predicate != nil {
-		shouldReconcile, err := c.predicate(cpContext)
+		shouldReconcile, err := c.predicate(workloadContext)
 		if err != nil {
 			return err
 		}
@@ -209,7 +236,7 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 	ownerRef := config.OwnerRefFrom(cpContext.HCP)
 	ownerRef.ApplyTo(workloadObj)
 	if c.adapt != nil {
-		if err := c.adapt(cpContext, workloadObj); err != nil {
+		if err := c.adapt(cpContext.workloadContext(), workloadObj); err != nil {
 			return err
 		}
 	}
@@ -267,161 +294,4 @@ func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneC
 	}
 	deploymentConfig.ApplyToStatefulSet(statefulSet)
 	return nil
-}
-
-func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32, existingResources map[string]corev1.ResourceRequirements) (*config.DeploymentConfig, error) {
-	if _, exist := podTemplateSpec.Annotations[config.NeedMetricsServerAccessLabel]; exist || c.NeedsManagementKASAccess() {
-		podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(true)
-	} else {
-		podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(false)
-	}
-
-	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
-
-	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, cpContext.HCP, podTemplateSpec.Spec.Containers); err != nil {
-		return nil, err
-	}
-	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, cpContext.HCP, podTemplateSpec.Spec.InitContainers); err != nil {
-		return nil, err
-	}
-
-	if err := c.applyWatchedResourcesAnnotation(cpContext, podTemplateSpec); err != nil {
-		return nil, err
-	}
-
-	if c.konnectivityContainerOpts != nil {
-		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &podTemplateSpec.Spec)
-	}
-
-	if c.availabilityProberOpts != nil {
-		availabilityProberImage := cpContext.ReleaseImageProvider.GetImage(util.AvailabilityProberImageName)
-		util.AvailabilityProber(
-			kas.InClusterKASReadyURL(cpContext.HCP.Spec.Platform.Type), availabilityProberImage,
-			&podTemplateSpec.Spec,
-			util.WithOptions(c.availabilityProberOpts))
-	}
-
-	deploymentConfig := &config.DeploymentConfig{
-		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
-		Resources:                 existingResources,
-		AdditionalLabels: map[string]string{
-			hyperv1.ControlPlaneComponentLabel: c.Name(),
-		},
-	}
-	deploymentConfig.Scheduling.PriorityClass = getPriorityClass(c.Name(), cpContext.HCP)
-
-	if c.NeedsManagementKASAccess() {
-		deploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
-	}
-
-	var replicas *int
-	if desiredReplicas != nil {
-		replicas = ptr.To(int(*desiredReplicas))
-	}
-	var multiZoneSpreadLabels map[string]string
-	if c.MultiZoneSpread() {
-		multiZoneSpreadLabels = podTemplateSpec.ObjectMeta.Labels
-	}
-	if c.IsRequestServing() {
-		deploymentConfig.SetRequestServingDefaults(cpContext.HCP, multiZoneSpreadLabels, replicas)
-	} else {
-		deploymentConfig.SetDefaults(cpContext.HCP, multiZoneSpreadLabels, replicas)
-	}
-	deploymentConfig.SetRestartAnnotation(cpContext.HCP.ObjectMeta)
-
-	return deploymentConfig, nil
-}
-
-func (c *controlPlaneWorkload) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
-	if c.watchedResources == nil {
-		return nil
-	}
-
-	var hashedData []string
-	for _, resource := range c.watchedResources {
-		if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: resource.GetName()}, resource); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return err
-		}
-
-		switch obj := resource.(type) {
-		case *corev1.ConfigMap:
-			for _, value := range obj.Data {
-				hashedData = append(hashedData, util.HashSimple(value))
-			}
-		case *corev1.Secret:
-			for _, value := range obj.Data {
-				hashedData = append(hashedData, util.HashSimple(value))
-			}
-		}
-	}
-	// if not sorted, we could get a different value on each reconcilation loop and cause unneeded rollout.
-	slices.Sort(hashedData)
-
-	if podTemplate.Annotations == nil {
-		podTemplate.Annotations = map[string]string{}
-	}
-	podTemplate.Annotations["component.hypershift.openshift.io/config-hash"] = strings.Join(hashedData, "")
-	return nil
-}
-
-func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
-	for _, volume := range podSpec.Volumes {
-		if volume.ConfigMap != nil {
-			volume.ConfigMap.DefaultMode = ptr.To[int32](420)
-		}
-
-		if volume.Secret != nil {
-			volume.Secret.DefaultMode = ptr.To[int32](416)
-		}
-	}
-}
-
-func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, hcp *hyperv1.HostedControlPlane, containers []corev1.Container) error {
-	for i, container := range containers {
-		if container.Image == "" {
-			return fmt.Errorf("container %s has no image key specified", container.Name)
-		}
-		key := container.Image
-		if payloadImage, exist := imageProvider.ImageExist(key); exist {
-			containers[i].Image = payloadImage
-		} else if key == "cluster-version-operator" {
-			// fallback to hcp releaseImage if "cluster-version-operator" image is not available.
-			// This could happen for example in local dev enviroments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
-			containers[i].Image = util.HCPControlPlaneReleaseImage(hcp)
-		}
-	}
-
-	return nil
-}
-
-var (
-	apiCriticalComponents = sets.New(
-		"kube-apiserver",
-		"openshift-apiserver",
-		"openshift-oauth-apiserver",
-		"oauth-openshift",
-		"router",
-	)
-)
-
-func getPriorityClass(componentName string, hcp *hyperv1.HostedControlPlane) string {
-	priorityClass := config.DefaultPriorityClass
-	overrideAnnotation := hyperv1.ControlPlanePriorityClass
-
-	if componentName == etcdComponentName {
-		priorityClass = config.EtcdPriorityClass
-		overrideAnnotation = hyperv1.EtcdPriorityClass
-	} else if apiCriticalComponents.Has(componentName) {
-		priorityClass = config.APICriticalPriorityClass
-		overrideAnnotation = hyperv1.APICriticalPriorityClass
-	}
-
-	if overrideValue := hcp.Annotations[overrideAnnotation]; overrideValue != "" {
-		priorityClass = overrideValue
-	}
-
-	return priorityClass
 }

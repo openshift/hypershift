@@ -36,7 +36,7 @@ func TestConfig(t *testing.T) {
 
 	cm := &corev1.ConfigMap{}
 	assets.LoadManifestInto(ComponentName, "config.yaml", cm)
-	cpContext := component.ControlPlaneContext{
+	cpContext := component.WorkloadContext{
 		HCP: hcp,
 	}
 	adaptConfig(cpContext, cm)

@@ -17,7 +17,7 @@ const (
 	infraKubeconfigVolumeName = "infra-kubeconfig"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 	clusterName, ok := hcp.Labels["cluster.x-k8s.io/cluster-name"]
 	if !ok {

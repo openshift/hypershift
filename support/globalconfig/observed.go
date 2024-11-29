@@ -44,7 +44,7 @@ func deserializeObservedConfig(cm *corev1.ConfigMap, config runtime.Object) erro
 // ReadObservedConfig reads global configuration resources from configmaps that
 // were created by the hosted-cluster-config-operator from resources inside the
 // guest cluster.
-func ReadObservedConfig(ctx context.Context, c client.Client, observedConfig *ObservedConfig, namespace string) error {
+func ReadObservedConfig(ctx context.Context, c client.Reader, observedConfig *ObservedConfig, namespace string) error {
 	log := ctrl.LoggerFrom(ctx)
 	var errs []error
 	configs := map[string]struct {

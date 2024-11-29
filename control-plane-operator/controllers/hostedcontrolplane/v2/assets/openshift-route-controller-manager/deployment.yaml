@@ -6,7 +6,6 @@ metadata:
   name: openshift-route-controller-manager
   namespace: HCP_NAMESPACE
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: openshift-route-controller-manager

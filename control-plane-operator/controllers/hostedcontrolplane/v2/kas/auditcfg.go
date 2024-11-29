@@ -16,7 +16,7 @@ const (
 	AuditPolicyProfileMapKey = "profile"
 )
 
-func AdaptAuditConfig(cpContext component.ControlPlaneContext, auditCfgMap *corev1.ConfigMap) error {
+func AdaptAuditConfig(cpContext component.WorkloadContext, auditCfgMap *corev1.ConfigMap) error {
 	auditConfig := cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig()
 	policy, err := audit.GetAuditPolicy(auditConfig)
 	if err != nil {

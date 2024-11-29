@@ -12,7 +12,7 @@ const (
 	configKey = "aws.conf"
 )
 
-func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	clusterID := cpContext.HCP.Spec.InfraID
 	config := cpContext.HCP.Spec.Platform.AWS.CloudProviderConfig
 	var zone, vpc, subnetID string

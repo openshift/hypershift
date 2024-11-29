@@ -37,7 +37,7 @@ func init() {
 	}
 }
 
-func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	routeList := &routev1.RouteList{}
 	if err := cpContext.Client.List(cpContext, routeList, client.InNamespace(cpContext.HCP.Namespace)); err != nil {
 		return fmt.Errorf("failed to list routes: %w", err)

@@ -38,7 +38,7 @@ const (
 	DefaultEtcdPort         = 2379
 )
 
-func adaptKubeAPIServerConfig(cpContext component.ControlPlaneContext, config *corev1.ConfigMap) error {
+func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev1.ConfigMap) error {
 	configParams := NewConfigParams(cpContext.HCP)
 	kasConfig := generateConfig(configParams)
 	serializedConfig, err := json.Marshal(kasConfig)

@@ -11,15 +11,9 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
-	deployment.Spec.Replicas = ptr.To[int32](2)
-	if cpContext.HCP.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
-		deployment.Spec.Replicas = ptr.To[int32](1)
-	}
-
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	configuration := cpContext.HCP.Spec.Configuration
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if tlsMinVersion := config.MinTLSVersion(configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {

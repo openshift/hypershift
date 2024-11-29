@@ -9,7 +9,7 @@ import (
 )
 
 func AdaptPodDisruptionBudget() option {
-	return WithAdaptFunction(func(cpContext ControlPlaneContext, pdb *policyv1.PodDisruptionBudget) error {
+	return WithAdaptFunction(func(cpContext WorkloadContext, pdb *policyv1.PodDisruptionBudget) error {
 		var minAvailable *intstr.IntOrString
 		var maxUnavailable *intstr.IntOrString
 		switch cpContext.HCP.Spec.ControllerAvailabilityPolicy {
@@ -27,7 +27,7 @@ func AdaptPodDisruptionBudget() option {
 
 // DisableIfAnnotationExist is a helper predicte for the common use case of disabling a resource when an annotation exists.
 func DisableIfAnnotationExist(annotation string) option {
-	return WithPredicate(func(cpContext ControlPlaneContext) bool {
+	return WithPredicate(func(cpContext WorkloadContext) bool {
 		if _, exists := cpContext.HCP.Annotations[annotation]; exists {
 			return false
 		}
@@ -37,7 +37,7 @@ func DisableIfAnnotationExist(annotation string) option {
 
 // EnableForPlatform is a helper predicte for the common use case of only enabling a resource for a specific platfrom.
 func EnableForPlatform(platform hyperv1.PlatformType) option {
-	return WithPredicate(func(cpContext ControlPlaneContext) bool {
+	return WithPredicate(func(cpContext WorkloadContext) bool {
 		return cpContext.HCP.Spec.Platform.Type == platform
 	})
 }

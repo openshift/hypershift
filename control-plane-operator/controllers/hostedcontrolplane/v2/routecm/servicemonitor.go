@@ -7,7 +7,7 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
-func adaptServiceMonitor(cpContext component.ControlPlaneContext, sm *prometheusoperatorv1.ServiceMonitor) error {
+func adaptServiceMonitor(cpContext component.WorkloadContext, sm *prometheusoperatorv1.ServiceMonitor) error {
 	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{sm.Namespace},
 	}

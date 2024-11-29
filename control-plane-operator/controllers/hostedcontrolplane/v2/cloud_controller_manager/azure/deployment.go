@@ -14,7 +14,7 @@ const (
 	containerName = "cloud-controller-manager"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	util.UpdateContainer(containerName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-name=%s", cpContext.HCP.Spec.InfraID),

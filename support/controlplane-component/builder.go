@@ -30,14 +30,14 @@ func NewStatefulSetComponent(name string, opts ComponentOptions) *controlPlaneWo
 	}
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext ControlPlaneContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
-	b.workload.adapt = func(cpContext ControlPlaneContext, obj client.Object) error {
+func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext WorkloadContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
+	b.workload.adapt = func(cpContext WorkloadContext, obj client.Object) error {
 		return adapt(cpContext, obj.(T))
 	}
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) WithPredicate(predicate func(cpContext ControlPlaneContext) (bool, error)) *controlPlaneWorkloadBuilder[T] {
+func (b *controlPlaneWorkloadBuilder[T]) WithPredicate(predicate func(cpContext WorkloadContext) (bool, error)) *controlPlaneWorkloadBuilder[T] {
 	b.workload.predicate = predicate
 	return b
 }
@@ -55,9 +55,13 @@ func (b *controlPlaneWorkloadBuilder[T]) WithManifestAdapter(manifestName string
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) WatchResource(resource client.Object, name string) *controlPlaneWorkloadBuilder[T] {
-	resource.SetName(name)
-	b.workload.watchedResources = append(b.workload.watchedResources, resource)
+func (b *controlPlaneWorkloadBuilder[T]) RolloutOnSecretChange(name ...string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.rolloutSecretsNames = append(b.workload.rolloutSecretsNames, name...)
+	return b
+}
+
+func (b *controlPlaneWorkloadBuilder[T]) RolloutOnConfigMapChange(name ...string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.rolloutConfigMapsNames = append(b.workload.rolloutSecretsNames, name...)
 	return b
 }
 

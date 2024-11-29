@@ -4,8 +4,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -36,9 +34,7 @@ func NewComponent() component.ControlPlaneComponent {
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(adaptServiceMonitor),
 		).
-		WatchResource(&corev1.ConfigMap{}, "kcm-config").
-		WatchResource(&corev1.ConfigMap{}, manifests.RootCAConfigMap("").Name).
-		WatchResource(&corev1.ConfigMap{}, manifests.ServiceServingCA("").Name).
+		RolloutOnConfigMapChange("kcm-config", manifests.RootCAConfigMap("").Name, manifests.ServiceServingCA("").Name).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
 }

@@ -15,12 +15,16 @@ metadata:
     uid: ""
   resourceVersion: "1"
 spec:
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: cloud-controller-manager
-  strategy: {}
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       annotations:
@@ -57,6 +61,22 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: hcp-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: cloud-controller-manager
+                hypershift.openshift.io/control-plane-component: cloud-controller-manager-kubevirt
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: cloud-controller-manager
+                hypershift.openshift.io/control-plane-component: cloud-controller-manager-kubevirt
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: true
       containers:
       - args:

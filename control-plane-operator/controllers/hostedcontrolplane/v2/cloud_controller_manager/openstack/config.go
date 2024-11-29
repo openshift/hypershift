@@ -23,7 +23,7 @@ const (
 
 // TODO: is this configMap really needed?
 // 'openstack-cloud-config' configMap already has the CA under the same key
-func adaptTrustedCA(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptTrustedCA(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	credentialsSecret, err := getCredentialsSecret(cpContext)
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func adaptTrustedCA(cpContext component.ControlPlaneContext, cm *corev1.ConfigMa
 }
 
 // In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
-func adaptConfig(cpContext component.ControlPlaneContext, cm *corev1.ConfigMap) error {
+func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	credentialsSecret, err := getCredentialsSecret(cpContext)
 	if err != nil {
 		return err
@@ -82,7 +82,7 @@ func getCloudConfig(hcpSpec hyperv1.HostedControlPlaneSpec, credentialsSecret *c
 	return config
 }
 
-func getCredentialsSecret(cpContext component.ControlPlaneContext) (*corev1.Secret, error) {
+func getCredentialsSecret(cpContext component.WorkloadContext) (*corev1.Secret, error) {
 	if cpContext.HCP.Spec.Platform.OpenStack == nil {
 		return nil, fmt.Errorf(".spec.platform.openStack is not defined")
 	}
