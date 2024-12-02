@@ -102,7 +102,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 	}
 
 	// This provides support for HTTP Proxy on IPv6 scenarios
-	ipv4, err := util.IsIPv4(hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String())
+	ipv4, err := util.IsIPv4CIDR(hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String())
 	if err != nil {
 		return "", true, fmt.Errorf("error checking the stack in the first ServiceNetworkCIDR %s: %w", hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String(), err)
 	}
