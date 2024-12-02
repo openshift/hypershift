@@ -1946,7 +1946,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			}
 			if !hasPrefix {
 				for _, volume := range pod.Spec.Volumes {
-					g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"))
+					g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"), "pod %s should not have kube-api-access-* volume mounted", pod.Name)
 				}
 			}
 		}
