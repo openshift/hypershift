@@ -972,6 +972,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		MetricsSet:                r.MetricsSet,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
+		ImageMetadataProvider:     r.ImageMetadataProvider,
 	}
 
 	var errs []error
