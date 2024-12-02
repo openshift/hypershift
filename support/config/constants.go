@@ -61,13 +61,15 @@ const (
 	// management cluster's resource group in Azure.
 	AROHCPKeyVaultManagedIdentityClientID = "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
 
-	ManagedAzureClientIdEnvVarKey        = "ARO_HCP_MI_CLIENT_ID"
-	ManagedAzureTenantIdEnvVarKey        = "ARO_HCP_TENANT_ID"
-	ManagedAzureCertificatePathEnvVarKey = "ARO_HCP_CLIENT_CERTIFICATE_PATH"
-	ManagedAzureCertificateMountPath     = "/mnt/certs"
-	ManagedAzureCertificatePath          = "/mnt/certs/"
-	ManagedAzureSecretsStoreCSIDriver    = "secrets-store.csi.k8s.io"
-	ManagedAzureSecretProviderClass      = "secretProviderClass"
+	ManagedAzureClientIdEnvVarKey            = "ARO_HCP_MI_CLIENT_ID"
+	ManagedAzureTenantIdEnvVarKey            = "ARO_HCP_TENANT_ID"
+	ManagedAzureCertificatePathEnvVarKey     = "ARO_HCP_CLIENT_CERTIFICATE_PATH"
+	ManagedAzureCertificateNameEnvVarKey     = "ARO_HCP_CLIENT_CERTIFICATE_NAME"
+	ManagedAzureSecretProviderClassEnvVarKey = "ARO_HCP_SECRET_PROVIDER_CLASS"
+	ManagedAzureCertificateMountPath         = "/mnt/certs"
+	ManagedAzureCertificatePath              = "/mnt/certs/"
+	ManagedAzureSecretsStoreCSIDriver        = "secrets-store.csi.k8s.io"
+	ManagedAzureSecretProviderClass          = "secretProviderClass"
 
 	ManagedAzureCPOSecretProviderClassName                = "managed-azure-cpo"
 	ManagedAzureCPOSecretStoreVolumeName                  = "cpo-cert"
