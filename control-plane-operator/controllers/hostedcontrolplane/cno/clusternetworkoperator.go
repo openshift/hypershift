@@ -622,11 +622,20 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	// to use on the CNCC deployment.
 	if azureutil.IsAroHCP() {
 		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
-			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName)...)
-
-		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
-				Name:  "ARO_HCP_SECRET_PROVIDER_CLASS",
+				Name:  config.ManagedAzureClientIdEnvVarKey,
+				Value: params.AzureClientID,
+			},
+			corev1.EnvVar{
+				Name:  config.ManagedAzureTenantIdEnvVarKey,
+				Value: params.AzureTenantID,
+			},
+			corev1.EnvVar{
+				Name:  config.ManagedAzureCertificateNameEnvVarKey,
+				Value: params.AzureCertificateName,
+			},
+			corev1.EnvVar{
+				Name:  config.ManagedAzureSecretProviderClassEnvVarKey,
 				Value: config.ManagedAzureNetworkSecretStoreProviderClassName,
 			},
 		)
