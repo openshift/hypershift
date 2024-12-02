@@ -1098,6 +1098,59 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Part two: reconcile the state of the world
+	if hcluster.Spec.AutoNode != nil && hcluster.Spec.AutoNode.Provisioner == hyperv1.ProvisionerKarpeneter {
+		taintConfigName := "set-karpenter-taint"
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      taintConfigName,
+				Namespace: hcluster.Namespace,
+			},
+		}
+		_, err := createOrUpdate(ctx, r.Client, configMap, func() error {
+			configMap.Data = map[string]string{
+				"config": `|
+			apiVersion: machineconfiguration.openshift.io/v1
+			kind: KubeletConfig
+			metadata:
+			  name: set-karpenter-taint
+			spec:
+			  kubeletConfig:
+				registerWithTaints:
+				- key: "karpenter.sh/unregistered"
+				  value: "true"
+				  effect: "NoExecute"`,
+			}
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create configmap: %w", err)
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "karpenter",
+				Namespace: hcluster.Namespace,
+			},
+		}
+		_, err = createOrUpdate(ctx, r.Client, nodePool, func() error {
+			nodePool.Spec = hyperv1.NodePoolSpec{
+				Replicas: ptr.To(int32(0)),
+				Release:  hcluster.Spec.Release,
+				Config: []corev1.LocalObjectReference{
+					{
+						Name: taintConfigName,
+					},
+				},
+			}
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create configmap: %w", err)
+		}
+
+	} else {
+		// delete
+	}
 
 	// Ensure the cluster has a finalizer for cleanup and update right away.
 	if !controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {

@@ -454,6 +454,9 @@ type HostedClusterSpec struct {
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
+	// AutoNode specifies the configuration for the auto managing Nodes.
+	AutoNode *AutoNode `json:"autoNode,omitempty"`
+
 	// etcd specifies configuration for the control plane etcd cluster. The
 	// default managementType is Managed. Once set, the managementType cannot be
 	// changed.
@@ -1091,6 +1094,20 @@ type Release struct {
 	// +kubebuilder:validation:MinLength=1
 	// +required
 	Image string `json:"image"`
+}
+
+// provisioner is a enum specifying the strategy for auto managing Nodes.
+// +kubebuilder:validation:Enum=Karpenter
+type Provisioner string
+
+const (
+	ProvisionerKarpeneter Provisioner = "Karpenter"
+)
+
+type AutoNode struct {
+	// We expose here internal configuration knobs that won't be exposed to the service.
+	Provisioner Provisioner `json:"provisioner"`
+	// upgrade settings...
 }
 
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all

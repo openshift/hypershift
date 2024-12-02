@@ -335,6 +335,10 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 		userDataSecret.Annotations = make(map[string]string)
 	}
 	userDataSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(t.nodePool).String()
+	if userDataSecret.Labels == nil {
+		userDataSecret.Labels = make(map[string]string)
+	}
+	userDataSecret.Labels[hyperv1.NodePoolLabel] = client.ObjectKeyFromObject(t.nodePool).String()
 
 	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)
 	encodedToken := base64.StdEncoding.EncodeToString([]byte(token))

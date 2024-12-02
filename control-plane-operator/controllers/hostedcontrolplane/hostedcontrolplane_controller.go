@@ -47,6 +47,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/karpenter"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
@@ -925,6 +926,20 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	var errs []error
 	if err := r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImageProvider, userReleaseImageProvider, infraStatus); err != nil {
 		errs = append(errs, err)
+	}
+
+	r.Log.Info("Reconciling Karpenter")
+	availabilityProberImage := releaseImageProvider.GetImage(util.AvailabilityProberImageName)
+	tokenMinterImage := releaseImageProvider.GetImage("token-minter")
+	if err := karpenter.ReconcileKarpenter(ctx,
+		r.Client,
+		createOrUpdate,
+		hostedControlPlane,
+		availabilityProberImage,
+		tokenMinterImage,
+		r.SetDefaultSecurityContext,
+		config.OwnerRefFrom(hostedControlPlane)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter deployment: %w", err)
 	}
 
 	if r.IsCPOV2 {

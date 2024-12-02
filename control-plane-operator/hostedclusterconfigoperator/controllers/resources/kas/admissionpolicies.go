@@ -3,8 +3,9 @@ package kas
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"strings"
+
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -71,6 +72,10 @@ func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.H
 		return fmt.Errorf("failed to reconcile Infrastructure Validating Admission Policy: %v", err)
 	}
 
+	if err := reconcileKarpenterValidatingAdmissionPolicy(ctx, hcp, client, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile Infrastructure Validating Admission Policy: %v", err)
+	}
+
 	if err := reconcileConfigMapsValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Mirrored Configs Validating Admission Policy: %w", err)
 	}
@@ -124,6 +129,25 @@ func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.H
 	infraAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(infraResources, infraAPIVersion, infraAPIGroup, []k8sadmissionv1beta1.OperationType{"UPDATE", "DELETE"})
 	if err := infraAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling Infrastructure Validating Admission Policy: %v", err)
+	}
+
+	return nil
+}
+
+func reconcileKarpenterValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	// Infra AdmissionPolicy
+	// This VAP only reconciles the ValidationAdmissionPolicy for the Infrastructure resource
+	// in order to allow certain SAs to update the spec field of the resource.
+	karpeneterAdmissionPolicy := AdmissionPolicy{Name: "autonode"}
+	karpenterAPIVersion := []string{"v1"}
+	karpeneterAPIGroup := []string{"karpenter.k8s.aws", "karpenter.sh"}
+	karpeneterResources := []string{"nodepools", "ec2nodeclass"}
+
+	HCCOUserValidation.Expression = generateCelExpression(userWhiteList)
+	karpeneterAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
+	karpeneterAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(karpeneterResources, karpenterAPIVersion, karpeneterAPIGroup, []k8sadmissionv1beta1.OperationType{"UPDATE", "DELETE"})
+	if err := karpeneterAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("error reconciling autonode Validating Admission Policy: %v", err)
 	}
 
 	return nil

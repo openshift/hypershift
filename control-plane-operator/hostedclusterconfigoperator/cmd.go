@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/karpenter"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/node"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
@@ -66,6 +67,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"machine":                machine.Setup,
 	"drainer":                drainer.Setup,
 	hcpstatus.ControllerName: hcpstatus.Setup,
+	"karpenter":              karpenter.Setup,
 }
 
 type HostedClusterConfigOperator struct {
