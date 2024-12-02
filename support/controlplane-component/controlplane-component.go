@@ -39,6 +39,7 @@ type ControlPlaneContext struct {
 	HCP                      *hyperv1.HostedControlPlane
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
+	ImageMetadataProvider    util.ImageMetadataProvider
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
@@ -57,6 +58,7 @@ type WorkloadContext struct {
 	HCP                      *hyperv1.HostedControlPlane
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
+	ImageMetadataProvider    util.ImageMetadataProvider
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
@@ -75,6 +77,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		SetDefaultSecurityContext: cp.SetDefaultSecurityContext,
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
+		ImageMetadataProvider:     cp.ImageMetadataProvider,
 	}
 }
 

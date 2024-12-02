@@ -34,8 +34,10 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1649,6 +1651,7 @@ func TestControlPlaneComponents(t *testing.T) {
 					VPC: &hyperv1.PowerVSVPC{},
 				},
 			},
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 		},
 	}
 
@@ -1664,8 +1667,12 @@ func TestControlPlaneComponents(t *testing.T) {
 		CreateOrUpdateProviderV2: upsert.NewV2(false),
 		ReleaseImageProvider:     testutil.FakeImageProvider(),
 		UserReleaseImageProvider: testutil.FakeImageProvider(),
-		HCP:                      hcp,
-		SkipPredicate:            true,
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result:   &dockerv1client.DockerImageConfig{},
+			Manifest: fakeimagemetadataprovider.FakeManifest{},
+		},
+		HCP:           hcp,
+		SkipPredicate: true,
 	}
 	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
 		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet

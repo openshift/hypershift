@@ -30,7 +30,7 @@ spec:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work
         component.hypershift.openshift.io/config-hash: 022a8a3a
-        hypershift.openshift.io/release-image: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
         app: kube-scheduler
