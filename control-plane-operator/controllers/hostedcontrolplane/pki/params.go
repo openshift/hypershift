@@ -84,7 +84,7 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	// Even with that, we cannot set more than one AdvertiseAddress so both
 	// are not supported at the same time.
 	// Check this for more info: https://github.com/kubernetes/enhancements/issues/2438
-	ipv4, err := util.IsIPv4(p.ServiceCIDR[0])
+	ipv4, err := util.IsIPv4CIDR(p.ServiceCIDR[0])
 	if err != nil || ipv4 {
 		p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseIPv4Address)
 	} else {
