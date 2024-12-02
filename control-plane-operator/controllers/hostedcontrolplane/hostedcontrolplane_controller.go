@@ -4987,6 +4987,50 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
+	if hyperazureutil.IsAroHCP() {
+		// Reconcile SecretProviderClasses
+		azureDiskSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureDiskCSISecretStoreProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureDiskSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure Disk Secret Provider Class: %w", err)
+		}
+
+		azureFileSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureFileCSISecretStoreProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureFileSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureFileSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure File Secret Provider Class: %w", err)
+		}
+
+		// Get the credentials secret so we can retrieve the tenant ID for the configuration
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+		tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		// Reconcile the secret needed for azure-disk-csi-controller
+		// This is related to https://github.com/openshift/csi-operator/pull/290.
+		azureDiskCSISecret := manifests.AzureDiskConfigWithCredentials(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskCSISecret, func() error {
+			return storage.ReconcileAzureDiskCSISecret(azureDiskCSISecret, hcp, tenantID)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure Disk CSI config: %w", err)
+		}
+
+		// Reconcile the secret needed for azure-disk-csi-controller
+		// This is related to https://github.com/openshift/csi-operator/pull/290.
+		azureFileCSISecret := manifests.AzureFileConfigWithCredentials(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureDiskCSISecret, func() error {
+			return storage.ReconcileAzureFileCSISecret(azureFileCSISecret, hcp, tenantID)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure File CSI config: %w", err)
+		}
+	}
+
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
