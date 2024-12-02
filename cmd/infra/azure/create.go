@@ -220,6 +220,38 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		l.Info("Successfully created vnet", "ID", result.VNetID)
 	}
 
+	if o.ManagedIdentitiesFile != "" {
+		managedIdentitiesRaw, err := os.ReadFile(o.ManagedIdentitiesFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --managed-identities-file %s: %w", o.ManagedIdentitiesFile, err)
+		}
+		if err := yaml.Unmarshal(managedIdentitiesRaw, &result.ControlPlaneMIs.ControlPlane); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal --managed-identities-file: %w", err)
+		}
+
+		components := map[string]string{
+			cpo:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
+			ciro:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
+			nodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
+			cloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
+			azureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
+			azureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
+			ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
+			cncc:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
+		}
+
+		for component, clientID := range components {
+			objectID, err := findObjectId(clientID)
+			if err != nil {
+				return nil, err
+			}
+			err = assignContributorRole(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, component, objectID)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if o.TechPreviewEnabled && o.ManagedIdentitiesFile == "" {
 		if o.ManagedIdentityKeyVaultName != "" {
 			result.ControlPlaneMIs.ControlPlane.ManagedIdentitiesKeyVault.Name = o.ManagedIdentityKeyVaultName
@@ -869,4 +901,59 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 		return fmt.Errorf("failed waiting to create guest cluster egress load balancer: %w", err)
 	}
 	return nil
+}
+
+// AssignContributorRole assigns the contributor role to the service principal asigneeID in the managed resource group
+// and the network or vnet resource groups based on the component
+func assignContributorRole(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, component, asigneeID string) error {
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
+	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
+	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+
+	scopes := []string{managedRG}
+
+	switch component {
+	case cloudProvider:
+		scopes = append(scopes, nsgRG)
+	case ingress:
+		scopes = append(scopes, vnetRG)
+	}
+
+	for _, scope := range scopes {
+		cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"Contributor\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", asigneeID, scope)
+		_, err := execAzCommand(cmdStr)
+		if err != nil {
+			return fmt.Errorf("failed to assign contributor role to service principal, %s for scope %s : %w", asigneeID, scopes, err)
+		}
+		log.Log.Info("Successfully assigned contributor role to service principal", "ID", asigneeID, "scope", scope)
+	}
+
+	return nil
+}
+
+func findObjectId(appID string) (string, error) {
+	cmdStr := fmt.Sprintf("az ad sp show --id %s --query id | sed 's/\"//g'", appID)
+
+	output, err := execAzCommand(cmdStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to find object ID for service principal, %s : %w", appID, err)
+
+	}
+	objectID := strings.ReplaceAll(string(output), "\n", "")
+
+	return objectID, nil
+}
+
+func execAzCommand(cmdStr string) ([]byte, error) {
+	cmd := exec.Command("sh", "-c", cmdStr)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute az command: %w", err)
+	}
+
+	if strings.Contains(string(output), "ERROR") {
+		return nil, errors.New(string(output))
+	}
+
+	return output, nil
 }
