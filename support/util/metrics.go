@@ -2,6 +2,7 @@ package util
 
 import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"k8s.io/utils/ptr"
 )
 
 // clusterIDLabel (_id) is the common label used to identify clusters in telemeter.
@@ -27,10 +28,10 @@ func ApplyClusterIDLabelToRecordingRule(rule *prometheusoperatorv1.Rule, cluster
 	rule.Labels[clusterIDLabel] = clusterID
 }
 
-func clusterIDRelabelConfig(clusterID string) *prometheusoperatorv1.RelabelConfig {
-	return &prometheusoperatorv1.RelabelConfig{
+func clusterIDRelabelConfig(clusterID string) prometheusoperatorv1.RelabelConfig {
+	return prometheusoperatorv1.RelabelConfig{
 		TargetLabel: clusterIDLabel,
 		Action:      "replace",
-		Replacement: clusterID,
+		Replacement: ptr.To(clusterID),
 	}
 }

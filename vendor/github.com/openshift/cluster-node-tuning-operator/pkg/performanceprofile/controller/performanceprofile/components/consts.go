@@ -21,6 +21,14 @@ const (
 	NamespaceNodeTuningOperator = "openshift-cluster-node-tuning-operator"
 	// ProfileNamePerformance defines the performance tuned profile name
 	ProfileNamePerformance = "openshift-node-performance"
+	// ProfileNamePerformanceRT defines the performance real time tuned profile name
+	ProfileNamePerformanceRT = "openshift-node-performance-rt"
+	// ProfileNameAmdX86 defines the AMD X86 specific tuning parameters
+	ProfileNameAmdX86 = "openshift-node-performance-amd-x86"
+	// ProfileNameArmAarch64 defines the ARM Aarch64 specific tuning parameters
+	ProfileNameArmAarch64 = "openshift-node-performance-arm-aarch64"
+	// ProfileNameIntelX86 defines the Intel X86 specific tuning parameters
+	ProfileNameIntelX86 = "openshift-node-performance-intel-x86"
 )
 
 const (

@@ -47,7 +47,7 @@ func CPUListToHexMask(cpulist string) (hexMask string, err error) {
 		x := new(big.Int).Lsh(big.NewInt(1), uint(cpu))
 		currMask.Or(currMask, x)
 	}
-	return fmt.Sprintf("%064x", currMask), nil
+	return fmt.Sprintf("%0x", currMask), nil
 }
 
 // CPUListToMaskList converts a list of cpus into a cpu mask represented
@@ -57,6 +57,14 @@ func CPUListToMaskList(cpulist string) (hexMask string, err error) {
 	if err != nil {
 		return "", nil
 	}
+
+	// Make sure the raw mask can be processed in 8 character chunks
+	padding_needed := len(maskStr) % 8
+	if padding_needed != 0 {
+		padding_needed = 8 - padding_needed
+		maskStr = strings.Repeat("0", padding_needed) + maskStr
+	}
+
 	index := 0
 	for index < (len(maskStr) - 8) {
 		if maskStr[index:index+8] != "00000000" {

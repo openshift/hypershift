@@ -8,6 +8,7 @@ import (
 	hypershiftversion "github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/utils/clock"
 
 	"k8s.io/component-base/cli"
 
@@ -40,7 +41,7 @@ func NewOperator(ctx context.Context) *cobra.Command {
 	cmd := controllercmd.
 		NewControllerCommandConfig("control-plane-pki-operator", version.Info{
 			GitCommit: hypershiftversion.GetRevision(),
-		}, RunOperator).
+		}, RunOperator, clock.RealClock{}).
 		WithTopologyDetector(topology.Detector{}).
 		NewCommandWithContext(ctx)
 	cmd.Use = "operator"

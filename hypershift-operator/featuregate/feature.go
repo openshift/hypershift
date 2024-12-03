@@ -17,6 +17,14 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	OpenStack featuregate.Feature = "OpenStack"
+	// MinimumKubeletVersion gates whether hosted clusters will
+	// obey the MinimumKubeletVersion configuration field on the NodeSpec object.
+	// When enabled and the field is set, no kubelets can join a hosted cluster
+	// that has an older version than the minimumm version specified.
+	// owner: @haircommander
+	// alpha: v0.1.51
+	// beta: x.y.z
+	MinimumKubeletVersion featuregate.Feature = "MinimumKubeletVersion"
 )
 
 func init() {
@@ -27,6 +35,7 @@ var defaultHypershiftFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 	// Every feature should be initiated here:
 	AROHCPManagedIdentities: {Default: false, PreRelease: featuregate.Alpha},
 	OpenStack:               {Default: false, PreRelease: featuregate.Alpha},
+	MinimumKubeletVersion:   {Default: false, PreRelease: featuregate.Alpha},
 
 	// TODO(alberto): Add the rest of the features here
 	// CPOV2:         {Default: false, PreRelease: featuregate.Alpha},

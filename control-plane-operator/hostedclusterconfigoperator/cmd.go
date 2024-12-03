@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/featuregate"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
@@ -36,14 +37,12 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
-
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -58,14 +57,15 @@ func NewCommand() *cobra.Command {
 }
 
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
-	"controller-manager-ca":  cmca.Setup,
-	resources.ControllerName: resources.Setup,
-	"inplaceupgrader":        inplaceupgrader.Setup,
-	"node":                   node.Setup,
-	nodecount.ControllerName: nodecount.Setup,
-	"machine":                machine.Setup,
-	"drainer":                drainer.Setup,
-	hcpstatus.ControllerName: hcpstatus.Setup,
+	"controller-manager-ca":    cmca.Setup,
+	resources.ControllerName:   resources.Setup,
+	"inplaceupgrader":          inplaceupgrader.Setup,
+	"node":                     node.Setup,
+	nodecount.ControllerName:   nodecount.Setup,
+	featuregate.ControllerName: featuregate.Setup,
+	"machine":                  machine.Setup,
+	"drainer":                  drainer.Setup,
+	hcpstatus.ControllerName:   hcpstatus.Setup,
 }
 
 type HostedClusterConfigOperator struct {
