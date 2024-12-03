@@ -1056,65 +1056,6 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 		}
 	}
 
-	// Bubble up upgrading NodePoolUpdatingVersionConditionType.
-	var status corev1.ConditionStatus
-	reason := ""
-	message := ""
-	status = "unknown"
-	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
-
-	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
-		status = corev1.ConditionTrue
-		reason = hyperv1.AsExpectedReason
-	}
-
-	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]; ok {
-		status = corev1.ConditionFalse
-		reason = hyperv1.NodePoolInplaceUpgradeFailedReason
-	}
-
-	// Check if config needs to be updated.
-	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
-
-	// Check if version needs to be updated.
-	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
-
-	if isUpdatingVersion {
-		message = fmt.Sprintf("Updating Version, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
-			Status:             status,
-			ObservedGeneration: nodePool.Generation,
-			Message:            message,
-			Reason:             reason,
-		})
-	} else {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
-			Status:             corev1.ConditionFalse,
-			ObservedGeneration: nodePool.Generation,
-			Reason:             hyperv1.AsExpectedReason,
-		})
-	}
-
-	if isUpdatingConfig {
-		message = fmt.Sprintf("Updating Config, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
-			Status:             status,
-			ObservedGeneration: nodePool.Generation,
-			Message:            message,
-			Reason:             reason,
-		})
-	} else {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			ObservedGeneration: nodePool.Generation,
-			Reason:             hyperv1.AsExpectedReason,
-		})
-	}
-
 	// Bubble up AvailableReplicas and Ready condition from MachineSet.
 	nodePool.Status.Replicas = machineSet.Status.AvailableReplicas
 	for _, c := range machineSet.Status.Conditions {
