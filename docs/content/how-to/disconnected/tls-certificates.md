@@ -58,7 +58,7 @@ This is defined in the field `hc.spec.additionalTrustBundle` as follows:
 ```yaml
 spec:
   additionalTrustBundle:
-    - name: user-ca-bundle
+    name: user-ca-bundle
 ```
 
 This `user-ca-bundle` entry is a ConfigMap created by the user in the HostedCluster namespace (the same namespace where the HostedCluster object is created).
