@@ -2347,6 +2347,31 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hostedCluster)
 
+	hostedClusterVersion, err := r.getHostedClusterVersion(ctx, hostedCluster, pullSecretBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return ReleaseImage, supportedversion.IsValidReleaseVersion(&wantedVersion, &currentVersionParsed, hostedClusterVersion, &minSupportedVersion, hostedCluster.Spec.Networking.NetworkType, hostedCluster.Spec.Platform.Type)
+}
+
+func (r *NodePoolReconciler) getHostedClusterVersion(ctx context.Context, hostedCluster *hyperv1.HostedCluster, pullSecretBytes []byte) (*semver.Version, error) {
+	if hostedCluster.Status.Version != nil && len(hostedCluster.Status.Version.History) > 0 {
+		for _, version := range hostedCluster.Status.Version.History {
+			// find first completed version
+			if version.CompletionTime == nil {
+				continue
+			}
+
+			hostedClusterVersion, err := semver.Parse(version.Version)
+			if err != nil {
+				return nil, err
+			}
+			return &hostedClusterVersion, nil
+		}
+	}
+
+	// use Spec.Release.Image if there is no completed version yet. This could happen at the initial creation of the cluster.
 	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hostedCluster.Spec.Release.Image, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup release image: %w", err)
@@ -2355,8 +2380,7 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 	if err != nil {
 		return nil, err
 	}
-
-	return ReleaseImage, supportedversion.IsValidReleaseVersion(&wantedVersion, &currentVersionParsed, &hostedClusterVersion, &minSupportedVersion, hostedCluster.Spec.Networking.NetworkType, hostedCluster.Spec.Platform.Type)
+	return &hostedClusterVersion, nil
 }
 
 func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {

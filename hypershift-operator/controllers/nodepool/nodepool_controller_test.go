@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -2515,6 +2516,94 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 				g.Expect(tc.err.Error()).To(Equal("release image metadata has no image for region \"" + tc.region + "\""))
 			}
 		})
+	}
+}
+
+func TestGetHostedClusterVersion(t *testing.T) {
+	testCases := []struct {
+		name                string
+		versionStatus       *hyperv1.ClusterVersionStatus
+		releaseImageVersion string
+		expectedVersion     string
+	}{
+		{
+			name:                "version history status is empty, should return release image version",
+			releaseImageVersion: "4.15.0",
+			expectedVersion:     "4.15.0",
+		},
+		{
+			name: "version history status has a completed entry, should return the completed version",
+			versionStatus: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{
+					{
+						Version:        "4.14.0",
+						CompletionTime: ptr.To(metav1.Now()),
+					},
+				},
+			},
+			releaseImageVersion: "4.15.0",
+			expectedVersion:     "4.14.0",
+		},
+		{
+			name: "version history status has no completed entries, should return release image version",
+			versionStatus: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{
+					{
+						Version:        "4.14.0",
+						CompletionTime: nil,
+					},
+				},
+			},
+			releaseImageVersion: "4.15.0",
+			expectedVersion:     "4.15.0",
+		},
+		{
+			name: "version history status has multiple entries, should return the first completed version",
+			versionStatus: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{
+					{
+						Version:        "4.16.0",
+						CompletionTime: nil,
+					},
+					{
+						Version:        "4.15.0",
+						CompletionTime: ptr.To(metav1.Now()),
+					},
+				},
+			},
+			releaseImageVersion: "4.16.0",
+			expectedVersion:     "4.15.0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
+				Version: tc.releaseImageVersion,
+			}
+			r := NodePoolReconciler{
+				ReleaseProvider: releaseProvider,
+			}
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "image",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: tc.versionStatus,
+				},
+			}
+
+			version, err := r.getHostedClusterVersion(context.Background(), hc, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(version).ToNot(BeNil())
+			g.Expect(version.String()).To(Equal(tc.expectedVersion))
+		})
+
 	}
 }
 
