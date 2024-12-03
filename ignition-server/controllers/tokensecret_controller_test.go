@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -80,7 +81,7 @@ func TestReconcile(t *testing.T) {
 
 				// Validate data for conditions
 				g.Expect(freshSecret.Data[TokenSecretReasonKey]).To(BeEquivalentTo(InvalidConfigReason))
-				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("Failed to decode and decompress config: could not initialize gzip reader: illegal base64 data at input byte 3"))
+				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("failed to decode and decompress config: could not initialize gzip reader: illegal base64 data at input byte 3"))
 			},
 		},
 		{
@@ -597,6 +598,85 @@ func TestProcessedExpiredToken(t *testing.T) {
 			}
 			err = r.Client.Get(context.Background(), client.ObjectKeyFromObject(secretToFetch), secretToFetch)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+	}
+}
+
+func TestHasSameReasonAndMessage(t *testing.T) {
+	testCases := []struct {
+		name     string
+		secret   *corev1.Secret
+		reason   string
+		message  error
+		expected bool
+	}{
+		{
+			name: "Reason and message match",
+			secret: &corev1.Secret{
+				Data: map[string][]byte{
+					TokenSecretReasonKey:  []byte("reason1"),
+					TokenSecretMessageKey: []byte("message1"),
+				},
+			},
+			reason:   "reason1",
+			message:  fmt.Errorf("message1"),
+			expected: true,
+		},
+		{
+			name: "Reason does not match",
+			secret: &corev1.Secret{
+				Data: map[string][]byte{
+					TokenSecretReasonKey:  []byte("reason1"),
+					TokenSecretMessageKey: []byte("message1"),
+				},
+			},
+			reason:   "reason2",
+			message:  fmt.Errorf("message1"),
+			expected: false,
+		},
+		{
+			name: "Message does not match",
+			secret: &corev1.Secret{
+				Data: map[string][]byte{
+					TokenSecretReasonKey:  []byte("reason1"),
+					TokenSecretMessageKey: []byte("message1"),
+				},
+			},
+			reason:   "reason1",
+			message:  fmt.Errorf("message2"),
+			expected: false,
+		},
+		{
+			name: "Both reason and message do not match",
+			secret: &corev1.Secret{
+				Data: map[string][]byte{
+					TokenSecretReasonKey:  []byte("reason1"),
+					TokenSecretMessageKey: []byte("message1"),
+				},
+			},
+			reason:   "reason2",
+			message:  fmt.Errorf("message2"),
+			expected: false,
+		},
+		{
+			name: "Reason and message are empty",
+			secret: &corev1.Secret{
+				Data: map[string][]byte{
+					TokenSecretReasonKey:  []byte(""),
+					TokenSecretMessageKey: []byte(""),
+				},
+			},
+			reason:   "",
+			message:  fmt.Errorf(""),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := hasSameReasonAndMessage(tc.secret, tc.reason, tc.message)
+			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
 }
