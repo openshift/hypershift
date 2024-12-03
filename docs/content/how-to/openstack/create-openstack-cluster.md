@@ -23,6 +23,7 @@ Upon scaling up a NodePool, a Machine will be created, and the CAPI provider wil
 * The `hypershift` CLI must be installed to deploy the HyperShift Operator. In production, it is not recommended to use that CLI to
   manage the hosted clusters.
 * The HyperShift Operator must be installed in the Management OCP cluster.
+* A load-balancer backend must be installed in the Management OCP cluster (e.g. Octavia, MetalLB, etc) so the kube-api Service can be created for each Hosted Cluster.
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
 * OpenStack Octavia service must be running in the cloud hosting the guest cluster when ingress is configured with an Octavia load balancer.
   In the future, we'll explore other Ingress options like MetalLB.
