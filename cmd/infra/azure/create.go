@@ -920,6 +920,8 @@ func assignContributorRole(subscriptionID, managedResourceGroupName, nsgResource
 		scopes = append(scopes, nsgRG)
 	case ingress:
 		scopes = append(scopes, vnetRG, dnsZoneRG)
+	case cpo:
+		scopes = append(scopes, nsgRG, vnetRG)
 	}
 
 	for _, scope := range scopes {

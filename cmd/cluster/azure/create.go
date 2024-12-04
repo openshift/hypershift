@@ -158,7 +158,7 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 			return nil, fmt.Errorf("flag --managed-identities-file  or  ( --management-key-vault-name and --management-key-vault-tenant-id ) are required")
 		}
 
-		if o.DNSZoneRGName == "" {
+		if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
 			return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
 		}
 	}
