@@ -88,6 +88,9 @@ spec:
           name: cloud-config
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig
+        - mountPath: /mnt/certs
+          name: cloud-provider-cert
+          readOnly: true
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
@@ -107,4 +110,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: azure-cloud-config
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: managed-azure-cloud-provider
+        name: cloud-provider-cert
 status: {}

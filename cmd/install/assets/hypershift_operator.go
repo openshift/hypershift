@@ -1268,6 +1268,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs: []string{
 					"list",
 					"create",
+					"update",
 				},
 			})
 	}

@@ -44,8 +44,8 @@ type AzureMachineSpec struct {
 	FailureDomain *string `json:"failureDomain,omitempty"`
 
 	// Image is used to provide details of an image to use during VM creation.
-	// If image details are omitted the image will default the Azure Marketplace "capi" offer,
-	// which is based on Ubuntu.
+	// If image details are omitted, the default is to use an Azure Compute Gallery Image
+	// from CAPZ's community gallery.
 	// +kubebuilder:validation:nullable
 	// +optional
 	Image *Image `json:"image,omitempty"`

@@ -94,6 +94,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/filewatcher"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -413,7 +414,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(hostedControlPlane); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
@@ -866,12 +867,26 @@ func healthCheckKASEndpoint(ingressPoint string, port int) error {
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedControlPlane) error {
-	for _, svc := range hc.Spec.Services {
+func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	for _, svc := range hcp.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
 		}
 	}
+
+	if hyperazureutil.IsAroHCP() {
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		if err := verifyResourceGroupLocationsMatch(ctx, hcp, tenantID); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -3066,6 +3081,23 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
 			}
+
+			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
+				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
+			}
+
+			if hyperazureutil.IsAroHCP() {
+				// Reconcile the SecretProviderClass
+				kmsSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
+				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
+					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS.CertificateName)
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+				}
+			}
 		}
 	}
 
@@ -4759,6 +4791,10 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
 	case hyperv1.AzurePlatform:
+		// Set up the params
+		p := azure.NewAzureParams(hcp)
+
+		// Reconcile CCM ServiceAccount
 		ownerRef := config.OwnerRefFrom(hcp)
 		sa := azure.CCMServiceAccount(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, sa, func() error {
@@ -4767,7 +4803,23 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return fmt.Errorf("failed to reconcile %s cloud provider service account: %w", hcp.Spec.Platform.Type, err)
 		}
 
-		p := azure.NewAzureParams(hcp)
+		// Reconcile SecretProviderClass
+		azureCloudProviderSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureCloudProviderSecretProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, azureCloudProviderSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureCloudProviderSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure cloud provider secret provider class: %w", err)
+		}
+
+		// Retrieve the credentials secret to get the tenant ID
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+		p.TenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+
+		// Reconcile the CCM Deployment
 		deployment := azure.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
 			return azure.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider)
@@ -5516,12 +5568,55 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return
 	}
-
 	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-	clientID := string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	clientSecret := string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
 
-	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	// Retrieve the KMS certificate
+	certPath := config.ManagedAzureCertificateMountPath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CertificateName
+	certsContent, err := os.ReadFile(certPath)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "Failed to retrieve KMS authentication certificate",
+			Reason:             err.Error(),
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	// Watch the KMS certificate for changes; if the certificate changes, the pod will be restarted
+	err = filewatcher.WatchFileForChanges(certPath)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "Failed to watch KMS authentication certificate for changes",
+			Reason:             err.Error(),
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	// Authenticate to Azure with the certificate
+	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "Failed to parse KMS authentication certificate",
+			Reason:             err.Error(),
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	options := &azidentity.ClientCertificateCredentialOptions{
+		SendCertificateChain: true,
+	}
+	cred, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.SecretEncryption.KMS.Azure.KMS.ClientID, parsedCertificate, key, options)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 			fmt.Sprintf("failed to obtain azure client credential: %v", err))
@@ -5622,4 +5717,49 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 		return true, nil
 	}
 	return false, nil
+}
+
+// verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
+func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane, tenantID string) error {
+	// Retrieve the CPO certificate
+	certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CertificateName
+	certsContent, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	// Authenticate to Azure with the certificate
+	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
+	if err != nil {
+		return err
+	}
+
+	options := &azidentity.ClientCertificateCredentialOptions{
+		SendCertificateChain: true,
+	}
+	creds, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ClientID, parsedCertificate, key, options)
+	if err != nil {
+		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+	}
+
+	// Retrieve full vnet information from the VNET ID
+	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get vnet info to verify its location: %v", err)
+	}
+	// Retrieve full network security group information from the network security group ID
+	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get network security group info to verify its location: %v", err)
+	}
+	// Retrieve full resource group information from the resource group name
+	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	if err != nil {
+		return fmt.Errorf("failed to get resource group info to verify its location: %v", err)
+	}
+	// Verify the vnet resource group location, network security group resource group location, and the managed resource group location match
+	if ptr.Deref(vnet.Location, "") != ptr.Deref(nsg.Location, "") || ptr.Deref(nsg.Location, "") != ptr.Deref(rg.Location, "") {
+		return fmt.Errorf("the locations of the resource groups do not match - vnet location: %v; network security group location: %v; managed resource group location: %v", ptr.Deref(vnet.Location, ""), ptr.Deref(nsg.Location, ""), ptr.Deref(rg.Location, ""))
+	}
+	return nil
 }
