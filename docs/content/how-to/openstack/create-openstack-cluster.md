@@ -12,7 +12,6 @@ Upon scaling up a NodePool, a Machine will be created, and the CAPI provider wil
 
 * Although the HyperShift Operator with OpenStack support is currently in development and is not intended for production use,
   it is possible to create and manage clusters for development and testing purposes and it's expected to work as described in this document.
-* OpenStack CSI (Cinder and Manila) are not functional yet but are [expected](https://issues.redhat.com/browse/OSASINFRA-3536) to work in the 4.18 release and fully supported in future releases.
 
 ## Prerequisites
 
