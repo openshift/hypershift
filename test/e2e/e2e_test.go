@@ -623,9 +623,10 @@ func (o *options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 
 func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
-		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
-		Location:        o.configurableClusterOptions.AzureLocation,
-		DNSZoneRGName:   "os4-common",
+		CredentialsFile:             o.configurableClusterOptions.AzureCredentialsFile,
+		Location:                    o.configurableClusterOptions.AzureLocation,
+		DNSZoneRGName:               "os4-common",
+		AssignServicePrincipalRoles: true,
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}

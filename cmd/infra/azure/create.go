@@ -68,6 +68,7 @@ type CreateInfraOptions struct {
 	ManagedIdentityKeyVaultTenantID string
 	TechPreviewEnabled              bool
 	ManagedIdentitiesFile           string
+	AssignServicePrincipalRoles     bool
 	DNSZoneRG                       string
 }
 
@@ -240,14 +241,16 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			cncc:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
 		}
 
-		for component, clientID := range components {
-			objectID, err := findObjectId(clientID)
-			if err != nil {
-				return nil, err
-			}
-			err = assignContributorRole(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, component, objectID)
-			if err != nil {
-				return nil, err
+		if o.AssignServicePrincipalRoles {
+			for component, clientID := range components {
+				objectID, err := findObjectId(clientID)
+				if err != nil {
+					return nil, err
+				}
+				err = assignContributorRole(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -905,10 +908,11 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 
 // AssignContributorRole assigns the contributor role to the service principal asigneeID in the managed resource group
 // and the network or vnet resource groups based on the component
-func assignContributorRole(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, component, asigneeID string) error {
+func assignContributorRole(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, asigneeID string) error {
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
 	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
 
 	scopes := []string{managedRG}
 
@@ -916,14 +920,14 @@ func assignContributorRole(subscriptionID, managedResourceGroupName, nsgResource
 	case cloudProvider:
 		scopes = append(scopes, nsgRG)
 	case ingress:
-		scopes = append(scopes, vnetRG)
+		scopes = append(scopes, vnetRG, dnsZoneRG)
 	}
 
 	for _, scope := range scopes {
 		cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"Contributor\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", asigneeID, scope)
 		_, err := execAzCommand(cmdStr)
 		if err != nil {
-			return fmt.Errorf("failed to assign contributor role to service principal, %s for scope %s : %w", asigneeID, scopes, err)
+			return fmt.Errorf("failed to assign contributor role to service principal, %s for scope %s : %w", asigneeID, scope, err)
 		}
 		log.Log.Info("Successfully assigned contributor role to service principal", "ID", asigneeID, "scope", scope)
 	}
