@@ -154,6 +154,15 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if platform != hyperv1.NonePlatform {
 			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
 		}
+		ValidateMetrics(t, context.Background(), hostedCluster, []string{
+			hcmetrics.SilenceAlertsMetricName,
+			hcmetrics.LimitedSupportEnabledMetricName,
+			hcmetrics.ProxyMetricName,
+			hcmetrics.InvalidAwsCredsMetricName,
+			HypershiftOperatorInfoName,
+			npmetrics.SizeMetricName,
+			npmetrics.AvailableReplicasMetricName,
+		}, true)
 	})
 }
 
@@ -167,12 +176,12 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 
 	// t.Run() is not supported in cleanup phase
 	if cleanupPhase {
-		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir, cleanupPhase)
+		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir)
 		return
 	}
 
 	h.Run("Teardown", func(t *testing.T) {
-		teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir, cleanupPhase)
+		teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir)
 	})
 }
 
@@ -305,8 +314,8 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 	return hc
 }
 
-// NOTE: teardownHostedCluster shouldn't start any subtests with t.Run() when cleanupPhase=True, this is not a supported operation and will fail immediately
-func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, client crclient.Client, opts *PlatformAgnosticOptions, artifactDir string, cleanupPhase bool) {
+// NOTE: Do not use t.Run() here as this function can be called in the Cleanup context and will fail immediately
+func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, client crclient.Client, opts *PlatformAgnosticOptions, artifactDir string) {
 	// TODO (Mulham): dumpCluster() uses testName to construct dumpDir, since we removed sub tests from this function
 	// we should pass dumpDir to the dumpCluster() as <artifactDir>/<testName>_<suffix>
 	dumpCluster := newClusterDumper(hc, opts, artifactDir)
@@ -329,18 +338,6 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	// First, do a dump of the cluster before tearing it down
 	// Save off any error so that we can continue with the teardown
 	dumpErr := dumpCluster(ctx, t, true)
-
-	if !cleanupPhase && !t.Failed() {
-		ValidateMetrics(t, ctx, hc, []string{
-			hcmetrics.SilenceAlertsMetricName,
-			hcmetrics.LimitedSupportEnabledMetricName,
-			hcmetrics.ProxyMetricName,
-			hcmetrics.InvalidAwsCredsMetricName,
-			HypershiftOperatorInfoName,
-			npmetrics.SizeMetricName,
-			npmetrics.AvailableReplicasMetricName,
-		}, true)
-	}
 
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
