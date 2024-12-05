@@ -70,8 +70,6 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	if opts.TechPreviewEnabled {
 		flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
 		flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
-		flags.StringVar(&opts.KeyVaultInfo.KeyVaultName, "management-key-vault-name", opts.KeyVaultInfo.KeyVaultName, "The name of the management Azure Key Vault where the managed identity certificates are stored.")
-		flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
 		flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
 		flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 		flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
@@ -98,7 +96,6 @@ type RawCreateOptions struct {
 	KMSClientID                 string
 	KMSCertName                 string
 	TechPreviewEnabled          bool
-	KeyVaultInfo                ManagementKeyVaultInfo
 	DNSZoneRGName               string
 	ManagedIdentitiesFile       string
 	AssignServicePrincipalRoles bool
@@ -110,11 +107,6 @@ type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
-}
-
-type ManagementKeyVaultInfo struct {
-	KeyVaultName     string
-	KeyVaultTenantID string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -146,16 +138,8 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 			return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
 		}
 
-		if o.KeyVaultInfo.KeyVaultName == "" && o.ManagedIdentitiesFile == "" {
-			return nil, fmt.Errorf("flag --management-key-vault-name is required")
-		}
-
-		if o.KeyVaultInfo.KeyVaultTenantID == "" && o.ManagedIdentitiesFile == "" {
-			return nil, fmt.Errorf("flag --management-key-vault-tenant-id is required")
-		}
-
-		if o.ManagedIdentitiesFile == "" && o.KeyVaultInfo.KeyVaultName == "" && o.KeyVaultInfo.KeyVaultTenantID == "" {
-			return nil, fmt.Errorf("flag --managed-identities-file  or  ( --management-key-vault-name and --management-key-vault-tenant-id ) are required")
+		if o.ManagedIdentitiesFile == "" {
+			return nil, fmt.Errorf("flag --managed-identities-file is required")
 		}
 
 		if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
@@ -534,8 +518,6 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		NetworkSecurityGroupID:          azureOpts.NetworkSecurityGroupID,
 		ResourceGroupTags:               azureOpts.ResourceGroupTags,
 		SubnetID:                        azureOpts.SubnetID,
-		ManagedIdentityKeyVaultName:     azureOpts.KeyVaultInfo.KeyVaultName,
-		ManagedIdentityKeyVaultTenantID: azureOpts.KeyVaultInfo.KeyVaultTenantID,
 		TechPreviewEnabled:              azureOpts.TechPreviewEnabled,
 		DNSZoneRG:                       azureOpts.DNSZoneRGName,
 		ManagedIdentitiesFile:           azureOpts.ManagedIdentitiesFile,

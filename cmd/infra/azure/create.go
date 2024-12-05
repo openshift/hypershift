@@ -64,8 +64,6 @@ type CreateInfraOptions struct {
 	NetworkSecurityGroupID          string
 	ResourceGroupTags               map[string]string
 	SubnetID                        string
-	ManagedIdentityKeyVaultName     string
-	ManagedIdentityKeyVaultTenantID string
 	TechPreviewEnabled              bool
 	ManagedIdentitiesFile           string
 	AssignServicePrincipalRoles     bool
