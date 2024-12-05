@@ -46,6 +46,7 @@ type RawCreateOptions struct {
 	VPCCIDR                      string
 	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount bool
+	PublicOnly                   bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -306,6 +307,13 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		}
 	}
 
+	if o.infra.PublicOnly {
+		if cluster.Annotations == nil {
+			cluster.Annotations = map[string]string{}
+		}
+		cluster.Annotations[hyperv1.AWSMachinePublicIPs] = "true"
+	}
+
 	return nil
 }
 
@@ -441,6 +449,7 @@ func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOption
 		VPCCIDR:                      awsOpts.VPCCIDR,
 		VPCOwnerCredentialOpts:       awsOpts.VPCOwnerCredentials,
 		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
+		PublicOnly:                   awsOpts.PublicOnly,
 	}
 }
 

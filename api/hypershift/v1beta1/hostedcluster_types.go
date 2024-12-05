@@ -347,6 +347,10 @@ const (
 
 	// ControlPlaneOperatorV2EnvVar when set on the CPO deplyoment, enables the new manifest based CPO implementation.
 	ControlPlaneOperatorV2EnvVar = "CPO_V2"
+
+	// AWSMachinePublicIPs, if set to "true", results in an AWS machine template that creates machines with public IPs
+	// WARNING: This option is for development and testing purposes only
+	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

@@ -49,6 +49,8 @@ type CreateInfraOptions struct {
 	VPCOwnerCredentialOpts       awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount bool
 
+	PublicOnly bool
+
 	additionalEC2Tags []*ec2.Tag
 }
 
@@ -71,6 +73,7 @@ type CreateInfraOutput struct {
 	PrivateZoneID    string                   `json:"privateZoneID"`
 	LocalZoneID      string                   `json:"localZoneID"`
 	ProxyAddr        string                   `json:"proxyAddr"`
+	PublicOnly       bool                     `json:"publicOnly"`
 
 	// Fields related to shared VPCs
 	VPCCreatorAccountID string `json:"vpcCreatorAccountID"`
@@ -111,6 +114,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	cmd.Flags().StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC")
 	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
+	cmd.Flags().BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, no private subnets or NAT gateway are created")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("base-domain")
@@ -214,6 +218,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		Name:             o.Name,
 		BaseDomain:       o.BaseDomain,
 		BaseDomainPrefix: o.BaseDomainPrefix,
+		PublicOnly:       o.PublicOnly,
 	}
 	if len(o.Zones) == 0 {
 		zone, err := o.firstZone(l, ec2Client)
@@ -252,29 +257,41 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	var publicSubnetIDs []string
 	var natGatewayID string
 	for _, zone := range o.Zones {
-		privateSubnetID, err := o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
-		if err != nil {
-			return nil, err
+		var (
+			privateSubnetID string
+			err             error
+		)
+		if !o.PublicOnly {
+			privateSubnetID, err = o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
+			if err != nil {
+				return nil, err
+			}
 		}
 		publicSubnetID, err := o.CreatePublicSubnet(l, ec2Client, result.VPCID, zone, publicNetwork.String())
 		if err != nil {
 			return nil, err
 		}
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
-		if !o.EnableProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
+		if !o.PublicOnly && !o.EnableProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
 			natGatewayID, err = o.CreateNATGateway(l, ec2Client, publicSubnetID, zone)
 			if err != nil {
 				return nil, err
 			}
 		}
-		privateRouteTable, err := o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
-		if err != nil {
-			return nil, err
+		if !o.PublicOnly {
+			privateRouteTable, err := o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
+			if err != nil {
+				return nil, err
+			}
+			endpointRouteTableIds = append(endpointRouteTableIds, aws.String(privateRouteTable))
 		}
-		endpointRouteTableIds = append(endpointRouteTableIds, aws.String(privateRouteTable))
+		zoneSubnetID := privateSubnetID
+		if o.PublicOnly {
+			zoneSubnetID = publicSubnetID
+		}
 		result.Zones = append(result.Zones, &CreateInfraOutputZone{
 			Name:     zone,
-			SubnetID: privateSubnetID,
+			SubnetID: zoneSubnetID,
 		})
 		// increment each subnet by /20
 		privateNetwork.IP[2] = privateNetwork.IP[2] + 16

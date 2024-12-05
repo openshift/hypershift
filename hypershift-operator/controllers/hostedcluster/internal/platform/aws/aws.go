@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -58,8 +59,22 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 		},
 	}
 
+	var nodePools []hyperv1.NodePool
+	if hcluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		// Fetch nodepools to set AWSCluster subnets
+		nodePoolList := &hyperv1.NodePoolList{}
+		if err := c.List(ctx, nodePoolList, client.InNamespace(hcluster.Namespace)); err != nil {
+			return nil, fmt.Errorf("failed to list nodepools: %w", err)
+		}
+		for i := range nodePoolList.Items {
+			if nodePoolList.Items[i].Spec.ClusterName == hcluster.Name {
+				nodePools = append(nodePools, nodePoolList.Items[i])
+			}
+		}
+	}
+
 	_, err := createOrUpdate(ctx, c, awsCluster, func() error {
-		return reconcileAWSCluster(awsCluster, hcluster, apiEndpoint)
+		return reconcileAWSCluster(awsCluster, hcluster, apiEndpoint, nodePools)
 	})
 	if err != nil {
 		return nil, err
@@ -335,7 +350,7 @@ func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 	return utilerrors.NewAggregate(errs)
 }
 
-func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
+func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, nodePools []hyperv1.NodePool) error {
 	// We only create this resource once and then let CAPI own it
 	awsCluster.Annotations = map[string]string{
 		capiv1.ManagedByAnnotation: "external",
@@ -363,6 +378,24 @@ func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.Hoste
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
+
+	if hcluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		subnetIDs := sets.New[string]()
+		for i := range nodePools {
+			subnetIDPtr := nodePools[i].Spec.Platform.AWS.Subnet.ID
+			if subnetIDPtr != nil {
+				subnetIDs.Insert(*subnetIDPtr)
+			}
+		}
+		awsCluster.Spec.NetworkSpec.Subnets = nil
+		for _, id := range sets.List(subnetIDs) {
+			awsCluster.Spec.NetworkSpec.Subnets = append(awsCluster.Spec.NetworkSpec.Subnets, capiaws.SubnetSpec{
+				ID:       id,
+				IsPublic: true,
+			})
+		}
+	}
+
 	return nil
 }
 
