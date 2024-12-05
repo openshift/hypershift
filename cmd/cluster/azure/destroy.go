@@ -14,11 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -32,7 +28,6 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
-	cmd.Flags().BoolVar(&opts.AzurePlatform.SkipServicePrincipalDeletion, "skip-service-principal-deletion", opts.AzurePlatform.SkipServicePrincipalDeletion, "Skip deletion of service principals")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 
@@ -99,24 +94,6 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		o.AzurePlatform.ResourceGroupName = o.Name + "-" + o.InfraID
 	}
 
-	client, err := util.GetClient()
-	if err != nil {
-		return fmt.Errorf("failed to get client: %w", err)
-	}
-
-	techPreviewCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "hypershift", Name: "feature-gate"}}
-	if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(techPreviewCM), techPreviewCM); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to retrieve feature-gate ConfigMap: %w", err)
-	}
-
-	if techPreviewCM.Data["TechPreviewEnabled"] == "true" {
-		o.TechPreviewEnabled = true
-	}
-
-	if hostedCluster != nil && o.TechPreviewEnabled {
-		o.AzurePlatform.ControlPlaneMIs = hostedCluster.Spec.Platform.Azure.ManagedIdentities
-	}
-
 	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
 }
 
@@ -127,12 +104,6 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		InfraID:           o.InfraID,
 		CredentialsFile:   o.AzurePlatform.CredentialsFile,
 		ResourceGroupName: o.AzurePlatform.ResourceGroupName,
-	}
-
-	if o.TechPreviewEnabled {
-		destroyInfraOptions.TechPreviewEnabled = o.TechPreviewEnabled
-		destroyInfraOptions.ControlPlaneMIs = o.AzurePlatform.ControlPlaneMIs
-		destroyInfraOptions.SkipServicePrincipalDeletion = o.AzurePlatform.SkipServicePrincipalDeletion
 	}
 	return destroyInfraOptions.Run(ctx, o.Log)
 }
