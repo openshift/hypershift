@@ -139,6 +139,13 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
 				}
+				// Reconcile nodeport-ignition-proxy Network Policy
+				policy = networkpolicy.NodePortIgnitionProxyNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcileNodePortIgnitionProxyNetworkPolicy(policy, hcluster)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile ignition proxy nodeport network policy: %w", err)
+				}
 			}
 		case hyperv1.Konnectivity:
 			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
@@ -149,6 +156,15 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
+
+				// Reconcile nodeport-konnectivity Network Policy when konnectivity is hosted in the kas pod
+				policy = networkpolicy.NodePortKonnectivityKASNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcileNodePortKonnectivityKASNetworkPolicy(policy, hcluster)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
+				}
+
 			}
 		}
 	}
@@ -345,6 +361,29 @@ func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
+func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(8443)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "ignition-server-proxy",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
 func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(9090)
 	protocol := corev1.ProtocolTCP
@@ -362,6 +401,29 @@ func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, 
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "ignition-server",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(8091)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "kube-apiserver",
 		},
 	}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
