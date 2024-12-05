@@ -408,6 +408,7 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                               minTLSVersion:
                                 description: |-
                                   minTLSVersion is used to specify the minimal version of the TLS protocol
@@ -1047,6 +1048,11 @@ spec:
                         description: |-
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
+                        enum:
+                        - CustomNoUpgrade
+                        - DevPreviewNoUpgrade
+                        - TechPreviewNoUpgrade
+                        - ""
                         type: string
                         x-kubernetes-validations:
                         - message: CustomNoUpgrade may not be changed
@@ -1710,11 +1716,11 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OpenShiftSDN).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
-                          - OpenShiftSDN
+                          - OVNKubernetes
                           This field is immutable after installation.
                         type: string
                       serviceNetwork:
@@ -5334,6 +5340,7 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                               minTLSVersion:
                                 description: |-
                                   minTLSVersion is used to specify the minimal version of the TLS protocol
@@ -5945,6 +5952,11 @@ spec:
                         description: |-
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
+                        enum:
+                        - CustomNoUpgrade
+                        - DevPreviewNoUpgrade
+                        - TechPreviewNoUpgrade
+                        - ""
                         type: string
                         x-kubernetes-validations:
                         - message: CustomNoUpgrade may not be changed
@@ -6596,11 +6608,11 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OpenShiftSDN).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
-                          - OpenShiftSDN
+                          - OVNKubernetes
                           This field is immutable after installation.
                         type: string
                       serviceNetwork:
