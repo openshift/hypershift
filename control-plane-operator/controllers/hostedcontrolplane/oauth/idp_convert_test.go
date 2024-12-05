@@ -376,7 +376,8 @@ users:
 			g.Expect(gotURL).To(Equal(tc.expectedProxyRequestURL))
 
 			// Validate RootCAs expectations.
-			expectedCertPool := x509.NewCertPool()
+			expectedCertPool, err := x509.SystemCertPool()
+			g.Expect(err).ToNot(HaveOccurred())
 			if tc.hcp.Spec.Configuration != nil {
 				if tc.hcp.Spec.Configuration.Proxy.TrustedCA.Name != "" {
 					expectedCertPool.AppendCertsFromPEM([]byte(fakeProxyCertCADecoded))
