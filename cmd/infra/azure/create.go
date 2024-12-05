@@ -51,23 +51,23 @@ const (
 )
 
 type CreateInfraOptions struct {
-	Name                            string
-	BaseDomain                      string
-	Location                        string
-	InfraID                         string
-	CredentialsFile                 string
-	Credentials                     *util.AzureCreds
-	OutputFile                      string
-	RHCOSImage                      string
-	ResourceGroupName               string
-	VnetID                          string
-	NetworkSecurityGroupID          string
-	ResourceGroupTags               map[string]string
-	SubnetID                        string
-	TechPreviewEnabled              bool
-	ManagedIdentitiesFile           string
-	AssignServicePrincipalRoles     bool
-	DNSZoneRG                       string
+	Name                        string
+	BaseDomain                  string
+	Location                    string
+	InfraID                     string
+	CredentialsFile             string
+	Credentials                 *util.AzureCreds
+	OutputFile                  string
+	RHCOSImage                  string
+	ResourceGroupName           string
+	VnetID                      string
+	NetworkSecurityGroupID      string
+	ResourceGroupTags           map[string]string
+	SubnetID                    string
+	TechPreviewEnabled          bool
+	ManagedIdentitiesFile       string
+	AssignServicePrincipalRoles bool
+	DNSZoneRG                   string
 }
 
 type CreateInfraOutput struct {
