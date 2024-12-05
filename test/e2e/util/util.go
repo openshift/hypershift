@@ -518,6 +518,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
+			// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
+			if strings.HasPrefix(pod.Name, "openstack-manila-csi-controllerplugin-") {
+				continue
+			}
+
 			// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
 			if strings.HasPrefix(pod.Name, "kubevirt-csi") {
 				continue
@@ -1194,6 +1199,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"redhat-marketplace-catalog":             "app",
 			"openstack-cinder-csi-driver-controller": "app",
 			"manila-csi-driver-controller":           "app",
+			"openstack-manila-csi":                   "app",
 		}
 
 		hcpPods := &corev1.PodList{}
@@ -1912,7 +1918,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
 				"openstack-cinder-csi-driver-controller",
 				"openstack-cinder-csi-driver-operator",
-				"manila-csi-driver-controller",
+				"openstack-manila-csi-controllerplugin",
 				"manila-csi-driver-operator",
 			)
 		}
@@ -1940,7 +1946,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			}
 			if !hasPrefix {
 				for _, volume := range pod.Spec.Volumes {
-					g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"))
+					g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"), "pod %s should not have kube-api-access-* volume mounted", pod.Name)
 				}
 			}
 		}
