@@ -1,10 +1,15 @@
+default_stages: [pre-commit, pre-push]
+default_install_hook_types: [pre-commit, pre-push]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: check-yaml
+        stages: [pre-commit]
       - id: trailing-whitespace
+        stages: [pre-commit]
         args:
           - --markdown-linebreak-ext=md
         exclude:  docs/content/reference/api.md
@@ -15,6 +20,7 @@ repos:
         description: Runs `make verify-codespell` to verify codespell format.
         entry: make verify-codespell
         language: system
+        stages: [pre-commit]
       - id: cpo-containerfiles-in-sync
         name: cpo-containerfiles-in-sync
         entry: ./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh
@@ -24,4 +30,5 @@ repos:
           - Containerfile.control-plane
           - Dockerfile.control-plane
         description: Ensures the CPO container files stay in sync
+        stages: [pre-commit]
 exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
