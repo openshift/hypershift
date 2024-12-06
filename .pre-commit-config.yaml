@@ -5,10 +5,13 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-merge-conflict
+        name: Check for merge conflict strings
         stages: [pre-commit]
       - id: check-yaml
+        name: Check yaml syntax
         stages: [pre-commit]
       - id: trailing-whitespace
+        name: Trim all whitespace from end of lines
         stages: [pre-commit]
         args:
           - --markdown-linebreak-ext=md
@@ -22,7 +25,7 @@ repos:
         language: system
         stages: [pre-commit]
       - id: cpo-containerfiles-in-sync
-        name: cpo-containerfiles-in-sync
+        name: Keep cpo-containerfiles-in-sync
         entry: ./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh
         language: script
         pass_filenames: false
