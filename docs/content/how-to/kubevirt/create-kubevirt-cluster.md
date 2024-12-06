@@ -33,7 +33,7 @@ places the cli tool within the /usr/local/bin directory.
 !!! note
 
     The command below is the same if you use docker.
-  
+
 ```shell
 podman run --rm --privileged -it -v \
 $PWD:/output docker.io/library/golang:1.20 /bin/bash -c \
@@ -245,7 +245,7 @@ namespace:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.14.0                                       
+example                   example         5               5               False         False        4.14.0  
 example-extra-cpu         example         2                               False         False                  True              True             Minimum availability requires 2 replicas, current 0 available
 ```
 
@@ -270,7 +270,7 @@ And the nodepool will be in the desired state:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.14.0                                       
+example                   example         5               5               False         False        4.14.0  
 example-extra-cpu         example         2               2               False         False        4.14.0  
 ```
 

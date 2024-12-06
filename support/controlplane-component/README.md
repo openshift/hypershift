@@ -34,7 +34,7 @@ EOF
 
 Note that the container image `image-key` will be replaced with the image value corresponding to that key from the release payload if that key exist, and kept as is otherwise.
 
-!!! note 
+!!! note
 
     If your workload is a StatefulSet, create a filed named `statefulset.yaml` containing the StatefulSet's manifest instead!
 
@@ -114,7 +114,7 @@ func NewComponent() component.ControlPlaneComponent {
 }
 ```
 
-!!! note 
+!!! note
 
     use `component.NewStatefulSetComponent()` instead if your components's workload is a StatefulSet.
 

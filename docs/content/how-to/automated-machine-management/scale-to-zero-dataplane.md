@@ -57,7 +57,7 @@ function annotate_nodes() {
         echo "HC Namespace: ${HC_CLUSTER_NS}"
         echo "HC Clusted Name: ${HC_CLUSTER_NAME}"
         exit 1
-    fi 
+    fi
 
     echo "Annotating Nodes to avoid Draining"
     oc annotate -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} machines --all "machine.cluster.x-k8s.io/exclude-node-draining="

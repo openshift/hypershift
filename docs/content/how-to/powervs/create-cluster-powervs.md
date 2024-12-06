@@ -22,7 +22,7 @@ Use the `hypershift create cluster powervs` command:
     RESOURCE_GROUP=ibm-hypershift-dev
     RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.12.0-0.nightly-multi-2022-09-08-131900
     PULL_SECRET="$HOME/pull-secret"
-    
+
     ./bin/hypershift create cluster powervs \
         --name $CLUSTER_NAME \
         --region $REGION \
@@ -44,7 +44,7 @@ where
 * RESOURCE_GROUP is the resource group in IBM Cloud where your infrastructure resources will be created.
 * RELEASE_IMAGE is the latest multi arch release image.
 * PULL_SECRET is a file that contains a valid OpenShift pull secret.
-* node-pool-replicas is worker node count 
+* node-pool-replicas is worker node count
 
 Running this command will create [infra](create-infra-separately.md) and manifests for the hosted cluster and deploys it.
 

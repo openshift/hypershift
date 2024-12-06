@@ -318,7 +318,7 @@ func (k KubeVirtAdvancedMultinetTest) composeDNSMasqPod(t *testing.T) *corev1.Po
 						"-c",
 						fmt.Sprintf(`set -xe
 dnf install -y iptables dnsmasq procps-ng
-ip a add 192.168.66.1/24 dev %[1]s 
+ip a add 192.168.66.1/24 dev %[1]s
 echo "net.ipv4.ip_forward=1" | tee -a /etc/sysctl.conf
 sysctl -p
 iptables -A FORWARD -i %[1]s -j ACCEPT

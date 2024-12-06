@@ -43,7 +43,7 @@ to live migrate and be portable across infra nodes.
 Below is a chart that outlines the current features of KubeVirt CSI as they map
 to the infra cluster's storage class.
 
-| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           | 
+| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           |
 |-----------------------|------------------------------------|---------------------------|-------------------------------------------------|
 | RWX Block             | RWO (Block/Filesystem) RWX (Block) | Supported                 |                                                 |
 | RWO Block             | RWO (Block/Filesystem)             | Not Supported             |                                                 |
@@ -104,7 +104,7 @@ mapping that was configured during cluster creation.
 KubeVirt CSI permits infra VolumeSnapshotClasses to be exposed to the guest
 cluster. Since VolumeSnapshotClasses are tied to a particular provisioner the
 mapping between VolumeSnapshotClasses and StorageClasses needs to expressed to
-hypershift during guest cluster creation. using the `hcp` cli tool and the 
+hypershift during guest cluster creation. using the `hcp` cli tool and the
 `--infra-volumesnapshot-class-mapping` cli argument.
 
 Below is an example of a simple setup with a single infra storage class and a
@@ -128,9 +128,9 @@ hcp create cluster kubevirt \
 --infra-volumesnapshot-class-mapping=infra-vsc1/guest-vsc1
 ```
 
-If you omit the `--infra-storage-class-mapping` and the 
-`--infra-volumesnapshot-class-mapping`. The system will use the default 
-storage class and the default volume snapshot class in the infra cluster. If 
+If you omit the `--infra-storage-class-mapping` and the
+`--infra-volumesnapshot-class-mapping`. The system will use the default
+storage class and the default volume snapshot class in the infra cluster. If
 the default is not set, then the snapshot functionality will not work and the
 snapshot request will never reach ready state. This is because it not possible
 to create a correct snapshot in the infra cluster.
@@ -167,7 +167,7 @@ hcp create cluster kubevirt \
 ```
 
 Since both storage class `infra-sca` and volume snapshot class `infra-vsca`
-are in the same group, this indicates to KubeVirt CSI that they are 
+are in the same group, this indicates to KubeVirt CSI that they are
 compatible and be used to create snapshots of volumes from storage class
 `guest-sca` using the guest volume snapshot class `guest-vsca`. The same
 is true with with the `b` grouping as well. Since `infra-scc` is also in
@@ -178,7 +178,7 @@ snapshot of volumes that use storage class `guest-sca`
 !!! note
 
    KubeVirt CSI passes snapshot requests to the underlying infra. This means
-   that snapshots will only work for compatible volumes. Please ensure the 
+   that snapshots will only work for compatible volumes. Please ensure the
    proper mapping is configured before attempting to create a snapshot in the
    guest cluster.
 
