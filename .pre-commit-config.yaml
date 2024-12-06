@@ -15,7 +15,6 @@ repos:
         stages: [pre-commit]
         args:
           - --markdown-linebreak-ext=md
-        exclude:  docs/content/reference/api.md
   - repo: local
     hooks:
       - id: make-codespell
@@ -34,4 +33,18 @@ repos:
           - Dockerfile.control-plane
         description: Ensures the CPO container files stay in sync
         stages: [pre-commit]
+      - id: make-verify
+        name: Run make verify
+        description: Runs `make verify`.
+        entry: make verify
+        language: system
+        stages: [pre-push]
+        require_serial: true
+      - id: make-test
+        name: Run make test
+        description: Runs `make test`.
+        entry: make test
+        language: system
+        stages: [ pre-push ]
 exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
+fail_fast: true
