@@ -33,7 +33,6 @@ func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions,
 		Location:           "eastus",
 		TechPreviewEnabled: false,
 		NodePoolOpts:       azurenodepool.DefaultOptions(),
-		DNSZoneRGName:      "os4-common",
 	}
 
 	if client == nil {
@@ -75,6 +74,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 		flags.StringVar(&opts.KeyVaultInfo.KeyVaultTenantID, "management-key-vault-tenant-id", opts.KeyVaultInfo.KeyVaultTenantID, "The tenant ID of the management Azure Key Vault where the managed identity certificates are stored.")
 		flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
 		flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
+		flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
 	}
 }
 
@@ -85,22 +85,23 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile        string
-	Location               string
-	EncryptionKeyID        string
-	AvailabilityZones      []string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
-	RHCOSImage             string
-	KMSClientID            string
-	KMSCertName            string
-	TechPreviewEnabled     bool
-	KeyVaultInfo           ManagementKeyVaultInfo
-	DNSZoneRGName          string
-	ManagedIdentitiesFile  string
+	CredentialsFile             string
+	Location                    string
+	EncryptionKeyID             string
+	AvailabilityZones           []string
+	ResourceGroupName           string
+	VnetID                      string
+	NetworkSecurityGroupID      string
+	ResourceGroupTags           map[string]string
+	SubnetID                    string
+	RHCOSImage                  string
+	KMSClientID                 string
+	KMSCertName                 string
+	TechPreviewEnabled          bool
+	KeyVaultInfo                ManagementKeyVaultInfo
+	DNSZoneRGName               string
+	ManagedIdentitiesFile       string
+	AssignServicePrincipalRoles bool
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -155,6 +156,10 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 
 		if o.ManagedIdentitiesFile == "" && o.KeyVaultInfo.KeyVaultName == "" && o.KeyVaultInfo.KeyVaultTenantID == "" {
 			return nil, fmt.Errorf("flag --managed-identities-file  or  ( --management-key-vault-name and --management-key-vault-tenant-id ) are required")
+		}
+
+		if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
+			return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
 		}
 	}
 
@@ -534,6 +539,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		TechPreviewEnabled:              azureOpts.TechPreviewEnabled,
 		DNSZoneRG:                       azureOpts.DNSZoneRGName,
 		ManagedIdentitiesFile:           azureOpts.ManagedIdentitiesFile,
+		AssignServicePrincipalRoles:     azureOpts.AssignServicePrincipalRoles,
 	}, nil
 }
 
