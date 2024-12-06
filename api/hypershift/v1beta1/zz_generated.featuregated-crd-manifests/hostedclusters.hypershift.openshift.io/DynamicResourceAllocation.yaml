@@ -393,6 +393,7 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                               minTLSVersion:
                                 description: |-
                                   minTLSVersion is used to specify the minimal version of the TLS protocol
@@ -696,6 +697,11 @@ spec:
                         description: |-
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
+                        enum:
+                        - CustomNoUpgrade
+                        - DevPreviewNoUpgrade
+                        - TechPreviewNoUpgrade
+                        - ""
                         type: string
                         x-kubernetes-validations:
                         - message: CustomNoUpgrade may not be changed
@@ -758,6 +764,7 @@ spec:
                               type: boolean
                           type: object
                         type: array
+                        x-kubernetes-list-type: atomic
                       externalRegistryHostnames:
                         description: |-
                           externalRegistryHostnames provides the hostnames for the default external image
@@ -767,6 +774,7 @@ spec:
                         items:
                           type: string
                         type: array
+                        x-kubernetes-list-type: atomic
                       registrySources:
                         description: |-
                           registrySources contains configuration that determines how the container runtime
@@ -782,6 +790,7 @@ spec:
                             items:
                               type: string
                             type: array
+                            x-kubernetes-list-type: atomic
                           blockedRegistries:
                             description: |-
                               blockedRegistries cannot be used for image pull and push actions. All other registries are permitted.
@@ -790,6 +799,7 @@ spec:
                             items:
                               type: string
                             type: array
+                            x-kubernetes-list-type: atomic
                           containerRuntimeSearchRegistries:
                             description: |-
                               containerRuntimeSearchRegistries are registries that will be searched when pulling images that do not have fully qualified
@@ -808,6 +818,7 @@ spec:
                             items:
                               type: string
                             type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     type: object
                   ingress:
@@ -1177,11 +1188,11 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OpenShiftSDN).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
-                          - OpenShiftSDN
+                          - OVNKubernetes
                           This field is immutable after installation.
                         type: string
                       serviceNetwork:

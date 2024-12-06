@@ -268,7 +268,7 @@ func (b *ControllerBuilder) Run(ctx context.Context, config *unstructured.Unstru
 	}
 	eventRecorder := events.NewKubeRecorderWithOptions(kubeClient.CoreV1().Events(namespace), b.eventRecorderOptions, b.componentName, controllerRef)
 
-	utilruntime.PanicHandlers = append(utilruntime.PanicHandlers, func(r interface{}) {
+	utilruntime.PanicHandlers = append(utilruntime.PanicHandlers, func(c context.Context, r interface{}) {
 		eventRecorder.Warningf(fmt.Sprintf("%sPanic", strings.Title(b.componentName)), "Panic observed: %v", r)
 	})
 
@@ -305,7 +305,7 @@ func (b *ControllerBuilder) Run(ctx context.Context, config *unstructured.Unstru
 
 	var server *genericapiserver.GenericAPIServer
 	if b.servingInfo != nil {
-		serverConfig, err := serving.ToServerConfig(ctx, *b.servingInfo, *b.authenticationConfig, *b.authorizationConfig, kubeConfig, kubeClient, b.leaderElection, b.enableHTTP2)
+		serverConfig, err := serving.ToServerConfig(ctx, *b.servingInfo, *b.authenticationConfig, *b.authorizationConfig, kubeConfig, kubeClient, b.leaderElection, b.enableHTTP2, b.versionInfo)
 		if err != nil {
 			return err
 		}
@@ -429,14 +429,14 @@ func (b *ControllerBuilder) getClientConfig() (*rest.Config, error) {
 }
 
 func topologyLeaderElection(topology configv1.TopologyMode, original configv1.LeaderElection) configv1.LeaderElection {
-	// if we can't determine the infra toplogy, return original
+	// if we can't determine the infra topology, return original
 	if topology == "" {
 		return original
 	}
 
-	// If we are running in a SingleReplicaTopologyMode and leader election is not disabled, configure leader election for SNO Toplogy
+	// If we are running in a SingleReplicaTopologyMode and leader election is not disabled, configure leader election for SNO Topology
 	if topology == configv1.SingleReplicaTopologyMode && !original.Disable {
-		klog.Info("detected SingleReplicaTopologyMode, the original leader election has been altered for the default SingleReplicaToplogy")
+		klog.Info("detected SingleReplicaTopologyMode, the original leader election has been altered for the default SingleReplicaTopology")
 		return leaderelectionconverter.LeaderElectionSNOConfig(original)
 	}
 	return original
