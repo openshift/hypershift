@@ -116,6 +116,7 @@ nav:
     - how-to/kubevirt/ingress-and-dns.md
     - how-to/kubevirt/configuring-storage.md
     - how-to/kubevirt/configuring-network.md
+    - how-to/kubevirt/live-migration.md
     - how-to/kubevirt/performance-tuning.md
     - how-to/kubevirt/external-infrastructure.md
     - how-to/kubevirt/gpu-devices.md
