@@ -247,7 +247,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 				if err != nil {
 					return nil, err
 				}
-				err = assignContributorRole(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID)
+				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID)
 				if err != nil {
 					return nil, err
 				}
@@ -905,13 +905,14 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 	return nil
 }
 
-// AssignContributorRole assigns the contributor role to the service principal asigneeID in the managed resource group
-// and the network or vnet resource groups based on the component
-func assignContributorRole(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, asigneeID string) error {
+// assignServicePrincipalRoles assigns the required roles to the service principal for each control plane managed identity component
+func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string) error {
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
 	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
 	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
+
+	contributorRole := "Contributor"
 
 	scopes := []string{managedRG}
 
@@ -922,17 +923,28 @@ func assignContributorRole(subscriptionID, managedResourceGroupName, nsgResource
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
 		scopes = append(scopes, nsgRG, vnetRG)
+	case nodePoolMgmt:
+		scopes = append(scopes, vnetRG)
 	}
 
+	// Assign contributor role to service principal
 	for _, scope := range scopes {
-		cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"Contributor\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", asigneeID, scope)
-		_, err := execAzCommand(cmdStr)
-		if err != nil {
-			return fmt.Errorf("failed to assign contributor role to service principal, %s for scope %s : %w", asigneeID, scope, err)
+		if err := assignRole(assigneeID, contributorRole, scope); err != nil {
+			return err
 		}
-		log.Log.Info("Successfully assigned contributor role to service principal", "ID", asigneeID, "scope", scope)
 	}
 
+	return nil
+}
+
+// assignRole assigns the role to the service principal
+func assignRole(assigneeID, role, scope string) error {
+	cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"%s\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", assigneeID, role, scope)
+	_, err := execAzCommand(cmdStr)
+	if err != nil {
+		return fmt.Errorf("failed to assign %s role to service principal, %s for scope %s : %w", role, assigneeID, scope, err)
+	}
+	log.Log.Info("Successfully assigned role to service principal", "role", role, "ID", assigneeID, "scope", scope)
 	return nil
 }
 
