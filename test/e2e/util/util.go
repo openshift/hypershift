@@ -1198,7 +1198,6 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"redhat-operators-catalog":               "app",
 			"redhat-marketplace-catalog":             "app",
 			"openstack-cinder-csi-driver-controller": "app",
-			"manila-csi-driver-controller":           "app",
 			"openstack-manila-csi":                   "app",
 		}
 
