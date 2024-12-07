@@ -477,7 +477,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
 		// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration annotation.
-		// This annotation will create a new condition called HostedClusterDestroyed which in conjuntion with CloudResourcesDestroyed
+		// This annotation will create a new condition called HostedClusterDestroyed which in conjunction with CloudResourcesDestroyed
 		// a SRE could determine if there are dangling objects once the HostedCluster is deleted. These cloud dangling objects will remain
 		// in AWS, and SRE will report them to the final user.
 		hostedClusterDestroyedCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed))
@@ -1899,7 +1899,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Labels = make(map[string]string)
 	}
 	// All labels on the HostedCluster with this special prefix are copied
-	// Thoses are labels set by OCM
+	// Those are labels set by OCM
 	for key, val := range hcluster.Labels {
 		if strings.HasPrefix(key, "api.openshift.com") {
 			hcp.Labels[key] = val
@@ -3561,7 +3561,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	}
 
 	// The following code is legacy support to preserve
-	// compatability with older HostedControlPlane controllers, which
+	// compatibility with older HostedControlPlane controllers, which
 	// may not be populating hcp.Status.VersionStatus.
 	//
 	// It is also used before the HostedControlPlane is created to bootstrap
@@ -3615,7 +3615,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// quite right because the intent here is to identify a terminal rollout
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
-	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatibility with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	hcpRolloutComplete := (hyperutil.HCPControlPlaneReleaseImage(hcp) == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
@@ -3623,11 +3623,11 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 
 	// The rollout is complete, so update the current history entry
 	version.History[0].State = configv1.CompletedUpdate
-	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatibility with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	version.History[0].Version = hcp.Status.Version
-	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatibility with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	if hcp.Status.LastReleaseImageTransitionTime != nil {
-		//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
+		//lint:ignore SA1019 consume the deprecated property until we can drop compatibility with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 		version.History[0].CompletionTime = hcp.Status.LastReleaseImageTransitionTime.DeepCopy()
 	}
 

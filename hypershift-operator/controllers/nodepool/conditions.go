@@ -28,7 +28,7 @@ const (
 )
 
 // These are copies pf metav1.Condition to accept hyperv1.NodePoolCondition
-// We use differnt conditions struct to relax metav1 input validation.
+// We use different conditions struct to relax metav1 input validation.
 // We want to relax validation to ease bubbling up from CAPI which uses their own type not honouring metav1 validations, particularly "Reason" accepts pretty much free string.
 // TODO (alberto): work upstream towards consolidation and programmatic Reasons.
 

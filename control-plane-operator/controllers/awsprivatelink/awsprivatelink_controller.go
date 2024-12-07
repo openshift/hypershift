@@ -472,7 +472,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	log.Info("reconcilation complete")
+	log.Info("reconciliation complete")
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -607,7 +607,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		}
 
 		// Verify there is not already an Endpoint that we can adopt
-		// This can happen if we have a stale status on AWSEndpointService or encoutered
+		// This can happen if we have a stale status on AWSEndpointService or encountered
 		// an error updating the AWSEndpointService on the previous reconcile
 		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
 			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),

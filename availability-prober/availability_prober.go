@@ -128,7 +128,7 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 
 		if len(requiredAPIs) > 0 {
 			_, apis, err := discoveryClient.ServerGroupsAndResources()
-			// Ignore GroupDiscoveryFailedError error, as the groups we care about might have been sucessfully discovered
+			// Ignore GroupDiscoveryFailedError error, as the groups we care about might have been successfully discovered
 			if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
 				log.Error(err, "discovering api resources failed, retrying...")
 				continue

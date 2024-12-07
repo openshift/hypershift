@@ -756,7 +756,7 @@ func (o *options) Validate() error {
 
 var _ flag.Value = &stringSliceVar{}
 
-// stringSliceVar mimicks github.com/spf13/pflag.StringSliceVar in a stdlib-compatible way
+// stringSliceVar mimics github.com/spf13/pflag.StringSliceVar in a stdlib-compatible way
 type stringSliceVar []string
 
 func (s *stringSliceVar) String() string     { return strings.Join(*s, ",") }

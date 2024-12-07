@@ -277,7 +277,7 @@ func (k KubeVirtAdvancedMultinetTest) firstMachineAddress() (string, error) {
 		}
 	}
 	if internalAddress == "" {
-		return "", fmt.Errorf("missing internal addres at kubevirt machine")
+		return "", fmt.Errorf("missing internal address at kubevirt machine")
 	}
 	return internalAddress, nil
 }

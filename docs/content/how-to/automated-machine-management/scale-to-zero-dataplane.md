@@ -14,7 +14,7 @@ In order to continue with the next steps, we need to have in mind some considera
 - The Hosted Control Plane will stay up and running, and you can scale up the *NodePool* whenever you want.
 - Some pods in the control plane will stay in "Pending" state.  
 - Once you rescale the *NodePool/s* it will take time until they reach the fully **Ready** state.
-- We will add an annotate to the nodes which will ensure the pod drainning does not happen. This we will save time and money and also we will avoid stucked pods.
+- We will add an annotate to the nodes which will ensure the pod drainning does not happen. This we will save time and money and also we will avoid stuck pods.
 
 Now let's explain the workflow.
 
@@ -92,7 +92,7 @@ annotate_nodes
 
 
 <details>
-<summary> How to scale down the nodes programatically </summary>
+<summary> How to scale down the nodes programmatically </summary>
 
 ```bash
 #!/bin/bash

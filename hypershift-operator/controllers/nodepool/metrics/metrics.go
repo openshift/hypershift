@@ -62,7 +62,7 @@ const (
 
 type void struct{}
 
-// semantically constant - not suposed to be changed at runtime
+// semantically constant - not supposed to be changed at runtime
 var (
 	transitionDurationMetricConditions = map[string]void{
 		hyperv1.NodePoolReachedIgnitionEndpoint:       void{},
@@ -196,7 +196,7 @@ type vCpusDetail struct {
 
 func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv1.NodePool, ec2InstanceTypeToResolutionErrorReason *map[string]string) vCpusDetail {
 	if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
-		ctrllog.Log.Info("cannot retrieve the number of vCPUs for " + nodePool.Name + " node pool as its plaform is not supported (supported platforms: AWS)")
+		ctrllog.Log.Info("cannot retrieve the number of vCPUs for " + nodePool.Name + " node pool as its platform is not supported (supported platforms: AWS)")
 
 		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: "unsupported platform"}
 	}

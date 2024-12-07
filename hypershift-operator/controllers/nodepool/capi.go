@@ -970,7 +970,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	// Propagate labels.
 	for k, v := range nodePool.Spec.NodeLabels {
 		// Propagated managed labels down to Machines with a known hardcoded prefix
-		// so the CPO HCCO Node controller can recongnise them and apply them to Nodes.
+		// so the CPO HCCO Node controller can recognise them and apply them to Nodes.
 		labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
 		machineSet.Spec.Template.Labels[labelKey] = v
 	}

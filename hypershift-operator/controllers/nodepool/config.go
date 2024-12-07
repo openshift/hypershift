@@ -53,7 +53,7 @@ type rolloutConfig struct {
 	// rawConfig is an mco consumable version of NodePool.spec.config, tuneConfig and any hypershift core machine config.
 	mcoRawConfig string
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
-	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this intial refactor.
+	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
 }
 
@@ -118,7 +118,7 @@ func (cg *ConfigGenerator) Hash() string {
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
 // This is only used to signal if a rollout is driven by a new release or by something else.
-// TODO(alberto): This was left unconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
+// TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
 	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)

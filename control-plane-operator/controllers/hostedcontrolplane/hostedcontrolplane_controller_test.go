@@ -1407,7 +1407,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 		expectedServices             []corev1.Service
 	}{
 		{
-			name:                         "Public HCP gets public LB ony",
+			name:                         "Public HCP gets public LB only",
 			endpointAccess:               hyperv1.Public,
 			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{

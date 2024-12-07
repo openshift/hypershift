@@ -101,14 +101,14 @@ type controlPlaneWorkload struct {
 	workloadType workloadType
 
 	// list of component names that this component depends on.
-	// reconcilation will be blocked until all dependencies are available.
+	// reconciliation will be blocked until all dependencies are available.
 	dependencies []string
 
 	adapt func(cpContext WorkloadContext, obj client.Object) error
 
 	// adapters for Secret, ConfigMap, Service, ServiceMonitor, etc.
 	manifestsAdapters map[string]genericAdapter
-	// predicate is called at the begining, the component is disabled if it returns false.
+	// predicate is called at the beginning, the component is disabled if it returns false.
 	predicate func(cpContext WorkloadContext) (bool, error)
 	// These secrets/configMaps will cause the Deployment/statefulset to rollout when changed.
 	rolloutSecretsNames    []string
@@ -145,7 +145,7 @@ func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
 	}
 	var reconcilationError error
 	if len(unavailableDependencies) == 0 {
-		// reconcile only when all dependencies are available, and don't return error immediatly so it can be included in the status condition first.
+		// reconcile only when all dependencies are available, and don't return error immediately so it can be included in the status condition first.
 		reconcilationError = c.update(cpContext)
 	}
 
@@ -211,14 +211,14 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 	case deploymentWorkloadType:
 		dep, err := assets.LoadDeploymentManifest(c.Name())
 		if err != nil {
-			return fmt.Errorf("faild loading deployment manifest: %v", err)
+			return fmt.Errorf("failed loading deployment manifest: %v", err)
 		}
 		workloadObj = dep
 		oldWorkloadObj = &appsv1.Deployment{}
 	case statefulSetWorkloadType:
 		sts, err := assets.LoadStatefulSetManifest(c.Name())
 		if err != nil {
-			return fmt.Errorf("faild loading statefulset manifest: %v", err)
+			return fmt.Errorf("failed loading statefulset manifest: %v", err)
 		}
 		workloadObj = sts
 		oldWorkloadObj = &appsv1.StatefulSet{}

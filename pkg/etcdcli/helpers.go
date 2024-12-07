@@ -193,7 +193,7 @@ func NewFakeEtcdClient(members []*etcdserverpb.Member, opts ...FakeClientOption)
 		// validate WithClusterHealth
 		case fcOpts.healthyMember > 0 || fcOpts.unhealthyMember > 0:
 			if fcOpts.healthyMember+fcOpts.unhealthyMember != len(members) {
-				return nil, fmt.Errorf("WithClusterHealth count must equal the numer of members: have %d, want %d ", fcOpts.unhealthyMember+fcOpts.healthyMember, len(members))
+				return nil, fmt.Errorf("WithClusterHealth count must equal the number of members: have %d, want %d ", fcOpts.unhealthyMember+fcOpts.healthyMember, len(members))
 			}
 		}
 		fakeEtcdClient.opts = fcOpts

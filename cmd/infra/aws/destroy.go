@@ -440,7 +440,7 @@ func (o *DestroyInfraOptions) DestroyVPCEndpointServices(ctx context.Context, cl
 
 		endpointConnections, err := client.DescribeVpcEndpointConnections(&ec2.DescribeVpcEndpointConnectionsInput{Filters: []*ec2.Filter{{Name: aws.String("service-id"), Values: aws.StringSlice(ids)}}})
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to list endpoint conncetions: %w", err))
+			errs = append(errs, fmt.Errorf("failed to list endpoint connections: %w", err))
 			return false
 		}
 		endpointConnectionsByServiceID := map[*string][]*string{}

@@ -169,7 +169,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		SuccessThreshold:    1,
 	}
 	if hcp.Spec.SecretEncryption != nil {
-		// Adjust KAS liveness probe to not have a hard depdendency on kms so problems isolated to kms don't
+		// Adjust KAS liveness probe to not have a hard dependency on kms so problems isolated to kms don't
 		// cause the entire kube-apiserver to restart and potentially enter CrashloopBackoff
 		totalProviderInstances := 0
 		switch hcp.Spec.SecretEncryption.Type {

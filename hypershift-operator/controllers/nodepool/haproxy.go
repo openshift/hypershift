@@ -523,7 +523,7 @@ func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, hclus
 			return "", fmt.Errorf("failed to generate haproxy ignition config: %w", err)
 		}
 		if missing {
-			return "", fmt.Errorf("failed to generate haproxy ignition config: waiting for missing componenent")
+			return "", fmt.Errorf("failed to generate haproxy ignition config: waiting for missing component")
 		}
 	}
 	return haproxyRawConfig, nil

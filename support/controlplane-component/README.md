@@ -82,12 +82,12 @@ var _ component.ComponentOptions = &MyComponent{}
 type MyComponent struct {
 }
 
-// Specify whether this component serves requests outisde of its node.
+// Specify whether this component serves requests outside its node.
 func (m *MyComponent) IsRequestServing() bool {
 	return false
 }
 
-// Specify whether this component's workload(pods) should be spread acorss availability zones
+// Specify whether this component's workload(pods) should be spread across availability zones
 func (m *MyComponent) MultiZoneSpread() bool {
 	return false
 }
@@ -196,13 +196,13 @@ func adaptMyConfig(cpContext component.ControlPlaneContext, config *corev1.Confi
 
 ### Predicates
 
-If your component has any prerequisites or depends on external resources to exist, you can define a predicate to block the creation/reconcilation of your component until your conditions are met.
+If your component has any prerequisites or depends on external resources to exist, you can define a predicate to block the creation/reconciliation of your component until your conditions are met.
 
 ```go
 // control-plane-operator/controllers/hostedcontrolplane/v2/mycomponent/component.go
 
 func myPredicate(cpContext component.ControlPlaneContext) (bool, error) {
-    // reconcile only if platfrom is AWS
+    // reconcile only if platform is AWS
     if cpContext.HCP.Spec.Platform.Type == "AWS" {
         return true
     }
@@ -263,7 +263,7 @@ This will trigger a rollout of your Deployment/StatefulSet on any change to `my-
 
 ### Dependencies
 
-If your component dpends on other components being `Available` before it can start reconciliation, you can deine your Dependencies as a list of components' names as follows:
+If your component depends on other components being `Available` before it can start reconciliation, you can define your Dependencies as a list of components' names as follows:
 
 ```go hl_lines="5"
 // control-plane-operator/controllers/hostedcontrolplane/v2/mycomponent/component.go

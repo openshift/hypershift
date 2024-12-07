@@ -8,7 +8,7 @@ title: Shared VPC
 
 AWS allows [sharing a VPC's subnets](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-sharing.html) from one account to another.
 This enables a use case where network management can be done in a single AWS account, while workloads such as OpenShift clusters exist
-in a separate, satellite acccount.
+in a separate, satellite account.
 
 Creating a standalone OCP cluster is already [supported in ROSA classic](https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html). 
 
@@ -100,7 +100,7 @@ flowchart LR
 
 The HostedCluster API exposes a `sharedVPC` field under `.spec.platform.aws` that allows specifying the following fields:
 - IngressRoleARN - the ARN of a role in the VPC owner account that allows managing DNS records in the private hosted zone of the HostedCluster. The ingress operator will assume this role to manage DNS records.
-- ControlPlaneRoleARN - the ARN of a role in the VPC owner account that allows creating a VPC endpdoint, a corresponding security group and DNS records in the `[cluster-name].hypershift.local` hosted zone for this HostedCluster.
+- ControlPlaneRoleARN - the ARN of a role in the VPC owner account that allows creating a VPC endpoint, a corresponding security group and DNS records in the `[cluster-name].hypershift.local` hosted zone for this HostedCluster.
 - LocalZoneID - the ID of the route53 hosted zone for `[cluster-name].hypershift.local` that is associated with the HostedCluster's VPC and exists in the VPC owner account.
 
 The `sharedVPC` field is optional. However, if it is set, all of the above fields are required and the HostedCluster is assumed to be using a shared VPC for its infrastructure.

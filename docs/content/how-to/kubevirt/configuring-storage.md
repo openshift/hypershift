@@ -7,7 +7,7 @@ categories, each of which have differing requirements.
 
 ETCD requires usage of high performance persistent storage on the management
 cluster hosting the ETCD pods. Due to the performance requirements, usage of a
-local storage csi driver such as [LVM Storage](https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html) is prefered.
+local storage csi driver such as [LVM Storage](https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html) is preferred.
 When a guest cluster is created in HighAvailability mode, ETCD is replicated
 in pods across three separate management cluster nodes. This replication
 ensures data resiliency even when a local storage csi driver is in use.

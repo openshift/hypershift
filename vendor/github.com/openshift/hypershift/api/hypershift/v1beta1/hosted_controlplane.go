@@ -180,7 +180,7 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// Tolerations when specified, define what custome tolerations are added to the hcp pods.
+	// Tolerations when specified, define what custom tolerations are added to the hcp pods.
 	//
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`

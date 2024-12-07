@@ -31,7 +31,7 @@ This procedure **is not helpful** for:
 
 The behaviour of this implementation is focused on the transparency for the user. Hypershift will not disrupt any customer workloads at anytime, also have in mind that the service workloads will be up and running during the migration process. Maybe at some point the Cluster API will be down but this will not affect the services running on the worker nodes.
 
-In the storage side, It's mandatory to have under consideration that when we move a HostedControlPlane to another Management cluster we use some external services, which allows the migration to make it happen. We re-use the storage provisioned in AWS by the initial ControlPlane (PVs/PVCs) in the destination Management cluster.
+In the storage side, It's mandatory to have under consideration that when we move a HostedControlPlane to another Management cluster we use some external services, which allows the migration to make it happen. We reusethe storage provisioned in AWS by the initial ControlPlane (PVs/PVCs) in the destination Management cluster.
 
 Regarding the Workers nodes assigned to the cluster, during the migration they will still point to the same DNS entry, and we, under the hood, change the DNS Records to point to the new Management Cluster API, that way the node migration is transparent for the user.
 
@@ -214,9 +214,9 @@ oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 kube-api
 
 3. Backup ETCD and Upload to S3 Bucket
 
-The whole process of this step is documented [here](https://hypershift-docs.netlify.app/how-to/aws/etc-backup-restore/), even with that we will go through the process in a more programatically way.
+The whole process of this step is documented [here](https://hypershift-docs.netlify.app/how-to/aws/etc-backup-restore/), even with that we will go through the process in a more programmatically way.
 
-To do this programatically it's a bit more complicated, but we will try to put all the necessary steps in a bash script
+To do this programmatically it's a bit more complicated, but we will try to put all the necessary steps in a bash script
 
 <details>
 <summary>ETCD Backup and Upload to S3 procedure</summary>
@@ -418,7 +418,7 @@ clean_routes "${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}" "${AWS_ZONE_ID}"
 !!! warning Warning
     This step is only relevant if you have a HostedCluster with a `--endpoint-access` argument as `PublicAndPrivate` or `Public`. If that's not the case, you will not have the need to execute this part.
 
-This was the last step on Backup stage, now we encourge you to validate all the OCP Objects and the S3 Bucket in order to ensure all is fine.
+This was the last step on Backup stage, now we encourage you to validate all the OCP Objects and the S3 Bucket in order to ensure all is fine.
 
 ### Restoration
 
@@ -742,7 +742,7 @@ To do that you just need to load the proper KUBECONFIG env var with the Hosted C
 oc delete pod -n openshift-ovn-kubernetes --all
 ```
 
-with that, all the ClusterOperators that were failling and all the new pods generated, will get executed without issues.
+with that, all the ClusterOperators that were failing and all the new pods generated, will get executed without issues.
 
 !!! warning Warning
     This step is only relevant if you have a HostedCluster with a `--endpoint-access` argument as `PublicAndPrivate` or `Public`. If that's not the case, you will not have the need to execute this part.

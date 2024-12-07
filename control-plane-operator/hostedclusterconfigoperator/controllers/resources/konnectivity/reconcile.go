@@ -52,7 +52,7 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
-				// Default is not the default, it means that the kubelets will re-use the hosts DNS resolver
+				// Default is not the default, it means that the kubelets will reuse the hosts DNS resolver
 				DNSPolicy:                    corev1.DNSDefault,
 				HostNetwork:                  true,
 				AutomountServiceAccountToken: ptr.To(false),

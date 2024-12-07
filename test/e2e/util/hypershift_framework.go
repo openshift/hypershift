@@ -306,7 +306,7 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 
 // NOTE: teardownHostedCluster shouldn't start any subtests with t.Run() when cleanupPhase=True, this is not a supported operation and will fail immediately
 func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, client crclient.Client, opts *PlatformAgnosticOptions, artifactDir string, cleanupPhase bool) {
-	// TODO (Mulham): dumpCluster() uses testName to construc dumpDir, since we removed sub tests from this function
+	// TODO (Mulham): dumpCluster() uses testName to construct dumpDir, since we removed sub tests from this function
 	// we should pass dumpDir to the dumpCluster() as <artifactDir>/<testName>_<suffix>
 	dumpCluster := newClusterDumper(hc, opts, artifactDir)
 

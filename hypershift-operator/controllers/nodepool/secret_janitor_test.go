@@ -64,7 +64,7 @@ func TestSecretJanitor_Reconcile(t *testing.T) {
 				{Name: "machineconfig-1"},
 			},
 		},
-		//We need the np.Status.Version to stay at 4.18 so that the token doesnt get updated when bumping releases,
+		//We need the np.Status.Version to stay at 4.18 so that the token doesn't get updated when bumping releases,
 		// this protects us from possibly hiding other factors that might be causing the token to be updated
 		Status: hyperv1.NodePoolStatus{Version: semver.MustParse("4.18.0").String()},
 	}
@@ -153,7 +153,7 @@ spec:
 	r := secretJanitor{
 		NodePoolReconciler: &NodePoolReconciler{
 			Client: c,
-			//We need the ReleaseProvider to stay at 4.18 so that the token doesnt get updated when bumping releases,
+			//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
 			// this protects us from possibly hiding other factors that might be causing the token to be updated
 			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
 			ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{

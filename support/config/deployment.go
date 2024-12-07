@@ -180,7 +180,7 @@ func colocationLabelValue(hcp *hyperv1.HostedControlPlane) string {
 }
 
 // SetMultizoneSpread sets PodAntiAffinity with corev1.LabelTopologyZone as the topology key for a given set of labels.
-// This is useful to e.g ensure pods are spread across availavility zones.
+// This is useful to e.g ensure pods are spread across availability zones.
 // If required is true, the rule is set as RequiredDuringSchedulingIgnoredDuringExecution, otherwise it is set as
 // PreferredDuringSchedulingIgnoredDuringExecution.
 func (c *DeploymentConfig) SetMultizoneSpread(labels map[string]string, required bool) {
@@ -425,7 +425,7 @@ func DefaultReplicas(hcp *hyperv1.HostedControlPlane, isRequestServingComponent 
 	}
 }
 
-// SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their sheduling
+// SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their scheduling
 // attributes can be modified accordingly.
 func (c *DeploymentConfig) SetRequestServingDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
 	if hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {

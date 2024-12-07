@@ -190,7 +190,7 @@ func InstallHostedCluster(ctx context.Context, logger logr.Logger, opts *Options
 		return RunCommand(logger, opts, deleteLogPath, deleteCmd)
 	}
 
-	// TODO: logs from the HostedCluster namespace - can we re-use e2e?
+	// TODO: logs from the HostedCluster namespace - can we reuse e2e?
 	return cleanup, nil
 }
 
@@ -205,6 +205,6 @@ func WaitForHostedClusterAvailable(ctx context.Context, logger logr.Logger, opts
 		"--timeout", "-1s", "--kubeconfig", opts.Kubeconfig,
 	)
 
-	// TODO: logs from the HostedCluster namespace - can we re-use e2e?
+	// TODO: logs from the HostedCluster namespace - can we reuse e2e?
 	return CleanupSentinel, RunCommand(logger, opts, waitLogPath, waitCmd)
 }

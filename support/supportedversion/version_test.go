@@ -136,7 +136,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Invalid when isntalling with OVNKubernetes and version < 4.11",
+			name:                   "Invalid when installing with OVNKubernetes and version < 4.11",
 			currentVersion:         nil,
 			nextVersion:            v("4.10.5"),
 			latestVersionSupported: v("4.12.0"),
@@ -146,7 +146,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Valid when isntalling with OVNKubernetes and version >= 4.11",
+			name:                   "Valid when installing with OVNKubernetes and version >= 4.11",
 			currentVersion:         nil,
 			nextVersion:            v("4.11.1"),
 			latestVersionSupported: v("4.12.0"),

@@ -134,7 +134,7 @@ func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullS
 		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
 	}
 
-	//check catalogs of last 4 supported version incase new version is not available
+	//check catalogs of last 4 supported version in case new version is not available
 	supportedVersions := 4
 	for i := 0; i < supportedVersions; i++ {
 		_, err = digestLister(ctx, fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor), pullSecret)

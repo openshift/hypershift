@@ -87,9 +87,9 @@ const (
 	etcdManualInterventionRequiredMetricHelp = "Indicates that manual intervention is required to recover the ETCD cluster"
 )
 
-// semantically constant - not suposed to be changed at runtime
+// semantically constant - not supposed to be changed at runtime
 var (
-	// List of known identidy providers
+	// List of known identity providers
 	// To be updated when a new identity provider is added; failure to do so is not a big deal it is just that
 	// countByIdentityProviderMetric metric will be undefined rather than initialized to 0 for the new identity provider
 	knownIdentityProviders = []configv1.IdentityProviderType{

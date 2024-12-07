@@ -96,7 +96,7 @@ spec:
               autoScaling:
                 description: |-
                   autoscaling specifies auto-scaling behavior for the NodePool.
-                  autoscaling is mutually exclusive with replicas. If replicas is set, this field must be ommited.
+                  autoscaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.
                 properties:
                   max:
                     description: Max is the maximum number of nodes allowed in the
@@ -776,7 +776,7 @@ spec:
                               listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.
                               The encryptionSetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Copmute/diskEncryptionSets/{resourceName}`.
                               The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
-                              The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis and must not end with a period (.) character.
+                              The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                               The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.
                             maxLength: 285
                             type: string
@@ -785,7 +785,7 @@ spec:
                               rule: size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/diskEncryptionSets/.*$')
                             - message: The resourceGroupName should be between 1 and
                                 90 characters, consisting only of alphanumeric characters,
-                                hyphens, underscores, periods and paranthesis
+                                hyphens, underscores, periods and parenthesis
                               rule: self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')
                             - message: the resourceGroupName in the encryptionSetID
                                 must not end with a period (.) character
@@ -831,7 +831,7 @@ spec:
                           subnetID is immutable once set.
                           The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
                           The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
-                          The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and paranthesis and must not end with a period (.) character.
+                          The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                           The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
                           The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
                         maxLength: 355
@@ -842,7 +842,7 @@ spec:
                           rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
-                            hyphens, underscores, periods and paranthesis
+                            hyphens, underscores, periods and parenthesis
                           rule: self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')
                         - message: the resourceGroupName in the subnetID must not
                             end with a period (.) character

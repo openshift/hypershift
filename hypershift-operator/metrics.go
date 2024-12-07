@@ -23,7 +23,7 @@ const (
 	OperatorInfoMetricName = "hypershift_operator_info"
 )
 
-// semantically constant - not suposed to be changed at runtime
+// semantically constant - not supposed to be changed at runtime
 var (
 	latestSupportedVersion = supportedversion.LatestSupportedVersion.String()
 	hypershiftVersion      = version.GetRevision()

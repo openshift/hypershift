@@ -1,6 +1,6 @@
 # Replacing the Worker Node's CRI-O Runtime
 
-Starting with OpenShift version 4.18, the Machine Config Operator (MCO) will switch the default runtime from `runc` to `crun`, simplying much of the internals, crun is a simplified implementation of runc written in C. You can find more information about this change [here](https://github.com/containers/crun?tab=readme-ov-file#documentation).
+Starting with OpenShift version 4.18, the Machine Config Operator (MCO) will switch the default runtime from `runc` to `crun`, simplifying much of the internals, crun is a simplified implementation of runc written in C. You can find more information about this change [here](https://github.com/containers/crun?tab=readme-ov-file#documentation).
 
 ## Switching from `runc` to `crun`
 

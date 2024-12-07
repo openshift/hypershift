@@ -165,7 +165,7 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 	}
 	result, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, endpointSlice, func() error {
 		if len(endpointSlice.OwnerReferences) == 0 {
-			// Machine infra ref is the KubevirtMachine wich has the same name
+			// Machine infra ref is the KubevirtMachine which has the same name
 			// as the kubevirt VirtualMachine CRD, but the namespace ca
 			// can be different if kubevirt infra cluster is external
 			vmKey := client.ObjectKey{
