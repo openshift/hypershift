@@ -1,10 +1,11 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.22-openshift-4.18 AS builder
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.22-openshift-4.19 AS builder
 
 WORKDIR /hypershift
 
 COPY . .
 
-RUN yum -y install azure-cli && \
-    yum clean all
+RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
+    dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm && \
+    dnf install -y azure-cli
 
 RUN make e2e
