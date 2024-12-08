@@ -118,19 +118,19 @@ hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
 	rm -rf cmd/install/assets/hypershift-operator/*
 
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
-	
+
 	# These consolidate with the 3 steps used to generate CRDs by openshift/api.
 	$(CODE_GEN) empty-partial-schemas --base-dir ./api/hypershift/v1beta1
 	$(CODE_GEN) schemapatch --base-dir ./api/hypershift/v1beta1
 	$(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./api/hypershift/v1beta1/featuregates --base-dir ./api/hypershift/v1beta1
-	
+
 	# Move final CRDs to the install folder.
 	mv ./api/hypershift/v1beta1/zz_generated.crd-manifests cmd/install/assets/hypershift-operator/
-	
+
 	# Generate additional CRDs.
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/scheduling/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/certificates/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
-	
+
 	# TODO: Create a feature gate and install controlplanecomponents in TechPreviewNoUpgrde featureSet.
 	# TODO: remove when we complete the switch to the new CPO approach.
 	mv ./cmd/install/assets/hypershift-operator/zz_generated.crd-manifests/controlplanecomponents-CustomNoUpgrade.crd.yaml support/controlplane-component/crds/hypershift.openshift.io_controlplanecomponents.yaml
@@ -148,7 +148,7 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/addons/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
-# remove ROSA CRDs 
+# remove ROSA CRDs
 	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_rosa*.yaml
 # remove EKS CRDs
 	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmanaged*.yaml
@@ -200,8 +200,13 @@ delegating_client:
 
 # Run tests
 .PHONY: test
+
+# Determine the number of CPU cores
+NUM_CORES := $(shell uname | grep -q 'Darwin' && sysctl -n hw.ncpu || nproc)
+
 test:
-	$(GO) test -race -count=25 -timeout=30m ./... -coverprofile cover.out
+	echo "Running tests with $(NUM_CORES) parallel jobs..."
+	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: e2e
 e2e:
