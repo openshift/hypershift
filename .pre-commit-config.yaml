@@ -7,6 +7,7 @@ repos:
       - id: trailing-whitespace
         args:
           - --markdown-linebreak-ext=md
+        exclude:  docs/content/reference/api.md
   - repo: local
     hooks:
       - id: make-codespell
