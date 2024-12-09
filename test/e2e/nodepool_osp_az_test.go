@@ -62,7 +62,7 @@ func (o OpenStackAZTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1
 				return want == got, fmt.Sprintf("expected NodePool to have platform %s, got %s", want, got), nil
 			},
 			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
-				diff := cmp.Diff(defaultAvailabilityZone, ptr.Deref(np.Spec.Platform.OpenStack, hyperv1.OpenStackNodePoolPlatform{}).AvailabilityZone)
+				diff := cmp.Diff(getAZName(), ptr.Deref(np.Spec.Platform.OpenStack, hyperv1.OpenStackNodePoolPlatform{}).AvailabilityZone)
 				return diff == "", fmt.Sprintf("incorrect availability zone: %v", diff), nil
 			},
 		},
@@ -88,7 +88,7 @@ func (o OpenStackAZTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1
 				if machine.Spec.FailureDomain == nil {
 					return false, "Machine does not have a failure domain", nil
 				}
-				want, got := defaultAvailabilityZone, *machine.Spec.FailureDomain
+				want, got := getAZName(), *machine.Spec.FailureDomain
 				return want == got, fmt.Sprintf("expected Machine to have failure domain %s, got %s", want, got), nil
 			},
 		},
@@ -105,8 +105,15 @@ func (o OpenStackAZTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool)
 	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 
 	nodePool.Spec.Replicas = &oneReplicas
-	nodePool.Spec.Platform.OpenStack.AvailabilityZone = defaultAvailabilityZone
+	nodePool.Spec.Platform.OpenStack.AvailabilityZone = getAZName()
 	return nodePool, nil
+}
+
+func getAZName() string {
+	if globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone != "" {
+		return globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone
+	}
+	return defaultAvailabilityZone
 }
 
 func (o OpenStackAZTest) SetupInfra(t *testing.T) error {
