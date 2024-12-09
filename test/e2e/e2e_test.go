@@ -110,8 +110,6 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone, "e2e.openstack-node-availability-zone", "", "The availability zone to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureManagedIdentitiesFile, "e2e.azure-managed-identities-file", "", "Path to an Azure managed identities file")
-	flag.StringVar(&globalOpts.configurableClusterOptions.ManagementKeyVaultName, "e2e.management-key-vault-name", "", "Name of the Azure Key Vault to use for Certificates")
-	flag.StringVar(&globalOpts.configurableClusterOptions.ManagementKeyVaultTenantId, "e2e.management-key-vault-tenant-id", "", "Tenant ID of the Azure Key Vault to use for Certificates")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
@@ -438,8 +436,6 @@ type configurableClusterOptions struct {
 	AWSCredentialsFile            string
 	AWSMultiArch                  bool
 	AzureCredentialsFile          string
-	ManagementKeyVaultName        string
-	ManagementKeyVaultTenantId    string
 	AzureManagedIdentitiesFile    string
 	OpenStackCredentialsFile      string
 	OpenStackCACertFile           string
@@ -635,19 +631,11 @@ func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 		opts.AvailabilityZones = zones
 	}
 
-	if o.configurableClusterOptions.ManagementKeyVaultName != "" {
-		opts.KeyVaultInfo.KeyVaultName = o.configurableClusterOptions.ManagementKeyVaultName
-	}
-
-	if o.configurableClusterOptions.ManagementKeyVaultTenantId != "" {
-		opts.KeyVaultInfo.KeyVaultTenantID = o.configurableClusterOptions.ManagementKeyVaultTenantId
-	}
-
 	if o.configurableClusterOptions.AzureManagedIdentitiesFile != "" {
 		opts.ManagedIdentitiesFile = o.configurableClusterOptions.AzureManagedIdentitiesFile
 	}
 
-	if (opts.KeyVaultInfo.KeyVaultName != "" && opts.KeyVaultInfo.KeyVaultTenantID != "") || opts.ManagedIdentitiesFile != "" {
+	if opts.ManagedIdentitiesFile != "" {
 		opts.TechPreviewEnabled = true
 	}
 
