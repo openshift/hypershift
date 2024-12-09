@@ -30,6 +30,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			name: "CAPO provisioned network and subnet",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "cluster-123",
 					Networking: hyperv1.ClusterNetworking{
 						MachineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/24")}},
 					},
@@ -71,6 +72,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"10.0.0.0/24"}),
 				},
+				Tags: []string{"openshiftClusterID=cluster-123"},
 			},
 			wantErr: false,
 		},
@@ -78,6 +80,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			name: "User provided network and subnet by ID on hosted cluster",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "cluster-123",
 					Networking: hyperv1.ClusterNetworking{
 						MachineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 					},
@@ -115,6 +118,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},
+				Tags: []string{"openshiftClusterID=cluster-123"},
 			},
 			wantErr: false,
 		},
@@ -122,6 +126,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			name: "User provided network and subnet by tag on hosted cluster",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "cluster-123",
 					Networking: hyperv1.ClusterNetworking{
 						MachineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 					},
@@ -144,6 +149,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 									},
 								}},
 							},
+							Tags: []string{"hcp-id=123"},
 						}}}},
 			expectedOpenStackClusterSpec: capo.OpenStackClusterSpec{
 				IdentityRef: capo.OpenStackIdentityReference{
@@ -171,6 +177,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
 					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},
+				Tags: []string{"openshiftClusterID=cluster-123", "hcp-id=123"},
 			},
 			wantErr: false,
 		},

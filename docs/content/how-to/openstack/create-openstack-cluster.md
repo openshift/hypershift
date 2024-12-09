@@ -365,6 +365,11 @@ example                   example         5               5               False 
 example-extra-az          example         2               2               False         False        4.17.0
 ```
 
+## OpenStack resources tagging
+
+The OpenStack resources created by the CAPI provider are tagged with `openshiftClusterID=<infraID>` but additional tags can be added to the resources
+via the `HostedCluster.Spec.Platform.OpenStack.Tags` field when creating the HostedCluster with a given YAML file.
+
 ## Delete a HostedCluster
 
 To delete a HostedCluster:
