@@ -357,7 +357,9 @@ const (
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Konnectivity Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Ignition Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
-
+// TODO(alberto): Use CEL cidr library for all these validation when all management clusters are >= 1.31.
+// TODO(alberto): Move this down to the networking section when IBMCloud has finished valid input migration.
+// +kubebuilder:validation:XValidation:rule=`(self.platform.type == "IBMCloud" || !has(self.networking.machineNetwork) && self.networking.clusterNetwork.all(c, self.networking.serviceNetwork.all(s, c.cidr != s.cidr)) || (has(self.networking.machineNetwork) && (self.networking.machineNetwork.all(m, self.networking.clusterNetwork.all(c, m.cidr != c.cidr)) && self.networking.machineNetwork.all(m, self.networking.serviceNetwork.all(s, m.cidr != s.cidr)) && self.networking.clusterNetwork.all(c, self.networking.serviceNetwork.all(s, c.cidr != s.cidr)))))`,message="CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -851,9 +853,6 @@ type DNSSpec struct {
 // clusterNetworking specifies network configuration for a cluster.
 // All CIDRs must be unique. Additional validation to check for CIDRs overlap and consistent network stack is perfomed by the controllers.
 // Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.
-// TODO this is available in vanilla kube from 1.31 API servers and in Openshift from 4.16.
-// TODO(alberto): Use CEL cidr library for all these validation when all management clusters are >= 1.31.
-// +kubebuilder:validation:XValidation:rule="(!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s, c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m, self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m, self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c, self.serviceNetwork.all(s, c.cidr != s.cidr)))))",message="CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping"
 type ClusterNetworking struct {
 	// machineNetwork is the list of IP address pools for machines.
 	// This might be used among other things to generate appropriate networking security groups in some clouds providers.
