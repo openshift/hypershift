@@ -346,9 +346,7 @@ func (o *Options) DefaultPowerVSOptions() powervs.RawCreateOptions {
 		Processors:             o.ConfigurableClusterOptions.PowerVSProcessors,
 		Memory:                 int32(o.ConfigurableClusterOptions.PowerVSMemory),
 		CloudInstanceID:        o.ConfigurableClusterOptions.PowerVSCloudInstanceID,
-		CloudConnection:        o.ConfigurableClusterOptions.PowerVSCloudConnection,
 		VPC:                    o.ConfigurableClusterOptions.PowerVSVPC,
-		PER:                    o.ConfigurableClusterOptions.PowerVSPER,
 		TransitGatewayLocation: o.ConfigurableClusterOptions.PowerVSTransitGatewayLocation,
 		TransitGateway:         o.ConfigurableClusterOptions.PowerVSTransitGateway,
 	}
