@@ -334,6 +334,11 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	if p.DisableProfiling {
 		args = append(args, "--profiling=false")
 	}
+	if p.PlatformType == hyperv1.IBMCloudPlatform {
+		args = append(args, "--node-monitor-grace-period=55s")
+	} else {
+		args = append(args, "--node-monitor-grace-period=50s")
+	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
 		fmt.Sprintf("--cluster-cidr=%s", p.ClusterCIDR),
@@ -361,7 +366,6 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--cluster-signing-duration=17520h",
 		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),
 		fmt.Sprintf("--tls-private-key-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
-		"--node-monitor-grace-period=50s",
 	}...)
 	for _, f := range p.FeatureGates() {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", f))
