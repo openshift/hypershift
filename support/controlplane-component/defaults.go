@@ -141,7 +141,7 @@ func (c *controlPlaneWorkload) applyWatchedResourcesAnnotation(cpContext Control
 			hashedData = append(hashedData, util.HashSimple(value))
 		}
 	}
-	// if not sorted, we could get a different value on each reconcilation loop and cause unneeded rollout.
+	// if not sorted, we could get a different value on each reconciliation loop and cause unneeded rollout.
 	slices.Sort(hashedData)
 
 	if podTemplate.Annotations == nil {
@@ -173,7 +173,7 @@ func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageP
 			containers[i].Image = payloadImage
 		} else if key == "cluster-version-operator" {
 			// fallback to hcp releaseImage if "cluster-version-operator" image is not available.
-			// This could happen for example in local dev enviroments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
+			// This could happen for example in local dev environments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
 			containers[i].Image = util.HCPControlPlaneReleaseImage(hcp)
 		}
 	}

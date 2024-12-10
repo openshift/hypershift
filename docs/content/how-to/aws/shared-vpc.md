@@ -10,7 +10,7 @@ AWS allows [sharing a VPC's subnets](https://docs.aws.amazon.com/vpc/latest/user
 This enables a use case where network management can be done in a single AWS account, while workloads such as OpenShift clusters exist
 in a separate, satellite account.
 
-Creating a standalone OCP cluster is already [supported in ROSA classic](https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html). 
+Creating a standalone OCP cluster is already [supported in ROSA classic](https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html).
 
 In hosted clusters, the shared VPC architecture is very similar to standalone OCP. However, hosted clusters require some new resources to be created.
 

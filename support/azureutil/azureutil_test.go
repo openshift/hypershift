@@ -187,7 +187,7 @@ func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 		want []corev1.EnvVar
 	}{
 		{
-			name: "returns a slice of environment variables iwth the azure creds",
+			name: "returns a slice of environment variables with the azure creds",
 			args: args{
 				azureClientID:        "my-client-id",
 				azureTenantID:        "my-tenant-id",
