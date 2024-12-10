@@ -68,10 +68,11 @@ func (r routeByNamespaceName) Less(i, j int) bool {
 
 func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
 	type backendDesc struct {
-		Name      string
-		SVCIP     string
-		SVCPort   int32
-		ClusterID string
+		Name        string
+		SVCIP       string
+		SVCPort     int32
+		ClusterID   string
+		AllowedCIDR string
 	}
 	type ExternalDNSBackendDesc struct {
 		Name                 string
@@ -88,10 +89,12 @@ func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID 
 	p.Backends = make([]backendDesc, 0, len(svcList.Items))
 	for _, svc := range svcList.Items {
 		p.Backends = append(p.Backends, backendDesc{
-			Name:      svc.Namespace + "-" + svc.Name,
-			SVCIP:     svc.Spec.ClusterIP,
-			SVCPort:   svc.Spec.Ports[0].Port,
-			ClusterID: svcsNamespaceToClusterID[svc.Namespace],
+			Name:        svc.Namespace + "-" + svc.Name,
+			SVCIP:       svc.Spec.ClusterIP,
+			SVCPort:     svc.Spec.Ports[0].Port,
+			ClusterID:   svcsNamespaceToClusterID[svc.Namespace],
+			AllowedCIDR: "1.1.1.1/32",
+			// AllowedCIDR: "0.0.0.0/0",
 		})
 	}
 
@@ -260,6 +263,7 @@ func ReconcileRouterService(svc *corev1.Service) error {
 		svc.Labels[k] = v
 	}
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyLocal
 	svc.Spec.Selector = hcpRouterLabels()
 	foundExternaDNS := false
 	foundKASSVC := false

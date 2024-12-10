@@ -30,10 +30,14 @@ frontend dataplane-kas-svc
 
   {{- range .Backends }}
   acl is_{{ .Name }} var(sess.cluster_id) -m str {{ .ClusterID }}
+  acl is_{{ .Name }}_request_allowed src {{ .AllowedCIDR }}
   {{- end }}
+
   {{- range .Backends }}
-  use_backend {{ .Name }} if is_{{ .Name }}
+  use_backend {{ .Name }} if is_{{ .Name }} is_{{ .Name }}_request_allowed
   {{- end }}
+
+  default_backend no-match
 
 # Frontends support any traffic coming from external DNS.
 frontend external-dns
@@ -41,11 +45,16 @@ frontend external-dns
   tcp-request inspect-delay 5s
   tcp-request content accept if { req_ssl_hello_type 1 }
 
+  tcp-request content set-var(sess.src_ip) src
+
+  log-format "%{+Q}o\ src_ip = %[var(sess.src_ip)], %ci:%cp / %si:%sp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
+
   {{- range .ExternalDNSBackends }}
   acl is_{{ .Name }} req_ssl_sni -i {{ .HostName }}
+  acl is_{{ .Name }}_request_allowed src 91.47.40.124
   {{- end }}
   {{- range .ExternalDNSBackends }}
-  use_backend {{ .Name }} if is_{{ .Name }}
+  use_backend {{ .Name }} if is_{{ .Name }} is_{{ .Name }}_request_allowed
   {{- end }}
 
 listen health_check_http_url
@@ -64,3 +73,9 @@ backend {{ .Name }}
 backend {{ .Name }}
   server {{ .Name }} {{ .DestinationServiceIP }}:{{.DestinationPort}}
 {{- end}}
+
+backend no-match
+  tcp-request content reject
+
+# example tcp connection reject
+# see https://marcelog.github.io/articles/restrict_block_acl_ip_address_haproxy_tcp.html
