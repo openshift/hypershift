@@ -14,12 +14,12 @@ Note: Some of the variables set here eg persistent rg name and dns related vars 
 
 ```sh
 PERSONAL_SP_NAME=<NAME_OF_PERSONAL_SP>
-LOCATION="eastus" 
+LOCATION="eastus"
 PULL_SECRET=<PATH_TO_PULLSECRET>
 PERSISTENT_RG_NAME="os4-common"
 SP_AKS_CREDS=<PATH_TO_AKS_CREDS>
 RELEASE_IMAGE=<OCP_PAYLOAD_RELEASE_IMAGE>
-AKS_CP_MI_NAME=<MANAGED_IDENTITY_NAME_FOR_AKS_CLUSTER> 
+AKS_CP_MI_NAME=<MANAGED_IDENTITY_NAME_FOR_AKS_CLUSTER>
 AKS_KUBELET_MI_NAME=<KUBELET_MANAGED_IDENTITY_NAME_FOR_AKS_CLUSTER>
 KV_NAME=<KV_NAME>
 AZURE_DISK_SP_NAME="azure-disk-<PERSONAL_SP_NAME>"
@@ -43,8 +43,8 @@ HC_NAME=<HC_NAME>
 ```
 
 ## Steps
-Note: Steps 1-7 set up the environment so that if created in a persistent group they can be 
-reused for creation of clusters in the future. Reusing these helps with reducing the quota used which has previously 
+Note: Steps 1-7 set up the environment so that if created in a persistent group they can be
+reused for creation of clusters in the future. Reusing these helps with reducing the quota used which has previously
 caused issues. We should reuse MIs and SPs where possible.
 
 ### 1. Retrieve User Account Details

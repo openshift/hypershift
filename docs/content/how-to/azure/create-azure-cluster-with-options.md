@@ -1,5 +1,5 @@
 # Create an Azure cluster with Additional Options
-This document describes how to set up an Azure cluster with Hypershift with additional flag options. 
+This document describes how to set up an Azure cluster with Hypershift with additional flag options.
 
 Creating an Azure cluster with Hypershift without any additional flag options can be found [here](create-azure-cluster_on_aks.md).
 
@@ -142,7 +142,7 @@ hypershift create nodepool azure \
 ```
 
 ### NodePool CR Example
-The DiskEncryptionSet ID can also be set directly through the NodePool CR. 
+The DiskEncryptionSet ID can also be set directly through the NodePool CR.
 
 ```
 apiVersion: hypershift.openshift.io/v1beta1
@@ -175,12 +175,12 @@ To enable the ephemeral OS disk option on the Azure VMs in your HostedCluster, s
 
 !!! important
 
-    Ephermeral OS disks are not available in every region or for every instance type. 
+    Ephermeral OS disks are not available in every region or for every instance type.
 
-    You may need to adjust the disk storage account type; to adjust the disk storage account type, 
+    You may need to adjust the disk storage account type; to adjust the disk storage account type,
     use the `disk-storage-account-type` flag as shown in the example below.
-    
-    You may need to adjust the disk size depending on the instance type used; to adjust the disk size, use the 
+
+    You may need to adjust the disk size depending on the instance type used; to adjust the disk size, use the
     `root-disk-size` flag.
 
     See [Ephemeral OS disks for Azure VMs](https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks) for more details.
