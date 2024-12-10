@@ -274,7 +274,7 @@ spec:
             - name: name
               value: prefetch-dependencies
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.1@sha256:566dfa9cf802e78ee26f8aae57c70cb6aa90f84dfdc929e176db4bc67d596df4
+              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.1@sha256:cd873246e0d830d8b3d0dc76334348474361101487457f65bc02aab9861aad2c
             - name: kind
               value: task
           resolver: bundles
@@ -309,7 +309,7 @@ spec:
             - name: name
               value: buildah
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:60c99bd62dbdb0edcd8606639f653adf115433f47f0deb43e7eb3a847c10392f
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:ccd1cebde461112883df1fa2be45d3f81b142e9fb72fb04347840e9830f2a66e
             - name: kind
               value: task
           resolver: bundles
@@ -346,7 +346,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:aa3b73079eff0e5b21caee387f4922e1499ad60914987a7e8002df40f776751e
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:93c54d3632f1b661a6b8161ccf744e71f2dc9b41e76f33d4fea65423ba7c0bfe
             - name: kind
               value: task
           resolver: bundles
@@ -383,7 +383,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:aa3b73079eff0e5b21caee387f4922e1499ad60914987a7e8002df40f776751e
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:93c54d3632f1b661a6b8161ccf744e71f2dc9b41e76f33d4fea65423ba7c0bfe
             - name: kind
               value: task
           resolver: bundles
@@ -421,7 +421,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:aa3b73079eff0e5b21caee387f4922e1499ad60914987a7e8002df40f776751e
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:93c54d3632f1b661a6b8161ccf744e71f2dc9b41e76f33d4fea65423ba7c0bfe
             - name: kind
               value: task
           resolver: bundles
@@ -455,7 +455,7 @@ spec:
             - name: name
               value: build-image-manifest
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:2a0760e9c0ba179c233094b85b35af2fd4db9e3688c231be3cc76fa27c326ae5
+              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:450dc27a020186c6fc75dc8cca93a2307f8fdda6a376f527677c06e07c7b7787
             - name: kind
               value: task
           resolver: bundles
@@ -464,31 +464,6 @@ spec:
             operator: in
             values:
               - "true"
-      - name: inspect-image
-        params:
-          - name: IMAGE_URL
-            value: $(tasks.build-container.results.IMAGE_URL)
-          - name: IMAGE_DIGEST
-            value: $(tasks.build-container.results.IMAGE_DIGEST)
-        runAfter:
-          - build-container
-        taskRef:
-          params:
-            - name: name
-              value: inspect-image
-            - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-inspect-image:0.1@sha256:242726382cb5331e5eb35f90d1249c0e61400b47d0cc67c3a30dba372f21b4c7
-            - name: kind
-              value: task
-          resolver: bundles
-        when:
-          - input: $(params.skip-checks)
-            operator: in
-            values:
-              - "false"
-        workspaces:
-          - name: source
-            workspace: workspace
       - name: deprecated-base-image-check
         params:
           - name: IMAGE_URL
@@ -569,7 +544,7 @@ spec:
             - name: name
               value: clamav-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.1@sha256:b4f450f1447b166da671f1d5819ab5a1485083e5c27ab91f7d8b7a2ff994c8c2
+              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:6e08cf608240f57442ca5458f3c0dade3558f4f2953be8ea939232f5d5378d58
             - name: kind
               value: task
           resolver: bundles
