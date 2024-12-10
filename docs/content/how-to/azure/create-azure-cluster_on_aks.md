@@ -3,13 +3,13 @@ This document describes how to set up an Azure Hosted Cluster on an AKS manageme
 
 If you already have an existing AKS cluster up and running, you can jump to the [Setup ExternalDNS](#setup-externaldns).
 
-There are also automated scripts to set up the AKS cluster, set up external DNS, install the HyperShift Operator, and 
+There are also automated scripts to set up the AKS cluster, set up external DNS, install the HyperShift Operator, and
 create an Azure HostedCluster in the /contrib/aks folder in the HyperShift repo.
 
 ## Prerequisites
 Obtain the az cli. See [this](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) for instructions.
 
-To create an AKS cluster, first set up your constants. The OBJECT_ID can be obtained from searching your username in 
+To create an AKS cluster, first set up your constants. The OBJECT_ID can be obtained from searching your username in
 Azure and pulling up your user profile.
 ```
 PREFIX="<your-prefix-here>"
@@ -80,7 +80,7 @@ az role assignment create \
 --assignee-principal-type ServicePrincipal
 ```
 
-Associate your object ID with the Key Vault. This is so you can use your profile with the Hypershift CLI to create 
+Associate your object ID with the Key Vault. This is so you can use your profile with the Hypershift CLI to create
 certificates in the key vault.
 ```
 az role assignment create \
@@ -93,7 +93,7 @@ Finally, get your kubeconfig to your AKS cluster
 ```
 az aks get-credentials \
     --resource-group ${AKS_RG} \
-    --name ${AKS_CLUSTER_NAME} \ 
+    --name ${AKS_CLUSTER_NAME} \
     --overwrite-existing
 ```
 
