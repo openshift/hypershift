@@ -23,6 +23,86 @@ There are a few prerequisites for encrypting the OS disks on the Azure VMs:
 
 After performing these steps, you just need to provide the DiskEncryptionSet ID when creating a hosted cluster.
 
+## Creating Service Principals for Managed Identities
+Pre-requisites:
+1. Key Vault Administrator role on the Key Vault
+
+
+### Define variables for service principal names
+```
+AZURE_DISK_SP_NAME=<azure-disk-sp-name>
+AZURE_FILE_SP_NAME=<azure-file-sp-name>
+NODEPOOL_MGMT=<nodepool-mgmt-sp-name>
+CLOUD_PROVIDER_SP_NAME=<cloud-provider-sp-name>
+CNCC_NAME=<cncc-sp-name>
+CONTROL_PLANE_SP_NAME=<cpo-sp-name>
+IMAGE_REGISTRY_SP_NAME=<ciro-sp-name>
+INGRESS_SP_NAME=<ingress-sp-name>
+KEY_VAULT_NAME=<name-of-precreated-key-vault>
+KEY_VAULT_TENANT_ID=<tenant-id-of-precreated-key-vault>
+```
+
+### Create service principals and capture app IDs
+```
+DISK_SP_APP_ID=$(az ad sp create-for-rbac --name "${AZURE_DISK_SP_NAME}" --create-cert --cert "${AZURE_DISK_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+FILE_SP_APP_ID=$(az ad sp create-for-rbac --name "${AZURE_FILE_SP_NAME}" --create-cert --cert "${AZURE_FILE_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+NODEPOOL_MGMT_APP_ID=$(az ad sp create-for-rbac --name "${NODEPOOL_MGMT}" --create-cert --cert "${NODEPOOL_MGMT}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+CLOUD_PROVIDER_APP_ID=$(az ad sp create-for-rbac --name "${CLOUD_PROVIDER_SP_NAME}" --create-cert --cert "${CLOUD_PROVIDER_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+CNCC_APP_ID=$(az ad sp create-for-rbac --name "${CNCC_NAME}" --create-cert --cert "${CNCC_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+CONTROL_PLANE_APP_ID=$(az ad sp create-for-rbac --name "${CONTROL_PLANE_SP_NAME}" --create-cert --cert "${CONTROL_PLANE_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+IMAGE_REGISTRY_APP_ID=$(az ad sp create-for-rbac --name "${IMAGE_REGISTRY_SP_NAME}" --create-cert --cert "${IMAGE_REGISTRY_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+INGRESS_APP_ID=$(az ad sp create-for-rbac --name "${INGRESS_SP_NAME}" --create-cert --cert "${INGRESS_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+```
+
+### Save service principal IDs and certificate names to a JSON file
+```
+SP_FILE="service-principals.json"
+
+# Save service principal IDs and certificate names to a JSON file
+OUTPUT_FILE="service-principals.json"
+
+cat <<EOF > SP_FILE
+{
+    "cloudProvider": {
+        "certificateName": "${CLOUD_PROVIDER_SP_NAME}",
+        "clientID": "${CLOUD_PROVIDER_APP_ID}"
+    },
+    "controlPlaneOperator": {
+        "certificateName": "${CONTROL_PLANE_SP_NAME}",
+        "clientID": "${CONTROL_PLANE_APP_ID}"
+    },
+    "disk": {
+        "certificateName": "${AZURE_DISK_SP_NAME}",
+        "clientID": "${DISK_SP_APP_ID}"
+    },
+    "file": {
+        "certificateName": "${AZURE_FILE_SP_NAME}",
+        "clientID": "${FILE_SP_APP_ID}"
+    },
+    "imageRegistry": {
+        "certificateName": "${IMAGE_REGISTRY_SP_NAME}",
+        "clientID": "${IMAGE_REGISTRY_APP_ID}"
+    },
+    "ingress": {
+        "certificateName": "${INGRESS_SP_NAME}",
+        "clientID": "${INGRESS_APP_ID}"
+    },
+    "network": {
+        "certificateName": "${CNCC_NAME}",
+        "clientID": "${CNCC_APP_ID}"
+    },
+    "nodePoolManagement": {
+        "certificateName": "${NODEPOOL_MGMT}",
+        "clientID": "${NODEPOOL_MGMT_APP_ID}"
+    },
+    "managedIdentitiesKeyVault": {
+        "name": "${KV_NAME}",
+        "tenantID": "{KV_TENANT_ID}"
+    }
+}
+EOF
+```
+
 ### CLI Example
 ```
 ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
@@ -40,8 +120,9 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
 --subnet-id "${GetSubnetID}" \
 --network-security-group-id "${GetNsgID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
---management-key-vault-name ${KEY_VAULT_NAME} \
---management-key-vault-tenant-id ${KEY_VAULT_TENANT_ID} \
+--managed-identities-file ${SP_FILE} \
+--assign-service-principal-roles \
+--dns-zone-rg-name ${DNS_ZONE_RG_NAME} \
 --fips=true \
 --marketplace-publisher azureopenshift \
 --marketplace-offer aro4 \
@@ -120,8 +201,9 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
 --subnet-id "${GetSubnetID}" \
 --network-security-group-id "${GetNsgID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
---management-key-vault-name ${KEY_VAULT_NAME} \
---management-key-vault-tenant-id ${KEY_VAULT_TENANT_ID} \
+--managed-identities-file ${MANAGED_IDENTITIES_FILE} \
+--assign-service-principal-roles \
+--dns-zone-rg-name ${DNS_ZONE_RG_NAME} \
 --fips=true \
 --marketplace-publisher azureopenshift \
 --marketplace-offer aro4 \

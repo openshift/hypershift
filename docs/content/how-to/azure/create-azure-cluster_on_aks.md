@@ -19,6 +19,8 @@ AKS_CLUSTER_NAME=${PREFIX}"-aks-cluster"
 SUBSCRIPTION_ID="<your-subscription-id-here>"
 KV_NAME="<your-key-vault-name-here>"
 OBJECT_ID="<your-object-id>"
+AKS_CP_MI_NAME="${PREFIX}-aks-cp-mi"
+AKS_KUBELET_MI_NAME="${PREFIX}-aks-kubelet-mi"
 ```
 
 Log in to your Azure account through the CLI
@@ -29,6 +31,12 @@ Create an Azure Resource Group
 az group create \
 --name ${AKS_RG} \
 --location ${LOCATION}
+```
+
+Create managed identities  to reuse for the AKS clusters
+```shell
+az identity create --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME
+az identity create --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME
 ```
 
 Create an AKS Cluster
@@ -42,7 +50,10 @@ az aks create \
 --os-sku AzureLinux \
 --node-vm-size Standard_D4s_v4 \
 --enable-fips-image \
---enable-addons azure-keyvault-secrets-provider
+--enable-addons azure-keyvault-secrets-provider \
+--kubernetes-version 1.31.1 \
+--assign-identity $AKS_CP_MI_ID \
+--assign-kubelet-identity $AKS_KUBELET_MI_ID
 ```
 
 Create a key vault on the AKS cluster
@@ -80,53 +91,150 @@ az role assignment create \
 
 Finally, get your kubeconfig to your AKS cluster
 ```
-az keyvault create \
---name ${KV_NAME} \
---resource-group ${AKS_RG} \
---location ${LOCATION} \
---enable-rbac-authorization
+az aks get-credentials \
+    --resource-group ${AKS_RG} \
+    --name ${AKS_CLUSTER_NAME} \ 
+    --overwrite-existing
 ```
 
+## Creating Service Principals for Managed Identities
+Define Service Principals for Managed Identities
+```
+AZURE_DISK_SP_NAME=<azure-disk-sp-name>
+AZURE_FILE_SP_NAME=<azure-file-sp-name>
+NODEPOOL_MGMT=<nodepool-mgmt-sp-name>
+CLOUD_PROVIDER_SP_NAME=<cloud-provider-sp-name>
+CNCC_NAME=<cncc-sp-name>
+CONTROL_PLANE_SP_NAME=<cpo-sp-name>
+IMAGE_REGISTRY_SP_NAME=<ciro-sp-name>
+INGRESS_SP_NAME=<ingress-sp-name>
+KEY_VAULT_NAME=<name-of-precreated-key-vault>
+KEY_VAULT_TENANT_ID=<tenant-id-of-precreated-key-vault>
+```
+
+Create service principals and capture app IDs
+```
+DISK_SP_APP_ID=$(az ad sp create-for-rbac --name "${AZURE_DISK_SP_NAME}" --create-cert --cert "${AZURE_DISK_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+FILE_SP_APP_ID=$(az ad sp create-for-rbac --name "${AZURE_FILE_SP_NAME}" --create-cert --cert "${AZURE_FILE_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+NODEPOOL_MGMT_APP_ID=$(az ad sp create-for-rbac --name "${NODEPOOL_MGMT}" --create-cert --cert "${NODEPOOL_MGMT}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+CLOUD_PROVIDER_APP_ID=$(az ad sp create-for-rbac --name "${CLOUD_PROVIDER_SP_NAME}" --create-cert --cert "${CLOUD_PROVIDER_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+CNCC_APP_ID=$(az ad sp create-for-rbac --name "${CNCC_NAME}" --create-cert --cert "${CNCC_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+CONTROL_PLANE_APP_ID=$(az ad sp create-for-rbac --name "${CONTROL_PLANE_SP_NAME}" --create-cert --cert "${CONTROL_PLANE_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+IMAGE_REGISTRY_APP_ID=$(az ad sp create-for-rbac --name "${IMAGE_REGISTRY_SP_NAME}" --create-cert --cert "${IMAGE_REGISTRY_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+INGRESS_APP_ID=$(az ad sp create-for-rbac --name "${INGRESS_SP_NAME}" --create-cert --cert "${INGRESS_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
+```
+
+Save service principal IDs and certificate names to a JSON file
+```
+SP_FILE="service-principals.json"
+
+# Save service principal IDs and certificate names to a JSON file
+OUTPUT_FILE="service-principals.json"
+
+cat <<EOF > SP_FILE
+{
+    "cloudProvider": {
+        "certificateName": "${CLOUD_PROVIDER_SP_NAME}",
+        "clientID": "${CLOUD_PROVIDER_APP_ID}"
+    },
+    "controlPlaneOperator": {
+        "certificateName": "${CONTROL_PLANE_SP_NAME}",
+        "clientID": "${CONTROL_PLANE_APP_ID}"
+    },
+    "disk": {
+        "certificateName": "${AZURE_DISK_SP_NAME}",
+        "clientID": "${DISK_SP_APP_ID}"
+    },
+    "file": {
+        "certificateName": "${AZURE_FILE_SP_NAME}",
+        "clientID": "${FILE_SP_APP_ID}"
+    },
+    "imageRegistry": {
+        "certificateName": "${IMAGE_REGISTRY_SP_NAME}",
+        "clientID": "${IMAGE_REGISTRY_APP_ID}"
+    },
+    "ingress": {
+        "certificateName": "${INGRESS_SP_NAME}",
+        "clientID": "${INGRESS_APP_ID}"
+    },
+    "network": {
+        "certificateName": "${CNCC_NAME}",
+        "clientID": "${CNCC_APP_ID}"
+    },
+    "nodePoolManagement": {
+        "certificateName": "${NODEPOOL_MGMT}",
+        "clientID": "${NODEPOOL_MGMT_APP_ID}"
+    },
+    "managedIdentitiesKeyVault": {
+        "name": "${KV_NAME}",
+        "tenantID": "${KV_TENANT_ID}"
+    }
+}
+EOF
+```
 
 ## Setup ExternalDNS
 First setup some constants. The resource group needs to be different from the resource group your AKS cluster is in.
 ```
-RG="external-dns"
+DNS_RG="external-dns"
 LOCATION="eastus"
-MGMT_DNS_ZONE_NAME="blah-blah-blah.com"
+MGMT_DNS_ZONE_NAME="blah.hypershift.azure.devcluster.openshift.com"
+DNS_RECORD_NAME="blah"
 EXTERNAL_DNS_NEW_SP_NAME="ExternalDnsServicePrincipal"
 SERVICE_PRINCIPAL_FILEPATH="/Users/your-username/azure_mgmt.json"
+PARENT_DNS_RG="os4-common"
+PARENT_DNS_ZONE="hypershift.azure.devcluster.openshift.com"
 ```
 
-Create an Azure resource group and your DNS zone, which will be used with ExternalDNS
+Create a DNS Zone in Azure
 ```
-az group create --name ${RG} --location ${LOCATION}
-az network dns zone create --resource-group ${RG} --name ${MGMT_DNS_ZONE_NAME}
+az network dns zone create --resource-group $DNS_RG --name $MGMT_DNS_ZONE_NAME
 ```
 
-Create a service principal for the DNS zone
+Delete Existing Record Set
 ```
-DNS_SP=$(az ad sp create-for-rbac --name ${EXTERNAL_DNS_NEW_SP_NAME})
+az network dns record-set ns delete --resource-group $PARENT_DNS_RG --zone-name $PARENT_DNS_ZONE --name $DNS_RECORD_NAME -y
+```
+
+Get Name Servers for DNS Zone
+```
+name_servers=$(az network dns zone show --resource-group $DNS_RG --name $MGMT_DNS_ZONE_NAME --query nameServers --output tsv)
+ns_array=()
+while IFS= read -r ns; do
+    ns_array+=("$ns")
+done <<< "$name_servers"
+```
+
+Add Name Servers to Parent DNS Zone
+```
+for ns in "${ns_array[@]}"; do
+    az network dns record-set ns add-record --resource-group $PARENT_DNS_RG --zone-name $PARENT_DNS_ZONE --record-set-name $DNS_RECORD_NAME --nsdname "$ns"
+done
+```
+
+Create Service Principal for DNS
+```
+DNS_SP=$(az ad sp create-for-rbac --name EXTERNAL_DNS_NEW_SP_NAME)
 EXTERNAL_DNS_SP_APP_ID=$(echo "$DNS_SP" | jq -r '.appId')
 EXTERNAL_DNS_SP_PASSWORD=$(echo "$DNS_SP" | jq -r '.password')
 ```
 
-Assign the rights for the service principal
+Assign Rights to Service Principal
 ```
-DNS_ID=$(az network dns zone show --name ${MGMT_DNS_ZONE_NAME} --resource-group ${RG} --query "id" --output tsv)
+DNS_ID=$(az network dns zone show --name ${DNS_ZONE_NAME} --resource-group ${DNS_RG} --query "id" --output tsv)
 az role assignment create --role "Reader" --assignee "${EXTERNAL_DNS_SP_APP_ID}" --scope "${DNS_ID}"
 az role assignment create --role "Contributor" --assignee "${EXTERNAL_DNS_SP_APP_ID}" --scope "${DNS_ID}"
 ```
 
-Create a configuration file for our service principal. Change the user path to the azure.json below as desired.
+Create DNS Credentials for AKS
 ```
-cat <<-EOF > ${SERVICE_PRINCIPAL_FILEPATH}
+cat <<-EOF > $SERVICE_PRINCIPAL_FILEPATH
 {
-  "tenantId": "$(az account show --query tenantId -o tsv)",
-  "subscriptionId": "$(az account show --query id -o tsv)",
-  "resourceGroup": "$RG",
-  "aadClientId": "$EXTERNAL_DNS_SP_APP_ID",
-  "aadClientSecret": "$EXTERNAL_DNS_SP_PASSWORD"
+"tenantId": "$(az account show --query tenantId -o tsv)",
+"subscriptionId": "$(az account show --query id -o tsv)",
+"resourceGroup": "$DNS_RG",
+"aadClientId": "$EXTERNAL_DNS_SP_APP_ID",
+"aadClientSecret": "$EXTERNAL_DNS_SP_PASSWORD"
 }
 EOF
 ```
@@ -245,8 +353,9 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
 --subnet-id "${GetSubnetID}" \
 --network-security-group-id "${GetNsgID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
---management-key-vault-name ${KEY_VAULT_NAME} \
---management-key-vault-tenant-id ${KEY_VAULT_TENANT_ID} \
+--managed-identities-file ${MANAGED_IDENTITIES_FILE} \
+--assign-service-principal-roles \
+--dns-zone-rg-name $DNS_RG \
 --fips=true \
 --marketplace-publisher azureopenshift \
 --marketplace-offer aro4 \
