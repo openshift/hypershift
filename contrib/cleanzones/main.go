@@ -39,66 +39,76 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var vpcs []string
+
+	// Get the list of infraIDs in use
+	var infraIDsInUse []string
 	for _, vpc := range output.Vpcs {
-		vpcs = append(vpcs, *vpc.VpcId)
-	}
-
-	// Find all zones in use by VPCs
-	zonesIdsInUse := make(map[string]string)
-	for _, vpc := range vpcs {
-		output, err := route53client.ListHostedZonesByVPCWithContext(ctx, &route53.ListHostedZonesByVPCInput{VPCId: aws.String(vpc), VPCRegion: aws.String("us-east-1")})
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, zoneSummary := range output.HostedZoneSummaries {
-			zonesIdsInUse[*zoneSummary.Name] = *zoneSummary.HostedZoneId
+		// Get the VPC name out of the tags
+		for _, tag := range vpc.Tags {
+			if *tag.Key == "Name" && len(strings.TrimSpace(*tag.Value)) > 0 {
+				infraID := strings.TrimSuffix(*tag.Value, "-vpc")
+				if len(infraID) > 0 {
+					infraIDsInUse = append(infraIDsInUse, infraID)
+				}
+			}
 		}
 	}
-
-	for name, id := range zonesIdsInUse {
-		log.Printf("%s %s in use", name, id)
-	}
+	log.Println("infraIDs in use:", infraIDsInUse)
 
 	examplePrivateZoneName := regexp.MustCompile("example-([a-z0-9]{5}).hypershift.local.")
-
 	publicZones := map[string]string{
-		"ci.hypershift.devcluster.openshift.com.":   "",
-		"hive.hypershift.devcluster.openshift.com.": "",
+		"ci.hypershift.devcluster.openshift.com.":         "",
+		"service.ci.hypershift.devcluster.openshift.com.": "",
 	}
 
 	// Delete unused private zones
 	err = route53client.ListHostedZonesPagesWithContext(ctx, &route53.ListHostedZonesInput{}, func(lhzo *route53.ListHostedZonesOutput, lastPage bool) bool {
 		for _, zone := range lhzo.HostedZones {
+			// Sanity check
 			if zone == nil || zone.Name == nil || zone.Id == nil {
 				continue
 			}
+			zoneName := *zone.Name
 			zoneId := strings.TrimPrefix(*zone.Id, "/hostedzone/")
+
+			// Check if the zone is in the list of public zones
+			// If it is, store the zoneId in publicZones value for the next step
 			for zoneName := range publicZones {
 				if *zone.Name == zoneName {
 					publicZones[zoneName] = zoneId
 				}
 			}
+
+			// Exclude public zones
 			if zone.Config == nil || zone.Config.PrivateZone == nil || !*zone.Config.PrivateZone {
 				continue
 			}
+
+			// Exclude the CI public zones (reduneant with the public zones check above for saftey)
+			// and private zones that are not example-<infraID>.hypershift.local.
 			if !strings.HasSuffix(*zone.Name, ".ci.hypershift.devcluster.openshift.com.") &&
-				!strings.HasSuffix(*zone.Name, ".hive.hypershift.devcluster.openshift.com.") &&
+				!strings.HasSuffix(*zone.Name, ".service.ci.hypershift.devcluster.openshift.com.") &&
 				!examplePrivateZoneName.MatchString(*zone.Name) {
 				continue
 			}
+
+			// Check if the zone is in use
 			inUse := false
-			for _, zoneIdInUse := range zonesIdsInUse {
-				if zoneId == zoneIdInUse {
+			for _, infraID := range infraIDsInUse {
+				if strings.Contains(zoneName, infraID) {
 					inUse = true
 					break
 				}
 			}
+
+			// If the zone is in use, skip it
 			if inUse {
 				continue
 			}
-			log.Printf("deleting hosted zone %s with id %s", *zone.Name, *zone.Id)
-			deleteZone(ctx, strings.TrimSuffix(*zone.Name, "."), strings.TrimPrefix(*zone.Id, "/hostedzone/"), route53client)
+
+			// The zone is not in use, delete it
+			log.Printf("deleting hosted zone %s with id %s", zoneName, zoneId)
+			deleteZone(ctx, zoneId, route53client)
 		}
 		return !lastPage
 	})
@@ -106,63 +116,72 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Delete unused api.* records from public zone
+	// Delete unused records from public zones
 	for _, publicZoneId := range publicZones {
+		// Sanity check
 		if publicZoneId == "" {
 			continue
 		}
 		lrrsi := &route53.ListResourceRecordSetsInput{
 			HostedZoneId: aws.String(publicZoneId),
-			MaxItems:     aws.String("200"),
+			MaxItems:     aws.String("100"),
 		}
-		output, err := route53client.ListResourceRecordSetsWithContext(ctx, lrrsi)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if len(output.ResourceRecordSets) == 0 {
-			continue
-		}
-		var changeBatch route53.ChangeBatch
-		var deleteRequired bool
-		for _, rrs := range output.ResourceRecordSets {
-			if *rrs.Type != "A" {
-				continue
+		err := route53client.ListResourceRecordSetsPagesWithContext(ctx, lrrsi, func(output *route53.ListResourceRecordSetsOutput, lastPage bool) bool {
+			var changeBatch route53.ChangeBatch
+			var deleteRequired bool
+			for _, rrs := range output.ResourceRecordSets {
+				// Sanity exlusion checks
+				if *rrs.Type != "A" && *rrs.Type != "CNAME" && *rrs.Type != "TXT" {
+					continue
+				}
+
+				// Check if the record is in use
+				inUseRecord := false
+				for _, infraID := range infraIDsInUse {
+					if strings.Contains(*rrs.Name, infraID) {
+						inUseRecord = true
+						break
+					}
+				}
+
+				// If the record is in use, skip it
+				if inUseRecord {
+					continue
+				}
+
+				// The record is not in use, delete it
+				deleteRequired = true
+				log.Printf("deleting record %s", *rrs.Name)
+
+				// Enqueue the record for deletion
+				changeBatch.Changes = append(changeBatch.Changes, &route53.Change{
+					Action:            aws.String("DELETE"),
+					ResourceRecordSet: rrs,
+				})
 			}
-			inUseRecord := false
-			for zoneNameInUse := range zonesIdsInUse {
-				if strings.HasSuffix(*rrs.Name, zoneNameInUse) {
-					inUseRecord = true
-					break
+			if deleteRequired {
+				// At least one record from the current page needs to be deleted
+				crrsi := &route53.ChangeResourceRecordSetsInput{
+					HostedZoneId: aws.String(publicZoneId),
+					ChangeBatch:  &changeBatch,
+				}
+
+				if !dryRun {
+					_, err = route53client.ChangeResourceRecordSetsWithContext(ctx, crrsi)
+					if err != nil {
+						log.Fatal(err)
+					}
 				}
 			}
-			if inUseRecord {
-				continue
-			}
-			deleteRequired = true
-			log.Printf("deleting record %s", *rrs.Name)
-			changeBatch.Changes = append(changeBatch.Changes, &route53.Change{
-				Action:            aws.String("DELETE"),
-				ResourceRecordSet: rrs,
-			})
-		}
-		if !deleteRequired {
-			continue
-		}
-		crrsi := &route53.ChangeResourceRecordSetsInput{
-			HostedZoneId: aws.String(publicZoneId),
-			ChangeBatch:  &changeBatch,
-		}
-
-		if !dryRun {
-			_, err = route53client.ChangeResourceRecordSetsWithContext(ctx, crrsi)
-			if err != nil {
-				log.Fatal(err)
-			}
+			return !lastPage
+		})
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
 }
 
-func deleteZone(ctx context.Context, zoneName string, zoneId string, client route53iface.Route53API) error {
+func deleteZone(ctx context.Context, zoneId string, client route53iface.Route53API) error {
 	err := deleteRecords(ctx, client, zoneId)
 	if err != nil {
 		return fmt.Errorf("failed to delete zone records")
