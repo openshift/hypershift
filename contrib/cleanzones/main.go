@@ -84,7 +84,7 @@ func main() {
 				continue
 			}
 
-			// Exclude the CI public zones (reduneant with the public zones check above for saftey)
+			// Exclude the CI public zones (redundant with the public zones check above for safety)
 			// and private zones that are not example-<infraID>.hypershift.local.
 			if !strings.HasSuffix(*zone.Name, ".ci.hypershift.devcluster.openshift.com.") &&
 				!strings.HasSuffix(*zone.Name, ".service.ci.hypershift.devcluster.openshift.com.") &&
@@ -130,7 +130,7 @@ func main() {
 			var changeBatch route53.ChangeBatch
 			var deleteRequired bool
 			for _, rrs := range output.ResourceRecordSets {
-				// Sanity exlusion checks
+				// Sanity exclusion checks
 				if *rrs.Type != "A" && *rrs.Type != "CNAME" && *rrs.Type != "TXT" {
 					continue
 				}
