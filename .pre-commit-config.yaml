@@ -9,6 +9,7 @@ repos:
         stages: [pre-commit]
       - id: check-yaml
         name: Check yaml syntax
+        args: [--allow-multiple-documents]
         stages: [pre-commit]
       - id: trailing-whitespace
         name: Trim all whitespace from end of lines
