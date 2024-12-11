@@ -149,6 +149,9 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 			},
 		},
 	}
+	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
+	}
 
 	return awsMachineTemplateSpec, nil
 }
