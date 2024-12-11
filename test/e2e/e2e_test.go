@@ -580,6 +580,7 @@ func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		EndpointAccess: o.configurableClusterOptions.AWSEndpointAccess,
 		IssuerURL:      o.IssuerURL,
 		MultiArch:      o.configurableClusterOptions.AWSMultiArch,
+		PublicOnly:     true,
 	}
 	opts.AdditionalTags = append(opts.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
