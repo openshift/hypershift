@@ -75,22 +75,25 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 		deploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
 
-	replicas := defaultReplicas(c.Name(), cpContext.HCP)
-	if desiredReplicas != nil {
-		replicas = int(*desiredReplicas)
-	}
-
-	var multiZoneSpreadLabels map[string]string
-	if c.MultiZoneSpread() {
-		multiZoneSpreadLabels = podTemplateSpec.ObjectMeta.Labels
-	}
-
-	if c.IsRequestServing() {
-		deploymentConfig.SetRequestServingDefaults(cpContext.HCP, multiZoneSpreadLabels, ptr.To(replicas))
-	} else {
-		deploymentConfig.SetDefaults(cpContext.HCP, multiZoneSpreadLabels, ptr.To(replicas))
-	}
 	deploymentConfig.SetRestartAnnotation(cpContext.HCP.ObjectMeta)
+
+	if c.workloadType != daemonSetWorkloadType {
+		replicas := defaultReplicas(c.Name(), cpContext.HCP)
+		if desiredReplicas != nil {
+			replicas = int(*desiredReplicas)
+		}
+
+		var multiZoneSpreadLabels map[string]string
+		if c.MultiZoneSpread() {
+			multiZoneSpreadLabels = podTemplateSpec.ObjectMeta.Labels
+		}
+
+		if c.IsRequestServing() {
+			deploymentConfig.SetRequestServingDefaults(cpContext.HCP, multiZoneSpreadLabels, ptr.To(replicas))
+		} else {
+			deploymentConfig.SetDefaults(cpContext.HCP, multiZoneSpreadLabels, ptr.To(replicas))
+		}
+	}
 
 	return deploymentConfig, nil
 }

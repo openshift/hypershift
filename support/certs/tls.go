@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -59,6 +60,21 @@ const (
 	CertificateRenewalEnvVar     = "CERTIFICATE_RENEWAL_PERCENTAGE"
 )
 
+type CertProvider struct {
+	Cert          string
+	Key           string
+	CA            string
+	WithAddresses bool
+	Addresses
+	WithSecretType bool
+	corev1.SecretType
+}
+
+type Addresses struct {
+	DNSNames []string
+	IPs      []string
+}
+
 // CertCfg contains all needed fields to configure a new certificate
 type CertCfg struct {
 	DNSNames     []string
@@ -82,6 +98,44 @@ func GenerateSelfSignedCertificate(cfg *CertCfg) (*rsa.PrivateKey, *x509.Certifi
 		return nil, nil, errors.Wrap(err, "failed to create self-signed certificate")
 	}
 	return key, crt, nil
+}
+
+func NewCertProvider(withAddresses bool, dnsNames, ips []string, withSecretType bool, secretType corev1.SecretType) *CertProvider {
+	cp := &CertProvider{}
+	if withAddresses {
+		cp.Addresses = Addresses{
+			DNSNames: dnsNames,
+			IPs:      ips,
+		}
+		cp.WithAddresses = true
+	}
+
+	if withSecretType {
+		cp.SecretType = secretType
+		cp.WithSecretType = true
+	}
+
+	cp.Cert = corev1.TLSCertKey
+	cp.Key = corev1.TLSPrivateKeyKey
+	cp.CA = corev1.TLSCertKey
+	return cp
+}
+
+func (c *CertProvider) Reconcile(secret *corev1.Secret, ca *corev1.Secret, ownerRef config.OwnerRef, cn string, org []string, extUsages []x509.ExtKeyUsage) error {
+	switch {
+	case c.WithAddresses && c.WithSecretType:
+		sdasdsd
+	case c.WithAddresses:
+		asdasd
+	}
+
+	c.OwnerRef.ApplyTo(c.Secret)
+	c.Secret.Type = corev1.SecretTypeOpaque
+	if c.SecretType != "" {
+		c.Secret.Type = c.SecretType
+	}
+
+	return ReconcileSignedCert(c.Secret, c.CA, c.CN, c.Org, c.ExtUsages, c.CrtKey, c.KeyKey, c.CAKey, c.DNSNames, c.IPs)
 }
 
 // GenerateSignedCertificate generate a key and cert defined by CertCfg and signed by CA.

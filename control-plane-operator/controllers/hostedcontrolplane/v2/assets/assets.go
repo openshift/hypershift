@@ -19,6 +19,7 @@ var manifestsAssets embed.FS
 const (
 	deploymentManifest  = "deployment.yaml"
 	statefulSetManifest = "statefulset.yaml"
+	daemonSetManifest   = "daemonset.yaml"
 )
 
 func LoadDeploymentManifest(componentName string) (*appsv1.Deployment, error) {
@@ -39,6 +40,16 @@ func LoadStatefulSetManifest(componentName string) (*appsv1.StatefulSet, error) 
 	}
 
 	return sts, nil
+}
+
+func LoadDaemonSetManifest(componentName string) (*appsv1.DaemonSet, error) {
+	ds := &appsv1.DaemonSet{}
+	_, _, err := LoadManifestInto(componentName, daemonSetManifest, ds)
+	if err != nil {
+		return nil, err
+	}
+
+	return ds, nil
 }
 
 // LoadManifest decodes the manifest data and load it into a new object.

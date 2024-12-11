@@ -85,6 +85,7 @@ type workloadType string
 const (
 	deploymentWorkloadType  workloadType = "Deployment"
 	statefulSetWorkloadType workloadType = "StatefulSet"
+	daemonSetWorkloadType   workloadType = "DaemonSet"
 )
 
 type ComponentOptions interface {
@@ -222,6 +223,13 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 		}
 		workloadObj = sts
 		oldWorkloadObj = &appsv1.StatefulSet{}
+	case daemonSetWorkloadType:
+		ds, err := assets.LoadDaemonSetManifest(c.Name())
+		if err != nil {
+			return fmt.Errorf("failed loading daemonset manifest: %v", err)
+		}
+		workloadObj = ds
+		oldWorkloadObj = &appsv1.DaemonSet{}
 	}
 	// make sure that the Deployment/Statefulset name matches the component name.
 	workloadObj.SetName(c.Name())
@@ -248,6 +256,10 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 		}
 	case statefulSetWorkloadType:
 		if err := c.applyOptionsToStatefulSet(cpContext, workloadObj.(*appsv1.StatefulSet), oldWorkloadObj.(*appsv1.StatefulSet)); err != nil {
+			return err
+		}
+	case daemonSetWorkloadType:
+		if err := c.applyOptionsToDaemonSet(cpContext, workloadObj.(*appsv1.DaemonSet), oldWorkloadObj.(*appsv1.DaemonSet)); err != nil {
 			return err
 		}
 	}
@@ -293,5 +305,24 @@ func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneC
 		return err
 	}
 	deploymentConfig.ApplyToStatefulSet(statefulSet)
+	return nil
+}
+
+func (c *controlPlaneWorkload) applyOptionsToDaemonSet(cpContext ControlPlaneContext, daemonSet *appsv1.DaemonSet, oldDaemonSet *appsv1.DaemonSet) error {
+	// preserve existing resource requirements.
+	existingResources := make(map[string]corev1.ResourceRequirements)
+	for _, container := range oldDaemonSet.Spec.Template.Spec.Containers {
+		existingResources[container.Name] = container.Resources
+	}
+	// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
+	if oldDaemonSet.Spec.Selector != nil {
+		daemonSet.Spec.Selector = oldDaemonSet.Spec.Selector.DeepCopy()
+	}
+
+	deploymentConfig, err := c.defaultOptions(cpContext, &daemonSet.Spec.Template, nil, existingResources)
+	if err != nil {
+		return err
+	}
+	deploymentConfig.ApplyToDaemonSet(daemonSet)
 	return nil
 }
