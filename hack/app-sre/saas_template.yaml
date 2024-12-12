@@ -59064,8 +59064,10 @@ objects:
               x-kubernetes-validations:
               - message: Arch is required once set
                 rule: '!has(oldSelf.arch) || has(self.arch)'
-              - message: Setting Arch to arm64 is only supported for AWS
-                rule: self.arch != 'arm64' || has(self.platform.aws)
+              - message: Setting Arch to arm64 is only supported for AWS, Azure and
+                  Agent
+                rule: self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure)
+                  || has(self.platform.agent)
               - message: Both replicas or autoScaling should not be set
                 rule: '!has(self.replicas) || !has(self.autoScaling)'
             status:
