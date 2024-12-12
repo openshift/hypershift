@@ -347,11 +347,42 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 	targetConfigHash := token.HashWithoutVersion()
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
+		reason := hyperv1.AsExpectedReason
+		message := fmt.Sprintf("Updating config in progress. Target config: %s", targetConfigHash)
+		status := corev1.ConditionTrue
+
+		if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+			capi, err := newCAPI(token, hcluster.Spec.InfraID)
+			if err != nil {
+				return &ctrl.Result{}, fmt.Errorf("error getting capi client: %w", err)
+			}
+
+			machineSet := capi.machineSet()
+			err = r.Get(ctx, client.ObjectKeyFromObject(machineSet), machineSet)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return &ctrl.Result{}, fmt.Errorf("failed to get MachineSet: %w", err)
+				}
+			} else {
+				if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
+					status = corev1.ConditionTrue
+					reason = hyperv1.AsExpectedReason
+					message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]
+				}
+
+				if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]; ok {
+					status = corev1.ConditionFalse
+					reason = hyperv1.NodePoolInplaceUpgradeFailedReason
+					message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]
+				}
+			}
+		}
+
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Updating config in progress. Target config: %s", targetConfigHash),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
 			ObservedGeneration: nodePool.Generation,
 		})
 		log.Info("NodePool config is updating",
@@ -378,11 +409,47 @@ func (r *NodePoolReconciler) updatingVersionCondition(ctx context.Context, nodeP
 	targetVersion := releaseImage.Version()
 	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
 	if isUpdatingVersion {
+		reason := hyperv1.AsExpectedReason
+		message := fmt.Sprintf("Updating version in progress. Target version: %s", targetVersion)
+		status := corev1.ConditionTrue
+
+		if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+			token, err := r.token(ctx, hcluster, nodePool)
+			if err != nil {
+				return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
+			}
+
+			capi, err := newCAPI(token, hcluster.Spec.InfraID)
+			if err != nil {
+				return &ctrl.Result{}, fmt.Errorf("error getting capi client: %w", err)
+			}
+
+			machineSet := capi.machineSet()
+			err = r.Get(ctx, client.ObjectKeyFromObject(machineSet), machineSet)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return &ctrl.Result{}, fmt.Errorf("failed to get MachineSet: %w", err)
+				}
+			} else {
+				if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
+					status = corev1.ConditionTrue
+					reason = hyperv1.AsExpectedReason
+					message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]
+				}
+
+				if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]; ok {
+					status = corev1.ConditionFalse
+					reason = hyperv1.NodePoolInplaceUpgradeFailedReason
+					message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]
+				}
+			}
+		}
+
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Updating version in progress. Target version: %s", targetVersion),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
 			ObservedGeneration: nodePool.Generation,
 		})
 		log.Info("NodePool version is updating",
