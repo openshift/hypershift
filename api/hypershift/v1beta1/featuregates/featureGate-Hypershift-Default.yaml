@@ -16,6 +16,9 @@
             {
                 "disabled": [
                     {
+                        "name": "AutoNodeKarpenter",
+                    },
+                    {
                       "name": "AROHCPManagedIdentities"
                     },
                     {
