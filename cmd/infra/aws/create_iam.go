@@ -41,7 +41,8 @@ type CreateIAMOptions struct {
 
 	CredentialsSecretData *util.CredentialsSecretData
 
-	additionalIAMTags []*iam.Tag
+	additionalIAMTags      []*iam.Tag
+	CreateKarpenterRoleARN bool
 }
 
 type CreateIAMOutput struct {
@@ -55,6 +56,8 @@ type CreateIAMOutput struct {
 
 	SharedIngressRoleARN      string `json:"sharedIngressRoleARN,omitempty"`
 	SharedControlPlaneRoleARN string `json:"sharedControlPlaneRoleARN,omitempty"`
+
+	KarpenterRoleARN string `json:"karpenterRoleARN,omitempty"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {

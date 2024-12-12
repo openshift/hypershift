@@ -47,6 +47,7 @@ type RawCreateOptions struct {
 	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount bool
 	PublicOnly                   bool
+	AutoNode                     bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -239,6 +240,19 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			EndpointAccess: endpointAccess,
 		},
 	}
+	if o.AutoNode {
+		cluster.Spec.AutoNode = &hyperv1.AutoNode{
+			Provisioner: &hyperv1.ProvisionerConfig{
+				Name: hyperv1.ProvisionerKarpeneter,
+				Karpenter: &hyperv1.KarpenterConfig{
+					Platform: hyperv1.AWSPlatform,
+					AWS: &hyperv1.KarpenterAWSConfig{
+						RoleARN: o.iamInfo.KarpenterRoleARN,
+					},
+				},
+			},
+		}
+	}
 
 	if o.iamInfo.SharedIngressRoleARN != "" && o.iamInfo.SharedControlPlaneRoleARN != "" {
 		cluster.Spec.Platform.AWS.SharedVPC = &hyperv1.AWSSharedVPC{
@@ -389,6 +403,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
+	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support AutoNode feature.")
 	flags.StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC (mask must be 16)")
 	flags.BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
@@ -467,6 +482,7 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 		KMSKeyARN:                    awsOpts.EtcdKMSKeyARN,
 		VPCOwnerCredentialsOpts:      awsOpts.VPCOwnerCredentials,
 		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
+		CreateKarpenterRoleARN:       awsOpts.AutoNode,
 	}
 }
 
