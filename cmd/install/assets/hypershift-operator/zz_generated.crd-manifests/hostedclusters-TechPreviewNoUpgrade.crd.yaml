@@ -113,6 +113,51 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              autoNode:
+                description: autoNode specifies the configuration for the autoNode
+                  feature.
+                properties:
+                  provisionerConfig:
+                    description: provisioner is the implementation used for Node auto
+                      provisioning.
+                    properties:
+                      karpenter:
+                        description: karpenter specifies the configuration for the
+                          Karpenter provisioner.
+                        properties:
+                          aws:
+                            description: aws specifies the AWS-specific configuration
+                              for Karpenter.
+                            properties:
+                              roleARN:
+                                description: arn specifies the ARN of the Karpenter
+                                  provisioner.
+                                type: string
+                            required:
+                            - roleARN
+                            type: object
+                          platform:
+                            description: platform specifies the platform-specific
+                              configuration for Karpenter.
+                            type: string
+                        required:
+                        - platform
+                        type: object
+                      name:
+                        allOf:
+                        - enum:
+                          - Karpenter
+                        - enum:
+                          - Karpenter
+                        description: name specifies the name of the provisioner to
+                          use.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - provisionerConfig
+                type: object
               autoscaling:
                 description: |-
                   autoscaling specifies auto-scaling behavior that applies to all NodePools

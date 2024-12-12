@@ -38,6 +38,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	DNS                              *DNSSpecApplyConfiguration                           `json:"dns,omitempty"`
 	Networking                       *ClusterNetworkingApplyConfiguration                 `json:"networking,omitempty"`
 	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
+	AutoNode                         *AutoNodeApplyConfiguration                          `json:"autoNode,omitempty"`
 	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
 	Services                         []ServicePublishingStrategyMappingApplyConfiguration `json:"services,omitempty"`
 	PullSecret                       *corev1.LocalObjectReference                         `json:"pullSecret,omitempty"`
@@ -156,6 +157,14 @@ func (b *HostedClusterSpecApplyConfiguration) WithNetworking(value *ClusterNetwo
 // If called multiple times, the Autoscaling field is set to the value of the last call.
 func (b *HostedClusterSpecApplyConfiguration) WithAutoscaling(value *ClusterAutoscalingApplyConfiguration) *HostedClusterSpecApplyConfiguration {
 	b.Autoscaling = value
+	return b
+}
+
+// WithAutoNode sets the AutoNode field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AutoNode field is set to the value of the last call.
+func (b *HostedClusterSpecApplyConfiguration) WithAutoNode(value *AutoNodeApplyConfiguration) *HostedClusterSpecApplyConfiguration {
+	b.AutoNode = value
 	return b
 }
 

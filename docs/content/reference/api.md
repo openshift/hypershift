@@ -348,6 +348,19 @@ associated with this HostedCluster.</p>
 </tr>
 <tr>
 <td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">
+AutoNode
+</a>
+</em>
+</td>
+<td>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>etcd</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.EtcdSpec">
@@ -2565,6 +2578,38 @@ string
 </td>
 <td>
 <p>End represents the end of the AlloctionPool, that is the highest IP of the pool.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AutoNode { #hypershift.openshift.io/v1beta1.AutoNode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>We expose here internal configuration knobs that won&rsquo;t be exposed to the service.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>provisionerConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">
+ProvisionerConfig
+</a>
+</em>
+</td>
+<td>
+<p>provisioner is the implementation used for Node auto provisioning.</p>
 </td>
 </tr>
 </tbody>
@@ -5024,6 +5069,19 @@ associated with this HostedCluster.</p>
 </tr>
 <tr>
 <td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">
+AutoNode
+</a>
+</em>
+</td>
+<td>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>etcd</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.EtcdSpec">
@@ -5861,6 +5919,19 @@ associated with the control plane.</p>
 </tr>
 <tr>
 <td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">
+AutoNode
+</a>
+</em>
+</td>
+<td>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>nodeSelector</code></br>
 <em>
 map[string]string
@@ -6582,6 +6653,78 @@ AzureKMSSpec
 <td>
 <em>(Optional)</em>
 <p>Azure defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KarpenterAWSConfig { #hypershift.openshift.io/v1beta1.KarpenterAWSConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>roleARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>arn specifies the ARN of the Karpenter provisioner.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KarpenterConfig { #hypershift.openshift.io/v1beta1.KarpenterConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformType">
+PlatformType
+</a>
+</em>
+</td>
+<td>
+<p>platform specifies the platform-specific configuration for Karpenter.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aws</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterAWSConfig">
+KarpenterAWSConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws specifies the AWS-specific configuration for Karpenter.</p>
 </td>
 </tr>
 </tbody>
@@ -9322,6 +9465,7 @@ AWSPlatformStatus
 ###PlatformType { #hypershift.openshift.io/v1beta1.PlatformType }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>, 
 <a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>, 
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
@@ -9992,6 +10136,70 @@ string
 <em>(Optional)</em>
 <p>Subnet is the subnet to use for load balancer.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###Provisioner { #hypershift.openshift.io/v1beta1.Provisioner }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
+</p>
+<p>
+<p>provisioner is a enum specifying the strategy for auto managing Nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Karpenter&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
+###ProvisionerConfig { #hypershift.openshift.io/v1beta1.ProvisionerConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">AutoNode</a>)
+</p>
+<p>
+<p>ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Provisioner">
+Provisioner
+</a>
+</em>
+</td>
+<td>
+<p>name specifies the name of the provisioner to use.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>karpenter</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">
+KarpenterConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>karpenter specifies the configuration for the Karpenter provisioner.</p>
 </td>
 </tr>
 </tbody>

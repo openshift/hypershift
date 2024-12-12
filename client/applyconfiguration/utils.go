@@ -56,6 +56,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.APIEndpointApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("APIServerNetworking"):
 		return &hypershiftv1beta1.APIServerNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AutoNode"):
+		return &hypershiftv1beta1.AutoNodeApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSCloudProviderConfig"):
 		return &hypershiftv1beta1.AWSCloudProviderConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
@@ -150,6 +152,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ImageContentSourceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("InPlaceUpgrade"):
 		return &hypershiftv1beta1.InPlaceUpgradeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KarpenterAWSConfig"):
+		return &hypershiftv1beta1.KarpenterAWSConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KarpenterConfig"):
+		return &hypershiftv1beta1.KarpenterConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KMSSpec"):
 		return &hypershiftv1beta1.KMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubeconfigSecretRef"):
@@ -244,6 +250,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.PowerVSResourceReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PowerVSVPC"):
 		return &hypershiftv1beta1.PowerVSVPCApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ProvisionerConfig"):
+		return &hypershiftv1beta1.ProvisionerConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Release"):
 		return &hypershiftv1beta1.ReleaseApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ReplaceUpgrade"):

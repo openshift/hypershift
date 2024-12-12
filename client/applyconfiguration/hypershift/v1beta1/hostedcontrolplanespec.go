@@ -53,6 +53,7 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	PausedUntil                      *string                                              `json:"pausedUntil,omitempty"`
 	OLMCatalogPlacement              *hypershiftv1beta1.OLMCatalogPlacement               `json:"olmCatalogPlacement,omitempty"`
 	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
+	AutoNode                         *AutoNodeApplyConfiguration                          `json:"autoNode,omitempty"`
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
 	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
 	Labels                           map[string]string                                    `json:"labels,omitempty"`
@@ -287,6 +288,14 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithOLMCatalogPlacement(value
 // If called multiple times, the Autoscaling field is set to the value of the last call.
 func (b *HostedControlPlaneSpecApplyConfiguration) WithAutoscaling(value *ClusterAutoscalingApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
 	b.Autoscaling = value
+	return b
+}
+
+// WithAutoNode sets the AutoNode field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AutoNode field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithAutoNode(value *AutoNodeApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
+	b.AutoNode = value
 	return b
 }
 
