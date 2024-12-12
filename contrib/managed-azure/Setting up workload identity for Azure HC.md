@@ -1,65 +1,22 @@
 # Setting up Workload Identity for Azure HostedClusters
 
-This document describes the steps needed to set up things for Workload Identity for Azure HostedClusters using the 
-following workload identity PR, https://github.com/openshift/hypershift/pull/4587. In general, the following is a brief 
+This document describes the steps needed to set up things for Workload Identity for Azure HostedClusters using the
+following workload identity PR, https://github.com/openshift/hypershift/pull/4587. In general, the following is a brief
 description of the steps needed to set everything up:
 
 1. Create a resource group for the managed Azure resources for the HCP
 2. Run the ccoctl tool to generate some prerequisite items
 3. Create an AKS mgmt cluster
 4. Setup externalDNS
-5. Install the HO 
-6. Create and set up managed identities for azure disk csi, azure file csi, and image registry operators 
+5. Install the HO
+6. Create and set up managed identities for azure disk csi, azure file csi, and image registry operators
 7. Create the HostedCluster
 
-The document sections that follow will walk through each part in more depth.
-
-NOTE: Until some Managed Identity PRs merge, you do need to make some tweaks to the instructions in this doc:
-
-- you need to include these PRs to the workload identity PR
-  - https://github.com/openshift/hypershift/pull/4884
-  - https://github.com/openshift/hypershift/pull/4888
-- you need a 4.18 release image with this PR included, https://github.com/openshift/cluster-ingress-operator/pull/1151
-- you need to include these flags when creating the AKS cluster, which are needed for the Managed Identity work
-
-```shell
---enable-addons azure-keyvault-secrets-provider \
---enable-secret-rotation \
---rotation-poll-interval 1m
-```
-
-- you need to run these steps after creating the AKS cluster, which are needed for the Managed Identity work
-```shell
-# Create Management Azure Key Vault
-az keyvault create \
---name ${KV_NAME} \
---resource-group ${AKS_RG} \
---location ${LOCATION} \
---enable-rbac-authorization
-
-# Save the KV MI Info
-AZURE_KEY_VAULT_AUTHORIZED_USER_ID=$(az aks show -n ${AKS_CLUSTER_NAME} -g ${AKS_RG} | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.clientId -r)
-AZURE_KEY_VAULT_AUTHORIZED_OBJECT_ID=$(az aks show -n ${AKS_CLUSTER_NAME} -g ${AKS_RG} | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.objectId -r)
-
-# Give the MI the Key Vault Secrets role
-az role assignment create \
---assignee-object-id "${AZURE_KEY_VAULT_AUTHORIZED_OBJECT_ID}" \
---role "Key Vault Secrets User" \
---scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/"${AKS_RG}" \
---assignee-principal-type ServicePrincipal
-
-## Associate your SP with the Key Vault
-az role assignment create \
-    --assignee <ASSIGNEE_ID> \
-    --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/"${AKS_RG}"/providers/Microsoft.KeyVault/vaults/${KV_NAME} \
-    --role "Key Vault Administrator"
-```
-
-- finally include these flags when creating the hosted cluster
-```shell
---management-key-vault-name ${KV_NAME} \
---management-key-vault-tenant-id ${KEY_VAULT_TENANT_ID}
-```
+The document sections that follow will walk through each part in more depth. This document also:
+ - assumes you have already set up persistent service principals for the HCP components.
+ - assumes you know how to set up the AKS management cluster to support managed identities/service principals for the
+hosted control plane.
+ - See [this for more details on those subjects](setup_dev_environment.md).
 
 ## Create a resource group for the managed Azure resources for the HCP
 You will need a resource group for the ccoctl tool to place some Azure resources. This same resource group will be used
@@ -73,9 +30,8 @@ LOCATION="eastus"
 az group create --name "${MANAGED_RG_NAME}" --location ${LOCATION}
 ```
 
-
 ## Run the ccoctl tool to generate some prerequisite items
-The ccoctl tool provides various commands to assist with the creating and maintenance of cloud credentials from outside 
+The ccoctl tool provides various commands to assist with the creating and maintenance of cloud credentials from outside
 a cluster. More information on the tool can be found [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md).
 
 You will need this tool to run two commands, though there are probably other ways of doing each of these:
@@ -84,7 +40,7 @@ You will need this tool to run two commands, though there are probably other way
 
 
 ### Creating RSA keys
-Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-rsa-keys-1) 
+Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-rsa-keys-1)
 to run this command. It should look something like this:
 ```shell
 % ./ccoctl azure create-key-pair
@@ -98,7 +54,7 @@ Save the private key path off as you will need it in [this step](Setting%20up%20
 
 
 ### Creating OpenID Connect Issuer
-Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-openid-connect-issuer) 
+Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-openid-connect-issuer)
 to run this command. It should look something like this:
 ```shell
 STORAGE_ACCOUNT_NAME=mystoragename
@@ -128,22 +84,21 @@ STORAGE_ACCOUNT_NAME=mystoragename
 
 Save your Issuer URL off as you will need it in [this step](Setting%20up%20workload%20identity%20for%20Azure%20HC.md#create-the-hostedcluster)
 
-
 ## Create an AKS mgmt cluster
-See [this shell script](setup_aks_cluster.sh) for information on how to create an AKS management cluster. 
-
+See [this shell script](setup_aks_cluster.sh) for information on how to create an AKS management cluster.
 
 ## Setup externalDNS
 See [this shell script](setup_external_dns.sh) for information on how to set up externalDNS on AKS.
 
-
 ## Install the HO
 See [this shell script](setup_install_ho_on_aks.sh) for information on how to install the HO on AKS.
 
-
 ## Create and set up managed identities for azure disk csi, azure file csi, and image registry operators
-You'll need to create and setup three managed identities to enable workload identity to work successfully. Here are the 
-commands to create and setup those three managed identities:
+You'll need to create and setup three managed identities to enable workload identity to work successfully. You'll want
+to make those in a resource group that is persistent. These should be reused during development, testing, and in CI.
+
+Here are the commands to create and setup those three managed identities; this assumes you are making the managed
+identities outside the managed resource group, in a group let's call _PERSISTENT_RG_NAME_:
 
 ```shell
 CSI_DISK_MSI_NAME="csi-disk-msi"
@@ -170,7 +125,7 @@ CSI_DISK_CLIENT_ID=$(az identity show --name "${CSI_DISK_MSI_NAME}" --resource-g
 #Federated ID
 az identity federated-credential create --name "${CSI_DISK_MSI_NAME}"-fed-id \
 --identity-name "${CSI_DISK_MSI_NAME}" \
---resource-group "${MANAGED_RG_NAME}" \
+--resource-group "${PERSISTENT_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa \
 --audience openshift
@@ -196,7 +151,7 @@ CSI_FILE_MSI_CLIENT_ID=$(az identity show --name "${CSI_FILE_CCM_MSI_NAME}" --re
 #Federated ID
 az identity federated-credential create --name "${CSI_FILE_CCM_MSI_NAME}"-fed-id \
 --identity-name "${CSI_FILE_CCM_MSI_NAME}" \
---resource-group "${MANAGED_RG_NAME}" \
+--resource-group "${PERSISTENT_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa \
 --audience openshift
@@ -222,22 +177,21 @@ IR_MSI_CLIENT_ID=$(az identity show --name "${IR_MSI_NAME}" --resource-group "${
 #Federated ID
 az identity federated-credential create --name "${IR_MSI_NAME}"-fed-id \
 --identity-name "${IR_MSI_NAME}" \
---resource-group "${MANAGED_RG_NAME}" \
+--resource-group "${PERSISTENT_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-image-registry:cluster-image-registry-operator \
 --audience openshift
 
 az identity federated-credential create --name "${IR_MSI_NAME}"-fed-id \
 --identity-name "${IR_MSI_NAME}" \
---resource-group "${MANAGED_RG_NAME}" \
+--resource-group "${PERSISTENT_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-image-registry:registry \
 --audience openshift
 ```
 
-
 ## Create the HostedCluster
-Now you should be ready to create the HostedCluster. 
+Now you should be ready to create the HostedCluster.
 
 ```shell
 SA_TOKEN_ISSUER_PRIVATE_KEY_PATH="This is the value you saved in step - Creating RSA keys"
@@ -256,17 +210,15 @@ hypershift create cluster azure \
 --vnet-id "${GetVnetID}" \
 --subnet-id "${GetSubnetID}" \
 --network-security-group-id "${GetNsgID}" \
---ir-client-id "${IR_MSI_CLIENT_ID}" \
 --oidc-issuer-url "${OIDC_ISSUER_URL}" \
 --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
---csi-disk-client-id "${CSI_MSI_CLIENT_ID}" \
---csi-file-client-id "${CSI_FILE_MSI_CLIENT_ID}" \
 --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
 --fips=true \
 --marketplace-publisher azureopenshift \
 --marketplace-offer aro4 \
 --marketplace-sku aro_417 \
 --marketplace-version 417.94.20240701 \
---management-key-vault-name ${KV_NAME} \
---management-key-vault-tenant-id ${KEY_VAULT_TENANT_ID}
+--dns-zone-rg-name os4-common \
+--assign-service-principal-roles \
+--managed-identities-file /Users/brcox/aro-hcp-service-principals.json
 ```
