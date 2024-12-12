@@ -3,13 +3,13 @@ package assets
 import (
 	"fmt"
 
-	"github.com/openshift/hypershift/support/api"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -81,6 +81,12 @@ func ShouldNodePool(reader AssetReader, fileName string) *hyperv1.NodePool {
 	nodePool := &hyperv1.NodePool{}
 	tolerantDeserializeResource(reader, fileName, nodePool)
 	return nodePool
+}
+
+func MustCRD(reader AssetReader, fileName string) *apiextensionsv1.CustomResourceDefinition {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+	deserializeResource(reader, fileName, crd)
+	return crd
 }
 
 func deserializeResource(reader AssetReader, fileName string, obj runtime.Object) {
