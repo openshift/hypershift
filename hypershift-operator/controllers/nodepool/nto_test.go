@@ -1011,3 +1011,88 @@ func makePerformanceProfileStatusAsString(opts ...func(*performanceprofilev2.Per
 	b, _ := yaml.Marshal(status)
 	return string(b)
 }
+
+func TestGetMirrorConfigForManifest(t *testing.T) {
+	machineConfig := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: valid-machineconfig
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    storage:
+      files:
+        - contents:
+            source: data:text/plain;base64,dGhyb3dhd2F5Cg==
+          filesystem: root
+          mode: 493
+          path: /some/path
+`
+
+	containerRuntimeConfig := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: valid-containerruntimeconfig
+spec:
+  containerRuntimeConfig:
+    defaultRuntime: crun
+`
+
+	kubeletConfig := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: valid-kubeletconfig
+spec:
+  kubeletConfig:
+    maxPods: 100
+`
+
+	imageDigestMirrorSet := `
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+  name: valid-idms
+spec:
+  imageDigestMirrors:
+    - mirrorSourcePolicy: AllowContactingSource
+      mirrors:
+        - some.registry.io/registry-redhat-io
+      source: registry.redhat.io
+`
+
+	testCases := []struct {
+		name  string
+		input []byte
+	}{
+		{
+			name:  "Valid MachineConfig",
+			input: []byte(machineConfig),
+		},
+		{
+			name:  "Valid ContainerRuntimeConfig",
+			input: []byte(containerRuntimeConfig),
+		},
+		{
+			name:  "Valid KubeletConfig",
+			input: []byte(kubeletConfig),
+		},
+		{
+			name:  "Valid ImageDigestMirrorSet",
+			input: []byte(imageDigestMirrorSet),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			_, err := getMirrorConfigForManifest(tc.input)
+			g.Expect(err).To(BeNil())
+		})
+	}
+}
