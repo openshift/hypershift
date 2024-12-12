@@ -5335,6 +5335,17 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 				Value: awssdk.String(awsSecurityGroupName(infraID)),
 			})
 		}
+
+		if hcp.Spec.AutoNode != nil && hcp.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
+			hcp.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
+			if !tagKeys.Has("karpenter.sh/discovery") {
+				tags = append(tags, &ec2.Tag{
+					Key:   awssdk.String("karpenter.sh/discovery"),
+					Value: awssdk.String(infraID),
+				})
+			}
+		}
+
 		createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 			GroupName:   awssdk.String(awsSecurityGroupName(infraID)),
 			Description: awssdk.String("default worker security group"),
