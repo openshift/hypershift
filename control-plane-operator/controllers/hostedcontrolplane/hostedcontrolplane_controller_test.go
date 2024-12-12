@@ -1617,6 +1617,9 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				FeatureGate: &configv1.FeatureGateSpec{},
+			},
 			Networking: hyperv1.ClusterNetworking{
 				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
 					{
@@ -1664,70 +1667,81 @@ func TestControlPlaneComponents(t *testing.T) {
 		HCP:                      hcp,
 		SkipPredicate:            true,
 	}
-	for _, component := range reconciler.components {
-		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
-			WithObjects(componentsFakeObjects(hcp.Namespace)...).
-			WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
-			WithObjects(secret).
-			Build()
-		cpContext.Client = fakeClient
+	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
+		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
 
-		// Reconcile multiple times to make sure multiple runs don't produce different results.
-		for i := 0; i < 2; i++ {
-			if err := component.Reconcile(cpContext); err != nil {
-				t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+		for _, component := range reconciler.components {
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(componentsFakeObjects(hcp.Namespace)...).
+				WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
+				WithObjects(secret).
+				Build()
+			cpContext.Client = fakeClient
+
+			// Reconcile multiple times to make sure multiple runs don't produce different results.
+			for i := 0; i < 2; i++ {
+				if err := component.Reconcile(cpContext); err != nil {
+					t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+				}
 			}
-		}
 
-		var deployments appsv1.DeploymentList
-		if err := fakeClient.List(context.Background(), &deployments); err != nil {
-			t.Fatalf("failed to list deployments: %v", err)
-		}
+			var deployments appsv1.DeploymentList
+			if err := fakeClient.List(context.Background(), &deployments); err != nil {
+				t.Fatalf("failed to list deployments: %v", err)
+			}
 
-		var statfulsets appsv1.StatefulSetList
-		if err := fakeClient.List(context.Background(), &statfulsets); err != nil {
-			t.Fatalf("failed to list statfulsets: %v", err)
-		}
+			var statfulsets appsv1.StatefulSetList
+			if err := fakeClient.List(context.Background(), &statfulsets); err != nil {
+				t.Fatalf("failed to list statfulsets: %v", err)
+			}
 
-		if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 {
-			t.Fatalf("expected one of deployment or statefulSet to exist for component %s", component.Name())
-		}
+			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 {
+				t.Fatalf("expected one of deployment or statefulSet to exist for component %s", component.Name())
+			}
 
-		var workload client.Object
-		if len(deployments.Items) > 0 {
-			workload = &deployments.Items[0]
-		} else {
-			workload = &statfulsets.Items[0]
-		}
+			var workload client.Object
+			if len(deployments.Items) > 0 {
+				workload = &deployments.Items[0]
+			} else {
+				workload = &statfulsets.Items[0]
+			}
 
-		yaml, err := util.SerializeResource(workload, api.Scheme)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
+			yaml, err := util.SerializeResource(workload, api.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var suffix = ""
+			if featureSet != configv1.Default {
+				suffix = fmt.Sprintf("_%s", featureSet)
+			}
+			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
 
-		controlPaneComponent := &hyperv1.ControlPlaneComponent{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      component.Name(),
-				Namespace: hcp.Namespace,
-			},
-		}
-		if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
-			t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
-		}
+			controlPaneComponent := &hyperv1.ControlPlaneComponent{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      component.Name(),
+					Namespace: hcp.Namespace,
+				},
+			}
+			if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+				t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
+			}
 
-		// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
-		for i := range controlPaneComponent.Status.Conditions {
-			controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
-		}
+			// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
+			for i := range controlPaneComponent.Status.Conditions {
+				controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+			}
 
-		yaml, err = util.SerializeResource(controlPaneComponent, api.Scheme)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+			yaml, err = util.SerializeResource(controlPaneComponent, api.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			suffix = "_component"
+			if featureSet != configv1.Default {
+				suffix = fmt.Sprintf("_component_%s", featureSet)
+			}
+			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
 		}
-		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix("_component"))
 	}
-
 }
 
 func componentsFakeObjects(namespace string) []client.Object {

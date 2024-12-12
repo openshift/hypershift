@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: router
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: private-router
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        component.hypershift.openshift.io/config-hash: 417672c4
+        hypershift.openshift.io/release-image: ""
+      creationTimestamp: null
+      labels:
+        app: private-router
+        hypershift.openshift.io/control-plane-component: router
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/request-serving-component: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: private-router
+                hypershift.openshift.io/control-plane-component: router
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: private-router
+                hypershift.openshift.io/control-plane-component: router
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - -f
+        - /usr/local/etc/haproxy
+        command:
+        - haproxy
+        image: haproxy-router
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /haproxy_ready
+            port: 9444
+            scheme: HTTP
+          initialDelaySeconds: 50
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: router
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 40Mi
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+        volumeMounts:
+        - mountPath: /usr/local/etc/haproxy/haproxy.cfg
+          name: config
+          subPath: haproxy.cfg
+      priorityClassName: hypershift-api-critical
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: router
+        name: config
+status: {}
