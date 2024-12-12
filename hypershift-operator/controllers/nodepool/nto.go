@@ -11,7 +11,10 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
+	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/api/operator/v1alpha1"
 	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -414,6 +417,9 @@ func BuildMirrorConfigs(ctx context.Context, cg *ConfigGenerator) ([]*MirrorConf
 func getMirrorConfigForManifest(manifest []byte) (*MirrorConfig, error) {
 	scheme := runtime.NewScheme()
 	_ = mcfgv1.Install(scheme)
+	_ = v1alpha1.Install(scheme)
+	_ = configv1.Install(scheme)
+	_ = configv1alpha1.Install(scheme)
 
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
