@@ -109,6 +109,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeImageName, "e2e.openstack-node-image-name", "", "The image name to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone, "e2e.openstack-node-availability-zone", "", "The availability zone to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureManagedIdentitiesFile, "e2e.azure-managed-identities-file", "", "Path to an Azure managed identities file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ManagementKeyVaultName, "e2e.management-key-vault-name", "", "Name of the Azure Key Vault to use for Certificates")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ManagementKeyVaultTenantId, "e2e.management-key-vault-tenant-id", "", "Tenant ID of the Azure Key Vault to use for Certificates")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
@@ -439,6 +440,7 @@ type configurableClusterOptions struct {
 	AzureCredentialsFile          string
 	ManagementKeyVaultName        string
 	ManagementKeyVaultTenantId    string
+	AzureManagedIdentitiesFile    string
 	OpenStackCredentialsFile      string
 	OpenStackCACertFile           string
 	AzureLocation                 string
@@ -621,8 +623,10 @@ func (o *options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 
 func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
-		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
-		Location:        o.configurableClusterOptions.AzureLocation,
+		CredentialsFile:             o.configurableClusterOptions.AzureCredentialsFile,
+		Location:                    o.configurableClusterOptions.AzureLocation,
+		DNSZoneRGName:               "os4-common",
+		AssignServicePrincipalRoles: true,
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
@@ -640,7 +644,11 @@ func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 		opts.KeyVaultInfo.KeyVaultTenantID = o.configurableClusterOptions.ManagementKeyVaultTenantId
 	}
 
-	if opts.KeyVaultInfo.KeyVaultName != "" && opts.KeyVaultInfo.KeyVaultTenantID != "" {
+	if o.configurableClusterOptions.AzureManagedIdentitiesFile != "" {
+		opts.ManagedIdentitiesFile = o.configurableClusterOptions.AzureManagedIdentitiesFile
+	}
+
+	if (opts.KeyVaultInfo.KeyVaultName != "" && opts.KeyVaultInfo.KeyVaultTenantID != "") || opts.ManagedIdentitiesFile != "" {
 		opts.TechPreviewEnabled = true
 	}
 

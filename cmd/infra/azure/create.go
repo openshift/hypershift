@@ -68,6 +68,8 @@ type CreateInfraOptions struct {
 	ManagedIdentityKeyVaultTenantID string
 	TechPreviewEnabled              bool
 	ManagedIdentitiesFile           string
+	AssignServicePrincipalRoles     bool
+	DNSZoneRG                       string
 }
 
 type CreateInfraOutput struct {
@@ -217,6 +219,40 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
 		result.VNetID = *vnet.ID
 		l.Info("Successfully created vnet", "ID", result.VNetID)
+	}
+
+	if o.ManagedIdentitiesFile != "" {
+		managedIdentitiesRaw, err := os.ReadFile(o.ManagedIdentitiesFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --managed-identities-file %s: %w", o.ManagedIdentitiesFile, err)
+		}
+		if err := yaml.Unmarshal(managedIdentitiesRaw, &result.ControlPlaneMIs.ControlPlane); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal --managed-identities-file: %w", err)
+		}
+
+		components := map[string]string{
+			cpo:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
+			ciro:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
+			nodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
+			cloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
+			azureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
+			azureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
+			ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
+			cncc:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
+		}
+
+		if o.AssignServicePrincipalRoles {
+			for component, clientID := range components {
+				objectID, err := findObjectId(clientID)
+				if err != nil {
+					return nil, err
+				}
+				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 
 	if o.TechPreviewEnabled && o.ManagedIdentitiesFile == "" {
@@ -867,4 +903,74 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 		return fmt.Errorf("failed waiting to create guest cluster egress load balancer: %w", err)
 	}
 	return nil
+}
+
+// assignServicePrincipalRoles assigns the required roles to the service principal for each control plane managed identity component
+func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string) error {
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
+	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
+	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
+
+	contributorRole := "Contributor"
+
+	scopes := []string{managedRG}
+
+	switch component {
+	case cloudProvider:
+		scopes = append(scopes, nsgRG)
+	case ingress:
+		scopes = append(scopes, vnetRG, dnsZoneRG)
+	case cpo:
+		scopes = append(scopes, nsgRG, vnetRG)
+	case nodePoolMgmt:
+		scopes = append(scopes, vnetRG)
+	}
+
+	// Assign contributor role to service principal
+	for _, scope := range scopes {
+		if err := assignRole(assigneeID, contributorRole, scope); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// assignRole assigns the role to the service principal
+func assignRole(assigneeID, role, scope string) error {
+	cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"%s\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", assigneeID, role, scope)
+	_, err := execAzCommand(cmdStr)
+	if err != nil {
+		return fmt.Errorf("failed to assign %s role to service principal, %s for scope %s : %w", role, assigneeID, scope, err)
+	}
+	log.Log.Info("Successfully assigned role to service principal", "role", role, "ID", assigneeID, "scope", scope)
+	return nil
+}
+
+func findObjectId(appID string) (string, error) {
+	cmdStr := fmt.Sprintf("az ad sp show --id %s --query id | sed 's/\"//g'", appID)
+
+	output, err := execAzCommand(cmdStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to find object ID for service principal, %s : %w", appID, err)
+
+	}
+	objectID := strings.ReplaceAll(string(output), "\n", "")
+
+	return objectID, nil
+}
+
+func execAzCommand(cmdStr string) ([]byte, error) {
+	cmd := exec.Command("sh", "-c", cmdStr)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute az command: %w", err)
+	}
+
+	if strings.Contains(string(output), "ERROR") {
+		return nil, errors.New(string(output))
+	}
+
+	return output, nil
 }
