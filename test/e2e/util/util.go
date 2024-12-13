@@ -553,6 +553,23 @@ func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, clien
 	})
 }
 
+func EnsureNoRapidDeploymentRollouts(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	const maxAllowedGeneration = 10
+	t.Run("EnsureNoRapidDeploymentRollouts", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		var deploymentList appsv1.DeploymentList
+		if err := client.List(ctx, &deploymentList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list deployments in namespace %s: %v", namespace, err)
+		}
+		for _, deployment := range deploymentList.Items {
+			if deployment.Generation > maxAllowedGeneration {
+				t.Errorf("Rapidly updating deployment detected! Deployment %s exceeds the max allowed generation of %d", deployment.Name, maxAllowedGeneration)
+			}
+		}
+	})
+}
+
 func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	// Priority of the etcd priority class, nothing should ever exceed this.
 	const maxAllowedPriority = 100002000
