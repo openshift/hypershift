@@ -47,7 +47,8 @@ type RawAzurePlatformCreateOptions struct {
 func DefaultOptions() *RawAzurePlatformCreateOptions {
 	return &RawAzurePlatformCreateOptions{
 		AzurePlatformCreateOptions: &AzurePlatformCreateOptions{
-			DiskSize: 120,
+			DiskSize:               120,
+			DiskStorageAccountType: string(hyperv1.DiskStorageAccountTypesPremiumLRS),
 		},
 		AzureMarketPlaceImageInfo: &AzureMarketPlaceImageInfo{},
 	}

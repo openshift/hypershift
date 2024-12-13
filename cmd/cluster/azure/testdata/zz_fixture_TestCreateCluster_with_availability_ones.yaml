@@ -161,6 +161,7 @@ spec:
         type: ImageID
       machineIdentityID: fakeMachineIdentityID
       osDisk:
+        diskStorageAccountType: Premium_LRS
         sizeGiB: 120
       subnetID: fakeSubnetID
       vmSize: Standard_D4s_v3
@@ -193,6 +194,7 @@ spec:
         type: ImageID
       machineIdentityID: fakeMachineIdentityID
       osDisk:
+        diskStorageAccountType: Premium_LRS
         sizeGiB: 120
       subnetID: fakeSubnetID
       vmSize: Standard_D4s_v3
