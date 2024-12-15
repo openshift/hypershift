@@ -155,7 +155,11 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	openStackClusterSpec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{
 		AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
 	}
-	openStackClusterSpec.Tags = openStackPlatform.Tags
+
+	// Users are permitted to specify additional tags to be applied to the OpenStack resources
+	// but the default tag will be compliant with the OpenShift Cluster ID.
+	openStackClusterSpec.Tags = []string{"openshiftClusterID=" + hcluster.Spec.InfraID}
+	openStackClusterSpec.Tags = append(openStackClusterSpec.Tags, openStackPlatform.Tags...)
 
 	return nil
 }
