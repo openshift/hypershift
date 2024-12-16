@@ -48,7 +48,7 @@ func TestSecretJanitor_Reconcile(t *testing.T) {
 	hostedCluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
 		Spec: hyperv1.HostedClusterSpec{
-			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+			PullSecret: hyperv1.ReloadableLocalObjectReference{Name: pullSecret.Name},
 		},
 		Status: hyperv1.HostedClusterStatus{
 			IgnitionEndpoint: "https://ignition.cluster-name.myns.devcluster.openshift.com",
@@ -311,7 +311,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 					Namespace: pullSecret.Namespace,
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: pullSecret.Name,
 					},
 					Platform: hyperv1.PlatformSpec{
@@ -333,7 +333,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 					Namespace: pullSecret.Namespace,
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: pullSecret.Name,
 					},
 					Platform: hyperv1.PlatformSpec{
@@ -356,7 +356,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 					Namespace: pullSecret.Namespace,
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: pullSecret.Name,
 					},
 					Platform: hyperv1.PlatformSpec{

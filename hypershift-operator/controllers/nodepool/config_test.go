@@ -15,7 +15,7 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
-	api "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
@@ -127,7 +127,7 @@ spec:
 			Namespace: "test",
 		},
 		Spec: hyperv1.HostedClusterSpec{
-			PullSecret: corev1.LocalObjectReference{
+			PullSecret: hyperv1.ReloadableLocalObjectReference{
 				Name: "pull-secret",
 			},
 			Configuration: &globalConfig,
@@ -140,6 +140,7 @@ spec:
 		releaseImage               *releaseinfo.ReleaseImage
 		hostedCluster              *hyperv1.HostedCluster
 		config                     []crclient.Object
+		pullSecret                 []byte
 		expectedMCORawConfig       string
 		client                     bool
 		expectedHash               string
@@ -280,8 +281,62 @@ spec:
 					Namespace: "test",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret-2",
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "additional-trust-bundle",
+					},
+				},
+			},
+		},
+		{
+			name:                       "When reloading pull secret requested, hash involves it",
+			expectedHash:               "bc1160e9",
+			expectedHashWithoutVersion: "71375893",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "config-1",
+						},
+					},
+				},
+			},
+			pullSecret: []byte(`let-me-pull`),
+			config: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-1",
+						Namespace: "test",
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: machineConfig,
+					},
+				},
+			},
+			expectedMCORawConfig: machineConfigDefaulted,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "latest",
+					},
+				},
+			},
+			client: true,
+			error:  nil,
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
+						Name:   "pull-secret-2",
+						Reload: true,
 					},
 					AdditionalTrustBundle: &corev1.LocalObjectReference{
 						Name: "additional-trust-bundle",
@@ -301,7 +356,7 @@ spec:
 				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build()
 			}
 
-			cg, err := NewConfigGenerator(context.Background(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "")
+			cg, err := NewConfigGenerator(context.Background(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", tc.pullSecret)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))
@@ -419,8 +474,10 @@ func TestHash(t *testing.T) {
 	baseCaseMCORawConfig := "test config"
 	baseCaseReleaseVersion := "4.7.0"
 	baseCasePullSecretName := "pull-secret"
+	baseCasePullSecret := []byte(`whatever`)
 	baseCaseAdditionalTrustBundleName := "trust-bundle"
 	baseCaseGlobalConfig := "global config"
+	baseCaseHostedCluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{PullSecret: hyperv1.ReloadableLocalObjectReference{Reload: false}}}
 	baseCaseHash := "bb196408"
 
 	testCases := []struct {
@@ -428,8 +485,10 @@ func TestHash(t *testing.T) {
 		mcoRawConfig              string
 		releaseVersion            string
 		pullSecretName            string
+		pullSecret                []byte
 		additionalTrustBundleName string
 		globalConfig              string
+		hcluster                  *hyperv1.HostedCluster
 		expected                  string
 	}{
 		{
@@ -437,8 +496,10 @@ func TestHash(t *testing.T) {
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
+			pullSecret:                baseCasePullSecret,
 			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
 			globalConfig:              baseCaseGlobalConfig,
+			hcluster:                  baseCaseHostedCluster,
 			expected:                  baseCaseHash,
 		},
 		{
@@ -446,8 +507,10 @@ func TestHash(t *testing.T) {
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            "4.8.0",
 			pullSecretName:            baseCasePullSecretName,
+			pullSecret:                baseCasePullSecret,
 			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
 			globalConfig:              baseCaseGlobalConfig,
+			hcluster:                  baseCaseHostedCluster,
 			expected:                  "27bb7699",
 		},
 		{
@@ -455,8 +518,10 @@ func TestHash(t *testing.T) {
 			mcoRawConfig:              "different",
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
+			pullSecret:                baseCasePullSecret,
 			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
 			globalConfig:              baseCaseGlobalConfig,
+			hcluster:                  baseCaseHostedCluster,
 			expected:                  "25f99ac5",
 		},
 		{
@@ -464,8 +529,10 @@ func TestHash(t *testing.T) {
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            "different",
+			pullSecret:                baseCasePullSecret,
 			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
 			globalConfig:              baseCaseGlobalConfig,
+			hcluster:                  baseCaseHostedCluster,
 			expected:                  "d0d6f6e9",
 		},
 		{
@@ -473,8 +540,10 @@ func TestHash(t *testing.T) {
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
+			pullSecret:                baseCasePullSecret,
 			additionalTrustBundleName: "different",
 			globalConfig:              baseCaseGlobalConfig,
+			hcluster:                  baseCaseHostedCluster,
 			expected:                  "42d42744",
 		},
 		{
@@ -482,9 +551,33 @@ func TestHash(t *testing.T) {
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
+			pullSecret:                baseCasePullSecret,
 			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
 			globalConfig:              "different",
+			hcluster:                  baseCaseHostedCluster,
 			expected:                  "e916ddfe",
+		},
+		{
+			name:                      "pull secret bytes without reload doesn't change hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			pullSecret:                []byte(`other`),
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              "different",
+			hcluster:                  baseCaseHostedCluster,
+			expected:                  "e916ddfe",
+		},
+		{
+			name:                      "pull secret bytes with reload changes hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			pullSecret:                []byte(`other`),
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              "different",
+			hcluster:                  &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{PullSecret: hyperv1.ReloadableLocalObjectReference{Reload: true}}},
+			expected:                  "c682061e",
 		},
 	}
 
@@ -499,9 +592,11 @@ func TestHash(t *testing.T) {
 				},
 			}
 			cg := &ConfigGenerator{
+				hostedCluster: tc.hcluster,
 				rolloutConfig: &rolloutConfig{
 					mcoRawConfig:              tc.mcoRawConfig,
 					pullSecretName:            tc.pullSecretName,
+					pullSecret:                tc.pullSecret,
 					additionalTrustBundleName: tc.additionalTrustBundleName,
 					globalConfig:              tc.globalConfig,
 					releaseImage:              releaseImage,

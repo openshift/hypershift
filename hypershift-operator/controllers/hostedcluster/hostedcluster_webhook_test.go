@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -34,7 +33,7 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
@@ -62,7 +61,7 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
@@ -122,7 +121,7 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
@@ -155,7 +154,7 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
@@ -275,7 +274,7 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -313,7 +312,7 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -383,7 +382,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -426,7 +425,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 						Type:     v1beta1.KubevirtPlatform,
 						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: v1beta1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},

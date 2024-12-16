@@ -168,6 +168,10 @@ const (
 	// A failure here is unlikely to resolve without the changing user input.
 	PlatformCredentialsFound ConditionType = "PlatformCredentialsFound"
 
+	// ImagePullCredentialsValid indicates that the image pull credentials referenced in the spec are valid.
+	// A failure here is unlikely to resolve without the changing user input.
+	ImagePullCredentialsValid ConditionType = "ImagePullCredentialsValid"
+
 	// ReconciliationActive indicates if reconciliation of the HostedCluster is
 	// active or paused hostedCluster.spec.pausedUntil.
 	ReconciliationActive ConditionType = "ReconciliationActive"

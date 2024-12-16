@@ -40,8 +40,8 @@ type HostedClusterSpecApplyConfiguration struct {
 	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
 	AutoNode                         *AutoNodeApplyConfiguration                          `json:"autoNode,omitempty"`
 	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
+	PullSecret                       *ReloadableLocalObjectReferenceApplyConfiguration    `json:"pullSecret,omitempty"`
 	Services                         []ServicePublishingStrategyMappingApplyConfiguration `json:"services,omitempty"`
-	PullSecret                       *corev1.LocalObjectReference                         `json:"pullSecret,omitempty"`
 	SSHKey                           *corev1.LocalObjectReference                         `json:"sshKey,omitempty"`
 	IssuerURL                        *string                                              `json:"issuerURL,omitempty"`
 	ServiceAccountSigningKey         *corev1.LocalObjectReference                         `json:"serviceAccountSigningKey,omitempty"`
@@ -176,6 +176,14 @@ func (b *HostedClusterSpecApplyConfiguration) WithEtcd(value *EtcdSpecApplyConfi
 	return b
 }
 
+// WithPullSecret sets the PullSecret field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the PullSecret field is set to the value of the last call.
+func (b *HostedClusterSpecApplyConfiguration) WithPullSecret(value *ReloadableLocalObjectReferenceApplyConfiguration) *HostedClusterSpecApplyConfiguration {
+	b.PullSecret = value
+	return b
+}
+
 // WithServices adds the given value to the Services field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Services field.
@@ -186,14 +194,6 @@ func (b *HostedClusterSpecApplyConfiguration) WithServices(values ...*ServicePub
 		}
 		b.Services = append(b.Services, *values[i])
 	}
-	return b
-}
-
-// WithPullSecret sets the PullSecret field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PullSecret field is set to the value of the last call.
-func (b *HostedClusterSpecApplyConfiguration) WithPullSecret(value corev1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
-	b.PullSecret = &value
 	return b
 }
 

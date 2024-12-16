@@ -316,7 +316,12 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		return &ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
 
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	pullSecret, err := r.getPullSecret(ctx, hcluster)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, pullSecret)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,

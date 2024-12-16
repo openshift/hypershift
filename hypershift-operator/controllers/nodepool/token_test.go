@@ -73,7 +73,7 @@ func TestNewToken(t *testing.T) {
 						Namespace: hcNamespace,
 					},
 					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
+						PullSecret: hyperv1.ReloadableLocalObjectReference{
 							Name: pullSecret.GetName(),
 						},
 						AdditionalTrustBundle: &corev1.LocalObjectReference{
@@ -93,6 +93,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{pullSecret: pullSecret.Data[corev1.DockerConfigJsonKey]},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -111,7 +112,7 @@ func TestNewToken(t *testing.T) {
 						Namespace: hcNamespace,
 					},
 					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
+						PullSecret: hyperv1.ReloadableLocalObjectReference{
 							Name: pullSecret.GetName(),
 						},
 						AdditionalTrustBundle: &corev1.LocalObjectReference{
@@ -124,6 +125,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{pullSecret: pullSecret.Data[corev1.DockerConfigJsonKey]},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -134,36 +136,6 @@ func TestNewToken(t *testing.T) {
 			expectedError:   "ignition endpoint is not set",
 		},
 		{
-			name: "When missing pullsecret it should fail",
-			configGenerator: &ConfigGenerator{
-				hostedCluster: &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hcName,
-						Namespace: hcNamespace,
-					},
-					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
-							Name: pullSecret.GetName(),
-						},
-						AdditionalTrustBundle: &corev1.LocalObjectReference{
-							Name: additionalTrustBundle.GetName(),
-						},
-					},
-					Status: hyperv1.HostedClusterStatus{
-						IgnitionEndpoint: "https://example.com",
-					},
-				},
-				nodePool:              &hyperv1.NodePool{},
-				controlplaneNamespace: controlplaneNamespace,
-			},
-			fakeObjects: []crclient.Object{
-				additionalTrustBundle,
-				ignitionServerCACert,
-			},
-			cpoCapabilities: &CPOCapabilities{},
-			expectedError:   "cannot get pull secret namespace/pull-secret: secrets \"pull-secret\" not found",
-		},
-		{
 			name: "When missing additionalTrustBundle it should fail",
 			configGenerator: &ConfigGenerator{
 				hostedCluster: &hyperv1.HostedCluster{
@@ -172,7 +144,7 @@ func TestNewToken(t *testing.T) {
 						Namespace: hcNamespace,
 					},
 					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
+						PullSecret: hyperv1.ReloadableLocalObjectReference{
 							Name: pullSecret.GetName(),
 						},
 						AdditionalTrustBundle: &corev1.LocalObjectReference{
@@ -185,6 +157,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{pullSecret: pullSecret.Data[corev1.DockerConfigJsonKey]},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -202,7 +175,7 @@ func TestNewToken(t *testing.T) {
 						Namespace: hcNamespace,
 					},
 					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
+						PullSecret: hyperv1.ReloadableLocalObjectReference{
 							Name: pullSecret.GetName(),
 						},
 						AdditionalTrustBundle: &corev1.LocalObjectReference{
@@ -215,6 +188,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{pullSecret: pullSecret.Data[corev1.DockerConfigJsonKey]},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -243,7 +217,7 @@ func TestNewToken(t *testing.T) {
 						Namespace: hcNamespace,
 					},
 					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
+						PullSecret: hyperv1.ReloadableLocalObjectReference{
 							Name: pullSecret.GetName(),
 						},
 						AdditionalTrustBundle: &corev1.LocalObjectReference{
@@ -256,6 +230,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{pullSecret: pullSecret.Data[corev1.DockerConfigJsonKey]},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -351,6 +326,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 						},
 					},
 					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{pullSecret: []byte(`whatever`)},
 				},
 			},
 			fakeObjects: []crclient.Object{
@@ -377,6 +353,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 						},
 					},
 					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{pullSecret: []byte(`whatever`)},
 				},
 			},
 			fakeObjects:   []crclient.Object{},
@@ -520,7 +497,7 @@ func TestTokenReconcile(t *testing.T) {
 						Namespace: hcNamespace,
 					},
 					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
+						PullSecret: hyperv1.ReloadableLocalObjectReference{
 							Name: pullSecret.GetName(),
 						},
 						AdditionalTrustBundle: &corev1.LocalObjectReference{
@@ -557,6 +534,7 @@ func TestTokenReconcile(t *testing.T) {
 							},
 						},
 					},
+					pullSecret:   pullSecret.Data[corev1.DockerConfigJsonKey],
 					globalConfig: "test-global-config",
 					mcoRawConfig: "raw-config",
 				},
@@ -709,6 +687,7 @@ func TestTokenUserDataSecret(t *testing.T) {
 							Name: "test-nodepool",
 						},
 					},
+					hostedCluster:         &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{PullSecret: hyperv1.ReloadableLocalObjectReference{Reload: false}}},
 					controlplaneNamespace: "test-namespace",
 					rolloutConfig: &rolloutConfig{
 						releaseImage: &releaseinfo.ReleaseImage{
@@ -758,6 +737,7 @@ func TestTokenSecret(t *testing.T) {
 							Name: "test-nodepool",
 						},
 					},
+					hostedCluster:         &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{PullSecret: hyperv1.ReloadableLocalObjectReference{Reload: false}}},
 					controlplaneNamespace: "test-namespace",
 					rolloutConfig: &rolloutConfig{
 						releaseImage: &releaseinfo.ReleaseImage{
