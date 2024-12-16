@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -582,6 +583,10 @@ func (o *options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		MultiArch:      o.configurableClusterOptions.AWSMultiArch,
 		PublicOnly:     true,
 	}
+	if e2eutil.IsLessThan(semver.MustParse("4.16.0")) {
+		opts.PublicOnly = false
+	}
+
 	opts.AdditionalTags = append(opts.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
 		// align with default for e2e.aws-region flag
