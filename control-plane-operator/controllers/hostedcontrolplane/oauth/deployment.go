@@ -7,24 +7,29 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/globalconfig"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	configHashAnnotation                 = "oauth.hypershift.openshift.io/config-hash"
+	KubeadminSecretHashAnnotation        = "hypershift.openshift.io/kubeadmin-secret-hash"
 	oauthNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
 	socks5ProxyContainerName             = "socks-proxy"
 
@@ -71,7 +76,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(ctx context.Context, client crclient.Client, deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -105,6 +110,17 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 		return fmt.Errorf("oauth server: configuration not found in configmap")
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
+
+	kubeadminPasswordSecret := common.KubeadminPasswordSecret(deployment.Namespace)
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get kubeadmin password secret: %v", err)
+		}
+		delete(deployment.Spec.Template.ObjectMeta.Annotations, KubeadminSecretHashAnnotation)
+	} else {
+		deployment.Spec.Template.ObjectMeta.Annotations[KubeadminSecretHashAnnotation] = util.HashSimple(kubeadminPasswordSecret.Data)
+	}
+
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: ptr.To(false),
 		Containers: []corev1.Container{

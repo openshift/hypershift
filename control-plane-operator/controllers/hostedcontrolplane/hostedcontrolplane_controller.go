@@ -1201,6 +1201,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	if util.HCPOAuthEnabled(hostedControlPlane) {
+		// Reconcile kubeadmin password
+		r.Log.Info("Reconciling kubeadmin password secret")
+		explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
+		if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, explicitOauthConfig, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to ensure control plane: %w", err)
+		}
+
 		if !r.IsCPOV2 {
 			// Reconcile openshift oauth apiserver
 			r.Log.Info("Reconciling OpenShift OAuth API Server")
@@ -1314,15 +1321,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		r.Log.Info("Reconciling ignition-server configs")
 		if err := r.reconcileIgnitionServerConfigs(ctx, hostedControlPlane, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile ignition-server configs: %w", err)
-		}
-	}
-
-	// Reconcile kubeadmin password
-	if util.HCPOAuthEnabled(hostedControlPlane) {
-		r.Log.Info("Reconciling kubeadmin password secret")
-		explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
-		if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, explicitOauthConfig, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to ensure control plane: %w", err)
 		}
 	}
 

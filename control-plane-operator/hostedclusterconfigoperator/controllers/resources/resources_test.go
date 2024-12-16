@@ -440,20 +440,12 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
 
-	annotatedOauthDeployment := &appsv1.Deployment{
-		ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
-	}
-	annotatedOauthDeployment.Spec.Template.Annotations = map[string]string{
-		SecretHashAnnotation: "fake-hash",
-	}
-
 	tests := map[string]struct {
 		inputHCP                                 *hyperv1.HostedControlPlane
 		inputObjects                             []client.Object
-		expectedOauthServerAnnotations           []string
 		expectKubeadminPasswordHashSecretToExist bool
 	}{
-		"when kubeadminPasswordSecret exists the oauth server is annotated and the hash secret is created": {
+		"when kubeadminPasswordSecret exists the hash secret is created": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -471,12 +463,9 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
-			expectedOauthServerAnnotations: []string{
-				SecretHashAnnotation,
-			},
 			expectKubeadminPasswordHashSecretToExist: true,
 		},
-		"when kubeadminPasswordSecret doesn't exist the oauth server is not annotated and the hash secret is not created": {
+		"when kubeadminPasswordSecret doesn't exist the hash secret is not created": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -488,20 +477,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
-			expectedOauthServerAnnotations:           nil,
-			expectKubeadminPasswordHashSecretToExist: false,
-		},
-		"when kubeadminPasswordSecret doesn't exist the oauth server SecretHashAnnotation annotation is deleted and the hash secret is not created": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{
-				annotatedOauthDeployment,
-			},
-			expectedOauthServerAnnotations:           nil,
 			expectKubeadminPasswordHashSecretToExist: false,
 		},
 	}
@@ -530,13 +505,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
 			err = r.cpClient.Get(context.TODO(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
 			g.Expect(err).To(BeNil())
-			if test.expectedOauthServerAnnotations == nil {
-				g.Expect(actualOauthDeployment.Spec.Template.Annotations).To(BeNil())
-			} else {
-				for _, annotation := range test.expectedOauthServerAnnotations {
-					g.Expect(len(actualOauthDeployment.Spec.Template.Annotations[annotation]) > 0).To(BeTrue())
-				}
-			}
 		})
 	}
 }
