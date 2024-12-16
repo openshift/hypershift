@@ -108,9 +108,9 @@ spec:
         - --cluster-signing-duration=17520h
         - --tls-cert-file=/etc/kubernetes/certs/server/tls.crt
         - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
-        - --node-monitor-grace-period=50s
         - --cluster-cidr=10.132.0.0/14
         - --service-cluster-ip-range=
+        - --node-monitor-grace-period=50s
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         - --feature-gates=OpenShiftPodSecurityAdmission=true
