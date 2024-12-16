@@ -689,7 +689,10 @@ func transportForCARef(ctx context.Context, kclient crclient.Reader, namespace, 
 	transport := net.SetTransportDefaults(&http.Transport{
 		TLSClientConfig: &tls.Config{},
 	})
-	roots := x509.NewCertPool()
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create system cert pool: %w", err)
+	}
 
 	if !skipKonnectivityDialer {
 		var err error
