@@ -5074,7 +5074,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		// Reconcile the secret needed for azure-disk-csi-controller
 		// This is related to https://github.com/openshift/csi-operator/pull/290.
 		azureFileCSISecret := manifests.AzureFileConfigWithCredentials(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureDiskCSISecret, func() error {
+		if _, err := createOrUpdate(ctx, r, azureFileCSISecret, func() error {
 			return storage.ReconcileAzureFileCSISecret(azureFileCSISecret, hcp, tenantID)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure File CSI config: %w", err)
