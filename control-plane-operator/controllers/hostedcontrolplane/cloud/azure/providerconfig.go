@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
@@ -43,8 +44,19 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 		return err
 	}
 
-	cfg.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ClientID
-	cfg.AADClientCertPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName
+	// Get the ClientID and CertificateName config for csi drivers in ARO
+	switch secret.Name {
+	case manifests.AzureDiskConfigWithCredentials(hcp.Namespace).Name:
+		cfg.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ClientID
+		cfg.AADClientCertPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName
+	case manifests.AzureFileConfigWithCredentials(hcp.Namespace).Name:
+		cfg.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ClientID
+		cfg.AADClientCertPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName
+	default:
+		cfg.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ClientID
+		cfg.AADClientCertPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName
+	}
+
 	cfg.UseManagedIdentityExtension = false
 	cfg.UseInstanceMetadata = false
 
