@@ -17,6 +17,8 @@ spec:
     metadata:
       labels:
         app: kubevirt-csi-driver
+      annotations:
+        openshift.io/required-scc: privileged
     spec:
       dnsPolicy: ClusterFirst
       priorityClassName: system-node-critical
