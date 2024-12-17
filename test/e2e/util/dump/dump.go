@@ -8,15 +8,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
 	"github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/upsert"
+
+	"k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"k8s.io/apimachinery/pkg/util/errors"
 )
 
 // DumpHostedCluster dumps the contents of the hosted cluster to the given artifact

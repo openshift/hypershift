@@ -8,6 +8,7 @@ package tools
 
 import (
 	_ "github.com/ahmetb/gen-crd-api-reference-docs"
+	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
 	// jparrill: The RHTAP tool is breaking the RHTAP builds from Feb 27th, so we're stop using it for now
 	// more info here https://redhat-internal.slack.com/archives/C031USXS2FJ/p1710177462151639
 	//_ "github.com/prometheus/prometheus/cmd/promtool"

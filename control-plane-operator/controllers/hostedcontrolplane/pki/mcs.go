@@ -3,9 +3,9 @@ package pki
 import (
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/openshift/hypershift/support/config"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func ReconcileMachineConfigServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {

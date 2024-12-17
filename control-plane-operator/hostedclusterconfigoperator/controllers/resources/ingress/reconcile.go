@@ -3,14 +3,15 @@ package ingress
 import (
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool, useNLB bool, loadBalancerScope operatorv1.LoadBalancerScope, loadBalancerIP string) error {
@@ -124,20 +125,38 @@ func ReconcileOpenStackDefaultIngressController(ingressController *unstructured.
 		return nil
 	}
 
-	unstructured.SetNestedField(ingressController.Object, ingressSubdomain, "spec", "domain")
-	unstructured.SetNestedField(ingressController.Object, string(operatorv1.LoadBalancerServiceStrategyType), "spec", "endpointPublishingStrategy", "type")
-	unstructured.SetNestedField(ingressController.Object, int64(replicas), "spec", "replicas")
-
-	unstructured.SetNestedField(ingressController.Object, string(loadBalancerScope), "spec", "endpointPublishingStrategy", "loadBalancer", "scope")
-	unstructured.SetNestedField(ingressController.Object, string(operatorv1.OpenStackLoadBalancerProvider), "spec", "endpointPublishingStrategy", "loadBalancer", "providerParameters", "type")
-	if loadBalancerIP != "" {
-		unstructured.SetNestedField(ingressController.Object, loadBalancerIP, "spec", "endpointPublishingStrategy", "loadBalancer", "providerParameters", "openstack", "floatingIP")
+	if err := unstructured.SetNestedField(ingressController.Object, ingressSubdomain, "spec", "domain"); err != nil {
+		return err
 	}
-	unstructured.SetNestedField(ingressController.Object, manifests.IngressDefaultIngressControllerCert().Name, "spec", "defaultCertificate", "name")
+	if err := unstructured.SetNestedField(ingressController.Object, string(operatorv1.LoadBalancerServiceStrategyType), "spec", "endpointPublishingStrategy", "type"); err != nil {
+		return err
+	}
+	if err := unstructured.SetNestedField(ingressController.Object, int64(replicas), "spec", "replicas"); err != nil {
+		return err
+	}
+
+	if err := unstructured.SetNestedField(ingressController.Object, string(loadBalancerScope), "spec", "endpointPublishingStrategy", "loadBalancer", "scope"); err != nil {
+		return err
+	}
+	if err := unstructured.SetNestedField(ingressController.Object, string(operatorv1.OpenStackLoadBalancerProvider), "spec", "endpointPublishingStrategy", "loadBalancer", "providerParameters", "type"); err != nil {
+		return err
+	}
+	if loadBalancerIP != "" {
+		if err := unstructured.SetNestedField(ingressController.Object, loadBalancerIP, "spec", "endpointPublishingStrategy", "loadBalancer", "providerParameters", "openstack", "floatingIP"); err != nil {
+			return err
+		}
+	}
+	if err := unstructured.SetNestedField(ingressController.Object, manifests.IngressDefaultIngressControllerCert().Name, "spec", "defaultCertificate", "name"); err != nil {
+		return err
+	}
 
 	if isPrivate {
-		unstructured.SetNestedField(ingressController.Object, operatorv1.PrivateStrategyType, "spec", "endpointPublishingStrategy", "type")
-		unstructured.SetNestedMap(ingressController.Object, map[string]interface{}{}, "spec", "endpointPublishingStrategy", "private")
+		if err := unstructured.SetNestedField(ingressController.Object, operatorv1.PrivateStrategyType, "spec", "endpointPublishingStrategy", "type"); err != nil {
+			return err
+		}
+		if err := unstructured.SetNestedMap(ingressController.Object, map[string]interface{}{}, "spec", "endpointPublishingStrategy", "private"); err != nil {
+			return err
+		}
 	}
 	return nil
 }

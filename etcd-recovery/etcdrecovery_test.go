@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"go.etcd.io/etcd/api/v3/etcdserverpb"
+
 	"k8s.io/utils/ptr"
+
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
 )
 
 func TestMissingMember(t *testing.T) {

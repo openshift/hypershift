@@ -6,9 +6,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 
-	"github.com/go-logr/logr"
-
 	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
 )
 
 // AzureCreds is the file format we expect for credentials. It is copied from the installer

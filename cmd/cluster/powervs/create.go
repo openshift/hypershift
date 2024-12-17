@@ -12,11 +12,14 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -258,15 +261,15 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	powerVsOpts := DefaultOptions()
 	BindOptions(powerVsOpts, cmd.Flags())
-	cmd.MarkFlagRequired("resource-group")
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkFlagRequired("resource-group")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("cloud-connection")
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("cloud-connection")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())

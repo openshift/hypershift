@@ -1,11 +1,11 @@
 package controlplanepkioperator
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 func ReconcileCSRApproverClusterRole(clusterRole *rbacv1.ClusterRole, hc *hypershiftv1beta1.HostedCluster, signers ...certificates.SignerClass) error {

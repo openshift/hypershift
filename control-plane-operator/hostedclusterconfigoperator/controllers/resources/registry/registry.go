@@ -4,9 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.PlatformType, availabilityPolicy hyperv1.AvailabilityPolicy) {
@@ -47,6 +48,6 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.Platf
 
 func generateImageRegistrySecret() string {
 	num := make([]byte, 64)
-	rand.Read(num)
+	_, _ = rand.Read(num)
 	return hex.EncodeToString(num)
 }

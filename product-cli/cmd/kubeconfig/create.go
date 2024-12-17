@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
-
 	hypershiftkubeconfig "github.com/openshift/hypershift/cmd/kubeconfig"
+
+	"github.com/spf13/cobra"
 )
 
 type options struct {

@@ -6,9 +6,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/blang/semver"
-
 	"github.com/openshift/hypershift/support/releaseinfo"
+
+	"github.com/blang/semver"
 )
 
 var (

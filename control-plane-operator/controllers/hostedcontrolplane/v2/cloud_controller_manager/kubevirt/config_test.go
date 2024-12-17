@@ -30,11 +30,17 @@ func TestConfig(t *testing.T) {
 	}
 
 	cm := &corev1.ConfigMap{}
-	assets.LoadManifestInto(ComponentName, "kubevirt-cloud-config.yaml", cm)
+	_, _, err := assets.LoadManifestInto(ComponentName, "kubevirt-cloud-config.yaml", cm)
+	if err != nil {
+		t.Fatalf("LoadManifestInto: unexpected error: %v", err)
+	}
 	cpContext := component.WorkloadContext{
 		HCP: hcp,
 	}
-	adaptConfig(cpContext, cm)
+	err = adaptConfig(cpContext, cm)
+	if err != nil {
+		t.Fatalf("adaptConfig: unexpected error: %v", err)
+	}
 
 	yaml, err := util.SerializeResource(cm, api.Scheme)
 	if err != nil {

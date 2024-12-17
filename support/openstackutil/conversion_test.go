@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 )
 

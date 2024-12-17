@@ -1,10 +1,10 @@
 package agent
 
 import (
-	"github.com/spf13/cobra"
-
 	hypershiftagent "github.com/openshift/hypershift/cmd/nodepool/agent"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {

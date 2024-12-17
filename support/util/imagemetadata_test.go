@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 )
 

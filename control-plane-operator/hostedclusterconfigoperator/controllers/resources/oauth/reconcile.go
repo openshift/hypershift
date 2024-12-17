@@ -7,11 +7,11 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/certs"
-	rbacv1 "k8s.io/api/rbac/v1"
-
-	corev1 "k8s.io/api/core/v1"
 
 	oauthv1 "github.com/openshift/api/oauth/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 func ReconcileOAuthServerCertCABundle(cm *corev1.ConfigMap, sourceBundle *corev1.ConfigMap) error {

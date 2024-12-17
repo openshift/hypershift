@@ -7,12 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/events"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestCertificateLoadingController_CurrentCA(t *testing.T) {

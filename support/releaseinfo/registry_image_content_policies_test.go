@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	imagev1 "github.com/openshift/api/image/v1"
 )
 

@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	"k8s.io/utils/ptr"
+
+	"github.com/blang/semver"
 )
 
 // LatestSupportedVersion is the latest minor OCP version supported by the

@@ -1,10 +1,10 @@
 package openstack
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {

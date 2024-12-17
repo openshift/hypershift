@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-
-	. "github.com/onsi/gomega"
 )
 
 func TestProcessPausedUntilField(t *testing.T) {

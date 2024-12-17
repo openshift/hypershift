@@ -9,13 +9,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 // GetSubnetNameFromSubnetID extracts the subnet name from a subnet ID
@@ -131,7 +131,7 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("virtual network has no name")
 	}
 
-	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) == 0 {
+	if len(vnet.Properties.Subnets) == 0 {
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnets found for resource group '%s'", vnetResourceGroupName)
 	}
 

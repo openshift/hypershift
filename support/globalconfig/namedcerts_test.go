@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
+
+	"github.com/onsi/gomega"
 )
 
 func TestApplyNamedCertificateMounts(t *testing.T) {

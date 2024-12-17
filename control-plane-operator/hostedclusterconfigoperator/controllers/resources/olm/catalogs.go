@@ -1,10 +1,13 @@
 package olm
 
 import (
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 )
 
 func ReconcileCertifiedOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {

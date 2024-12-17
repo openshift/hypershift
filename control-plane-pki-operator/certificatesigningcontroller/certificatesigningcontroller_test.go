@@ -16,24 +16,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	certificatesv1applyconfigurations "k8s.io/client-go/applyconfigurations/certificates/v1"
-	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
-	"k8s.io/utils/ptr"
+	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
+	certificatesv1applyconfigurations "k8s.io/client-go/applyconfigurations/certificates/v1"
+	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/util/certificate/csr"
 	testingclock "k8s.io/utils/clock/testing"
+	"k8s.io/utils/ptr"
 
-	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // generating lots of PKI in environments where compute and/or entropy is limited (like in test containers)

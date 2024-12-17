@@ -11,11 +11,14 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/pkg/version"
-	"github.com/spf13/cobra"
+
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 func NewStartCommand() *cobra.Command {

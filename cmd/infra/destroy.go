@@ -1,11 +1,11 @@
 package infra
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/infra/powervs"
+
+	"github.com/spf13/cobra"
 )
 
 func NewDestroyCommand() *cobra.Command {

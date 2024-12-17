@@ -5,9 +5,9 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-
 	"github.com/openshift/hypershift/cmd/log"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
 func Test_SetupAzureCredentials(t *testing.T) {

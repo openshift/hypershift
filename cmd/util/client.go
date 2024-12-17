@@ -5,12 +5,13 @@ import (
 	"os"
 	"strings"
 
+	hyperapi "github.com/openshift/hypershift/support/api"
+
 	"k8s.io/client-go/rest"
+
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	hyperapi "github.com/openshift/hypershift/support/api"
 )
 
 const (

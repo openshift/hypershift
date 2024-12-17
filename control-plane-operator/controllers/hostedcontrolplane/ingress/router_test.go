@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
+
+	routev1 "github.com/openshift/api/route/v1"
+
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 

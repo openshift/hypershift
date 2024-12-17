@@ -10,12 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,8 +26,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 type options struct {
@@ -70,7 +74,7 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 
 		}
-		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.List())
+		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.UnsortedList())
 		if err != nil {
 			log.Error(err, "failed to parse --required-api arguments")
 			os.Exit(1)
@@ -205,19 +209,19 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 }
 
 type stringSetFlag struct {
-	val sets.String
+	val sets.Set[string]
 }
 
 func (s *stringSetFlag) Set(v string) error {
 	if s.val == nil {
-		s.val = sets.String{}
+		s.val = sets.Set[string]{}
 	}
 	s.val.Insert(v)
 	return nil
 }
 
 func (s *stringSetFlag) String() string {
-	return fmt.Sprintf("%v", s.val.List())
+	return fmt.Sprintf("%v", s.val.UnsortedList())
 }
 func (s *stringSetFlag) Type() string {
 	return "stringSetFlag"

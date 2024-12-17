@@ -3,8 +3,6 @@ package cluster
 import (
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
@@ -12,6 +10,8 @@ import (
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/aws"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/openstack"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommands() *cobra.Command {

@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
+	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
 	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/upsert"
+
 	corev1 "k8s.io/api/core/v1"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -16,10 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
-	"github.com/openshift/hypershift/support/supportedversion"
-	"github.com/openshift/hypershift/support/upsert"
 )
 
 const (

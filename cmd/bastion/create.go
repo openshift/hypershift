@@ -1,9 +1,9 @@
 package bastion
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/bastion/aws"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand() *cobra.Command {

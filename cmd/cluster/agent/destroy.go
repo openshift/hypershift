@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/log"
+
+	"github.com/spf13/cobra"
 )
 
 type DestroyOptions struct {

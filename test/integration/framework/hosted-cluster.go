@@ -16,9 +16,11 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/support/supportedversion"
+
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/go-logr/logr"
 )
 
 func InterruptableContext(parent context.Context) context.Context {

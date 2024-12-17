@@ -21,13 +21,15 @@ import (
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
 const (
@@ -458,20 +460,14 @@ func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Pred
 func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
 	hostedClusterName := ""
 	nodePoolName := ""
-	switch obj.(type) {
+	switch objType := obj.(type) {
 	case *hyperv1.HostedCluster:
-		hc, ok := obj.(*hyperv1.HostedCluster)
-		if !ok {
-			return ""
-		}
+		hc := objType
 		if hc.GetAnnotations() != nil {
 			return hc.GetAnnotations()[HostedClustersScopeAnnotation]
 		}
 	case *hyperv1.NodePool:
-		np, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return ""
-		}
+		np := objType
 		hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
 	default:
 		if obj.GetAnnotations() != nil {

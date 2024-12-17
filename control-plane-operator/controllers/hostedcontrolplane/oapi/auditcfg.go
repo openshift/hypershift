@@ -3,11 +3,12 @@ package oapi
 import (
 	"fmt"
 
-	configv1 "github.com/openshift/api/config/v1"
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/openshift/hypershift/support/config"
+
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/apiserver/audit"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (

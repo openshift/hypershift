@@ -22,10 +22,10 @@ import (
 	"syscall"
 
 	cliversion "github.com/openshift/hypershift/cmd/version"
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/product-cli/cmd/create"
 	"github.com/openshift/hypershift/product-cli/cmd/destroy"
+
+	"github.com/spf13/cobra"
 )
 
 func main() {

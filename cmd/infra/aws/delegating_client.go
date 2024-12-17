@@ -3,6 +3,8 @@ package aws
 import (
 	"fmt"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -16,8 +18,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
 // NewDelegatingClient creates a new set of AWS service clients that delegate individual calls to the right credentials.

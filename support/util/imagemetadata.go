@@ -5,13 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/docker/distribution"
-
-	"github.com/blang/semver"
-	"github.com/docker/distribution/registry/client/transport"
-	"github.com/golang/groupcache/lru"
-	"k8s.io/client-go/rest"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -19,7 +12,15 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
+
+	"k8s.io/client-go/rest"
+
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/blang/semver"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/registry/client/transport"
+	"github.com/golang/groupcache/lru"
 )
 
 var (
@@ -47,7 +48,6 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	log := ctrl.LoggerFrom(ctx)
 
 	var (
-		repo           distribution.Repository
 		ref            *reference.DockerImageReference
 		parsedImageRef reference.DockerImageReference
 		err            error
@@ -75,7 +75,7 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 		}
 
 		ref = &parsedImageRef
-		repo, err = getRepository(ctx, *ref, pullSecret)
+		_, err = getRepository(ctx, *ref, pullSecret)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +104,7 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 		}
 	}
 
-	repo, err = getRepository(ctx, *ref, pullSecret)
+	repo, err := getRepository(ctx, *ref, pullSecret)
 	if err != nil || repo == nil {
 		return nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
 	}

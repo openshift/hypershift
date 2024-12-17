@@ -4,21 +4,23 @@ import (
 	"fmt"
 	"sync"
 
-	"go.uber.org/zap/zapcore"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"go.uber.org/zap/zapcore"
 )
 
 func newUpdateLoopDetector() *updateLoopDetector {
 	return &updateLoopDetector{
-		hasNoOpUpdate:    sets.String{},
+		hasNoOpUpdate:    sets.Set[string]{},
 		updateEventCount: map[string]int{},
 		log: zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 			o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -41,7 +43,7 @@ func updateLoopThreshold(o runtime.Object) int {
 }
 
 type updateLoopDetector struct {
-	hasNoOpUpdate    sets.String
+	hasNoOpUpdate    sets.Set[string]
 	lock             sync.RWMutex
 	updateEventCount map[string]int
 	log              logr.Logger

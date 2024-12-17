@@ -6,6 +6,10 @@ import (
 	"strings"
 	"time"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -21,16 +25,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type DestroyInfraOptions struct {
@@ -144,8 +145,8 @@ func NewDestroyCommand() *cobra.Command {
 	BindOptions(opts.AWSCredentialsOpts, cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
@@ -180,7 +181,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 		infraCtx = ctx
 	}
 
-	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	err := wait.PollUntilContextCancel(infraCtx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := o.DestroyInfra(infraCtx)
 		if err != nil {
 			if !awsutil.IsErrorRetryable(err) {
@@ -190,7 +191,12 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 			return false, nil
 		}
 		return true, nil
-	}, infraCtx.Done())
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
@@ -281,17 +287,16 @@ func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3ifa
 	}
 	for _, bucket := range result.Buckets {
 		if strings.HasPrefix(*bucket.Name, fmt.Sprintf("%s-image-registry-", o.InfraID)) {
-			if err := emptyBucket(ctx, client, *bucket.Name); err != nil {
+			if err = emptyBucket(ctx, client, *bucket.Name); err != nil {
 				errs = append(errs, fmt.Errorf("failed to empty bucket %s: %w", *bucket.Name, err))
 				continue
 			}
-			_, err := client.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+			_, err = client.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
 				Bucket: bucket.Name,
 			})
 			if err != nil {
 				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
 					o.Log.Info("S3 Bucket already deleted", "name", *bucket.Name)
-					err = nil
 				} else {
 					errs = append(errs, err)
 				}

@@ -12,11 +12,13 @@ import (
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 type Options struct {

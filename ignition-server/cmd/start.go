@@ -20,10 +20,9 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
 	corev1 "k8s.io/api/core/v1"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
@@ -33,6 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 const namespaceEnvVariableName = "MY_NAMESPACE"
@@ -193,10 +196,15 @@ func run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("error setting up manager: %w", err)
 	}
-	if err := mgr.Add(certWatcher); err != nil {
+	if err = mgr.Add(certWatcher); err != nil {
 		return fmt.Errorf("failed to add certWatcher to manager: %w", err)
 	}
-	go mgr.Start(ctx)
+	go func() {
+		err = mgr.Start(ctx)
+		if err != nil {
+			logger.Error(err, "failed to start manager")
+		}
+	}()
 
 	mgr.GetLogger().Info("Using opts", "opts", fmt.Sprintf("%+v", opts))
 	eventRecorder := mgr.GetEventRecorderFor("ignition-server")
@@ -254,7 +262,10 @@ func run(ctx context.Context, opts Options) error {
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write(value.Payload)
+		_, err = w.Write(value.Payload)
+		if err != nil {
+			logger.Error(err, "failed to write response")
+		}
 
 		eventRecorder.Event(tokenSecret, corev1.EventTypeNormal, "GetPayload", "")
 		getRequestsPerNodePool.WithLabelValues(r.Header.Get("NodePool")).Inc()

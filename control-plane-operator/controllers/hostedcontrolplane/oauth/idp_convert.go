@@ -13,15 +13,16 @@ import (
 	"strings"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
-	osinv1 "github.com/openshift/api/osin/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	kas "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
 	supportproxy "github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
-	"golang.org/x/net/http/httpproxy"
+
+	configv1 "github.com/openshift/api/config/v1"
+	osinv1 "github.com/openshift/api/osin/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,8 +31,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/net"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"golang.org/x/net/http/httpproxy"
 )
 
 const (

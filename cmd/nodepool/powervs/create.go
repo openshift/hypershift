@@ -6,14 +6,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spf13/cobra"
-
-	"k8s.io/apimachinery/pkg/util/intstr"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+
+	"k8s.io/apimachinery/pkg/util/intstr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
 )
 
 type PowerVSPlatformCreateOptions struct {

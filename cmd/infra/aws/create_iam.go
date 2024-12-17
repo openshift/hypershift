@@ -7,20 +7,22 @@ import (
 	"fmt"
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 type CreateIAMOptions struct {
@@ -85,12 +87,12 @@ func NewCreateIAMCommand() *cobra.Command {
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("public-zone-id")
-	cmd.MarkFlagRequired("private-zone-id")
-	cmd.MarkFlagRequired("local-zone-id")
-	cmd.MarkFlagRequired("oidc-bucket-name")
-	cmd.MarkFlagRequired("oidc-bucket-region")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("public-zone-id")
+	_ = cmd.MarkFlagRequired("private-zone-id")
+	_ = cmd.MarkFlagRequired("local-zone-id")
+	_ = cmd.MarkFlagRequired("oidc-bucket-name")
+	_ = cmd.MarkFlagRequired("oidc-bucket-region")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

@@ -1,10 +1,10 @@
 package kubevirt
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {

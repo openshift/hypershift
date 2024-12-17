@@ -3,10 +3,11 @@ package cco
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+
 	operatorv1 "github.com/openshift/api/operator/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReconcileCloudCredentialConfig(t *testing.T) {

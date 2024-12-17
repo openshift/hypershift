@@ -7,15 +7,16 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
+
+	admissionv1 "k8s.io/api/admission/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	admissionv1 "k8s.io/api/admission/v1"
+	"github.com/google/go-cmp/cmp"
 )
 
 func main() {

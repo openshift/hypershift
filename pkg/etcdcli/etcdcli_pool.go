@@ -7,8 +7,9 @@ import (
 	"sort"
 	"time"
 
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"k8s.io/klog/v2"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 // EtcdClientPool fulfills these requirements:

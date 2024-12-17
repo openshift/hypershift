@@ -13,7 +13,8 @@ import (
 	"testing"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -25,12 +26,14 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	. "github.com/onsi/gomega"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type PlatformAgnosticOptions struct {
@@ -85,7 +88,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 		if err := recover(); err != nil {
 			// on a panic, print error and mark test as failed so postTeardown() is skipped
 			// panics from subtests can't be caught by this.
-			h.Errorf(string(debug.Stack()))
+			h.Errorf("error happened: %v", debug.Stack())
 		}
 
 		h.teardown(hostedCluster, opts, artifactDir, false)

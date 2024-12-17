@@ -3,16 +3,17 @@ package ocm
 import (
 	"testing"
 
-	v1 "github.com/openshift/api/config/v1"
-	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	controlplanecomponent "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	corev1 "k8s.io/api/core/v1"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
+
+	v1 "github.com/openshift/api/config/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -59,10 +60,13 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 	}
 
 	configMap := &corev1.ConfigMap{}
-	controlplanecomponent.LoadManifestInto(ComponentName, "config.yaml", configMap)
+	_, _, err := controlplanecomponent.LoadManifestInto(ComponentName, "config.yaml", configMap)
+	if err != nil {
+		t.Fatalf("LoadManifestInto: unexpected error: %v", err)
+	}
 
 	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-	err := util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
+	err = util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
 	if err != nil {
 		t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
 	}

@@ -1,13 +1,13 @@
 package nodepool
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool/agent"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool/aws"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool/kubevirt"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool/openstack"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand() *cobra.Command {

@@ -5,17 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/cmd/util"
-
-	"github.com/go-logr/logr"
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
@@ -34,7 +32,9 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
-	"go.uber.org/zap/zapcore"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -47,6 +47,7 @@ import (
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
@@ -55,6 +56,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/go-logr/logr"
+	"github.com/google/go-cmp/cmp"
+	"go.uber.org/zap/zapcore"
 )
 
 var Now = metav1.NewTime(time.Now())
@@ -1105,7 +1110,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			}
 		})
 	}
-	watchedResources := sets.String{}
+	watchedResources := sets.Set[string]{}
 	for _, resource := range r.managedResources() {
 		resourceType := fmt.Sprintf("%T", resource)
 		switch resourceType {
@@ -1120,7 +1125,14 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		}
 		watchedResources.Insert(resourceType)
 	}
-	if diff := cmp.Diff(client.createdTypes.List(), watchedResources.List()); diff != "" {
+
+	sortedCreatedTypes := client.createdTypes.UnsortedList()
+	sortedWatchedResources := watchedResources.UnsortedList()
+
+	sort.Strings(sortedCreatedTypes)
+	sort.Strings(sortedWatchedResources)
+
+	if diff := cmp.Diff(sortedCreatedTypes, sortedWatchedResources); diff != "" {
 		t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
 	}
 }
@@ -1321,12 +1333,12 @@ func TestReconcileCLISecrets(t *testing.T) {
 
 type createTypeTrackingClient struct {
 	crclient.Client
-	createdTypes sets.String
+	createdTypes sets.Set[string]
 }
 
 func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Object, opts ...crclient.CreateOption) error {
 	if c.createdTypes == nil {
-		c.createdTypes = sets.String{}
+		c.createdTypes = sets.Set[string]{}
 	}
 	c.createdTypes.Insert(fmt.Sprintf("%T", obj))
 	return c.Client.Create(ctx, obj, opts...)
@@ -2046,7 +2058,10 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			if err != nil {
+				t.Fatalf("failed to get hosted control plane object: %v", err)
+			}
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
 			if len(previousClusterID) > 0 {

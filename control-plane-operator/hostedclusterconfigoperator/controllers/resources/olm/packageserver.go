@@ -2,9 +2,8 @@ package olm
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
-
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	"k8s.io/utils/ptr"
 )
 
 func ReconcilePackageServerAPIService(apiService *apiregistrationv1.APIService, ca *corev1.Secret) {

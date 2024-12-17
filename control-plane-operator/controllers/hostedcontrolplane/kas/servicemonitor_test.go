@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func TestReconcileRecordingRules(t *testing.T) {

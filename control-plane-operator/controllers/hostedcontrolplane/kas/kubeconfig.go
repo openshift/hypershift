@@ -4,12 +4,13 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	corev1 "k8s.io/api/core/v1"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 

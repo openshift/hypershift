@@ -3,13 +3,13 @@ package pki
 import (
 	"testing"
 
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-
-	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/config"
 )
 
 func TestReconcileOAuthServerCert(t *testing.T) {

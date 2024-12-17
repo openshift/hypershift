@@ -8,17 +8,19 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/blang/semver"
-	"golang.org/x/sync/errgroup"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
+
 	cr "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/blang/semver"
+	"golang.org/x/sync/errgroup"
 )
 
 type KubevirtInfraClientMap interface {

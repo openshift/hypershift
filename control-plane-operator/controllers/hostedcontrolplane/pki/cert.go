@@ -3,10 +3,10 @@ package pki
 import (
 	"crypto/x509"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 var (

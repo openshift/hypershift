@@ -3,11 +3,13 @@ package supportedversion
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/blang/semver"
-	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func TestSupportedVersions(t *testing.T) {

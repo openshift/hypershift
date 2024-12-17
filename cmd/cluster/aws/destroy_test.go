@@ -3,10 +3,10 @@ package aws
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-
-	. "github.com/onsi/gomega"
 )
 
 func Test_ValidateCredentialInfo(t *testing.T) {

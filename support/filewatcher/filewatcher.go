@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/fsnotify/fsnotify"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 var (
@@ -32,7 +33,12 @@ func WatchFileForChanges(fileToWatch string) error {
 		log.Info("Watching file...", "file", fileToWatch)
 
 		// Start the file watcher to monitor file changes
-		go checkForFileChanges(fileToWatch)
+		go func() {
+			err := checkForFileChanges(fileToWatch)
+			if err != nil {
+				log.Error(err, "Error checking for file changes")
+			}
+		}()
 	})
 	return err
 }

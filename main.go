@@ -23,9 +23,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
-
 	"github.com/openshift/hypershift/cmd/consolelogs"
 	createcmd "github.com/openshift/hypershift/cmd/create"
 	destroycmd "github.com/openshift/hypershift/cmd/destroy"
@@ -36,6 +33,9 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
@@ -49,7 +49,7 @@ func main() {
 		TraverseChildren: true,
 
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -71,12 +71,12 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT)
 	go func() {
 		<-sigs
-		fmt.Fprintln(os.Stderr, "\nAborted...")
+		_, _ = fmt.Fprintln(os.Stderr, "\nAborted...")
 		cancel()
 	}()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }

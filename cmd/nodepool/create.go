@@ -2,8 +2,6 @@ package nodepool
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/nodepool/agent"
 	"github.com/openshift/hypershift/cmd/nodepool/aws"
 	"github.com/openshift/hypershift/cmd/nodepool/azure"
@@ -11,6 +9,8 @@ import (
 	"github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	"github.com/openshift/hypershift/cmd/nodepool/openstack"
 	"github.com/openshift/hypershift/cmd/nodepool/powervs"
+
+	"github.com/spf13/cobra"
 )
 
 // The following lines are needed in order to validate that any platform implementing PlatformOptions satisfy the interface

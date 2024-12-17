@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openshift/hypershift/support/util"
-
-	corev1 "k8s.io/api/core/v1"
-
-	imagev1 "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
+
+	imagev1 "github.com/openshift/api/image/v1"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 

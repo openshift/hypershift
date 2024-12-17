@@ -3,14 +3,19 @@ package etcdcli
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	grpcprom "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/openshift/library-go/pkg/operator/events"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/klog/v2"
+
+	grpcprom "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
@@ -19,9 +24,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -55,14 +57,13 @@ func NewEtcdClient(endpointsFunc func() ([]string, error), eventRecorder events.
 // newEtcdClientWithClientOpts allows customization of the etcd client using ClientOptions. All clients must be manually
 // closed by the caller with Close().
 func newEtcdClientWithClientOpts(endpoints []string, skipConnectionTest bool, opts ...ClientOption) (*clientv3.Client, error) {
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(ioutil.Discard, ioutil.Discard, os.Stderr))
+	grpclog.SetLoggerV2(grpclog.NewLoggerV2(io.Discard, io.Discard, os.Stderr))
 	clientOpts, err := newClientOpts(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error during clientOpts: %w", err)
 	}
 
 	dialOptions := []grpc.DialOption{
-		grpc.WithBlock(), // block until the underlying connection is up
 		grpc.WithChainUnaryInterceptor(grpcprom.UnaryClientInterceptor),
 		grpc.WithChainStreamInterceptor(grpcprom.StreamClientInterceptor),
 	}

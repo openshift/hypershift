@@ -4,11 +4,12 @@ import (
 	"context"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
+	"github.com/openshift/hypershift/cmd/cluster/core"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type RawCreateOptions struct {
@@ -103,7 +104,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	noneOpts := DefaultOptions()
 	BindOptions(noneOpts, cmd.Flags())
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

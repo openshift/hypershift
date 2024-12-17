@@ -4,15 +4,16 @@ import (
 	"context"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/support/upsert"
+
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
+
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
-	"github.com/openshift/hypershift/support/upsert"
 )
 
 const (
@@ -33,10 +34,13 @@ func setupConfigMapObserver(cfg *operator.HostedClusterConfigOperatorConfig) err
 		return err
 	}
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(targetKubeClient, 10*time.Hour, informers.WithNamespace(ManagedConfigNamespace))
-	cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
+	err = cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		informerFactory.Start(ctx.Done())
 		return nil
 	}))
+	if err != nil {
+		return err
+	}
 
 	configMaps := informerFactory.Core().V1().ConfigMaps()
 	reconciler := &ManagedCAObserver{

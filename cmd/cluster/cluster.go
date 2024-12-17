@@ -3,8 +3,6 @@ package cluster
 import (
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -14,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	"github.com/openshift/hypershift/cmd/log"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommands() *cobra.Command {
@@ -61,7 +61,7 @@ func NewDestroyCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID; inferred from the hosted cluster by default")
 	cmd.PersistentFlags().BoolVar(&opts.DestroyCloudResources, "destroy-cloud-resources", opts.DestroyCloudResources, "If true, cloud resources such as load balancers and persistent storage disks created by the cluster during its lifetime are removed")
 
-	cmd.MarkPersistentFlagRequired("name")
+	_ = cmd.MarkPersistentFlagRequired("name")
 
 	cmd.AddCommand(aws.NewDestroyCommand(opts))
 	cmd.AddCommand(none.NewDestroyCommand(opts))

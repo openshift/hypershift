@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
-	"github.com/spf13/pflag"
+
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/spf13/pflag"
 )
 
 func TestRawCreateOptions_Validate(t *testing.T) {

@@ -3,13 +3,14 @@ package mcs
 import (
 	"fmt"
 
-	configv1 "github.com/openshift/api/config/v1"
-	corev1 "k8s.io/api/core/v1"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 type MCSParams struct {

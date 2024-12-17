@@ -11,12 +11,13 @@ import (
 
 	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+
 	"github.com/spf13/cobra"
 )
 
 func main() {
 	cmd := NewCommand()
-	cmd.Execute()
+	_ = cmd.Execute()
 }
 
 type Options struct {

@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	operatorv1 "github.com/openshift/api/operator/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
 func TestReconcileDefaultIngressController(t *testing.T) {

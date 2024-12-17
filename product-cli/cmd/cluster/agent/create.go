@@ -5,6 +5,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+
 	"github.com/spf13/cobra"
 )
 

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime"
-
 	hyperapi "github.com/openshift/hypershift/support/api"
+
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func DeserializeResource(data string, resource runtime.Object, objectTyper runtime.ObjectTyper) error {

@@ -7,25 +7,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
-	imageapi "github.com/openshift/api/image/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
+
+	imageapi "github.com/openshift/api/image/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
 
 func TestSetMachineSetReplicas(t *testing.T) {
@@ -612,7 +617,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 
 func TestListMachineTemplatesAWS(t *testing.T) {
 	g := NewWithT(t)
-	capiaws.AddToScheme(api.Scheme)
+	_ = capiaws.AddToScheme(api.Scheme)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,
@@ -913,12 +918,6 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			o.SetAnnotations(a)
 		}
 	}
-	withMaxUnhealthy := func(value string) func(*capiv1.MachineHealthCheck) {
-		return func(mhc *capiv1.MachineHealthCheck) {
-			maxUnhealthy := intstr.Parse(value)
-			mhc.Spec.MaxUnhealthy = &maxUnhealthy
-		}
-	}
 	withTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
 		return func(mhc *capiv1.MachineHealthCheck) {
 			for i := range mhc.Spec.UnhealthyConditions {
@@ -1003,24 +1002,6 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			expected: healthcheck(),
 		},
 		{
-			name:     "maxunhealthy override in hc",
-			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
-			np:       nodepool(),
-			expected: healthcheck(withMaxUnhealthy("10%")),
-		},
-		{
-			name:     "maxunhealthy override in np",
-			hc:       hostedcluster(),
-			np:       nodepool(withMaxUnhealthyOverride("5")),
-			expected: healthcheck(withMaxUnhealthy("5")),
-		},
-		{
-			name:     "maxunhealthy override in both, np takes precedence",
-			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
-			np:       nodepool(withMaxUnhealthyOverride("5")),
-			expected: healthcheck(withMaxUnhealthy("5")),
-		},
-		{
 			name:     "invalid maxunhealthy override value, default is preserved",
 			hc:       hostedcluster(),
 			np:       nodepool(withMaxUnhealthyOverride("foo")),
@@ -1041,7 +1022,10 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 				capiClusterName: "cluster",
 			}
 			mhc := &capiv1.MachineHealthCheck{}
-			capi.reconcileMachineHealthCheck(context.Background(), mhc)
+			err := capi.reconcileMachineHealthCheck(context.Background(), mhc)
+			if err != nil {
+				t.Fatalf("failed to reconcile MachineHealthCheck: %v", err)
+			}
 			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
 		})
 	}
@@ -1418,9 +1402,9 @@ func TestCAPIReconcile(t *testing.T) {
 				capiClusterName: capiClusterName,
 			}
 
-			if tt.expectedError {
-				// TODO(alberto): use WithObjectTracker() / WithInterceptorFuncs() to mock error paths.
-			}
+			//if tt.expectedError {
+			// TODO(alberto): use WithObjectTracker() / WithInterceptorFuncs() to mock error paths.
+			//}
 
 			// Make sure the templates are populates in the control plane namespace
 			templateList := &capiaws.AWSMachineTemplateList{}

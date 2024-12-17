@@ -7,11 +7,14 @@ import (
 
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/spf13/cobra"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
 )
 
 type Outputs string
@@ -222,7 +225,10 @@ func applyPatchesToObjects(objects []crclient.Object, patches []ObjectPatch) ([]
 		patchedObject := &unstructured.Unstructured{Object: content}
 		for _, p := range patches {
 			if p.CanBeAppliedTo(patchedObject) {
-				unstructured.SetNestedField(patchedObject.Object, p.Value, p.Path...)
+				err = unstructured.SetNestedField(patchedObject.Object, p.Value, p.Path...)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 		patchedObjects[i] = patchedObject
@@ -239,7 +245,10 @@ func render(objects []crclient.Object, format string, out io.Writer) error {
 				return err
 			}
 			if i < len(objects)-1 {
-				fmt.Fprintln(out, "---")
+				_, err = fmt.Fprintln(out, "---")
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil

@@ -16,8 +16,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/targetconfigcontroller"
+
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"

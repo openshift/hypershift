@@ -6,12 +6,13 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-pki-operator/topology"
 	hypershiftversion "github.com/openshift/hypershift/pkg/version"
-	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/version"
-
-	"k8s.io/component-base/cli"
 
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+
+	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/component-base/cli"
+
+	"github.com/spf13/cobra"
 )
 
 func main() {
@@ -25,7 +26,7 @@ func NewOperatorCommand(ctx context.Context) *cobra.Command {
 		Use:   "control-plane-pki-operator",
 		Short: "HyperShift control plane PKI Operator.",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}

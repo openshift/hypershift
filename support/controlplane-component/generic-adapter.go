@@ -3,6 +3,7 @@ package controlplanecomponent
 import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

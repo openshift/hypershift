@@ -10,10 +10,12 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"golang.org/x/crypto/ssh"
 
 	"k8s.io/utils/ptr"
+
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {

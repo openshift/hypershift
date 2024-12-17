@@ -14,12 +14,14 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/armon/go-socks5"
 	"github.com/go-logr/logr"
 	"golang.org/x/net/proxy"
-	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // The ProxyDialer is the dialer used to connect via a Konnectivity proxy

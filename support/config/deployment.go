@@ -5,11 +5,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
@@ -42,7 +42,7 @@ type DeploymentConfig struct {
 	LivenessProbes            LivenessProbes
 	ReadinessProbes           ReadinessProbes
 	Resources                 ResourcesSpec
-	DebugDeployments          sets.String
+	DebugDeployments          sets.Set[string]
 	ResourceRequestOverrides  ResourceOverrides
 	IsolateAsRequestServing   bool
 	RevisionHistoryLimit      int
@@ -509,11 +509,15 @@ func parseResourceRequestOverrideAnnotation(key, value string, overrides Resourc
 // debugDeployments returns a set of deployments to debug based on the
 // debugDeploymentsAnnotation value, indicating the deployment should be considered to
 // be in development mode.
-func debugDeployments(hc *hyperv1.HostedControlPlane) sets.String {
+func debugDeployments(hc *hyperv1.HostedControlPlane) sets.Set[string] {
 	val, exists := hc.Annotations[util.DebugDeploymentsAnnotation]
 	if !exists {
 		return nil
 	}
 	names := strings.Split(val, ",")
-	return sets.NewString(names...)
+	setOfNames := sets.New[string]()
+	for _, name := range names {
+		setOfNames.Insert(strings.TrimSpace(name))
+	}
+	return setOfNames
 }

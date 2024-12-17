@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 )
 

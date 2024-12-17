@@ -4,9 +4,9 @@ import (
 	"embed"
 	"path"
 
-	corev1 "k8s.io/api/core/v1"
-
 	component "github.com/openshift/hypershift/support/controlplane-component"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 //go:embed templates/*

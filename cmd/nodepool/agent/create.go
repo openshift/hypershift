@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spf13/cobra"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
 )
 
 type AgentPlatformCreateOptions struct {
