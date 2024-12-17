@@ -109,6 +109,7 @@ type AzureConfig struct {
 	SubscriptionID               string `json:"subscriptionId"`
 	AADClientID                  string `json:"aadClientId"`
 	AADClientSecret              string `json:"aadClientSecret"`
+	AADClientCertPath            string `json:"aadClientCertPath"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`
