@@ -5081,32 +5081,6 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		}
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-
-		// Reconcile the Azure Disk configuration secret
-		// TODO this just copies the cloud provider secret at the moment. There will be a follow-on PR to provide
-		// different credentials for Azure Disk and Azure File (right below).
-		// This is related to https://github.com/openshift/csi-operator/pull/290.
-		azureDiskConfigSecret := manifests.AzureDiskConfigWithCredentials(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureDiskConfigSecret, func() error {
-			return azure.ReconcileCloudConfigWithCredentials(azureDiskConfigSecret, hcp, credentialsSecret)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
-		}
-
-		// Reconcile the Azure File configuration secret
-		azureFileConfigSecret := manifests.AzureFileConfigWithCredentials(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, azureFileConfigSecret, func() error {
-			return azure.ReconcileCloudConfigWithCredentials(azureFileConfigSecret, hcp, credentialsSecret)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile Azure disk config: %w", err)
-		}
-	}
-
 	deployment := manifests.ClusterStorageOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
 		return storage.ReconcileOperatorDeployment(deployment, params, hcp.Spec.Platform.Type)
