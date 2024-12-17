@@ -35,7 +35,7 @@ OUT_DIR ?= bin
 
 # run the HO locally
 HYPERSHIFT_INSTALL_AWS := ./hack/dev/aws/hypershft-install-aws.sh
-RUN_OPERATOR_LOCALLY_AWS := ./hack/dev/aws/run-operator-locally-aws.sh
+RUN_OPERATOR_LOCALLY_AWS := ./hack/dev/aws/run-operator-locally-aws-dev.sh
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -88,6 +88,10 @@ tests:
 .PHONY: hypershift-operator
 hypershift-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-operator ./hypershift-operator
+
+.PHONY: karpenter-operator
+karpenter-operator:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/karpenter-operator ./karpenter-operator
 
 .PHONY: control-plane-operator
 control-plane-operator:

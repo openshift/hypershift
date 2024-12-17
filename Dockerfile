@@ -4,12 +4,13 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make hypershift hypershift-operator product-cli
+RUN make hypershift hypershift-operator product-cli karpenter-operator
 
 FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
+                    /hypershift/bin/karpenter-operator \
      /usr/bin/
 
 ENTRYPOINT ["/usr/bin/hypershift"]

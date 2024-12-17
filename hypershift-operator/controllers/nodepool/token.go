@@ -60,6 +60,7 @@ type userData struct {
 	caCert                 []byte
 	ignitionServerEndpoint string
 	proxy                  *configv1.Proxy
+	ami                    string
 }
 
 // NewToken is the contract to create a new Token struct.
@@ -124,10 +125,19 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, configGenerator.hostedCluster)
 
+	ami := ""
+	if configGenerator.hostedCluster.Spec.Platform.AWS != nil {
+		ami, err = defaultNodePoolAMI(configGenerator.hostedCluster.Spec.Platform.AWS.Region, configGenerator.nodePool.Spec.Arch, configGenerator.releaseImage)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	token.userData = &userData{
 		ignitionServerEndpoint: ignEndpoint,
 		caCert:                 caCert,
 		proxy:                  proxy,
+		ami:                    ami,
 	}
 
 	return token, nil
@@ -335,6 +345,19 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 		userDataSecret.Annotations = make(map[string]string)
 	}
 	userDataSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(t.nodePool).String()
+	if userDataSecret.Labels == nil {
+		userDataSecret.Labels = make(map[string]string)
+	}
+
+	if t.hostedCluster.Spec.AutoNode != nil && t.hostedCluster.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
+		t.hostedCluster.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
+		// TODO(alberto): prevent nodePool name collisions adding prefix to karpenter NodePool.
+		if t.nodePool.GetName() == "karpenter" {
+			userDataSecret.Labels[hyperv1.NodePoolLabel] = fmt.Sprintf("%s-%s", t.nodePool.Spec.ClusterName, t.nodePool.GetName())
+			userDataSecret.Labels["hypershift.openshift.io/ami"] = t.userData.ami
+		}
+
+	}
 
 	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)
 	encodedToken := base64.StdEncoding.EncodeToString([]byte(token))

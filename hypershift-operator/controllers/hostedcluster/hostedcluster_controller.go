@@ -1757,6 +1757,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	if err := r.reconcileKarpenterOperator(ctx, createOrUpdate, hcluster, hcp, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
+	}
+
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
 		releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
@@ -1955,6 +1959,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
 	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
 	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
+	hcp.Spec.AutoNode = hcluster.Spec.AutoNode
 	hcp.Spec.NodeSelector = hcluster.Spec.NodeSelector
 	hcp.Spec.Tolerations = hcluster.Spec.Tolerations
 	hcp.Spec.Labels = hcluster.Spec.Labels

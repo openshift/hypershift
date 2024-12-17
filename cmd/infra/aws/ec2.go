@@ -11,9 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/cmd/util"
-
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -215,14 +215,20 @@ func (o *CreateInfraOptions) existingDHCPOptions(client ec2iface.EC2API) (string
 }
 
 func (o *CreateInfraOptions) CreatePrivateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone), tagNameSubnetInternalELB)
+	karpenterDiscoveryTag := []*ec2.Tag{
+		{
+			Key:   ptr.To("karpenter.sh/discovery"),
+			Value: ptr.To(o.InfraID),
+		},
+	}
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone), tagNameSubnetInternalELB, karpenterDiscoveryTag)
 }
 
 func (o *CreateInfraOptions) CreatePublicSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), tagNameSubnetPublicELB)
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), tagNameSubnetPublicELB, nil)
 }
 
-func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name, scopeTag string) (string, error) {
+func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name, scopeTag string, additionalTags []*ec2.Tag) (string, error) {
 	subnetID, err := o.existingSubnet(client, name)
 	if err != nil {
 		return "", err
@@ -236,6 +242,9 @@ func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API,
 		Key:   aws.String(scopeTag),
 		Value: aws.String("1"),
 	})
+	if additionalTags != nil {
+		tagSpec[0].Tags = append(tagSpec[0].Tags, additionalTags...)
+	}
 
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
 		AvailabilityZone:  aws.String(zone),

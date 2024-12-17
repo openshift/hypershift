@@ -209,6 +209,222 @@ var (
 }`,
 	}
 
+	//   {
+	// 	"Action": [
+	// 	  "*"
+	// 	],
+	// 	"Resource": [
+	// 	  "*"
+	// 	],
+	// 	"Effect": "Allow"
+	//   }
+	karpenterPolicy = policyBinding{
+		name:            "karpenter",
+		serviceAccounts: []string{"system:serviceaccount:kube-system:karpenter"},
+		policy: `{
+			"Version": "2012-10-17",
+			"Statement": [
+			  {
+				"Sid": "AllowScopedEC2InstanceAccessActions",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*::image/*",
+					"arn:*:ec2:*::snapshot/*",
+					"arn:*:ec2:*:*:security-group/*",
+					"arn:*:ec2:*:*:subnet/*"
+				],
+				"Action": [
+					"ec2:RunInstances",
+					"ec2:CreateFleet"
+				]
+			  },
+			  {
+				"Sid": "AllowScopedEC2LaunchTemplateAccessActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:ec2:*:*:launch-template/*",
+				"Action": [
+					"ec2:RunInstances",
+					"ec2:CreateFleet"
+				]
+			  },
+			  {
+				"Sid": "AllowScopedEC2InstanceActionsWithTags",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*:*:fleet/*",
+					"arn:*:ec2:*:*:instance/*",
+					"arn:*:ec2:*:*:volume/*",
+					"arn:*:ec2:*:*:network-interface/*",
+					"arn:*:ec2:*:*:launch-template/*",
+					"arn:*:ec2:*:*:spot-instances-request/*"
+				],
+				"Action": [
+					"ec2:RunInstances",
+					"ec2:CreateFleet",
+					"ec2:CreateLaunchTemplate"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:RequestTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedResourceCreationTagging",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*:*:fleet/*",
+					"arn:*:ec2:*:*:instance/*",
+					"arn:*:ec2:*:*:volume/*",
+					"arn:*:ec2:*:*:network-interface/*",
+					"arn:*:ec2:*:*:launch-template/*",
+					"arn:*:ec2:*:*:spot-instances-request/*"
+				],
+				"Action": "ec2:CreateTags",
+				"Condition": {
+					"StringEquals": {
+					"ec2:CreateAction": [
+						"RunInstances",
+						"CreateFleet",
+						"CreateLaunchTemplate"
+					]
+					},
+					"StringLike": {
+					"aws:RequestTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedResourceTagging",
+				"Effect": "Allow",
+				"Resource": "arn:*:ec2:*:*:instance/*",
+				"Action": "ec2:CreateTags",
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedDeletion",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*:*:instance/*",
+					"arn:*:ec2:*:*:launch-template/*"
+				],
+				"Action": [
+					"ec2:TerminateInstances",
+					"ec2:DeleteLaunchTemplate"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			{
+				"Sid": "AllowRegionalReadActions",
+				"Effect": "Allow",
+				"Resource": "*",
+				"Action": [
+					"ec2:DescribeImages",
+					"ec2:DescribeInstances",
+					"ec2:DescribeInstanceTypeOfferings",
+					"ec2:DescribeInstanceTypes",
+					"ec2:DescribeLaunchTemplates",
+					"ec2:DescribeSecurityGroups",
+					"ec2:DescribeSpotPriceHistory",
+					"ec2:DescribeSubnets"
+				]
+			  },
+			  {
+				"Sid": "AllowSSMReadActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:ssm:*::parameter/aws/service/*",
+				"Action": "ssm:GetParameter"
+			  },
+			  {
+				"Sid": "AllowPricingReadActions",
+				"Effect": "Allow",
+				"Resource": "*",
+				"Action": "pricing:GetProducts"
+			  },
+			  {
+				"Sid": "AllowInterruptionQueueActions",
+				"Effect": "Allow",
+				"Resource": "*",
+				"Action": [
+					"sqs:DeleteMessage",
+					"sqs:GetQueueUrl",
+					"sqs:ReceiveMessage"
+				]
+			  },
+			  {
+				"Sid": "AllowPassingInstanceRole",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:role/*",
+				"Action": "iam:PassRole",
+				"Condition": {
+					"StringEquals": {
+					"iam:PassedToService": [
+						"ec2.amazonaws.com",
+						"ec2.amazonaws.com.cn"
+					]
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedInstanceProfileCreationActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": [
+					"iam:CreateInstanceProfile"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+					}
+				}
+			  },
+			{
+				"Sid": "AllowScopedInstanceProfileTagActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": [
+					"iam:TagInstanceProfile"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*",
+					"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedInstanceProfileActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": [
+					"iam:AddRoleToInstanceProfile",
+					"iam:RemoveRoleFromInstanceProfile",
+					"iam:DeleteInstanceProfile"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowInstanceProfileReadActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": "iam:GetInstanceProfile"
+			  }
+			]
+		  }`,
+	}
+
 	nodePoolPolicy = policyBinding{
 		name:            "node-pool",
 		serviceAccounts: []string{"system:serviceaccount:kube-system:capa-controller-manager"},
@@ -628,6 +844,12 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger
 		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID, sharedVPC),
 		&output.Roles.NetworkARN:              cloudNetworkConfigControllerPolicy,
 	}
+
+	if o.CreateKarpenterRoleARN {
+		bindings[&output.KarpenterRoleARN] = karpenterPolicy
+
+	}
+
 	if len(o.KMSKeyARN) > 0 {
 		bindings[&output.KMSProviderRoleARN] = kmsProviderPolicy(o.KMSKeyARN)
 	}

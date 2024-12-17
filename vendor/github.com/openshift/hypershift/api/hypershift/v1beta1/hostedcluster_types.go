@@ -460,6 +460,10 @@ type HostedClusterSpec struct {
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
+	// autoNode specifies the configuration for the autoNode feature.
+	// +openshift:enable:FeatureGate=AutoNodeKarpenter
+	AutoNode *AutoNode `json:"autoNode,omitempty"`
+
 	// etcd specifies configuration for the control plane etcd cluster. The
 	// default managementType is Managed. Once set, the managementType cannot be
 	// changed.
@@ -1095,6 +1099,47 @@ type Release struct {
 	// +required
 	Image string `json:"image"`
 }
+
+// We expose here internal configuration knobs that won't be exposed to the service.
+type AutoNode struct {
+	// provisioner is the implementation used for Node auto provisioning.
+	// +required
+	Provisioner *ProvisionerConfig `json:"provisionerConfig"`
+}
+
+// ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.
+type ProvisionerConfig struct {
+	// name specifies the name of the provisioner to use.
+	// +required
+	// +kubebuilder:validation:Enum=Karpenter
+	Name Provisioner `json:"name"`
+	// karpenter specifies the configuration for the Karpenter provisioner.
+	// +optional
+	Karpenter *KarpenterConfig `json:"karpenter,omitempty"`
+}
+
+type KarpenterConfig struct {
+	// platform specifies the platform-specific configuration for Karpenter.
+	// +required
+	Platform PlatformType `json:"platform"`
+	// aws specifies the AWS-specific configuration for Karpenter.
+	// +optional
+	AWS *KarpenterAWSConfig `json:"aws,omitempty"`
+}
+
+type KarpenterAWSConfig struct {
+	//arn specifies the ARN of the Karpenter provisioner.
+	// +required
+	RoleARN string `json:"roleARN"`
+}
+
+const (
+	ProvisionerKarpeneter Provisioner = "Karpenter"
+)
+
+// provisioner is a enum specifying the strategy for auto managing Nodes.
+// +kubebuilder:validation:Enum=Karpenter
+type Provisioner string
 
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all
 // NodePools associated with a control plane.
