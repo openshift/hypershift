@@ -30,7 +30,7 @@ spec:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,certs
         component.hypershift.openshift.io/config-hash: "1252551421580954"
-        hypershift.openshift.io/release-image: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
         app: kube-controller-manager

@@ -30,7 +30,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: payload,update-payloads
-        hypershift.openshift.io/release-image: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
         app: cluster-version-operator
@@ -85,6 +85,7 @@ spec:
         - name: CLUSTER_PROFILE
           value: ibm-cloud-managed
         - name: RELEASE_IMAGE
+          value: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         - name: NODE_NAME
           valueFrom:
             fieldRef:
@@ -284,9 +285,10 @@ spec:
             annotations:
               include.release.openshift.io/ibm-cloud-managed: "true"
               release.openshift.io/delete: "true"
+          EOF
         command:
         - /bin/bash
-        image: cluster-version-operator
+        image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         imagePullPolicy: IfNotPresent
         name: prepare-payload
         resources:
