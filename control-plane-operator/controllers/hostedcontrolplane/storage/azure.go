@@ -3,9 +3,11 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	hypershiftconfig "github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -28,7 +30,7 @@ func initializeAzureCSIControllerConfig(hcp *hyperv1.HostedControlPlane, tenantI
 func ReconcileAzureDiskCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, tenantID string) error {
 	config := initializeAzureCSIControllerConfig(hcp, tenantID)
 	config.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ClientID
-	config.AADClientCertPath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName
+	config.AADClientCertPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName)
 
 	serializedConfig, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -46,7 +48,7 @@ func ReconcileAzureDiskCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedContr
 func ReconcileAzureFileCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, tenantID string) error {
 	config := initializeAzureCSIControllerConfig(hcp, tenantID)
 	config.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ClientID
-	config.AADClientCertPath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName
+	config.AADClientCertPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName)
 
 	serializedConfig, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
