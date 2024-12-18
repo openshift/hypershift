@@ -62,7 +62,7 @@ spec:
 	}
 
 	// Managed a NodePool to generate userData for Karpenter instances
-	// TODO(alberto): consider invoking the token library to manage the karpenter userdata programatically,
+	// TODO(alberto): consider invoking the token library to manage the karpenter userdata programmatically,
 	// instead of via NodePool API.
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{

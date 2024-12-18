@@ -308,7 +308,7 @@ func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []
 		return false, nil
 	}
 
-	// Default to using the deserializeManifest function, but allow for a custom deserialization function to be passed in the context for testing purposes and avoiding paralelism issues
+	// Default to using the deserializeManifest function, but allow for a custom deserialization function to be passed in the context for testing purposes and avoiding parallelism issues
 	deserializeFunc := deserializeManifest
 	if ctx.Value(DeserializeFuncName) != nil {
 		deserializeFunc = ctx.Value(DeserializeFuncName).(func([]byte) (*manifestlist.DeserializedManifestList, error))

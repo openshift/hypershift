@@ -170,7 +170,7 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 
 	composedRef := fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.NameString())
 
-	// If the overriden image name is in the cache, return early
+	// If the overridden image name is in the cache, return early
 	if imageDigest, exists := digestCache.Get(composedRef); exists {
 		ref.ID = string(imageDigest.(digest.Digest))
 		return imageDigest.(digest.Digest), ref, nil
@@ -400,7 +400,7 @@ func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReferenc
 	}
 
 	// docker lib, by default will empty the Namespace once we pass an override with just a Namespace
-	// and it will asume that is the Name instead
+	// and it will assume that is the Name instead
 	if sourceRef.Namespace == "" {
 		if sourceRef.Name == ref.Namespace {
 			composedImage := fmt.Sprintf("%s/%s/%s", mirrorRef.Registry, ref.Namespace, ref.NameString())
