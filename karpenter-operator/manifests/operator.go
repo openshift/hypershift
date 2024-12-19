@@ -342,7 +342,7 @@ func ReconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.Creat
 
 	// The deployment depends on the kubeconfig being reported.
 	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret for CAPI which is used for karpeneter for convience
+		// Resolve the kubeconfig secret for CAPI which is used for karpeneter for convenience
 		capiKubeConfigSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: hcp.Namespace,
