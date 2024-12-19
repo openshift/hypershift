@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
 // we require labelling these cluster-scoped resources so that the controller cleaning them up

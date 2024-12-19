@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/openshift/hypershift/cmd/infra/aws"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 

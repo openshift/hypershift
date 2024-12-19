@@ -8,12 +8,13 @@ with some slight adjustments to use a controller-runtime cache rather than a sta
 import (
 	"context"
 
-	"github.com/blang/semver"
-	"github.com/prometheus/client_golang/prometheus"
+	configv1 "github.com/openshift/api/config/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	configv1 "github.com/openshift/api/config/v1"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/blang/semver"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Register exposes core platform metrics that relate to the configuration

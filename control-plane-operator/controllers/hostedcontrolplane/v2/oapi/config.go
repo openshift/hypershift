@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"path"
 
-	corev1 "k8s.io/api/core/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
-	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (

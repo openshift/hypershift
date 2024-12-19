@@ -3,10 +3,10 @@ package openstack
 import (
 	"context"
 
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {

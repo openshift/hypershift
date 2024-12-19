@@ -4,15 +4,16 @@ import (
 	"context"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/support/upsert"
+
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
+
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
-	"github.com/openshift/hypershift/support/upsert"
 )
 
 const (

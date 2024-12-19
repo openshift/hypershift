@@ -3,11 +3,11 @@ package aws
 import (
 	"context"
 
-	"github.com/spf13/cobra"
-
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/version"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {

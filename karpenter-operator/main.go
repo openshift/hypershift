@@ -7,14 +7,17 @@ import (
 
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/spf13/cobra"
+
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/spf13/cobra"
 )
 
 var (

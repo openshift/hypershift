@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 

@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/docker/distribution"
-	"github.com/docker/distribution/manifest/manifestlist"
 	. "github.com/onsi/gomega"
-	"github.com/opencontainers/go-digest"
+
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/manifestlist"
+	"github.com/opencontainers/go-digest"
 )
 
 const (

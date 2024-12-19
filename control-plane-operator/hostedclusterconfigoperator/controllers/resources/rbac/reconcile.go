@@ -2,6 +2,7 @@ package rbac
 
 import (
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 

@@ -3,21 +3,23 @@ package ignition
 import (
 	"bytes"
 	"fmt"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/clarketm/json"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
+
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/config"
+	"github.com/clarketm/json"
+	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
 const (

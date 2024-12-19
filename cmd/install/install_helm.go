@@ -6,9 +6,11 @@ import (
 	"strings"
 
 	"github.com/openshift/hypershift/pkg/version"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var helmTemplateParams = TemplateParams{

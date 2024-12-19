@@ -3,10 +3,11 @@ package kubevirt
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	"k8s.io/utils/ptr"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {

@@ -3,13 +3,12 @@ package kas
 import (
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
-
-	clientcmd "k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+
+	corev1 "k8s.io/api/core/v1"
+	clientcmd "k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 func ReconcileOauthMetadata(cfg *corev1.ConfigMap, ownerRef config.OwnerRef, userOauthMetadata string, externalOAuthAddress string, externalOAuthPort int32) error {

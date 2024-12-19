@@ -9,9 +9,10 @@ import (
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func DefaultOptions() *RawOpenStackPlatformCreateOptions {

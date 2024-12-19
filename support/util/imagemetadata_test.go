@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"github.com/opencontainers/go-digest"
+
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+
+	"github.com/opencontainers/go-digest"
 )
 
 func TestGetRegistryOverrides(t *testing.T) {

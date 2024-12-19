@@ -6,12 +6,12 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"k8s.io/utils/ptr"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+
+	"k8s.io/utils/ptr"
 )
 
 // TODO (cewong): Add tests for other params

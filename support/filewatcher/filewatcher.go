@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/fsnotify/fsnotify"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 var (

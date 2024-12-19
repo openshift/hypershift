@@ -3,13 +3,15 @@ package openstack
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
+
 	"k8s.io/utils/ptr"
 
-	"github.com/openshift/hypershift/api/util/ipnet"
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReconcileOpenStackCluster(t *testing.T) {

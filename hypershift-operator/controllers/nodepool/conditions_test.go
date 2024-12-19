@@ -6,22 +6,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blang/semver"
-	"github.com/openshift/api/image/docker10"
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+
+	"github.com/openshift/api/image/docker10"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
-
-	. "github.com/onsi/gomega"
+	"github.com/blang/semver"
 )
 
 func TestGenerateReconciliationPausedCondition(t *testing.T) {

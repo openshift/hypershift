@@ -6,14 +6,16 @@ import (
 	"net"
 	"time"
 
-	"k8s.io/utils/ptr"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/openshift/hypershift/cmd/util"
+
+	"k8s.io/utils/ptr"
+
 	"github.com/spf13/pflag"
 )
 

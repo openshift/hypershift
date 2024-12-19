@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/pkg/version"
-	"github.com/spf13/cobra"
+
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +18,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/spf13/cobra"
 )
 
 type options struct {
