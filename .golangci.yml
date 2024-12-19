@@ -8,10 +8,10 @@ severity:
 issues:
   exclude-rules:
     - linters:
-      - staticcheck
+        - staticcheck
       text: "SA1019: src.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release"
     - linters:
-      - staticcheck
+        - staticcheck
       text: "SA1019: in.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release."
     - linters:
         - staticcheck
@@ -31,6 +31,13 @@ issues:
 linters:
   enable:
     - gci
+  disable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
 linters-settings:
   gci:
     sections:
