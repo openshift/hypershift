@@ -3,7 +3,6 @@ kind: Deployment
 metadata:
   name: kube-controller-manager
 spec:
-  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -49,7 +48,6 @@ spec:
         - --cluster-signing-duration=17520h
         - --tls-cert-file=/etc/kubernetes/certs/server/tls.crt
         - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
-        - --node-monitor-grace-period=50s
         command:
         - hyperkube
         - kube-controller-manager

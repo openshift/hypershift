@@ -14,7 +14,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -35,6 +34,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 			c.Args = append(c.Args, fmt.Sprintf("--cloud-provider=%s", "external"))
 		}
+
+		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+			c.Args = append(c.Args, "--node-monitor-grace-period=55s")
+		} else {
+			c.Args = append(c.Args, "--node-monitor-grace-period=50s")
+		}
+
 		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
 			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
 		}
@@ -44,6 +50,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], ComponentName) {
 			c.Args = append(c.Args, "--profiling=false")
 		}
+
 		for _, f := range config.FeatureGates(hcp.Spec.Configuration.GetFeatureGateSelection()) {
 			c.Args = append(c.Args, fmt.Sprintf("--feature-gates=%s", f))
 		}
@@ -68,11 +75,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			})
 		}
 	})
-
-	deployment.Spec.Replicas = ptr.To[int32](2)
-	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
-		deployment.Spec.Replicas = ptr.To[int32](1)
-	}
 
 	return nil
 }
