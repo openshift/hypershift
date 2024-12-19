@@ -59,7 +59,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator hyp
 update: workspace-sync api-deps api api-docs deps clients
 
 .PHONY: verify
-verify: update staticcheck fmt vet
+verify: update staticcheck fmt vet verify-codespell
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
