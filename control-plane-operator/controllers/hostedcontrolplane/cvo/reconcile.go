@@ -115,7 +115,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, releaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -138,11 +138,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: ptr.To(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(releaseImage, platformType, oauthEnabled)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(dataPlaneReleaseImage, platformType, oauthEnabled)),
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneImage, releaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
@@ -300,6 +300,7 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool) 
 			"    release.openshift.io/delete: \"true\"",
 		)
 	}
+	stmts = append(stmts, "EOF")
 	return strings.Join(stmts, "\n")
 }
 
@@ -330,17 +331,17 @@ oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.y
 	return fmt.Sprintf(scriptTemplate, clusterID, payloadDir)
 }
 
-func buildCVOContainerMain(image, releaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
+func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(cvoContainerMain().Name, vol), file)
 	}
 	return func(c *corev1.Container) {
-		c.Image = image
+		c.Image = controlPlaneReleaseImage
 		c.Command = []string{"cluster-version-operator"}
 		c.Args = []string{
 			"start",
 			"--release-image",
-			releaseImage,
+			dataPlaneReleaseImage,
 			"--enable-auto-update=false",
 			"--kubeconfig",
 			path.Join(volumeMounts.Path(c.Name, cvoVolumeKubeconfig().Name), kas.KubeconfigKey),

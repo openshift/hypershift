@@ -122,9 +122,9 @@ func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagRefe
 	return nil
 }
 
-func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, digestLister registryclient.DigestListerFN) (map[string]string, error) {
+func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, digestLister registryclient.DigestListerFN, imageMetadataProvider util.ImageMetadataProvider) (map[string]string, error) {
 	imageRef := hcp.Spec.ReleaseImage
-	imageConfig, _, _, err := registryclient.GetMetadata(ctx, imageRef, pullSecret)
+	imageConfig, _, _, err := imageMetadataProvider.GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image metadata: %w", err)
 	}

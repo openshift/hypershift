@@ -44,6 +44,7 @@ type ControlPlaneContext struct {
 	HCP                      *hyperv1.HostedControlPlane
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
+	ImageMetadataProvider    util.ImageMetadataProvider
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool

@@ -21,7 +21,7 @@ func adaptStatefulSet(cpContext component.ControlPlaneContext, sts *appsv1.State
 	hcp := cpContext.HCP
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
 
-	ipv4, err := util.IsIPv4(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
+	ipv4, err := util.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
 	}

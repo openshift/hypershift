@@ -40,7 +40,7 @@ func etcdPodSelector() map[string]string {
 
 func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider) (*EtcdParams, error) {
 
-	ipv4, err := hyputils.IsIPv4(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
+	ipv4, err := hyputils.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return nil, fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
 	}

@@ -10,6 +10,8 @@ import (
 
 	"github.com/openshift/hypershift/cmd/util"
 
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
@@ -30,6 +32,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -57,8 +60,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var Now = metav1.NewTime(time.Now())
-var Later = metav1.NewTime(Now.Add(5 * time.Minute))
+var (
+	Now   = metav1.NewTime(time.Now())
+	Later = metav1.NewTime(Now.Add(5 * time.Minute))
+)
+
+const (
+	ManifestListMediaType = "application/vnd.docker.distribution.manifest.list.v2+json"
+	LinuxOS               = "linux"
+	ArchitectureAMD64     = "amd64"
+	ArchitecturePPC64LE   = "ppc64le"
+)
 
 func TestHasBeenAvailable(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
@@ -155,7 +167,10 @@ func TestHasBeenAvailable(t *testing.T) {
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
 				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result:   &dockerv1client.DockerImageConfig{},
+						Manifest: fakeimagemetadataprovider.FakeManifest{},
+					}, nil
 				},
 				now: func() metav1.Time { return reconcilerNow },
 			}
@@ -899,6 +914,35 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	releaseImage, _ := version.LookupDefaultOCPVersion("")
+	manifests := []manifestlist.ManifestDescriptor{
+		{
+			Descriptor: distribution.Descriptor{
+				MediaType: ManifestListMediaType,
+				Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+			},
+			Platform: manifestlist.PlatformSpec{
+				Architecture: ArchitectureAMD64,
+				OS:           LinuxOS,
+			},
+		},
+		{
+			Descriptor: distribution.Descriptor{
+				MediaType: ManifestListMediaType,
+				Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+			},
+			Platform: manifestlist.PlatformSpec{
+				Architecture: ArchitecturePPC64LE,
+				OS:           LinuxOS,
+			},
+		},
+	}
+	deserializeFunc := func(payload []byte) (*manifestlist.DeserializedManifestList, error) {
+		return &manifestlist.DeserializedManifestList{
+			ManifestList: manifestlist.ManifestList{
+				Manifests: manifests,
+			},
+		}, nil
+	}
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1083,7 +1127,12 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		),
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-			return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+			return &fakereleaseprovider.FakeReleaseProvider{},
+				&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					MediaType: ManifestListMediaType,
+					Result:    &dockerv1client.DockerImageConfig{},
+					Manifest:  fakeimagemetadataprovider.FakeManifest{},
+				}, nil
 		},
 		EnableEtcdRecovery: true,
 		now:                metav1.Now,
@@ -1099,7 +1148,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	for _, hc := range hostedClusters {
 		t.Run(hc.Name, func(t *testing.T) {
-			_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
+			ctx := context.WithValue(context.Background(), registryclient.DeserializeFuncName, deserializeFunc)
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
 			if err != nil {
 				t.Fatalf("Reconcile failed: %v", err)
 			}
@@ -1910,7 +1960,7 @@ func TestValidateReleaseImage(t *testing.T) {
 								"image-4.18.0": "4.18.0",
 							},
 						},
-						&fakeimagemetadataprovider.FakeImageMetadataProvider{
+						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 							Result: &dockerv1client.DockerImageConfig{},
 						},
 						nil
@@ -2252,7 +2302,7 @@ func TestIsUpgradeable(t *testing.T) {
 							"image-4.14":   "4.15.0",
 						},
 					},
-					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 						Result: &dockerv1client.DockerImageConfig{},
 					},
 					nil
@@ -2609,7 +2659,7 @@ func TestIsProgressing(t *testing.T) {
 							"release-1.3": "1.3.0",
 						},
 					},
-					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 						Result: &dockerv1client.DockerImageConfig{},
 					},
 					nil
@@ -3535,7 +3585,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				),
 				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
 				},
 				now: metav1.Now,
 			}

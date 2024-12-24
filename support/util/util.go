@@ -291,19 +291,28 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 	return imageRegistryOverrides
 }
 
-// IsIPv4 function parse the CIDR and get the IPNet struct if the IPNet.IP cannot be converted to 4bytes format,
-// the function returns nil, if it's an IPv6 it will return nil.
-func IsIPv4(cidr string) (bool, error) {
-	_, ipnet, err := net.ParseCIDR(cidr)
+// IsIPv4CIDR checks if the input string is an IPv4 CIDR.
+func IsIPv4CIDR(input string) (bool, error) {
+	_, ipnet, err := net.ParseCIDR(input)
 	if err != nil {
-		return false, fmt.Errorf("error validating the incoming CIDR %s: %v", cidr, err)
+		return false, fmt.Errorf("error parsing input '%s': not a valid CIDR", input)
 	}
-
 	if ipnet.IP.To4() != nil {
 		return true, nil
-	} else {
-		return false, nil
 	}
+	return false, nil
+}
+
+// IsIPv4Address checks if the input string is an IPv4 address.
+func IsIPv4Address(input string) (bool, error) {
+	ip := net.ParseIP(input)
+	if ip == nil {
+		return false, fmt.Errorf("error parsing input '%s': not a valid IP address", input)
+	}
+	if ip.To4() != nil {
+		return true, nil
+	}
+	return false, nil
 }
 
 // FirstUsableIP returns the first usable IP in both, IPv4 and IPv6 stacks.
@@ -398,7 +407,7 @@ func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc 
 		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
 
-	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes, imageMetadataProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to determine if release image multi-arch: %w", err)
 	}

@@ -92,15 +92,20 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
+	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: map[string][]string{},
+	}
+
 	p := &controllers.LocalIgnitionProvider{
-		Client:              cl,
-		ReleaseProvider:     &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{},
-		CloudProvider:       "",
-		Namespace:           o.Namespace,
-		WorkDir:             o.WorkDir,
-		PreserveOutput:      true,
-		ImageFileCache:      imageFileCache,
-		FeatureGateManifest: o.FeatureGateManifest,
+		Client:                cl,
+		ReleaseProvider:       &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{},
+		ImageMetadataProvider: imageMetaDataProvider,
+		CloudProvider:         "",
+		Namespace:             o.Namespace,
+		WorkDir:               o.WorkDir,
+		PreserveOutput:        true,
+		ImageFileCache:        imageFileCache,
+		FeatureGateManifest:   o.FeatureGateManifest,
 	}
 
 	payload, err := p.GetPayload(ctx, o.Image, config.String(), "", "", "")
