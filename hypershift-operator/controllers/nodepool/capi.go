@@ -1325,5 +1325,5 @@ func (r *NodePoolReconciler) getMachinesForNodePool(ctx context.Context, nodePoo
 }
 
 func (c *CAPI) reconcileORCResources(ctx context.Context) error {
-	return openstack.ReconcileOpenStackImageCR(ctx, c.Client, c.CreateOrUpdate, c.hostedCluster, c.releaseImage, c.controlplaneNamespace)
+	return openstack.ReconcileOpenStackImageCR(ctx, c.Client, c.CreateOrUpdate, c.hostedCluster, c.releaseImage, c.nodePool)
 }
