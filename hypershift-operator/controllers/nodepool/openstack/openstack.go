@@ -3,6 +3,7 @@ package openstack
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
@@ -82,8 +84,23 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 	return openStackMachineTemplate, nil
 }
 
-func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, controlPlaneNamespace string) error {
+func getOpenStackClusterForHostedCluster(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (capiopenstackv1beta1.OpenStackCluster, error) {
+	cluster := capiopenstackv1beta1.OpenStackCluster{}
+
+	if err := c.Get(ctx, types.NamespacedName{Namespace: controlPlaneNamespace, Name: hcluster.Name}, &cluster); err != nil {
+		return cluster, fmt.Errorf("failed to list Machines: %w", err)
+	}
+
+	return cluster, nil
+}
+
+func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool) error {
 	releaseVersion, err := releaseinfo.OpenStackReleaseImage(release)
+	if err != nil {
+		return err
+	}
+	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
+	openstackCluster, err := getOpenStackClusterForHostedCluster(ctx, client, hcluster, controlPlaneNamespace)
 	if err != nil {
 		return err
 	}
@@ -94,10 +111,10 @@ func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, create
 			// TODO: add proper cleanup in CAPI resources cleanup
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: hcluster.APIVersion,
-					Kind:       hcluster.Kind,
-					Name:       hcluster.Name,
-					UID:        hcluster.UID,
+					APIVersion: openstackCluster.APIVersion,
+					Kind:       openstackCluster.Kind,
+					Name:       openstackCluster.Name,
+					UID:        openstackCluster.UID,
 				},
 			},
 		},
