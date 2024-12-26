@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -134,7 +134,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 						Name: "tests",
 					},
 					Spec: tc.nodePool,
-				})
+				}, &releaseinfo.ReleaseImage{})
 			if tc.checkError != nil {
 				tc.checkError(t, err)
 			} else {
