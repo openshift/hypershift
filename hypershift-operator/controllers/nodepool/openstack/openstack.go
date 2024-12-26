@@ -17,7 +17,7 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 )
 
-func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
+func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
 	openStackMachineTemplate := &capiopenstackv1beta1.OpenStackMachineTemplateSpec{Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{Spec: capiopenstackv1beta1.OpenStackMachineSpec{
 		Flavor: ptr.To(nodePool.Spec.Platform.OpenStack.Flavor),
 	}}}
@@ -27,8 +27,12 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 			Name: ptr.To(nodePool.Spec.Platform.OpenStack.ImageName),
 		}
 	} else {
+		releaseVersion, err := releaseinfo.OpenStackReleaseImage(releaseImage)
+		if err != nil {
+			return nil, err
+		}
 		openStackMachineTemplate.Template.Spec.Image.ImageRef = &capiopenstackv1beta1.ResourceReference{
-			Name: "rhcos-" + hcluster.Name,
+			Name: "rhcos-" + releaseVersion + "-" + hcluster.Name,
 		}
 	}
 
@@ -78,9 +82,13 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 }
 
 func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage) error {
+	releaseVersion, err := releaseinfo.OpenStackReleaseImage(release)
+	if err != nil {
+		return err
+	}
 	openStackImage := orc.Image{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "rhcos-" + hcluster.Name,
+			Name:      "rhcos-" + releaseVersion + "-" + hcluster.Name,
 			Namespace: hcluster.Namespace,
 			// TODO: add proper cleanup in CAPI resources cleanup
 			OwnerReferences: []metav1.OwnerReference{
@@ -117,9 +125,13 @@ func reconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 		SecretName: hcluster.Spec.Platform.OpenStack.IdentityRef.Name,
 		CloudName:  hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName,
 	}
+	releaseVersion, err := releaseinfo.OpenStackReleaseImage(release)
+	if err != nil {
+		return err
+	}
 
 	openStackImageSpec.Resource = &orc.ImageResourceSpec{
-		Name: "rhcos-" + hcluster.Name,
+		Name: "rhcos-" + releaseVersion + "-" + hcluster.Name,
 		Content: &orc.ImageContent{
 			DiskFormat: "qcow2",
 			Download: &orc.ImageContentSourceDownload{

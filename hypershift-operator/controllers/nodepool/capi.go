@@ -849,7 +849,7 @@ func (c *CAPI) machineTemplateBuilders() (client.Object, func(object client.Obje
 	case hyperv1.OpenStackPlatform:
 		template = &capiopenstackv1beta1.OpenStackMachineTemplate{}
 		var err error
-		machineTemplateSpec, err = openstack.MachineTemplateSpec(hcluster, nodePool)
+		machineTemplateSpec, err = openstack.MachineTemplateSpec(hcluster, nodePool, c.releaseImage)
 		if err != nil {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
