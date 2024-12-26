@@ -81,7 +81,7 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 	return openStackMachineTemplate, nil
 }
 
-func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage) error {
+func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, controlPlaneNamespace string) error {
 	releaseVersion, err := releaseinfo.OpenStackReleaseImage(release)
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, create
 	openStackImage := orc.Image{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "rhcos-" + releaseVersion + "-" + hcluster.Name,
-			Namespace: hcluster.Namespace,
+			Namespace: controlPlaneNamespace,
 			// TODO: add proper cleanup in CAPI resources cleanup
 			OwnerReferences: []metav1.OwnerReference{
 				{
