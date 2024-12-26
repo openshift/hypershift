@@ -376,3 +376,15 @@ func UnsupportedOpenstackDefaultImage(releaseImage *ReleaseImage) (string, strin
 
 	return disk.Location, disk.SHA256, nil
 }
+
+func OpenStackReleaseImage(releaseImage *ReleaseImage) (string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	openStack, exists := arch.Artifacts["openstack"]
+	if !exists {
+		return "", fmt.Errorf("couldn't find OS metadata for openstack")
+	}
+	return openStack.Release, nil
+}
