@@ -148,7 +148,7 @@ spec:
             - name: name
               value: init
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:ac64e4003e4d535d4ac71434837c0fd70f978178ae852c717d7344c3e8efb94e
+              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:ad2c6461433b867a5b8c5243048014f71295f4f7b0b684e6289246e37f698204
             - name: kind
               value: task
           resolver: bundles
@@ -274,7 +274,7 @@ spec:
             - name: name
               value: prefetch-dependencies
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.1@sha256:cd873246e0d830d8b3d0dc76334348474361101487457f65bc02aab9861aad2c
+              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.1@sha256:d1a7af2e0696f1d36dc722d770ca7c29c075c8a03a1fbc8f687447816042abd6
             - name: kind
               value: task
           resolver: bundles
@@ -309,7 +309,7 @@ spec:
             - name: name
               value: buildah
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:01c8daae57efbf6a574f52d8333b6eca7ccb7b6244196c5fae562d813f9c36a6
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.2@sha256:2daae1f22c949594c1284e8ad52d11d361309eb0da87e80db9c2953277f7c561
             - name: kind
               value: task
           resolver: bundles
@@ -346,7 +346,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:27d07dbe1d3b6b612cd0a68eb4974791e9a91af2df98c43b9810b5b9f7ca573c
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:b94c011bb86dd0998c2bb3b7cab59ddd2086848bc6a6e015a4a701920d30bc9e
             - name: kind
               value: task
           resolver: bundles
@@ -383,7 +383,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:27d07dbe1d3b6b612cd0a68eb4974791e9a91af2df98c43b9810b5b9f7ca573c
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:b94c011bb86dd0998c2bb3b7cab59ddd2086848bc6a6e015a4a701920d30bc9e
             - name: kind
               value: task
           resolver: bundles
@@ -421,7 +421,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:27d07dbe1d3b6b612cd0a68eb4974791e9a91af2df98c43b9810b5b9f7ca573c
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.2@sha256:b94c011bb86dd0998c2bb3b7cab59ddd2086848bc6a6e015a4a701920d30bc9e
             - name: kind
               value: task
           resolver: bundles
@@ -455,7 +455,7 @@ spec:
             - name: name
               value: build-image-manifest
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:38c5c4106cbcbcf970e00fbd3b878201fcca2587242cd5d8b97be9b32b9a23d5
+              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:35e81a29fc00570479928b75c8e5309a9addbe7409a822a2cc9b3862a6d0c4aa
             - name: kind
               value: task
           resolver: bundles
@@ -566,7 +566,7 @@ spec:
             - name: name
               value: rpms-signature-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:ec536e55a039052823ba74e07db3175554fb046649671d1fefd776ca064d00ac
+              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:39cd56ffa26ff5edfd5bf9b61e902cae35a345c078cd9dcbc0737d30f3ce5ef1
             - name: kind
               value: task
           resolver: bundles
