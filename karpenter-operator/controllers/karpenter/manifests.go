@@ -165,7 +165,7 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 							},
 							{
 								Name:  "AWS_REGION",
-								Value: "us-east-1",
+								Value: hcp.Spec.Platform.AWS.Region,
 							},
 							{
 								Name:  "AWS_SHARED_CREDENTIALS_FILE",
