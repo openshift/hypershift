@@ -80,6 +80,7 @@ import (
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
@@ -222,6 +223,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		autoscalerv2.NewComponent(),
 		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
 		ocmv2.NewComponent(),
+		oauthv2.NewComponent(),
 		routecmv2.NewComponent(),
 		clusterpolicyv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
@@ -1214,12 +1216,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
 				return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 			}
-		}
 
-		// Reconcile oauth server
-		r.Log.Info("Reconciling OAuth Server")
-		if err := r.reconcileOAuthServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+			// Reconcile oauth server
+			r.Log.Info("Reconciling OAuth Server")
+			if err := r.reconcileOAuthServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+			}
+
 		}
 
 		// TODO: move this up with the rest of conditions reconciliation logic?
