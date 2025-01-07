@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	azureutil "github.com/Azure/go-autorest/autorest/azure"
@@ -65,6 +63,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/registryoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/routecm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
@@ -3803,6 +3802,24 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
+
+	// Create SecretProviderClass when deploying on managed Azure
+	if hyperazureutil.IsAroHCP() {
+		ingressSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureIngressSecretStoreProviderClassName, hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ingressSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(ingressSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingress operator secret provider class: %w", err)
+		}
+
+		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		p.AzureTenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+	}
 
 	if _, exists := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
 		rootCA := manifests.RootCAConfigMap(hcp.Namespace)
