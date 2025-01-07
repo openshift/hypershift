@@ -112,6 +112,10 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureManagedIdentitiesFile, "e2e.azure-managed-identities-file", "", "Path to an Azure managed identities file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceOffer, "e2e.azure-marketplace-offer", "", "The location to use for Azure")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplacePublisher, "e2e.azure-marketplace-publisher", "", "The marketplace publisher to use for Azure")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceSKU, "e2e.azure-marketplace-sku", "", "The marketplace SKU to use for Azure")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceVersion, "e2e.azure-marketplace-version", "", "The marketplace version to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
 	flag.StringVar(&globalOpts.configurableClusterOptions.NetworkType, "network-type", string(hyperv1.OVNKubernetes), "The network type to use. If unset, will default based on the OCP version.")
@@ -441,6 +445,10 @@ type configurableClusterOptions struct {
 	OpenStackCredentialsFile      string
 	OpenStackCACertFile           string
 	AzureLocation                 string
+	AzureMarketplaceOffer         string
+	AzureMarketplacePublisher     string
+	AzureMarketplaceSKU           string
+	AzureMarketplaceVersion       string
 	Region                        string
 	Zone                          stringSliceVar
 	PullSecretFile                string
@@ -643,6 +651,22 @@ func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 
 	if opts.ManagedIdentitiesFile != "" {
 		opts.TechPreviewEnabled = true
+	}
+
+	if o.configurableClusterOptions.AzureMarketplaceOffer != "" {
+		opts.NodePoolOpts.MarketplaceOffer = o.configurableClusterOptions.AzureMarketplaceOffer
+	}
+
+	if o.configurableClusterOptions.AzureMarketplacePublisher != "" {
+		opts.NodePoolOpts.MarketplacePublisher = o.configurableClusterOptions.AzureMarketplacePublisher
+	}
+
+	if o.configurableClusterOptions.AzureMarketplaceSKU != "" {
+		opts.NodePoolOpts.MarketplaceSKU = o.configurableClusterOptions.AzureMarketplaceSKU
+	}
+
+	if o.configurableClusterOptions.AzureMarketplaceVersion != "" {
+		opts.NodePoolOpts.MarketplaceVersion = o.configurableClusterOptions.AzureMarketplaceVersion
 	}
 
 	return opts
