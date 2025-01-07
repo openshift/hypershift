@@ -1314,10 +1314,10 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	// Reconcile image registry operator
-	r.Log.Info("Reconciling Image Registry Operator")
-	if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+	/*r.Log.Info("Reconciling Image Registry Operator")
+	 if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
-	}
+	}*/
 
 	if IsStorageAndCSIManaged(hostedControlPlane) {
 		// Reconcile cluster storage operator

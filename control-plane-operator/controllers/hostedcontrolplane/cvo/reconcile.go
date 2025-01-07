@@ -1,10 +1,13 @@
 package cvo
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -15,8 +18,6 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 
-	configv1 "github.com/openshift/api/config/v1"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -24,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -209,7 +211,7 @@ func buildCVOContainerBootstrap(image, clusterID string) func(*corev1.Container)
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			cvoBootrapScript(clusterID),
+			cvoBootstrapScript(clusterID),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -258,8 +260,8 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 
 	stmts = append(stmts,
 		fmt.Sprintf("cp -R /manifests %s/", payloadDir),
-		fmt.Sprintf("rm %s/manifests/*_deployment.yaml", payloadDir),
-		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
+		fmt.Sprintf("rm -f %s/manifests/*_deployment.yaml", payloadDir),
+		fmt.Sprintf("rm -f %s/manifests/*_servicemonitor.yaml", payloadDir),
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 
@@ -299,10 +301,10 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 				continue
 			}
 		}
-		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
+		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", manifest)))
 	}
 	if !oauthEnabled {
-		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
+		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
 	}
 	toRemove := ResourcesToRemove(platformType)
 	if len(toRemove) > 0 {
@@ -338,31 +340,58 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 	return strings.Join(stmts, "\n")
 }
 
-func cvoBootrapScript(clusterID string) string {
+func cvoBootstrapScript(clusterID string) string {
+	enabledCaps := sets.New[configv1.ClusterVersionCapability](
+		configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]...)
+	enabledCaps = enabledCaps.Delete(configv1.ClusterVersionCapabilityImageRegistry)
+	capList := enabledCaps.UnsortedList()
+	slices.SortFunc(capList, func(a, b configv1.ClusterVersionCapability) int {
+		return strings.Compare(string(a), string(b))
+	})
+
 	payloadDir := volumeMounts.Path(cvoContainerBootstrap().Name, cvoVolumePayload().Name)
+	cv := &configv1.ClusterVersion{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterVersion",
+			APIVersion: "config.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: configv1.ClusterID(clusterID),
+			Capabilities: &configv1.ClusterVersionCapabilitiesSpec{
+				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+				AdditionalEnabledCapabilities: capList,
+			},
+		},
+	}
+
+	// TODO(thomas): ignore the error for simplicity sake today
+	cvJson, _ := json.Marshal(cv)
+
 	var scriptTemplate = `#!/bin/bash
 set -euo pipefail
-cat > /tmp/clusterversion.yaml <<EOF
-apiVersion: config.openshift.io/v1
-kind: ClusterVersion
-metadata:
-  name: version
-spec:
-  clusterID: %s
+MANIFEST_DIR=%s/manifests
+ls -la ${MANIFEST_DIR}
+cat > /tmp/clusterversion.json <<-EOF
+%s
 EOF
 oc get ns openshift-config &> /dev/null || oc create ns openshift-config
 oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
+oc apply -f ${MANIFEST_DIR}/0000_00_cluster-version-operator_01_clusterversions*
+oc apply -f /tmp/clusterversion.json
+oc get clusterversion.config.openshift.io/version -oyaml
 while true; do
-  echo "Applying CVO bootstrap manifests"
-  if oc apply -f %s/manifests; then
+  echo "Applying CVO bootstrap manifests..."
+  if oc apply -f ${MANIFEST_DIR}; then
     echo "Bootstrap manifests applied successfully."
     break
   fi
   sleep 1
 done
-oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.yaml
 `
-	return fmt.Sprintf(scriptTemplate, clusterID, payloadDir)
+	return fmt.Sprintf(scriptTemplate, payloadDir, string(cvJson))
 }
 
 func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
