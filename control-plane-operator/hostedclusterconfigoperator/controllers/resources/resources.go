@@ -2,7 +2,6 @@ package resources
 
 import (
 	"context"
-	"crypto/md5"
 	"fmt"
 	"reflect"
 	"strings"
@@ -85,7 +84,6 @@ import (
 
 const (
 	ControllerName         = "resources"
-	SecretHashAnnotation   = "hypershift.openshift.io/kubeadmin-secret-hash"
 	ConfigNamespace        = "openshift-config"
 	ConfigManagedNamespace = "openshift-config-managed"
 	CloudProviderCMName    = "cloud-provider-config"
@@ -1341,31 +1339,20 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 		if apierrors.IsNotFound(err) {
 			// kubeAdminPasswordHash should not exist when a user specifies an explicit oauth config
 			// delete kubeAdminPasswordHash if it exist
-			return r.deleteKubeadminPasswordHashSecret(ctx, hcp)
+			return r.deleteKubeadminPasswordHashSecret(ctx)
 		}
 		return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
 	}
 
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
-	if _, err := r.CreateOrUpdate(ctx, r.client, kubeadminPasswordHashSecret, func() error {
+	_, err := r.CreateOrUpdate(ctx, r.client, kubeadminPasswordHashSecret, func() error {
 		return kubeadminpassword.ReconcileKubeadminPasswordHashSecret(kubeadminPasswordHashSecret, kubeadminPasswordSecret)
-	}); err != nil {
-		return err
-	}
-	oauthDeployment := manifests.OAuthDeployment(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r.cpClient, oauthDeployment, func() error {
-		if oauthDeployment.Spec.Template.ObjectMeta.Annotations == nil {
-			oauthDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
-		}
-		oauthDeployment.Spec.Template.ObjectMeta.Annotations[SecretHashAnnotation] = secretHash(kubeadminPasswordHashSecret.Data["kubeadmin"])
-		return nil
-	}); err != nil {
-		return err
-	}
-	return nil
+	})
+
+	return err
 }
 
-func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context) error {
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordHashSecret), kubeadminPasswordHashSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -1377,18 +1364,7 @@ func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context, hcp 
 		}
 	}
 
-	oauthDeployment := manifests.OAuthDeployment(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r.cpClient, oauthDeployment, func() error {
-		delete(oauthDeployment.Spec.Template.ObjectMeta.Annotations, SecretHashAnnotation)
-		return nil
-	}); err != nil {
-		return err
-	}
 	return nil
-}
-
-func secretHash(data []byte) string {
-	return fmt.Sprintf("%x", md5.Sum(data))
 }
 
 func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

@@ -14,7 +14,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	configmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/api"
@@ -268,7 +268,7 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment)
 	g.Expect(err).ToNot(HaveOccurred())
 	// validate oauthDeployment has kubeadmin password hash annotation
-	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).To(HaveKey(resources.SecretHashAnnotation))
+	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).To(HaveKey(oauth.KubeadminSecretHashAnnotation))
 }
 
 func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -290,5 +290,5 @@ func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.C
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment)
 	g.Expect(err).ToNot(HaveOccurred())
 	// validate oauthDeployment kubeadmin password hash annotation was removed
-	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).ToNot(HaveKey(resources.SecretHashAnnotation))
+	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).ToNot(HaveKey(oauth.KubeadminSecretHashAnnotation))
 }

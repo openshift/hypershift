@@ -81,6 +81,7 @@ import (
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
@@ -223,6 +224,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		autoscalerv2.NewComponent(),
 		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
 		ocmv2.NewComponent(),
+		oauthv2.NewComponent(),
 		routecmv2.NewComponent(),
 		clusterpolicyv2.NewComponent(),
 		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
@@ -1203,18 +1205,26 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	if util.HCPOAuthEnabled(hostedControlPlane) {
+		// Reconcile kubeadmin password
+		r.Log.Info("Reconciling kubeadmin password secret")
+		explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
+		if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, explicitOauthConfig, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to ensure control plane: %w", err)
+		}
+
 		if !r.IsCPOV2 {
 			// Reconcile openshift oauth apiserver
 			r.Log.Info("Reconciling OpenShift OAuth API Server")
 			if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
 				return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 			}
-		}
 
-		// Reconcile oauth server
-		r.Log.Info("Reconciling OAuth Server")
-		if err := r.reconcileOAuthServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+			// Reconcile oauth server
+			r.Log.Info("Reconciling OAuth Server")
+			if err := r.reconcileOAuthServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+			}
+
 		}
 
 		// TODO: move this up with the rest of conditions reconciliation logic?
@@ -1316,15 +1326,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		r.Log.Info("Reconciling ignition-server configs")
 		if err := r.reconcileIgnitionServerConfigs(ctx, hostedControlPlane, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile ignition-server configs: %w", err)
-		}
-	}
-
-	// Reconcile kubeadmin password
-	if util.HCPOAuthEnabled(hostedControlPlane) {
-		r.Log.Info("Reconciling kubeadmin password secret")
-		explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
-		if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, explicitOauthConfig, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to ensure control plane: %w", err)
 		}
 	}
 
