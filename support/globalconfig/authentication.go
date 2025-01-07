@@ -1,6 +1,8 @@
 package globalconfig
 
 import (
+	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -21,5 +23,12 @@ func ReconcileAuthenticationConfiguration(authentication *configv1.Authenticatio
 		authentication.Spec = *config.Authentication
 	}
 	authentication.Spec.ServiceAccountIssuer = issuerURL
+	for i := range authentication.Spec.OIDCProviders {
+		for j, client := range authentication.Spec.OIDCProviders[i].OIDCClients {
+			if client.ClientSecret.Name == "" {
+				authentication.Spec.OIDCProviders[i].OIDCClients[j].ClientSecret.Name = fmt.Sprintf("%s-post-install-client-secret", client.ComponentName)
+			}
+		}
+	}
 	return nil
 }
