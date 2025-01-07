@@ -2,6 +2,7 @@ package hostedcontrolplane
 
 import (
 	"context"
+	"crypto/x509/pkix"
 	"fmt"
 	"testing"
 	"time"
@@ -1655,13 +1656,6 @@ func TestControlPlaneComponents(t *testing.T) {
 		},
 	}
 
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "azure-credential-information",
-			Namespace: "hcp-namespace",
-		},
-	}
-
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                  context.Background(),
 		CreateOrUpdateProviderV2: upsert.NewV2(false),
@@ -1678,10 +1672,13 @@ func TestControlPlaneComponents(t *testing.T) {
 		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
 
 		for _, component := range reconciler.components {
+			fakeObjects, err := componentsFakeObjects(hcp.Namespace)
+			if err != nil {
+				t.Fatalf("failed to generate fake objects: %v", err)
+			}
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
-				WithObjects(componentsFakeObjects(hcp.Namespace)...).
+				WithObjects(fakeObjects...).
 				WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
-				WithObjects(secret).
 				Build()
 			cpContext.Client = fakeClient
 
@@ -1751,7 +1748,7 @@ func TestControlPlaneComponents(t *testing.T) {
 	}
 }
 
-func componentsFakeObjects(namespace string) []client.Object {
+func componentsFakeObjects(namespace string) ([]client.Object, error) {
 	rootCA := manifests.RootCAConfigMap(namespace)
 	rootCA.Data = map[string]string{
 		certs.CASignerCertMapKey: "fake",
@@ -1777,6 +1774,13 @@ func componentsFakeObjects(namespace string) []client.Object {
 		corev1.TLSPrivateKeyKey: []byte("fake"),
 	}
 
+	azureCredentialsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-credential-information",
+			Namespace: "hcp-namespace",
+		},
+	}
+
 	cloudCredsSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "fake-cloud-credentials-secret",
@@ -1784,12 +1788,25 @@ func componentsFakeObjects(namespace string) []client.Object {
 		},
 	}
 
+	caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}
+	key, cert, err := certs.GenerateSelfSignedCertificate(&caCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate self signed CA: %v", err)
+	}
+	csrSigner := manifests.CSRSignerCASecret(namespace)
+	csrSigner.Data = map[string][]byte{
+		certs.CASignerCertMapKey: certs.CertToPem(cert),
+		certs.CASignerKeyMapKey:  certs.PrivateKeyToPem(key),
+	}
+
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
 		manifests.KubeControllerManagerClientCertSecret(namespace),
 		manifests.KubeSchedulerClientCertSecret(namespace),
+		azureCredentialsSecret,
 		cloudCredsSecret,
-	}
+		csrSigner,
+	}, nil
 }
 
 func componentsFakeDependencies(componentName string, namespace string) []client.Object {

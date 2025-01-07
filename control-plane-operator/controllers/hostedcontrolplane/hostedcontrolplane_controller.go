@@ -72,6 +72,7 @@ import (
 	kubevirtccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/kubevirt"
 	openstackccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack"
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
+	ccov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator"
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
@@ -230,6 +231,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		kubevirtccmv2.NewComponent(),
 		openstackccmv2.NewComponent(),
 		powervsccmv2.NewComponent(),
+		ccov2.NewComponent(),
 	)
 }
 
@@ -1279,13 +1281,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
 		}
-	}
 
-	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
-		// Reconcile cloud credential operator
-		r.Log.Info("Reconciling Cloud Credential Operator")
-		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+		if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+			// Reconcile cloud credential operator
+			r.Log.Info("Reconciling Cloud Credential Operator")
+			if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+			}
 		}
 	}
 
