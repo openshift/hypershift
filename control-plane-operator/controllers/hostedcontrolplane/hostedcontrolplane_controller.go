@@ -932,6 +932,11 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		}
 	}
 
+	// Get the latest HCP in memory before we patch the status
+	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(hostedControlPlane), hostedControlPlane); err != nil {
+		return reconcile.Result{}, err
+	}
+
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	missingImages := sets.New(releaseImageProvider.GetMissingImages()...).Insert(userReleaseImageProvider.GetMissingImages()...)
 	if missingImages.Len() == 0 {
