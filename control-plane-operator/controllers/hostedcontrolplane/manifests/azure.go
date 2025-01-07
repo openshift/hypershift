@@ -25,3 +25,12 @@ func AzureProviderConfigWithCredentials(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func AzureCredentialInformation(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-credential-information",
+			Namespace: ns,
+		},
+	}
+}
