@@ -375,6 +375,11 @@ func buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage string, prox
 
 func buildOASContainerMain(image string, etcdHostname string, port int32, internalOAuthDisable bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
+		noProxy := []string{
+			manifests.KubeAPIServerService("").Name,
+			etcdHostname,
+			config.AuditWebhookService,
+		}
 		cpath := func(volume, file string) string {
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
 		}
@@ -405,7 +410,7 @@ func buildOASContainerMain(image string, etcdHostname string, port int32, intern
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
+				Value: strings.Join(noProxy, ","),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
