@@ -54,27 +54,6 @@ func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error
 	return containerImage, split[1], nil
 }
 
-func unsupportedOpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
-	if !foundArch {
-		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
-	}
-	openStack, exists := arch.Artifacts["openstack"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for openstack")
-	}
-	artifact, exists := openStack.Formats["qcow2.gz"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
-	}
-	disk, exists := artifact["disk"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
-	}
-
-	return disk.Location, disk.SHA256, nil
-}
-
 func allowUnsupportedRHCOSVariants(nodePool *hyperv1.NodePool) bool {
 	val, exists := nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
 	if exists && strings.ToLower(val) == "true" {
@@ -101,7 +80,7 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 
 	imageName, imageHash, err := defaultImage(releaseImage)
 	if err != nil && allowUnsupportedRHCOSVariants(nodePool) {
-		imageName, imageHash, err = unsupportedOpenstackDefaultImage(releaseImage)
+		imageName, imageHash, err = releaseinfo.UnsupportedOpenstackDefaultImage(releaseImage)
 		if err != nil {
 			return nil, err
 		}

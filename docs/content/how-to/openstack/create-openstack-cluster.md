@@ -28,7 +28,6 @@ Upon scaling up a NodePool, a Machine will be created, and the CAPI provider wil
 * OpenStack Octavia service must be running in the cloud hosting the guest cluster when ingress is configured with an Octavia load balancer.
   In the future, we'll explore other Ingress options like MetalLB.
 * The default external network (on which the kube-apiserver LoadBalancer type service is created) of the Management OCP cluster must be reachable from the guest cluster.
-* The RHCOS image must be uploaded to OpenStack.
 
 ### Install the HyperShift and HCP CLI
 
@@ -83,23 +82,6 @@ NAME                        READY   STATUS    RESTARTS   AGE
 operator-755d587f44-lrtrq   1/1     Running   0          114s
 operator-755d587f44-qj6pz   1/1     Running   0          114s
 ```
-
-### Upload RHCOS image in OpenStack
-
-For now, we need to manually push an RHCOS image that will be used when deploying the node pools
-on OpenStack. In the [future](https://issues.redhat.com/browse/OSASINFRA-3492), the CAPI provider (CAPO) will handle the RHCOS image
-lifecycle by using the image available in the chosen release payload.
-
-Here is an example of how to upload an RHCOS image to OpenStack:
-
-```shell
-openstack image create --disk-format qcow2 --file rhcos-openstack.x86_64.qcow2 rhcos
-```
-
-!!! note
-
-    The `rhcos-openstack.x86_64.qcow2` file is the RHCOS image that was downloaded from the OpenShift mirror.
-    You can download the latest RHCOS image from the [Red Hat OpenShift Container Platform mirror](https://mirror.openshift.com/pub/openshift-v4/dependencies/rhcos/).
 
 ## Create a floating IP for the Ingress (optional)
 
@@ -168,7 +150,6 @@ hcp create cluster openstack \
 --openstack-credentials-file $CLOUDS_YAML \
 --openstack-ca-cert-file $CA_CERT_PATH \
 --openstack-external-network-id $EXTERNAL_NETWORK_ID \
---openstack-node-image-name $IMAGE_NAME \
 --openstack-node-flavor $FLAVOR \
 --openstack-ingress-floating-ip $INGRESS_FLOATING_IP
 ```
@@ -313,7 +294,7 @@ port for SR-IOV, with no port security and address pairs:
 ```shell
 export NODEPOOL_NAME=$CLUSTER_NAME-extra-az
 export WORKER_COUNT="2"
-export IMAGE_NAME="rhcos"
+export IMAGE_NAME="rhcos" # Pre-existing Glance image used for this NodePool
 export FLAVOR="m1.xlarge"
 export AZ="az1"
 export SRIOV_NEUTRON_NETWORK_ID="f050901b-11bc-4a75-a553-878509255760"
