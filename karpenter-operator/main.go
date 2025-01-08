@@ -106,6 +106,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
 	}
 
+	mac := karpenter.MachineApproverController{}
+	if err := mac.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup controller with manager: %w", err)
+	}
+
 	if err := mgr.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start manager: %w", err)
 	}

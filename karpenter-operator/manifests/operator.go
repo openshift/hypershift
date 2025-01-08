@@ -10,12 +10,15 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/ptr"
+
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -107,86 +110,152 @@ func ReconcileKarpenterOperatorDeployment(deployment *appsv1.Deployment,
 							},
 						},
 					},
-					{
-						Name: "serviceaccount-token",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
-						},
-					},
-				},
-				Containers: []corev1.Container{
-					{
-						Name:            name,
-						Image:           hypershiftOperatorImage,
-						ImagePullPolicy: corev1.PullAlways,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "target-kubeconfig",
-								MountPath: "/mnt/kubeconfig",
-							},
-						},
-						Env: []corev1.EnvVar{
-							{
-								Name: "MY_NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-						},
-						Command: []string{
-							"/usr/bin/karpenter-operator",
-						},
-						Args: []string{
-							"--target-kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-							"--namespace=$(MY_NAMESPACE)",
-							"--control-plane-operator-image=" + controlPlaneOperatorImage,
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/healthz",
-									Port:   intstr.FromString("http"),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 60,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
-						},
-
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/readyz",
-									Port:   intstr.FromString("http"),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							PeriodSeconds:    10,
-							SuccessThreshold: 1,
-							FailureThreshold: 3,
-							TimeoutSeconds:   5,
-						},
-						Ports: []corev1.ContainerPort{
-							{
-								Name:          "metrics",
-								ContainerPort: 8000,
-							},
-							{
-								Name:          "http",
-								ContainerPort: 8081,
-								Protocol:      corev1.ProtocolTCP,
-							},
-						},
-					},
 				},
 			},
 		},
 	}
+
+	mainContainer := corev1.Container{
+		Name:            name,
+		Image:           hypershiftOperatorImage,
+		ImagePullPolicy: corev1.PullAlways,
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "target-kubeconfig",
+				MountPath: "/mnt/kubeconfig",
+			},
+		},
+		Env: []corev1.EnvVar{
+			{
+				Name: "MY_NAMESPACE",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
+			},
+		},
+		Command: []string{
+			"/usr/bin/karpenter-operator",
+		},
+		Args: []string{
+			"--target-kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+			"--namespace=$(MY_NAMESPACE)",
+			"--control-plane-operator-image=" + controlPlaneOperatorImage,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromString("http"),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 60,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    5,
+			TimeoutSeconds:      5,
+		},
+
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/readyz",
+					Port:   intstr.FromString("http"),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			FailureThreshold: 3,
+			TimeoutSeconds:   5,
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "metrics",
+				ContainerPort: 8000,
+			},
+			{
+				Name:          "http",
+				ContainerPort: 8081,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+	}
+
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "serviceaccount-token",
+				VolumeSource: corev1.VolumeSource{
+					EmptyDir: &corev1.EmptyDirVolumeSource{
+						Medium: corev1.StorageMediumMemory,
+					},
+				},
+			},
+			corev1.Volume{
+				Name: "provider-creds",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: "karpenter-credentials",
+					},
+				},
+			})
+
+		mainContainer.Env = append(mainContainer.Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: "/etc/provider/credentials",
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: hcp.Spec.Platform.AWS.Region,
+			},
+			corev1.EnvVar{
+				Name:  "AWS_SDK_LOAD_CONFIG",
+				Value: "true",
+			})
+
+		mainContainer.VolumeMounts = append(mainContainer.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "serviceaccount-token",
+				MountPath: "/var/run/secrets/openshift/serviceaccount",
+			},
+			corev1.VolumeMount{
+				Name:      "provider-creds",
+				MountPath: "/etc/provider",
+			})
+
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "token-minter",
+			Image:           controlPlaneOperatorImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/usr/bin/control-plane-operator", "token-minter"},
+			Args: []string{
+				"--service-account-namespace=kube-system",
+				"--service-account-name=karpenter",
+				"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+				fmt.Sprintf("--kubeconfig-secret-namespace=%s", deployment.Namespace),
+				"--kubeconfig-secret-name=service-network-admin-kubeconfig",
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "serviceaccount-token",
+					MountPath: "/var/run/secrets/openshift/serviceaccount",
+				},
+			},
+		})
+	}
+
+	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, mainContainer)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), controlPlaneOperatorImage, &deployment.Spec.Template.Spec)
 	deploymentConfig := config.DeploymentConfig{
