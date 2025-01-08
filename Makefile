@@ -53,7 +53,7 @@ all: build e2e tests
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
+build: hypershift-operator control-plane-operator control-plane-pki-operator karpenter-operator hypershift product-cli
 
 .PHONY: update
 update: workspace-sync api-deps api api-docs deps clients

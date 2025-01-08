@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/upsert"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -17,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -73,7 +75,8 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 				return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
 			}
 			return nil
-		}))); err != nil {
+		},
+	))); err != nil {
 		return fmt.Errorf("failed to watch CRDs: %w", err)
 	}
 
@@ -92,7 +95,8 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 				return nil
 			}
 			return []ctrl.Request{{NamespacedName: client.ObjectKeyFromObject(o)}}
-		}))); err != nil {
+		},
+	))); err != nil {
 		return fmt.Errorf("failed to watch Deployment: %w", err)
 	}
 
