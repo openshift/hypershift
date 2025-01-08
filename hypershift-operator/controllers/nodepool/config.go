@@ -47,6 +47,7 @@ type ConfigGenerator struct {
 type rolloutConfig struct {
 	releaseImage              *releaseinfo.ReleaseImage
 	pullSecretName            string
+	pullSecret                []byte
 	additionalTrustBundleName string
 	// globalConfig represents input from hostedCluster.spec.config that requires a NodePool rollout.
 	globalConfig string
@@ -58,7 +59,7 @@ type rolloutConfig struct {
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
-func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string) (*ConfigGenerator, error) {
+func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, pullSecret []byte) (*ConfigGenerator, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client can't be nil")
 	}
@@ -80,6 +81,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		rolloutConfig: &rolloutConfig{
 			releaseImage:     releaseImage,
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,
+			pullSecret:       pullSecret,
 			globalConfig:     globalConfig,
 			haproxyRawConfig: haproxyRawConfig,
 		},
@@ -113,7 +115,14 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	inputs := cg.mcoRawConfig + cg.releaseImage.Version()
+	if cg.hostedCluster.Spec.PullSecret.Reload {
+		inputs += string(cg.pullSecret)
+	} else {
+		inputs += cg.pullSecretName
+	}
+	inputs += cg.additionalTrustBundleName + cg.globalConfig
+	return supportutil.HashSimple(inputs)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.

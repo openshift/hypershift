@@ -580,7 +580,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{}
 			hc := &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{

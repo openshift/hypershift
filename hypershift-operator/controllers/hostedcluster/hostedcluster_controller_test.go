@@ -1107,7 +1107,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 			{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 		}
-		cluster.Spec.PullSecret = corev1.LocalObjectReference{Name: "secret"}
+		cluster.Spec.PullSecret = hyperv1.ReloadableLocalObjectReference{Name: "secret"}
 		cluster.Spec.InfraID = "infra-id"
 		cluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}}
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
@@ -1611,7 +1611,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -1632,7 +1632,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -1654,7 +1654,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1679,7 +1679,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1704,7 +1704,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1736,7 +1736,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OpenShiftSDN,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1768,7 +1768,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1800,7 +1800,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1825,7 +1825,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1857,7 +1857,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1889,7 +1889,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -1926,7 +1926,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
@@ -2126,7 +2126,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageFrom,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2144,7 +2144,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageFrom,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2167,7 +2167,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageTo,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2201,7 +2201,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageTo,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2235,7 +2235,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageTo,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2259,7 +2259,7 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageToZstream,
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2493,7 +2493,7 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.2",
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2516,7 +2516,7 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.2",
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2531,7 +2531,7 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2554,7 +2554,7 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2583,7 +2583,7 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},
@@ -2617,7 +2617,7 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
-					PullSecret: corev1.LocalObjectReference{
+					PullSecret: hyperv1.ReloadableLocalObjectReference{
 						Name: "pull-secret",
 					},
 				},

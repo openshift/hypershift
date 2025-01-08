@@ -277,8 +277,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Error(err, "Invalid infraID, waiting.")
 		return ctrl.Result{}, nil
 	}
-	// Retrieve pull secret name to check for changes when config is checked for updates
-	_, err := r.getPullSecretName(ctx, hcluster)
+	// Retrieve pull secret to check for changes when config is checked for updates
+	pullSecret, err := r.getPullSecret(ctx, hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -303,7 +303,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, pullSecret)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -373,11 +373,16 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
+	pullSecret, err := r.getPullSecret(ctx, hcluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up pull secret: %w", err)
+	}
+
 	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, hcluster, releaseImage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, pullSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -907,20 +912,21 @@ func (r *NodePoolReconciler) getPullSecretBytes(ctx context.Context, hostedClust
 	return pullSecret.Data[corev1.DockerConfigJsonKey], nil
 }
 
-// getPullSecretName retrieves the name of the pull secret in the hosted cluster spec
-func (r *NodePoolReconciler) getPullSecretName(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (string, error) {
-	return getPullSecretName(ctx, r.Client, hostedCluster)
+// getPullSecret validates and retrieves the pull secret in the hosted cluster spec
+func (r *NodePoolReconciler) getPullSecret(ctx context.Context, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
+	return getPullSecret(ctx, r.Client, hostedCluster)
 }
 
-func getPullSecretName(ctx context.Context, crclient client.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
+func getPullSecret(ctx context.Context, crclient client.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
 	pullSecret := &corev1.Secret{}
 	if err := crclient.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
-		return "", fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
+		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
 	}
-	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
-		return "", fmt.Errorf("pull secret %s/%s missing %q key when retrieving pull secret name", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
+	rawPullSecret, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !hasKey {
+		return nil, fmt.Errorf("pull secret %s/%s missing %q key when retrieving pull secret name", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
 	}
-	return pullSecret.Name, nil
+	return rawPullSecret, nil
 }
 
 func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*corev1.ConfigMap, error) {

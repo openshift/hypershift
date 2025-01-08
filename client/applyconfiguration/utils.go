@@ -254,6 +254,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ProvisionerConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Release"):
 		return &hypershiftv1beta1.ReleaseApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ReloadableLocalObjectReference"):
+		return &hypershiftv1beta1.ReloadableLocalObjectReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ReplaceUpgrade"):
 		return &hypershiftv1beta1.ReplaceUpgradeApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RollingUpdate"):

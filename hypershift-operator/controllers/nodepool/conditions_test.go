@@ -168,7 +168,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+					PullSecret: hyperv1.ReloadableLocalObjectReference{Name: pullSecret.Name},
 					InfraID:    "fake-infra-id",
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -322,7 +322,7 @@ func TestUpdatingVersionCondition(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+					PullSecret: hyperv1.ReloadableLocalObjectReference{Name: pullSecret.Name},
 					InfraID:    "fake-infra-id",
 				},
 				Status: hyperv1.HostedClusterStatus{

@@ -16,6 +16,7 @@ metadata:
     hypershift.openshift.io/safe-to-delete-with-cluster: "true"
   name: example-pull-secret
   namespace: clusters
+type: kubernetes.io/dockerconfigjson
 ---
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster

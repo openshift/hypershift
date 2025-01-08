@@ -470,7 +470,7 @@ func TestGetPullSecretBytes(t *testing.T) {
 					Namespace: "test",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					PullSecret: hyperv1.ReloadableLocalObjectReference{Name: "pull-secret"},
 				},
 			},
 			secret: &corev1.Secret{
@@ -493,7 +493,7 @@ func TestGetPullSecretBytes(t *testing.T) {
 					Namespace: "test",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{Name: "pull-secrett"},
+					PullSecret: hyperv1.ReloadableLocalObjectReference{Name: "pull-secrett"},
 				},
 			},
 			secret: &corev1.Secret{
@@ -516,7 +516,7 @@ func TestGetPullSecretBytes(t *testing.T) {
 					Namespace: "test",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					PullSecret: hyperv1.ReloadableLocalObjectReference{Name: "pull-secret"},
 				},
 			},
 			secret: &corev1.Secret{
@@ -622,7 +622,7 @@ func TestDetermineHostedClusterPayloadArch(t *testing.T) {
 					Namespace: "test",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					PullSecret: hyperv1.ReloadableLocalObjectReference{Name: "pull-secret"},
 					Release: hyperv1.Release{
 						Image: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 					},
@@ -650,7 +650,7 @@ func TestDetermineHostedClusterPayloadArch(t *testing.T) {
 					Namespace: "test",
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					PullSecret: hyperv1.ReloadableLocalObjectReference{Name: "pull-secret"},
 					Release: hyperv1.Release{
 						Image: "quay.io/openshift-release-dev/ocp-release:4.16.11-multi",
 					},

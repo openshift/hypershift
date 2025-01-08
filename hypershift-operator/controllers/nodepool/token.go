@@ -37,7 +37,7 @@ const (
 	TokenSecretNodePoolUpgradeType       = "hypershift.openshift.io/node-pool-upgrade-type"
 )
 
-// Token knows how to create an UUUID token for a unique configGenerator Hash.
+// Token knows how to create a UUID token for a unique configGenerator Hash.
 // It also knows how to manage the lifecycle of a corresponding token secret that it is used by the tokenSecret controller to generate the final ignition payload
 // and a user data secret that points to the ignition server URL using the UUUID as an authenticator header to get that payload.
 type Token struct {
@@ -78,15 +78,10 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 	tempReconciler := &NodePoolReconciler{
 		Client: configGenerator.Client,
 	}
-	pullSecretBytes, err := tempReconciler.getPullSecretBytes(ctx, configGenerator.hostedCluster)
-	if err != nil {
-		return nil, err
-	}
 
-	additionalTrustBundleCM := &corev1.ConfigMap{}
 	additionalTrustBundle := ""
 	if configGenerator.hostedCluster.Spec.AdditionalTrustBundle != nil {
-		additionalTrustBundleCM, err = tempReconciler.getAdditionalTrustBundle(ctx, configGenerator.hostedCluster)
+		additionalTrustBundleCM, err := tempReconciler.getAdditionalTrustBundle(ctx, configGenerator.hostedCluster)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +101,7 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		CreateOrUpdateProvider:    upsert.New(false),
 		ConfigGenerator:           configGenerator,
 		cpoCapabilities:           cpoCapabilities,
-		pullSecretHash:            []byte(supportutil.HashSimple(pullSecretBytes)),
+		pullSecretHash:            []byte(supportutil.HashSimple(configGenerator.pullSecret)),
 		additionalTrustBundleHash: []byte(supportutil.HashSimple(additionalTrustBundle)),
 		globalConfigHash:          []byte(hcConfigurationHash),
 	}

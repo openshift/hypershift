@@ -133,6 +133,7 @@ const (
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
+	reloadContentLabel                                         = "hypershift.openshift.io/reload"
 
 	etcdEncKeyPostfix    = "-etcd-encryption-key"
 	managedServiceEnvVar = "MANAGED_SERVICE"
@@ -1272,24 +1273,63 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	{
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 		}
-		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
-			srcData, srcHasData := src.Data[".dockerconfigjson"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+		wantCondition := metav1.Condition{
+			Type:               string(hyperv1.ImagePullCredentialsValid),
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: hcluster.Generation,
+			Message:            "Required image pull credentials are found",
+		}
+		if apierrors.IsNotFound(err) {
+			wantCondition = metav1.Condition{
+				Type:               string(hyperv1.ImagePullCredentialsValid),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.SecretNotFoundReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            fmt.Sprintf("Referenced image pull credential %s/%s is not found", hcluster.ObjectMeta.Namespace, hcluster.Spec.PullSecret.Name),
 			}
-			dst.Type = corev1.SecretTypeDockerConfigJson
-			if dst.Data == nil {
-				dst.Data = map[string][]byte{}
+		} else {
+			_, hasPullCredentials := src.Data[corev1.DockerConfigJsonKey]
+			if src.Type != corev1.SecretTypeDockerConfigJson || !hasPullCredentials {
+				wantCondition = metav1.Condition{
+					Type:               string(hyperv1.ImagePullCredentialsValid),
+					Status:             metav1.ConditionFalse,
+					Reason:             hyperv1.InvalidConfigurationReason,
+					ObservedGeneration: hcluster.Generation,
+					Message:            fmt.Sprintf("Referenced image pull credential %s/%s is invalid - ensure the secret is of dockerconfigjson type and has the appropriate content", hcluster.ObjectMeta.Namespace, hcluster.Spec.PullSecret.Name),
+				}
 			}
-			dst.Data[".dockerconfigjson"] = srcData
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
+		}
+		if !meta.IsStatusConditionPresentAndEqual(hcluster.Status.Conditions, wantCondition.Type, wantCondition.Status) {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, wantCondition)
+			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile image pull credentials: %s, failed to update status: %w", err, statusErr)
+			}
+
+			if wantCondition.Status == metav1.ConditionFalse {
+				// this won't change until the user updates the spec, or changes the secret, so we can't do more here
+			}
+		}
+		if wantCondition.Status != metav1.ConditionFalse {
+			dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
+			_, err = createOrUpdate(ctx, r.Client, dst, func() error {
+				srcData, srcHasData := src.Data[".dockerconfigjson"]
+				if !srcHasData {
+					return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+				}
+				dst.Type = corev1.SecretTypeDockerConfigJson
+				if dst.Data == nil {
+					dst.Data = map[string][]byte{}
+				}
+				dst.Data[".dockerconfigjson"] = srcData
+				return nil
+			})
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
+			}
 		}
 	}
 
@@ -4025,6 +4065,24 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 				}
 			}
 			return []reconcile.Request{}
+		}
+		// if we're reconciling a secret that has been labelled for reloading, enqueue the HostedClusters that reference it
+		if _, isSecret := obj.(*corev1.Secret); isSecret {
+			if obj.GetAnnotations()[reloadContentLabel] != "true" {
+				return []reconcile.Request{}
+			}
+			hcList := &hyperv1.HostedClusterList{}
+			if err := c.List(ctx, hcList, client.InNamespace(obj.GetNamespace())); err != nil {
+				log.Error(err, "failed to list hc")
+				return []reconcile.Request{}
+			}
+			var names []reconcile.Request
+			for _, hc := range hcList.Items {
+				if hc.Spec.PullSecret.Name == obj.GetName() {
+					names = append(names, reconcile.Request{NamespacedName: types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}})
+				}
+			}
+			return names
 		}
 		if _, isJob := obj.(*batchv1.Job); isJob {
 			if obj.GetName() != etcdrecoverymanifests.EtcdRecoveryJob("").Name {

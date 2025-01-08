@@ -283,6 +283,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 			Name:      opts.Name + "-pull-secret",
 			Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 		},
+		Type: corev1.SecretTypeDockerConfigJson,
 		Data: map[string][]byte{
 			".dockerconfigjson": pullSecret,
 		},
@@ -318,7 +319,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 				NetworkType: hyperv1.NetworkType(opts.NetworkType),
 			},
 			InfraID:    opts.InfraID,
-			PullSecret: corev1.LocalObjectReference{Name: prototype.PullSecret.Name},
+			PullSecret: hyperv1.ReloadableLocalObjectReference{Name: prototype.PullSecret.Name},
 			FIPS:       opts.FIPS,
 			DNS: hyperv1.DNSSpec{
 				BaseDomain: opts.BaseDomain,
