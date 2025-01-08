@@ -120,6 +120,7 @@ func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 	podConfig.Volumes = append(podConfig.Volumes,
 		util.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
 		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
+		util.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
 	)
 
 	podConfig.Containers = append(podConfig.Containers,
@@ -165,6 +166,11 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 			"-v=1",
 		}
 		c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      config.ManagedAzureKMSSecretStoreVolumeName,
+			MountPath: config.ManagedAzureCertificateMountPath,
+			ReadOnly:  true,
+		})
 		c.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -213,6 +219,24 @@ func buildVolumeAzureKMSCredentials(v *corev1.Volume) {
 			{
 				Key:  azure.CloudConfigKey,
 				Path: azureKMSCredsFileKey,
+			},
+		},
+	}
+}
+
+func kasVolumeKMSSecretStore() *corev1.Volume {
+	return &corev1.Volume{
+		Name: config.ManagedAzureKMSSecretStoreVolumeName,
+	}
+}
+
+func buildVolumeKMSSecretStore(v *corev1.Volume) {
+	v.VolumeSource = corev1.VolumeSource{
+		CSI: &corev1.CSIVolumeSource{
+			Driver:   config.ManagedAzureSecretsStoreCSIDriver,
+			ReadOnly: ptr.To(true),
+			VolumeAttributes: map[string]string{
+				config.ManagedAzureSecretProviderClass: config.ManagedAzureKMSSecretStoreVolumeName,
 			},
 		},
 	}

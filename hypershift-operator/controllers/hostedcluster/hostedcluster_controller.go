@@ -81,6 +81,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -1786,9 +1787,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
-	// Reconcile the AWS OIDC discovery
+	// Reconcile platform specific items
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		// Reconcile the AWS OIDC discovery
 		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 				Type:               string(hyperv1.ValidOIDCConfiguration),
@@ -1811,6 +1813,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		})
 		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
+		if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CertificateName)
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
 		}
 	}
 
@@ -2723,15 +2733,6 @@ func reconcileControlPlaneOperatorDeployment(
 		)
 	}
 
-	aroHCPKVMIClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
-	if ok {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  config.AROHCPKeyVaultManagedIdentityClientID,
-				Value: aroHCPKVMIClientID,
-			})
-	}
-
 	mainContainer = hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
 	proxy.SetEnvVars(&mainContainer.Env)
 
@@ -2803,6 +2804,27 @@ func reconcileControlPlaneOperatorDeployment(
 				},
 			},
 		})
+	case hyperv1.AzurePlatform:
+		// Add the client ID of the managed Azure key vault as an environment variable on the CPO. This is used in
+		// configuring the SecretProviderClass CRs for OpenShift components on the HCP needing to authenticate with
+		// Azure cloud API.
+		aroHCPKVMIClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
+		if ok {
+			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+				corev1.EnvVar{
+					Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+					Value: aroHCPKVMIClientID,
+				})
+		}
+
+		// Mount the control plane operator's certificate from the managed Azure key vault. The CPO authenticates with
+		// the Azure cloud API for validating resource group locations.
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName),
+		)
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName, config.ManagedAzureCPOSecretProviderClassName),
+		)
 	}
 
 	if hcp.Spec.AdditionalTrustBundle != nil {
@@ -3027,6 +3049,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				Verbs: []string{
 					"list",
 					"create",
+					"update",
 				},
 			})
 	}
@@ -4387,12 +4410,6 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 		if _, found := credentialsSecret.Data[expectedKey]; !found {
 			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
 		}
-	}
-
-	// Verify the resource group locations match
-	err := azureutil.VerifyResourceGroupLocationsMatch(ctx, hc, credentialsSecret)
-	if err != nil {
-		errs = append(errs, err)
 	}
 
 	return utilerrors.NewAggregate(errs)
