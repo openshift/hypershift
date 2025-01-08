@@ -414,8 +414,7 @@ func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReferenc
 	}
 
 	if ref.Namespace == sourceRef.Namespace && ref.Name == sourceRef.Name {
-		composedImage := fmt.Sprintf("%s/%s/%s", mirrorRef.Registry, mirrorRef.Namespace, ref.NameString())
-		composedRef, err := reference.Parse(composedImage)
+		composedRef, err := reference.Parse(mirror)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to parse composed image reference (exact match) %q: %w", source, err)
 		}
