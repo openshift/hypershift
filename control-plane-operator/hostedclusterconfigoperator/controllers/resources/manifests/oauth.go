@@ -1,6 +1,7 @@
 package manifests
 
 import (
+	"github.com/openshift/api/annotations"
 	oauthv1 "github.com/openshift/api/oauth/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -13,6 +14,9 @@ func OAuthCABundle() *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "oauth-serving-cert",
 			Namespace: "openshift-config-managed",
+			Annotations: map[string]string{
+				annotations.OpenShiftComponent: "apiserver-auth",
+			},
 		},
 	}
 }
