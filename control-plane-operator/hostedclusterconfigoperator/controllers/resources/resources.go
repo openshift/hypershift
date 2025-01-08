@@ -1126,6 +1126,10 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 		// Copy OIDCClient Secrets into openshift-config namespace
 		if len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
 			for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
+				// If the secret name is empty, we assume the guest cluster admin is going to create this secret manually
+				if oidcClient.ClientSecret.Name == "" {
+					continue
+				}
 				var src corev1.Secret
 				err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
 				if err != nil {
