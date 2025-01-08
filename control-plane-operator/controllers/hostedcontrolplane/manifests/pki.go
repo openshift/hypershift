@@ -1,6 +1,8 @@
 package manifests
 
 import (
+	"github.com/openshift/api/annotations"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -282,7 +284,17 @@ func KonnectivityClusterSecret(ns string) *corev1.Secret {
 
 func KonnectivityClientSecret(ns string) *corev1.Secret { return secretFor(ns, "konnectivity-client") }
 
-func KonnectivityAgentSecret(ns string) *corev1.Secret { return secretFor(ns, "konnectivity-agent") }
+func KonnectivityAgentSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "konnectivity-agent",
+			Namespace: ns,
+			Annotations: map[string]string{
+				annotations.OpenShiftComponent: "HyperShift",
+			},
+		},
+	}
+}
 
 func IngressCert(ns string) *corev1.Secret { return secretFor(ns, "ingress-crt") }
 
