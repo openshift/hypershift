@@ -68,7 +68,6 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 	sa *corev1.ServiceAccount,
 	kubeConfigSecret *corev1.Secret,
 	availabilityProberImage, tokenMinterImage string,
-	credentialsSecret *corev1.Secret,
 	setDefaultSecurityContext bool,
 	ownerRef config.OwnerRef) error {
 
@@ -115,7 +114,7 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 						Name: "provider-creds",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: credentialsSecret.Name,
+								SecretName: "karpenter-credentials",
 							},
 						},
 					},
@@ -374,27 +373,6 @@ func (r *Reconciler) reconcileKarpenter(ctx context.Context, hcp *hyperv1.Hosted
 		return fmt.Errorf("failed to reconcile karpenter role binding: %w", err)
 	}
 
-	awsCredentialsTemplate := `[default]
-	role_arn = %s
-	web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-	sts_regional_endpoints = regional
-`
-	arn := hcp.Spec.AutoNode.Provisioner.Karpenter.AWS.RoleARN
-	credentialsSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: hcp.Namespace,
-			Name:      "karpenter-credentials",
-		},
-	}
-	if _, err := createOrUpdate(ctx, c, credentialsSecret, func() error {
-		credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
-		credentialsSecret.Data = map[string][]byte{"credentials": []byte(credentials)}
-		credentialsSecret.Type = corev1.SecretTypeOpaque
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile karpenter credentials secret %s/%s: %w", credentialsSecret.Namespace, credentialsSecret.Name, err)
-	}
-
 	// The deployment depends on the kubeconfig being reported.
 	if hcp.Status.KubeConfig != nil {
 		// Resolve the kubeconfig secret for CAPI which is used for karpeneter for convenience
@@ -411,7 +389,7 @@ func (r *Reconciler) reconcileKarpenter(ctx context.Context, hcp *hyperv1.Hosted
 
 		deployment := KarpenterDeployment(hcp.Namespace)
 		_, err = createOrUpdate(ctx, c, deployment, func() error {
-			return ReconcileKarpenterDeployment(deployment, hcp, serviceAccount, capiKubeConfigSecret, availabilityProberImage, tokenMinterImage, credentialsSecret, setDefaultSecurityContext, ownerRef)
+			return ReconcileKarpenterDeployment(deployment, hcp, serviceAccount, capiKubeConfigSecret, availabilityProberImage, tokenMinterImage, setDefaultSecurityContext, ownerRef)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile karpenter deployment: %w", err)

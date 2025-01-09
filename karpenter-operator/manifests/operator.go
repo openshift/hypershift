@@ -384,6 +384,27 @@ func ReconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.Creat
 	ownerRef := config.OwnerRefFrom(hcp)
 	setDefaultSecurityContext := false
 
+	awsCredentialsTemplate := `[default]
+	role_arn = %s
+	web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+	sts_regional_endpoints = regional
+`
+	arn := hcp.Spec.AutoNode.Provisioner.Karpenter.AWS.RoleARN
+	credentialsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcp.Namespace,
+			Name:      "karpenter-credentials",
+		},
+	}
+	if _, err := createOrUpdate(ctx, c, credentialsSecret, func() error {
+		credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
+		credentialsSecret.Data = map[string][]byte{"credentials": []byte(credentials)}
+		credentialsSecret.Type = corev1.SecretTypeOpaque
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile karpenter credentials secret %s/%s: %w", credentialsSecret.Namespace, credentialsSecret.Name, err)
+	}
+
 	role := KarpenterOperatorRole(hcp.Namespace)
 	_, err := createOrUpdate(ctx, c, role, func() error {
 		return ReconcileKarpenterOperatorRole(role, ownerRef)
