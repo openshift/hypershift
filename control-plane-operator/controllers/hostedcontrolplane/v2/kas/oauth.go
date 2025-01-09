@@ -9,9 +9,9 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	corev1 "k8s.io/api/core/v1"
-
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

@@ -6,16 +6,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/support/testutil"
+
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {

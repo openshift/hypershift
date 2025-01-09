@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/openshift/hypershift/support/config"
+
 	"gopkg.in/yaml.v2"
 )
 

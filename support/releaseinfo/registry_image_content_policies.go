@@ -2,9 +2,10 @@ package releaseinfo
 
 import (
 	"context"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"strings"
 	"sync"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var _ ProviderWithOpenShiftImageRegistryOverrides = (*ProviderWithOpenShiftImageRegistryOverridesDecorator)(nil)

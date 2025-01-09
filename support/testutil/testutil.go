@@ -7,14 +7,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/types"
+
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"sigs.k8s.io/yaml"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/onsi/gomega/types"
 )
 
 // CompareWithFixture will compare output with a test fixture and allows to automatically update them

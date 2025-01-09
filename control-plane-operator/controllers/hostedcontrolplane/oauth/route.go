@@ -2,12 +2,11 @@ package oauth
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
-	routev1 "github.com/openshift/api/route/v1"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	routev1 "github.com/openshift/api/route/v1"
 )
 
 func ReconcileExternalPublicRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string, labelHCPRoutes bool) error {

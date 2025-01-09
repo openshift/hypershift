@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/distribution"
-	"github.com/opencontainers/go-digest"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+
+	"github.com/docker/distribution"
+	"github.com/opencontainers/go-digest"
 )
 
 type FakeImageMetadataProvider interface {

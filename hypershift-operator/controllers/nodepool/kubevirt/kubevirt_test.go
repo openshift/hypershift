@@ -6,25 +6,28 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap/zaptest"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	suppconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/releaseinfo"
+
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
-	kubevirtv1 "kubevirt.io/api/core/v1"
-	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	suppconfig "github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"github.com/google/go-cmp/cmp"
+	"go.uber.org/zap/zaptest"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 const (

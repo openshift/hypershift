@@ -1,9 +1,9 @@
 package consolelogs
 
 import (
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/consolelogs/aws"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCommand() *cobra.Command {

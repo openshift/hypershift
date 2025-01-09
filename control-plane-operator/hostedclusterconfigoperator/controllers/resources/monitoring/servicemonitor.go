@@ -1,9 +1,10 @@
 package monitoring
 
 import (
+	"github.com/openshift/hypershift/support/metrics"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openshift/hypershift/support/metrics"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 

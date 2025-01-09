@@ -7,17 +7,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/nodepool/core"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
+
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	cmdutil "github.com/openshift/hypershift/cmd/util"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/nodepool/core"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func DefaultOptions() *RawKubevirtPlatformCreateOptions {

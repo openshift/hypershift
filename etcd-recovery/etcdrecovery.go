@@ -12,24 +12,26 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
-
 	hyperapi "github.com/openshift/hypershift/support/api"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	"go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	etcdclient "go.etcd.io/etcd/client/v3"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/spf13/cobra"
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	etcdclient "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap/zapcore"
 )
 
 const (

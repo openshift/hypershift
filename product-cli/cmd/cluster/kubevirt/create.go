@@ -3,10 +3,10 @@ package kubevirt
 import (
 	"context"
 
-	"github.com/spf13/cobra"
-
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {

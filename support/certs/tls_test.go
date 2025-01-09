@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	fuzz "github.com/google/gofuzz"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/support/certs"
+	"github.com/google/go-cmp/cmp"
+	fuzz "github.com/google/gofuzz"
 )
 
 // TestValidateKeyPairConsidersAllFields does what the name suggests.

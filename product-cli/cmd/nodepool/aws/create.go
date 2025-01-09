@@ -1,10 +1,10 @@
 package aws
 
 import (
-	"github.com/spf13/cobra"
-
 	hypershiftaws "github.com/openshift/hypershift/cmd/nodepool/aws"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {

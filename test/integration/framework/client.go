@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	homanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+
 	v1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +24,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/go-logr/logr"
 )
 
 // WaitForGuestRestConfig returns the raw content of a KubeConfig for the guest cluster's API server.

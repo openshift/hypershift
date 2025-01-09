@@ -7,10 +7,12 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 //go:embed hypershift-operator/*
