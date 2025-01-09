@@ -122,6 +122,9 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplacePublisher, "e2e.azure-marketplace-publisher", "", "The marketplace publisher to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceSKU, "e2e.azure-marketplace-sku", "", "The marketplace SKU to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureMarketplaceVersion, "e2e.azure-marketplace-version", "", "The marketplace version to use for Azure")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureIssuerURL, "e2e.oidc-issuer-url", "", "The OIDC provider issuer URL")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath, "e2e.sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureDataPlaneIdentities, "e2e.azure-data-plane-identities-file", "", "Path to a file containing the client IDs of the managed identities associated with the data plane")
 
 	// Kubevirt specific flags
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "DEPRECATED (ignored will be removed soon)")
@@ -449,58 +452,61 @@ type options struct {
 }
 
 type configurableClusterOptions struct {
-	AWSCredentialsFile            string
-	AWSMultiArch                  bool
-	AzureCredentialsFile          string
-	AzureManagedIdentitiesFile    string
-	OpenStackCredentialsFile      string
-	OpenStackCACertFile           string
-	AzureLocation                 string
-	AzureMarketplaceOffer         string
-	AzureMarketplacePublisher     string
-	AzureMarketplaceSKU           string
-	AzureMarketplaceVersion       string
-	Region                        string
-	Zone                          stringSliceVar
-	PullSecretFile                string
-	BaseDomain                    string
-	ControlPlaneOperatorImage     string
-	AWSEndpointAccess             string
-	AWSOidcS3BucketName           string
-	AWSKmsKeyAlias                string
-	ExternalDNSDomain             string
-	KubeVirtContainerDiskImage    string
-	KubeVirtNodeMemory            string
-	KubeVirtRootVolumeSize        uint
-	KubeVirtRootVolumeVolumeMode  string
-	KubeVirtNodeCores             uint
-	KubeVirtInfraKubeconfigFile   string
-	KubeVirtInfraNamespace        string
-	NodePoolReplicas              int
-	SSHKeyFile                    string
-	NetworkType                   string
-	OpenStackExternalNetworkID    string
-	OpenStackNodeFlavor           string
-	OpenStackNodeImageName        string
-	OpenStackNodeAvailabilityZone string
-	PowerVSResourceGroup          string
-	PowerVSRegion                 string
-	PowerVSZone                   string
-	PowerVSVpcRegion              string
-	PowerVSSysType                string
-	PowerVSProcType               hyperv1.PowerVSNodePoolProcType
-	PowerVSProcessors             string
-	PowerVSMemory                 int
-	PowerVSCloudInstanceID        string
-	PowerVSCloudConnection        string
-	PowerVSVPC                    string
-	PowerVSPER                    bool
-	PowerVSTransitGatewayLocation string
-	PowerVSTransitGateway         string
-	EtcdStorageClass              string
-	Annotations                   stringMapVar
-	ServiceCIDR                   stringSliceVar
-	ClusterCIDR                   stringSliceVar
+	AWSCredentialsFile                    string
+	AWSMultiArch                          bool
+	AzureCredentialsFile                  string
+	AzureManagedIdentitiesFile            string
+	AzureIssuerURL                        string
+	AzureServiceAccountTokenIssuerKeyPath string
+	AzureDataPlaneIdentities              string
+	OpenStackCredentialsFile              string
+	OpenStackCACertFile                   string
+	AzureLocation                         string
+	AzureMarketplaceOffer                 string
+	AzureMarketplacePublisher             string
+	AzureMarketplaceSKU                   string
+	AzureMarketplaceVersion               string
+	Region                                string
+	Zone                                  stringSliceVar
+	PullSecretFile                        string
+	BaseDomain                            string
+	ControlPlaneOperatorImage             string
+	AWSEndpointAccess                     string
+	AWSOidcS3BucketName                   string
+	AWSKmsKeyAlias                        string
+	ExternalDNSDomain                     string
+	KubeVirtContainerDiskImage            string
+	KubeVirtNodeMemory                    string
+	KubeVirtRootVolumeSize                uint
+	KubeVirtRootVolumeVolumeMode          string
+	KubeVirtNodeCores                     uint
+	KubeVirtInfraKubeconfigFile           string
+	KubeVirtInfraNamespace                string
+	NodePoolReplicas                      int
+	SSHKeyFile                            string
+	NetworkType                           string
+	OpenStackExternalNetworkID            string
+	OpenStackNodeFlavor                   string
+	OpenStackNodeImageName                string
+	OpenStackNodeAvailabilityZone         string
+	PowerVSResourceGroup                  string
+	PowerVSRegion                         string
+	PowerVSZone                           string
+	PowerVSVpcRegion                      string
+	PowerVSSysType                        string
+	PowerVSProcType                       hyperv1.PowerVSNodePoolProcType
+	PowerVSProcessors                     string
+	PowerVSMemory                         int
+	PowerVSCloudInstanceID                string
+	PowerVSCloudConnection                string
+	PowerVSVPC                            string
+	PowerVSPER                            bool
+	PowerVSTransitGatewayLocation         string
+	PowerVSTransitGateway                 string
+	EtcdStorageClass                      string
+	Annotations                           stringMapVar
+	ServiceCIDR                           stringSliceVar
+	ClusterCIDR                           stringSliceVar
 }
 
 var nextAWSZoneIndex = 0
@@ -643,8 +649,12 @@ func (o *options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 
 func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
-		CredentialsFile:             o.configurableClusterOptions.AzureCredentialsFile,
-		Location:                    o.configurableClusterOptions.AzureLocation,
+		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
+		Location:        o.configurableClusterOptions.AzureLocation,
+		// TODO we will re-enable these as part of HOSTEDCP-1542 but we need to first merge a few prerequisite PRs
+		//IssuerURL:                        o.configurableClusterOptions.AzureIssuerURL,
+		//ServiceAccountTokenIssuerKeyPath: o.configurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,
+		//DataPlaneIdentities: o.configurableClusterOptions.AzureDataPlaneIdentities
 		DNSZoneRGName:               "os4-common",
 		AssignServicePrincipalRoles: true,
 
