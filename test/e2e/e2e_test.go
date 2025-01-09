@@ -649,14 +649,13 @@ func (o *options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 
 func (o *options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
-		CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
-		Location:        o.configurableClusterOptions.AzureLocation,
-		// TODO we will re-enable these as part of HOSTEDCP-1542 but we need to first merge a few prerequisite PRs
-		//IssuerURL:                        o.configurableClusterOptions.AzureIssuerURL,
-		//ServiceAccountTokenIssuerKeyPath: o.configurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,
-		//DataPlaneIdentities: o.configurableClusterOptions.AzureDataPlaneIdentities
-		DNSZoneRGName:               "os4-common",
-		AssignServicePrincipalRoles: true,
+		CredentialsFile:                  o.configurableClusterOptions.AzureCredentialsFile,
+		Location:                         o.configurableClusterOptions.AzureLocation,
+		IssuerURL:                        o.configurableClusterOptions.AzureIssuerURL,
+		ServiceAccountTokenIssuerKeyPath: o.configurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,
+		DataPlaneIdentitiesFile:          o.configurableClusterOptions.AzureDataPlaneIdentities,
+		DNSZoneRGName:                    "os4-common",
+		AssignServicePrincipalRoles:      true,
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
