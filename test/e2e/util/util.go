@@ -697,7 +697,7 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 
 func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
-		AtLeast(t, Version418)
+		AtLeast(t, Version419)
 		testNamespaceName := "e2e-psa-check"
 		namespace := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
