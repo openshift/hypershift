@@ -1327,7 +1327,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
 		AtLeast(t, Version418)
 		t.Log("Waiting for ValidatingAdmissionPolicies to exist")
-		var expectedVAPCount = 5
+		var expectedVAPCount = 6
 		g := NewWithT(t)
 		start := time.Now()
 		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
