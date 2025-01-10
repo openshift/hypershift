@@ -981,6 +981,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.DeployerClusterRole, reconcile: rbac.ReconcileDeployerClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.DeployerClusterRoleBinding, reconcile: rbac.ReconcileDeployerClusterRoleBinding},
 
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.NodePublicInfoViewerClusterRole, reconcile: rbac.ReconcileNodePublicInfoViewerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NodePublicInfoViewerClusterRoleBinding, reconcile: rbac.ReconcileNodePublicInfoViewerClusterRoleBinding},
+
 		// ClusterRole and ClusterRoleBinding for useroauthaccesstokens referenced from https://github.com/openshift/cluster-authentication-operator/tree/bebf0fd3932be12594227b415fecd5d664611bc0/bindata/oauth-apiserver/RBAC
 		// Let this go by for now
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.UserOAuthClusterRole, reconcile: rbac.ReconcileUserOAuthClusterRole},
