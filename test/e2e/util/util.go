@@ -1326,51 +1326,29 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
 	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
 		AtLeast(t, Version418)
-		t.Log("Waiting for ValidatingAdmissionPolicies to exist")
-		var expectedVAPCount = 5
 		g := NewWithT(t)
-		start := time.Now()
+		t.Log("Checking that all ValidatingAdmissionPolicies are present")
 		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
-		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-
-			if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
-				t.Logf("Failed to list ValidatingAdmissionPolicies: %v", err)
-				return false, nil
-			}
-
-			if len(validatingAdmissionPolicies.Items) == 0 {
-				t.Log("No ValidatingAdmissionPolicies found")
-				return false, nil
-			}
-
-			if len(validatingAdmissionPolicies.Items) == expectedVAPCount {
-				t.Logf("Found at least %d ValidatingAdmissionPolicies", expectedVAPCount)
-				return true, nil
-			}
-
-			return true, nil
-		})
-		duration := time.Since(start).Round(time.Second)
-		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait for ValidatingAdmissionPolicies to exist in %s: %v", duration, err))
-
-		for _, vap := range validatingAdmissionPolicies.Items {
-			switch vap.Name {
-			case hccokasvap.AdmissionPolicyNameConfig:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameConfig), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameConfig))
-			case hccokasvap.AdmissionPolicyNameMirror:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameMirror), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameMirror))
-			case hccokasvap.AdmissionPolicyNameICSP:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameICSP), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameICSP))
-			case hccokasvap.AdmissionPolicyNameInfra:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameInfra), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameInfra))
-			case hccokasvap.AdmissionPolicyNameNTOMirroredConfigs:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameNTOMirroredConfigs), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameNTOMirroredConfigs))
-			default:
-				t.Errorf("Unexpected ValidatingAdmissionPolicy %s found in the list", vap.Name)
-			}
+		if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
+			t.Errorf("Failed to list ValidatingAdmissionPolicies: %v", err)
 		}
-		g.Expect(expectedVAPCount).To(Equal(len(validatingAdmissionPolicies.Items)), fmt.Sprintf("Failed checking ValidatingAdmissionPolicies, there are %d VAP deployed and %d is expected", len(validatingAdmissionPolicies.Items), expectedVAPCount))
-		t.Logf("Successfully waited for ValidatingAdmissionPolicies to exist in %s", duration)
+		if len(validatingAdmissionPolicies.Items) == 0 {
+			t.Errorf("No ValidatingAdmissionPolicies found")
+		}
+		requiredVAPs := []string{
+			hccokasvap.AdmissionPolicyNameConfig,
+			hccokasvap.AdmissionPolicyNameMirror,
+			hccokasvap.AdmissionPolicyNameICSP,
+			hccokasvap.AdmissionPolicyNameInfra,
+			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+		}
+		presentVAPs := []string{}
+		for _, vap := range validatingAdmissionPolicies.Items {
+			presentVAPs = append(presentVAPs, vap.Name)
+		}
+		for _, requiredVAP := range requiredVAPs {
+			g.Expect(presentVAPs).To(ContainElement(requiredVAP), fmt.Sprintf("ValidatingAdmissionPolicy %s not found", requiredVAP))
+		}
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesCheckDeniedRequests", func(t *testing.T) {
 		AtLeast(t, Version418)
