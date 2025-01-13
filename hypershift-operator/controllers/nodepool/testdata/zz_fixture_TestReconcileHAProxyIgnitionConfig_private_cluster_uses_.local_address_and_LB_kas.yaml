@@ -23,7 +23,7 @@ frontend local_apiserver
 backend remote_apiserver
   mode tcp
   log global
-  option httpchk GET /livez/ping
+  option httpchk GET /version
   option log-health-checks
   default-server inter 10s fall 3 rise 3
   server controlplane api.hc.hypershift.local:6443
