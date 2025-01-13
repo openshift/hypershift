@@ -34,6 +34,12 @@ repos:
           - Dockerfile.control-plane
         description: Ensures the CPO container files stay in sync
         stages: [pre-commit]
+      - id: make-lint-fix
+        name: Sort imports
+        description: Runs `make lint-fix` to sort imports.
+        entry: make lint-fix
+        language: system
+        stages: [pre-commit]
       - id: make-verify
         name: Run make verify
         description: Runs `make verify`.
