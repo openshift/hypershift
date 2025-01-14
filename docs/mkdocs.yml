@@ -121,7 +121,13 @@ nav:
     - how-to/kubevirt/gpu-devices.md
     - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
   - 'OpenStack':
-    - how-to/openstack/create-openstack-cluster.md
+    - how-to/openstack/index.md
+    - how-to/openstack/prerequisites.md
+    - how-to/openstack/hostedcluster.md
+    - how-to/openstack/az.md
+    - how-to/openstack/additional-ports.md
+    - how-to/openstack/performance-tuning.md
+    - how-to/openstack/destroy.md
   - 'None':
     - how-to/none/create-none-cluster.md
     - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
