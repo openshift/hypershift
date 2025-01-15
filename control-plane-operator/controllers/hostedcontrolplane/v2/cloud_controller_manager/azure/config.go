@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	configKey = "cloud.conf"
+	ConfigKey = "cloud.conf"
 )
 
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
@@ -31,7 +31,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
 	}
 
-	cm.Data[configKey] = string(serializedConfig)
+	cm.Data[ConfigKey] = string(serializedConfig)
 	return nil
 }
 
@@ -48,7 +48,7 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
 	}
 
-	secret.Data[configKey] = serializedConfig
+	secret.Data[ConfigKey] = serializedConfig
 	return nil
 }
 

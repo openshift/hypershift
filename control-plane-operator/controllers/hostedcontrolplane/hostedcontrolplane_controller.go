@@ -75,6 +75,7 @@ import (
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
+	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
@@ -240,6 +241,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		openstackccmv2.NewComponent(),
 		powervsccmv2.NewComponent(),
 		ccov2.NewComponent(),
+		storagev2.NewComponent(),
 	)
 }
 
@@ -1319,11 +1321,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
 	}
 
-	if IsStorageAndCSIManaged(hostedControlPlane) {
-		// Reconcile cluster storage operator
-		r.Log.Info("Reconciling cluster storage operator")
-		if err := r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile cluster storage operator: %w", err)
+	if !r.IsCPOV2 {
+		if IsStorageAndCSIManaged(hostedControlPlane) {
+			// Reconcile cluster storage operator
+			r.Log.Info("Reconciling cluster storage operator")
+			if err := r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile cluster storage operator: %w", err)
+			}
 		}
 	}
 
