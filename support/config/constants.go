@@ -45,4 +45,39 @@ const (
 	EnableCVOManagementClusterMetricsAccessEnvVar = "ENABLE_CVO_MANAGEMENT_CLUSTER_METRICS_ACCESS"
 
 	AuditWebhookService = "audit-webhook"
+
+	// DefaultMachineNetwork is the default network CIDR for the machine network.
+	DefaultMachineNetwork = "10.0.0.0/16"
+)
+
+// Managed Azure Related Constants
+const (
+	// AROHCPKeyVaultManagedIdentityClientID captures the client ID of the managed identity created on an ARO HCP
+	// management cluster. This managed identity is used to pull secrets and certificates out of Azure Key Vaults in the
+	// management cluster's resource group in Azure.
+	AROHCPKeyVaultManagedIdentityClientID = "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
+
+	ManagedAzureClientIdEnvVarKey        = "ARO_HCP_MI_CLIENT_ID"
+	ManagedAzureTenantIdEnvVarKey        = "ARO_HCP_TENANT_ID"
+	ManagedAzureCertificatePathEnvVarKey = "ARO_HCP_CLIENT_CERTIFICATE_PATH"
+	ManagedAzureCertificateMountPath     = "/mnt/certs"
+	ManagedAzureCertificatePath          = "/mnt/certs/"
+	ManagedAzureSecretsStoreCSIDriver    = "secrets-store.csi.k8s.io"
+	ManagedAzureSecretProviderClass      = "secretProviderClass"
+
+	ManagedAzureCPOSecretProviderClassName                = "managed-azure-cpo"
+	ManagedAzureCPOSecretStoreVolumeName                  = "cpo-cert"
+	ManagedAzureCloudProviderSecretProviderClassName      = "managed-azure-cloud-provider"
+	ManagedAzureCloudProviderSecretStoreVolumeName        = "cloud-provider-cert"
+	ManagedAzureDiskCSISecretStoreProviderClassName       = "managed-azure-disk-csi"
+	ManagedAzureFileCSISecretStoreProviderClassName       = "managed-azure-file-csi"
+	ManagedAzureImageRegistrySecretStoreProviderClassName = "managed-azure-image-registry"
+	ManagedAzureImageRegistrySecretStoreVolumeName        = "image-registry-cert"
+	ManagedAzureIngressSecretStoreProviderClassName       = "managed-azure-ingress"
+	ManagedAzureIngressSecretStoreVolumeName              = "ingress-cert"
+	ManagedAzureKMSSecretProviderClassName                = "managed-azure-kms"
+	ManagedAzureKMSSecretStoreVolumeName                  = "kms-cert"
+	ManagedAzureNetworkSecretStoreProviderClassName       = "managed-azure-network"
+	ManagedAzureNodePoolMgmtSecretProviderClassName       = "managed-azure-nodepool-management"
+	ManagedAzureNodePoolMgmtSecretStoreVolumeName         = "nodepool-management-cert"
 )

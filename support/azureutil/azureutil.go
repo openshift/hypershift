@@ -217,3 +217,52 @@ func VerifyResourceGroupLocationsMatch(ctx context.Context, hc *hyperv1.HostedCl
 
 	return nil
 }
+
+// IsAroHCP returns true if the managed service environment variable is set to ARO-HCP
+func IsAroHCP() bool {
+	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
+}
+
+func GetKeyVaultAuthorizedUser() string {
+	return os.Getenv(config.AROHCPKeyVaultManagedIdentityClientID)
+}
+
+func CreateEnvVarsForAzureManagedIdentity(azureClientID, azureTenantID, azureCertificateName string) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{
+			Name:  config.ManagedAzureClientIdEnvVarKey,
+			Value: azureClientID,
+		},
+		{
+			Name:  config.ManagedAzureTenantIdEnvVarKey,
+			Value: azureTenantID,
+		},
+		{
+			Name:  config.ManagedAzureCertificatePathEnvVarKey,
+			Value: config.ManagedAzureCertificatePath + azureCertificateName,
+		},
+	}
+}
+
+func CreateVolumeMountForAzureSecretStoreProviderClass(secretStoreVolumeName string) corev1.VolumeMount {
+	return corev1.VolumeMount{
+		Name:      secretStoreVolumeName,
+		MountPath: config.ManagedAzureCertificateMountPath,
+		ReadOnly:  true,
+	}
+}
+
+func CreateVolumeForAzureSecretStoreProviderClass(secretStoreVolumeName, secretProviderClassName string) corev1.Volume {
+	return corev1.Volume{
+		Name: secretStoreVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			CSI: &corev1.CSIVolumeSource{
+				Driver:   config.ManagedAzureSecretsStoreCSIDriver,
+				ReadOnly: ptr.To(true),
+				VolumeAttributes: map[string]string{
+					config.ManagedAzureSecretProviderClass: secretProviderClassName,
+				},
+			},
+		},
+	}
+}
