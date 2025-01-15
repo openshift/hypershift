@@ -25,3 +25,21 @@ func AzureProviderConfigWithCredentials(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func AzureDiskConfigWithCredentials(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-disk-csi-config",
+			Namespace: ns,
+		},
+	}
+}
+
+func AzureFileConfigWithCredentials(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-file-csi-config",
+			Namespace: ns,
+		},
+	}
+}
