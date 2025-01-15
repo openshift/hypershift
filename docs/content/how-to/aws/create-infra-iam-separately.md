@@ -10,6 +10,7 @@ separately so that the `hypershift create cluster aws` command can just be used 
 or simply render it so it can be modified before applying.
 
 In order to do this, you need to:
+
 1. Create the AWS infrastructure
 2. Create AWS IAM resources
 3. Create the cluster
