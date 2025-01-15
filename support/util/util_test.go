@@ -1,10 +1,21 @@
 package util
 
 import (
+	"context"
 	"testing"
 	"unicode/utf8"
 
 	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiversion "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	fakekubeclient "k8s.io/client-go/kubernetes/fake"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestCompressDecompress(t *testing.T) {
@@ -406,38 +417,6 @@ func TestParseNodeSelector(t *testing.T) {
 	}
 }
 
-func TestDoesMgmtClusterAndNodePoolCPUArchMatch(t *testing.T) {
-	tests := []struct {
-		name           string
-		mgmtClusterCPU string
-		nodePoolCPU    string
-		wantErr        bool
-	}{
-		{
-			name:           "Mgmt cluster cpu and nodepool cpu don't match",
-			mgmtClusterCPU: "arm64",
-			nodePoolCPU:    "amd64",
-			wantErr:        true,
-		},
-		{
-			name:           "Mgmt cluster cpu and nodepool cpu match",
-			mgmtClusterCPU: "arm64",
-			nodePoolCPU:    "arm64",
-			wantErr:        false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			err := DoesMgmtClusterAndNodePoolCPUArchMatch(tc.mgmtClusterCPU, tc.nodePoolCPU)
-			if tc.wantErr {
-				g.Expect(err).ToNot(BeNil())
-			} else {
-				g.Expect(err).To(BeNil())
-			}
-		})
-	}
-}
 func TestSanitizeIgnitionPayload(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -481,6 +460,282 @@ func TestSanitizeIgnitionPayload(t *testing.T) {
 				g.Expect(err).To(HaveOccurred())
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestGetMgmtClusterCPUArch(t *testing.T) {
+	fakeKubeClient := fakekubeclient.NewSimpleClientset()
+	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
+
+	if !ok {
+		t.Fatalf("failed to convert FakeDiscovery")
+	}
+
+	// if you want to fake a specific version
+	fakeDiscovery.FakedServerVersion = &apiversion.Info{
+		Platform: "linux/amd64",
+	}
+
+	tests := []struct {
+		Name         string
+		expectedArch string
+		expectedErr  bool
+	}{
+		{
+			Name:         "Nominal use case",
+			expectedArch: "amd64",
+			expectedErr:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			g := NewWithT(t)
+			mgmtClusterArch, err := GetMgmtClusterCPUArch(fakeKubeClient)
+			if tc.expectedErr {
+				g.Expect(err).ToNot(BeNil())
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(mgmtClusterArch).To(Equal(tc.expectedArch))
+			}
+
+		})
+	}
+}
+
+func TestGetPullSecretBytes(t *testing.T) {
+	testCases := []struct {
+		name      string
+		hc        *hyperv1.HostedCluster
+		secret    *corev1.Secret
+		expectErr bool
+	}{
+		{
+			name: "HC has right pull secret info; no err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte("mysecret"),
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name: "HC has wrong pull secret name; err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secrett"},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte("mysecret"),
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "HC has right pull secret name; pull secret missing key; err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					"wrong-key": []byte("mysecret"),
+				},
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			objs := []crclient.Object{tc.hc, tc.secret}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+
+			pullSecretBytes, err := GetPullSecretBytes(context.TODO(), client, tc.hc)
+			if !tc.expectErr {
+				g.Expect(err).To(BeNil())
+				g.Expect(pullSecretBytes).To(Equal(tc.secret.Data[corev1.DockerConfigJsonKey]))
+			} else {
+				g.Expect(err).To(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestGetImageArchitecture(t *testing.T) {
+	pullSecretBytes := []byte("{\"auths\":{\"quay.io\":{\"auth\":\"\",\"email\":\"\"}}}")
+
+	testCases := []struct {
+		name                  string
+		image                 string
+		pullSecretBytes       []byte
+		imageMetadataProvider *RegistryClientImageMetadataProvider
+		expectedArch          hyperv1.PayloadArchType
+		expectErr             bool
+	}{
+		{
+			name:                  "Get amd64 from amd64 image; no err",
+			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+			pullSecretBytes:       pullSecretBytes,
+			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
+			expectedArch:          hyperv1.AMD64,
+			expectErr:             false,
+		},
+		{
+			name:                  "Get ppc64le from ppc64le image; no err",
+			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes:       pullSecretBytes,
+			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
+			expectedArch:          hyperv1.PPC64LE,
+			expectErr:             false,
+		},
+		{
+			name:                  "Bad pull secret; err",
+			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes:       []byte(""),
+			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
+			expectedArch:          "",
+			expectErr:             true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			arch, err := getImageArchitecture(context.TODO(), tc.image, tc.pullSecretBytes, tc.imageMetadataProvider)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(arch).To(Equal(tc.expectedArch))
+			}
+		})
+	}
+}
+
+func TestDetermineHostedClusterPayloadArch(t *testing.T) {
+	pullSecretBytes := []byte("{\"auths\":{\"quay.io\":{\"auth\":\"\",\"email\":\"\"}}}")
+
+	testCases := []struct {
+		name                  string
+		hc                    *hyperv1.HostedCluster
+		secret                *corev1.Secret
+		imageMetadataProvider *RegistryClientImageMetadataProvider
+		expectedPayloadType   hyperv1.PayloadArchType
+		expectErr             bool
+	}{
+		{
+			name: "Get amd64 from amd64 image; no err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+					},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: pullSecretBytes,
+				},
+			},
+			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
+			expectedPayloadType:   hyperv1.AMD64,
+			expectErr:             false,
+		},
+		{
+			name: "Get multi payload from multi image; no err",
+			hc: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.16.11-multi",
+					},
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: pullSecretBytes,
+				},
+			},
+			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
+			expectedPayloadType:   hyperv1.Multi,
+			expectErr:             false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			objs := []crclient.Object{tc.hc, tc.secret}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+
+			payloadType, err := DetermineHostedClusterPayloadArch(context.TODO(), client, tc.hc, tc.imageMetadataProvider)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(payloadType).To(Equal(tc.expectedPayloadType))
 			}
 		})
 	}

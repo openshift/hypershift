@@ -408,6 +408,7 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                               minTLSVersion:
                                 description: |-
                                   minTLSVersion is used to specify the minimal version of the TLS protocol
@@ -1047,6 +1048,11 @@ spec:
                         description: |-
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
+                        enum:
+                        - CustomNoUpgrade
+                        - DevPreviewNoUpgrade
+                        - TechPreviewNoUpgrade
+                        - ""
                         type: string
                         x-kubernetes-validations:
                         - message: CustomNoUpgrade may not be changed
@@ -1710,11 +1716,11 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OpenShiftSDN).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
-                          - OpenShiftSDN
+                          - OVNKubernetes
                           This field is immutable after installation.
                         type: string
                       serviceNetwork:
@@ -5334,6 +5340,7 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                               minTLSVersion:
                                 description: |-
                                   minTLSVersion is used to specify the minimal version of the TLS protocol
@@ -5945,6 +5952,11 @@ spec:
                         description: |-
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
+                        enum:
+                        - CustomNoUpgrade
+                        - DevPreviewNoUpgrade
+                        - TechPreviewNoUpgrade
+                        - ""
                         type: string
                         x-kubernetes-validations:
                         - message: CustomNoUpgrade may not be changed
@@ -6596,11 +6608,11 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OpenShiftSDN).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
-                          - OpenShiftSDN
+                          - OVNKubernetes
                           This field is immutable after installation.
                         type: string
                       serviceNetwork:
@@ -7934,6 +7946,10 @@ spec:
                         description: |-
                           MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
                           CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
+                          Deprecated: This field is no longer used. The HyperShift Operator now performs multi-arch validations
+                          automatically despite the platform type. The HyperShift Operator will set HostedCluster.Status.PayloadArch based
+                          on the HostedCluster release image. This field is used by the NodePool controller to validate the
+                          NodePool.Spec.Arch is supported.
                         type: boolean
                       region:
                         description: |-
@@ -9912,6 +9928,17 @@ spec:
                   for identity providers. The [identity-provider-name] placeholder must be replaced
                   with the name of an identity provider defined on the HostedCluster.
                   This is populated after the infrastructure is ready.
+                type: string
+              payloadArch:
+                description: |-
+                  payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
+                  Multi, ARM64, AMD64, S390X, or PPC64LE.
+                enum:
+                - Multi
+                - ARM64
+                - AMD64
+                - PPC64LE
+                - S390X
                 type: string
               platform:
                 description: Platform contains platform-specific status of the HostedCluster

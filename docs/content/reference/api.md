@@ -1517,7 +1517,11 @@ bool
 <td>
 <em>(Optional)</em>
 <p>MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
-CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.</p>
+CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
+Deprecated: This field is no longer used. The HyperShift Operator now performs multi-arch validations
+automatically despite the platform type. The HyperShift Operator will set HostedCluster.Status.PayloadArch based
+on the HostedCluster release image. This field is used by the NodePool controller to validate the
+NodePool.Spec.Arch is supported.</p>
 </td>
 </tr>
 <tr>
@@ -4622,6 +4626,21 @@ This is populated after the infrastructure is ready.</p>
 <em>(Optional)</em>
 <p>Conditions represents the latest available observations of a control
 plane&rsquo;s current state.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>payloadArch</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PayloadArchType">
+PayloadArchType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>payloadArch represents the CPU architecture type of the HostedCluster.Spec.Release.Image. The valid values are:
+Multi, ARM64, AMD64, S390X, or PPC64LE.</p>
 </td>
 </tr>
 <tr>
@@ -8114,6 +8133,32 @@ to an external network is not possible or desirable, e.g. if using a provider ne
 </td>
 </tr>
 </tbody>
+</table>
+###PayloadArchType { #hypershift.openshift.io/v1beta1.PayloadArchType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AMD64&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;ARM64&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Multi&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;PPC64LE&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;S390X&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###PersistentVolumeAccessMode { #hypershift.openshift.io/v1beta1.PersistentVolumeAccessMode }
 <p>

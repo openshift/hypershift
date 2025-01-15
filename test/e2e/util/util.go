@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/library-go/test/library/metrics"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -1736,5 +1737,31 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 				}
 			}
 		}
+	})
+}
+
+func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsurePayloadArchSetCorrectly", func(t *testing.T) {
+		EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have valid Status.Payload", hostedCluster.Namespace, hostedCluster.Name),
+			func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+				hc := &hyperv1.HostedCluster{}
+				err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+				return hc, err
+			},
+			[]Predicate[*hyperv1.HostedCluster]{
+				func(cluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+					imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
+					payloadArch, err := util.DetermineHostedClusterPayloadArch(ctx, client, cluster, imageMetadataProvider)
+					if err != nil {
+						return false, "failed to get hc payload arch", err
+					}
+					if payloadArch != cluster.Status.PayloadArch {
+						return false, fmt.Sprintf("expected payload arch %s, got %s", cluster.Status.PayloadArch, payloadArch), nil
+					}
+
+					return true, "", nil
+				},
+			}, WithTimeout(30*time.Minute),
+		)
 	})
 }

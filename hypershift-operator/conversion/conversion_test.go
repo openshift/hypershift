@@ -380,6 +380,12 @@ func fixHostedControlPlaneAfterFuzz(in runtime.Object) {
 		hc.Spec.Platform.OpenStack = nil
 	}
 
+	// There was no formal support for Azure on alpha so we shouldn't fuzz
+	// the beta object and expect it to equal the alpha version.
+	if hc.Spec.Platform.Azure != nil {
+		hc.Spec.Platform.Azure = nil
+	}
+
 	if hc.Spec.Platform.AWS != nil {
 		hc.Spec.Platform.AWS.SharedVPC = nil
 	}
@@ -397,6 +403,14 @@ func fixHosterClusterAfterFuzz(in runtime.Object) {
 		hc.Spec.Platform.OpenStack = nil
 	}
 
+	// There was no formal support for Azure on alpha so we shouldn't fuzz
+	// the beta object and expect it to equal the alpha version.
+	if hc.Spec.Platform.Azure != nil {
+		hc.Spec.Platform.Azure = nil
+	}
+
+	hc.Status.PayloadArch = ""
+
 	if hc.Spec.Platform.AWS != nil {
 		hc.Spec.Platform.AWS.SharedVPC = nil
 	}
@@ -412,6 +426,12 @@ func fixNodePoolAfterFuzz(in runtime.Object) {
 	// OpenStack support on alpha.
 	if np.Spec.Platform.OpenStack != nil {
 		np.Spec.Platform.OpenStack = nil
+	}
+
+	// There was no formal support for Azure on alpha so we shouldn't fuzz
+	// the beta object and expect it to equal the alpha version.
+	if np.Spec.Platform.Azure != nil {
+		np.Spec.Platform.Azure = nil
 	}
 }
 

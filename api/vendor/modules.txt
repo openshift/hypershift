@@ -20,7 +20,7 @@ github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.2
 ## explicit; go 1.12
 github.com/modern-go/reflect2
-# github.com/openshift/api v0.0.0-20240524162738-d899f8877d22
+# github.com/openshift/api v0.0.0-20240912201240-0a8800162826
 ## explicit; go 1.22.0
 github.com/openshift/api/config/v1
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
@@ -49,10 +49,10 @@ gopkg.in/inf.v0
 # gopkg.in/yaml.v2 v2.4.0
 ## explicit; go 1.15
 gopkg.in/yaml.v2
-# k8s.io/api v0.30.1
+# k8s.io/api v0.30.2
 ## explicit; go 1.22.0
 k8s.io/api/core/v1
-# k8s.io/apimachinery v0.30.1
+# k8s.io/apimachinery v0.30.2
 ## explicit; go 1.22.0
 k8s.io/apimachinery/pkg/api/resource
 k8s.io/apimachinery/pkg/apis/meta/v1

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/util"
 	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
@@ -41,7 +42,7 @@ func LookupDefaultOCPVersion(releaseStream string) (OCPVersion, error) {
 	}
 
 	var releaseURL string
-	if strings.Contains(releaseStream, "multi") {
+	if strings.Contains(releaseStream, hyperv1.ArchitectureMulti) {
 		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, releaseStream)
 	} else {
 		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)

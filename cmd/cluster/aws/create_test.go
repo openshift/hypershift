@@ -83,43 +83,6 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 	}
 }
 
-func TestValidateMultiArchRelease(t *testing.T) {
-	tests := map[string]struct {
-		releaseImage    string
-		releaseStream   string
-		pullSecretFile  string
-		inputAWSOptions *RawCreateOptions
-		expectError     bool
-	}{
-		"non-multi-arch release image used": {
-			releaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.0-ec.3-aarch64",
-			inputAWSOptions: &RawCreateOptions{
-				MultiArch: true,
-			},
-			expectError: true,
-		},
-		"non-multi-arch release stream used": {
-			releaseStream: "stable",
-			inputAWSOptions: &RawCreateOptions{
-				MultiArch: true,
-			},
-			expectError: true,
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			err := validateMultiArchRelease(context.Background(), test.releaseImage, test.releaseStream, test.pullSecretFile, test.inputAWSOptions)
-			if test.expectError {
-				g.Expect(err).To(HaveOccurred())
-			} else {
-				g.Expect(err).To(BeNil())
-			}
-		})
-	}
-}
-
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)

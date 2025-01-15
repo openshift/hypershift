@@ -24,7 +24,6 @@ import (
 	"net/netip"
 	"os"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -104,7 +103,6 @@ import (
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1019,11 +1017,27 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Set HostedCluster payload arch
+	payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, r.Client, hcluster, registryClientImageMetadataProvider)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidReleaseImage),
+			ObservedGeneration: hcluster.Generation,
+		}
+		condition.Status = metav1.ConditionFalse
+		condition.Message = err.Error()
+		condition.Reason = hyperv1.PayloadArchNotFoundReason
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+
+		return ctrl.Result{}, err
+	}
+
+	hcluster.Status.PayloadArch = payloadArch
+
 	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 	}
-
 	// Set Progressing condition
 	{
 		condition := metav1.Condition{
@@ -1122,13 +1136,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return ctrl.Result{}, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	controlPlaneOperatorImage, err := GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
@@ -4024,13 +4034,9 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
 		return nil
 	}
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hc)
+	if err != nil {
+		return err
 	}
 
 	releaseInfo, err := r.lookupReleaseImage(ctx, hc, releaseProvider)
@@ -4053,35 +4059,6 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 			return err
 		}
 		currentVersion = &version
-	}
-
-	// Validate release image is multi-arch
-	if hc.Spec.Platform.Type == hyperv1.AWSPlatform && hc.Spec.Platform.AWS.MultiArch {
-		isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
-		if err != nil {
-			return fmt.Errorf("failed to determine if release image multi-arch: %w", err)
-		}
-
-		if !isMultiArchReleaseImage {
-			return fmt.Errorf("release image is not a multi-arch image")
-		}
-	}
-
-	// Validate each NodePool CPU arch matches the management cluster's CPU arch when the Hosted Cluster is not multi-arch
-	if hc.Spec.Platform.Type == hyperv1.AWSPlatform && !hc.Spec.Platform.AWS.MultiArch {
-		nodePoolList := &hyperv1.NodePoolList{}
-		if err := r.List(ctx, nodePoolList, client.InNamespace(hc.Namespace)); err != nil {
-			return fmt.Errorf("failed to get list of nodepools for cpu arch validation: %w", err)
-		}
-
-		mgmtClusterCPUArch := runtime.GOARCH
-
-		for _, nodePool := range nodePoolList.Items {
-			if err := hyperutil.DoesMgmtClusterAndNodePoolCPUArchMatch(mgmtClusterCPUArch, nodePool.Spec.Arch); err != nil {
-				return err
-			}
-		}
-
 	}
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
@@ -4730,13 +4707,9 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 }
 
 func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) (*releaseinfo.ReleaseImage, error) {
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return nil, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	if err != nil {
+		return nil, err
 	}
 	return releaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
 }

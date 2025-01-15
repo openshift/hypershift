@@ -18,6 +18,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
@@ -32,6 +33,7 @@ type HostedClusterStatusApplyConfiguration struct {
 	ControlPlaneEndpoint     *APIEndpointApplyConfiguration          `json:"controlPlaneEndpoint,omitempty"`
 	OAuthCallbackURLTemplate *string                                 `json:"oauthCallbackURLTemplate,omitempty"`
 	Conditions               []metav1.ConditionApplyConfiguration    `json:"conditions,omitempty"`
+	PayloadArch              *hypershiftv1beta1.PayloadArchType      `json:"payloadArch,omitempty"`
 	Platform                 *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
 }
 
@@ -99,6 +101,14 @@ func (b *HostedClusterStatusApplyConfiguration) WithConditions(values ...*metav1
 		}
 		b.Conditions = append(b.Conditions, *values[i])
 	}
+	return b
+}
+
+// WithPayloadArch sets the PayloadArch field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the PayloadArch field is set to the value of the last call.
+func (b *HostedClusterStatusApplyConfiguration) WithPayloadArch(value hypershiftv1beta1.PayloadArchType) *HostedClusterStatusApplyConfiguration {
+	b.PayloadArch = &value
 	return b
 }
 

@@ -4330,3 +4330,63 @@ func withCondition(condition crconditionsv1.Condition) func(*performanceprofilev
 		}
 	}
 }
+
+func Test_validateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
+	testCases := []struct {
+		name        string
+		hc          *hyperv1.HostedCluster
+		np          *hyperv1.NodePool
+		expectedErr bool
+	}{
+		{
+			name: "payload is multi",
+			hc: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					PayloadArch: hyperv1.Multi,
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name: "payload is amd64; np is amd64",
+			hc: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					PayloadArch: hyperv1.AMD64,
+				},
+			},
+			np: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name: "payload is amd64; np is arm64",
+			hc: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					PayloadArch: hyperv1.AMD64,
+				},
+			},
+			np: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureARM64,
+				},
+			},
+			expectedErr: true,
+		},
+	}
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			err := validateHCPayloadSupportsNodePoolCPUArch(tt.hc, tt.np)
+			if tt.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err).To(Not(BeNil()))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
