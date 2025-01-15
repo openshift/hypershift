@@ -23,6 +23,15 @@ func UserCABundle() *corev1.ConfigMap {
 	}
 }
 
+func OpenShiftUserCABundle() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openshift-user-ca",
+			Namespace: "openshift-controller-manager",
+		},
+	}
+}
+
 func ImageRegistryAdditionalTrustedCAConfigMap(name string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
