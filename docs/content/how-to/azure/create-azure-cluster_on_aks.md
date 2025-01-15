@@ -1,10 +1,11 @@
 # Create an Azure Hosted Cluster on AKS
-This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup(starting in OCP 4.17).
+## General
+This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup(implemented in OCP 4.17).
 
 If you already have an existing AKS cluster up and running, you can jump to the [Setup ExternalDNS](#setup-externaldns).
 
-There are also automated scripts to set up the AKS cluster, set up external DNS, install the HyperShift Operator, and
-create an Azure HostedCluster in the /contrib/aks folder in the HyperShift repo.
+There are also automated scripts - located in the [/contrib/managed-azure folder in the HyperShift repo](https://github.com/openshift/hypershift/tree/main/contrib/managed-azure) -
+to set up the AKS cluster, to set up external DNS, install the HyperShift Operator, and create an Azure HostedCluster.
 
 ## Prerequisites
 Obtain the az cli. See [this](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) for instructions.
@@ -26,17 +27,17 @@ AKS_KUBELET_MI_NAME="${PREFIX}-aks-kubelet-mi"
 Log in to your Azure account through the CLI
 `az login`
 
-Create an Azure Resource Group
+Create an Azure resource group to create your AKS management cluster in
 ```
 az group create \
 --name ${AKS_RG} \
 --location ${LOCATION}
 ```
 
-Create managed identities  to reuse for the AKS clusters
+Create managed identities to reuse for the AKS clusters
 ```shell
-az identity create --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME
-az identity create --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME
+az identity create --name $AKS_CP_MI_NAME --resource-group $AKS_RG
+az identity create --name $AKS_KUBELET_MI_NAME --resource-group $AKS_RG
 ```
 
 Create an AKS Cluster
@@ -52,6 +53,8 @@ az aks create \
 --enable-fips-image \
 --enable-addons azure-keyvault-secrets-provider \
 --kubernetes-version 1.31.1 \
+--enable-secret-rotation \
+--rotation-poll-interval 1m \
 --assign-identity $AKS_CP_MI_ID \
 --assign-kubelet-identity $AKS_KUBELET_MI_ID
 ```
@@ -182,34 +185,11 @@ MGMT_DNS_ZONE_NAME="blah.hypershift.azure.devcluster.openshift.com"
 DNS_RECORD_NAME="blah"
 EXTERNAL_DNS_NEW_SP_NAME="ExternalDnsServicePrincipal"
 SERVICE_PRINCIPAL_FILEPATH="/Users/your-username/azure_mgmt.json"
-PARENT_DNS_RG="os4-common"
-PARENT_DNS_ZONE="hypershift.azure.devcluster.openshift.com"
 ```
 
 Create a DNS Zone in Azure
 ```
 az network dns zone create --resource-group $DNS_RG --name $MGMT_DNS_ZONE_NAME
-```
-
-Delete Existing Record Set
-```
-az network dns record-set ns delete --resource-group $PARENT_DNS_RG --zone-name $PARENT_DNS_ZONE --name $DNS_RECORD_NAME -y
-```
-
-Get Name Servers for DNS Zone
-```
-name_servers=$(az network dns zone show --resource-group $DNS_RG --name $MGMT_DNS_ZONE_NAME --query nameServers --output tsv)
-ns_array=()
-while IFS= read -r ns; do
-    ns_array+=("$ns")
-done <<< "$name_servers"
-```
-
-Add Name Servers to Parent DNS Zone
-```
-for ns in "${ns_array[@]}"; do
-    az network dns record-set ns add-record --resource-group $PARENT_DNS_RG --zone-name $PARENT_DNS_ZONE --record-set-name $DNS_RECORD_NAME --nsdname "$ns"
-done
 ```
 
 Create Service Principal for DNS
