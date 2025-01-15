@@ -258,8 +258,8 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 
 	stmts = append(stmts,
 		fmt.Sprintf("cp -R /manifests %s/", payloadDir),
-		fmt.Sprintf("rm %s/manifests/*_deployment.yaml", payloadDir),
-		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
+		fmt.Sprintf("rm -f %s/manifests/*_deployment.yaml", payloadDir),
+		fmt.Sprintf("rm -f %s/manifests/*_servicemonitor.yaml", payloadDir),
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 
@@ -299,10 +299,10 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 				continue
 			}
 		}
-		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
+		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", manifest)))
 	}
 	if !oauthEnabled {
-		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
+		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
 	}
 	toRemove := ResourcesToRemove(platformType)
 	if len(toRemove) > 0 {
