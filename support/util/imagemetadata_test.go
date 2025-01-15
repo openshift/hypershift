@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -314,6 +315,38 @@ func TestSeekOverride(t *testing.T) {
 				Tag:       "latest",
 			},
 		},
+		{
+			name:      "if registry override exact coincidence is found, and using ID",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "registry.build01.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ci-op-p2mqdwjp",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "virthost.ostest.test.metalkube.org:5000",
+				Name:      "local-release-image",
+				Namespace: "localimages",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
+			},
+		},
+		{
+			name:      "if registry override partial coincidence is found, and using ID",
+			overrides: fakeOverrides(),
+			imageRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "mce-image",
+				Namespace: "mce",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Name:      "mce-image",
+				Namespace: "mce",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
+			},
+		},
 	}
 
 	for _, tc := range testsCases {
@@ -321,7 +354,7 @@ func TestSeekOverride(t *testing.T) {
 			ctx := context.TODO()
 			g := NewGomegaWithT(t)
 			imgRef := seekOverride(ctx, tc.overrides, tc.imageRef)
-			g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
 		})
 	}
 }
@@ -334,6 +367,12 @@ func fakeOverrides() map[string][]string {
 		},
 		"quay.io/mce": {
 			"myregistry.io/mce",
+		},
+		"registry.build01.ci.openshift.org/ci-op-p2mqdwjp/release": {
+			"virthost.ostest.test.metalkube.org:5000/localimages/local-release-image",
+		},
+		"registry.ci.openshift.org/ocp/4.18-2025-01-04-031500": {
+			"virthost.ostest.test.metalkube.org:5000/localimages/local-release-image",
 		},
 	}
 }
