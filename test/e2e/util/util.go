@@ -1673,6 +1673,9 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 	}
+	if IsLessThan(Version417) {
+		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
+	}
 
 	var predicates []Predicate[*hyperv1.HostedCluster]
 	for conditionType, conditionStatus := range expectedConditions {
