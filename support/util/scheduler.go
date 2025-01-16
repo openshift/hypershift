@@ -77,9 +77,10 @@ func UpdateHostedCluster(hc *hyperv1.HostedCluster, size string, config *schedul
 		if lbSubnets != "" {
 			hc.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
 		}
-	}
 
-	hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, size)
+		hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, size)
+
+	}
 
 	return hc, nil
 }

@@ -32,6 +32,7 @@ import (
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
+	aroscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aro"
 	rosascheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/rosa"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
@@ -40,6 +41,7 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -460,7 +462,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controllers to manage dedicated request serving isolation
-	if opts.EnableDedicatedRequestServingIsolation {
+	if opts.EnableDedicatedRequestServingIsolation && !azureutil.IsAroHCP() {
 		// Use the new scheduler if we support size tagging on hosted clusters
 		if enableSizeTagging {
 			hcScheduler := rosascheduler.DedicatedServingComponentSchedulerAndSizer{}
@@ -499,6 +501,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	} else {
 		log.Info("Dedicated request serving isolation controllers disabled")
+	}
+
+	if enableSizeTagging && azureutil.IsAroHCP() {
+		hcScheduler := aroscheduler.Scheduler{}
+		if err := hcScheduler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create aro scheduler controller: %w", err)
+		}
 	}
 
 	// If it exists, block default ingress controller from admitting HCP private routes
