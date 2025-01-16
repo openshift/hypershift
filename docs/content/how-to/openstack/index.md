@@ -21,8 +21,10 @@ Table of content:
 
 - [Prerequisites](prerequisites.md)
 - [Create a Hosted Cluster and a default Nodepool](hostedcluster.md)
-- Advanced scenarios: additional Nodepools can be created with specific configurations:
-  - [Nodepools distributed over Nova availability zones](az.md)
-  - [Additional ports for Nodepools](additional-ports.md)
-  - [Node tuning, SR-IOV Network Operator](performance-tuning.md)
 - [Destroy a Hosted Cluster](destroy.md)
+
+Advanced scenarios: additional Nodepools can be created with specific configurations:
+
+- [Nodepools distributed over Nova availability zones](az.md)
+- [Additional ports for Nodepools](additional-ports.md)
+- [Node tuning, SR-IOV Network Operator](performance-tuning.md)
