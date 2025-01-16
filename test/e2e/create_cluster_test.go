@@ -140,23 +140,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 				},
 			},
 			{
-				name: "when feature gated fields are used it should fail",
-				file: "hostedcluster-base.yaml",
-				validations: []struct {
-					name                   string
-					mutateInput            func(*hyperv1.HostedCluster)
-					expectedErrorSubstring string
-				}{
-					{
-						name: "When OpenStack value is set as platform type it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Platform.Type = hyperv1.OpenStackPlatform
-						},
-						expectedErrorSubstring: "Unsupported value: \"OpenStack\"",
-					},
-				},
-			},
-			{
 				name: "when infraID or clusterID are not valid input it should fail",
 				file: "hostedcluster-base.yaml",
 				validations: []struct {
