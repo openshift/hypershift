@@ -87,15 +87,14 @@ spec:
         - -v=2
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --feature-gates=ConsolePluginContentSecurityPolicy=true
+        - --feature-gates=SetEIPForNLBIngressController=true
         - --feature-gates=OpenShiftPodSecurityAdmission=true
-        - --feature-gates=ExternalCloudProvider=true
-        - --feature-gates=ExternalCloudProviderAzure=true
-        - --feature-gates=ExternalCloudProviderGCP=true
-        - --feature-gates=ExternalCloudProviderExternal=true
         - --feature-gates=CSIDriverSharedResource=true
         - --feature-gates=BuildCSIVolumes=true
         - --feature-gates=MachineAPIProviderOpenStack=true
         - --feature-gates=InsightsConfigAPI=true
+        - --feature-gates=InsightsRuntimeExtractor=true
         - --feature-gates=AzureWorkloadIdentity=true
         - --feature-gates=PrivateHostedZoneAWS=true
         - --feature-gates=SigstoreImageVerification=true
@@ -105,20 +104,25 @@ spec:
         - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=RouteExternalCertificate=true
         - --feature-gates=AdminNetworkPolicy=true
+        - --feature-gates=NetworkSegmentation=true
+        - --feature-gates=AdditionalRoutingCapabilities=true
+        - --feature-gates=RouteAdvertisements=true
         - --feature-gates=NetworkLiveMigration=true
         - --feature-gates=NetworkDiagnosticsConfig=true
+        - --feature-gates=OVNObservability=true
         - --feature-gates=HardwareSpeed=true
         - --feature-gates=EtcdBackendQuota=true
         - --feature-gates=AutomatedEtcdBackup=true
         - --feature-gates=DNSNameResolver=true
         - --feature-gates=VSphereControlPlaneMachineSet=true
         - --feature-gates=MachineConfigNodes=true
-        - --feature-gates=MetricsServer=true
-        - --feature-gates=InstallAlternateInfrastructureAWS=true
         - --feature-gates=GCPClusterHostedDNS=true
+        - --feature-gates=AWSClusterHostedDNS=true
         - --feature-gates=MixedCPUsAllocation=true
         - --feature-gates=ManagedBootImages=true
+        - --feature-gates=ManagedBootImagesAWS=true
         - --feature-gates=OnClusterBuild=true
+        - --feature-gates=BootcNodeManagement=true
         - --feature-gates=SignatureStores=true
         - --feature-gates=PinnedImages=true
         - --feature-gates=UpgradeStatus=true
@@ -126,24 +130,24 @@ spec:
         - --feature-gates=Example=true
         - --feature-gates=PlatformOperators=true
         - --feature-gates=NewOLM=true
-        - --feature-gates=ExternalRouteCertificate=true
         - --feature-gates=InsightsOnDemandDataGather=true
         - --feature-gates=BareMetalLoadBalancer=true
         - --feature-gates=InsightsConfig=true
-        - --feature-gates=ImagePolicy=true
         - --feature-gates=NodeDisruptionPolicy=true
         - --feature-gates=MetricsCollectionProfiles=true
         - --feature-gates=VSphereDriverConfiguration=true
-        - --feature-gates=ClusterAPIInstallAWS=true
-        - --feature-gates=ClusterAPIInstallGCP=true
-        - --feature-gates=ClusterAPIInstallNutanix=true
-        - --feature-gates=ClusterAPIInstallOpenStack=true
-        - --feature-gates=ClusterAPIInstallPowerVS=true
-        - --feature-gates=ClusterAPIInstallVSphere=true
         - --feature-gates=ChunkSizeMiB=true
-        - --feature-gates=ServiceAccountTokenNodeBindingValidation=true
+        - --feature-gates=PersistentIPsForVirtualization=true
+        - --feature-gates=ClusterMonitoringConfig=true
+        - --feature-gates=MultiArchInstallAWS=true
+        - --feature-gates=MultiArchInstallGCP=true
+        - --feature-gates=IngressControllerLBSubnetsAWS=true
+        - --feature-gates=AWSEFSDriverVolumeMetrics=true
+        - --feature-gates=ImageStreamImportMode=true
+        - --feature-gates=VSphereMultiNetworks=true
+        - --feature-gates=IngressControllerDynamicConfigurationManager=true
+        - --feature-gates=MinimumKubeletVersion=true
         - --feature-gates=ServiceAccountTokenNodeBinding=true
-        - --feature-gates=ServiceAccountTokenPodNodeInfo=true
         - --feature-gates=ValidatingAdmissionPolicy=true
         - --feature-gates=NodeSwap=true
         - --feature-gates=DynamicResourceAllocation=true
@@ -152,13 +156,17 @@ spec:
         - --feature-gates=DisableKubeletCloudCredentialProviders=true
         - --feature-gates=KMSv1=true
         - --feature-gates=TranslateStreamCloseWebsocketRequests=true
+        - --feature-gates=VolumeAttributesClass=true
         - --feature-gates=VolumeGroupSnapshot=true
+        - --feature-gates=UserNamespacesSupport=true
+        - --feature-gates=UserNamespacesPodSecurityStandards=true
+        - --feature-gates=ProcMountType=true
         - --feature-gates=GatewayAPI=false
         - --feature-gates=MachineAPIOperatorDisableMachineHealthCheckController=false
         - --feature-gates=ClusterAPIInstall=false
-        - --feature-gates=ClusterAPIInstallAzure=false
         - --feature-gates=ClusterAPIInstallIBMCloud=false
         - --feature-gates=MachineAPIMigration=false
+        - --feature-gates=MultiArchInstallAzure=false
         - --feature-gates=EventedPLEG=false
         command:
         - hyperkube

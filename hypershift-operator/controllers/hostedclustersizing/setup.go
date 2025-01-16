@@ -124,7 +124,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 			}}
 		})).
 		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 		}).Complete(newReconciler(
 		hypershiftClient, mgr.GetClient(), time.Now,
 		hypershiftOperatorImage, releaseProvider, imageMetadataProvider,
@@ -136,7 +136,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 		Named(ValidatingControllerName).
 		For(&schedulingv1alpha1.ClusterSizingConfiguration{}).
 		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 		}).Complete(&validator{
 		client: hypershiftClient,
 		lister: mgr.GetClient(),

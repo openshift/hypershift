@@ -17,13 +17,27 @@
 package components
 
 import (
+	"context"
+
 	apiconfigv1 "github.com/openshift/api/config/v1"
-	mcov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcov1 "github.com/openshift/api/machineconfiguration/v1"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type Handler interface {
+	// Delete deletes the components owned by the controller
+	Delete(ctx context.Context, profileName string) error
+	// Exists checks for the existences of the components owned by the controller
+	Exists(ctx context.Context, profileName string) bool
+	// Apply applies the desired state to the components owned by the controller, or creates them if not exists
+	Apply(ctx context.Context, obj client.Object, recorder record.EventRecorder, options *Options) error
+}
+
 type Options struct {
-	ProfileMCP    *mcov1.MachineConfigPool
-	MachineConfig MachineConfigOptions
+	ProfileMCP                  *mcov1.MachineConfigPool
+	MachineConfig               MachineConfigOptions
+	MixedCPUsFeatureGateEnabled bool
 }
 
 type MachineConfigOptions struct {

@@ -7,6 +7,7 @@ package starlark
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"sort"
@@ -324,15 +325,7 @@ func (prog *Program) Write(out io.Writer) error {
 	return err
 }
 
-// ExecFile calls [ExecFileOptions] using [syntax.LegacyFileOptions].
-//
-// Deprecated: use [ExecFileOptions] with [syntax.FileOptions] instead,
-// because this function relies on legacy global variables.
-func ExecFile(thread *Thread, filename string, src interface{}, predeclared StringDict) (StringDict, error) {
-	return ExecFileOptions(syntax.LegacyFileOptions(), thread, filename, src, predeclared)
-}
-
-// ExecFileOptions parses, resolves, and executes a Starlark file in the
+// ExecFile parses, resolves, and executes a Starlark file in the
 // specified global environment, which may be modified during execution.
 //
 // Thread is the state associated with the Starlark thread.
@@ -347,11 +340,11 @@ func ExecFile(thread *Thread, filename string, src interface{}, predeclared Stri
 // Execution does not modify this dictionary, though it may mutate
 // its values.
 //
-// If ExecFileOptions fails during evaluation, it returns an *EvalError
+// If ExecFile fails during evaluation, it returns an *EvalError
 // containing a backtrace.
-func ExecFileOptions(opts *syntax.FileOptions, thread *Thread, filename string, src interface{}, predeclared StringDict) (StringDict, error) {
+func ExecFile(thread *Thread, filename string, src interface{}, predeclared StringDict) (StringDict, error) {
 	// Parse, resolve, and compile a Starlark source file.
-	_, mod, err := SourceProgramOptions(opts, filename, src, predeclared.Has)
+	_, mod, err := SourceProgram(filename, src, predeclared.Has)
 	if err != nil {
 		return nil, err
 	}
@@ -361,15 +354,7 @@ func ExecFileOptions(opts *syntax.FileOptions, thread *Thread, filename string, 
 	return g, err
 }
 
-// SourceProgram calls [SourceProgramOptions] using [syntax.LegacyFileOptions].
-//
-// Deprecated: use [SourceProgramOptions] with [syntax.FileOptions] instead,
-// because this function relies on legacy global variables.
-func SourceProgram(filename string, src interface{}, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
-	return SourceProgramOptions(syntax.LegacyFileOptions(), filename, src, isPredeclared)
-}
-
-// SourceProgramOptions produces a new program by parsing, resolving,
+// SourceProgram produces a new program by parsing, resolving,
 // and compiling a Starlark source file.
 // On success, it returns the parsed file and the compiled program.
 // The filename and src parameters are as for syntax.Parse.
@@ -378,8 +363,8 @@ func SourceProgram(filename string, src interface{}, isPredeclared func(string) 
 // a pre-declared identifier of the current module.
 // Its typical value is predeclared.Has,
 // where predeclared is a StringDict of pre-declared values.
-func SourceProgramOptions(opts *syntax.FileOptions, filename string, src interface{}, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
-	f, err := opts.Parse(filename, src, 0)
+func SourceProgram(filename string, src interface{}, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
+	f, err := syntax.Parse(filename, src, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -411,7 +396,7 @@ func FileProgram(f *syntax.File, isPredeclared func(string) bool) (*Program, err
 	}
 
 	module := f.Module.(*resolve.Module)
-	compiled := compile.File(f.Options, f.Stmts, pos, "<toplevel>", module.Locals, module.Globals)
+	compiled := compile.File(f.Stmts, pos, "<toplevel>", module.Locals, module.Globals)
 
 	return &Program{compiled}, nil
 }
@@ -419,7 +404,7 @@ func FileProgram(f *syntax.File, isPredeclared func(string) bool) (*Program, err
 // CompiledProgram produces a new program from the representation
 // of a compiled program previously saved by Program.Write.
 func CompiledProgram(in io.Reader) (*Program, error) {
-	data, err := io.ReadAll(in)
+	data, err := ioutil.ReadAll(in)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +453,7 @@ func ExecREPLChunk(f *syntax.File, thread *Thread, globals StringDict) error {
 	}
 
 	module := f.Module.(*resolve.Module)
-	compiled := compile.File(f.Options, f.Stmts, pos, "<toplevel>", module.Locals, module.Globals)
+	compiled := compile.File(f.Stmts, pos, "<toplevel>", module.Locals, module.Globals)
 	prog := &Program{compiled}
 
 	// -- variant of Program.Init --
@@ -527,15 +512,7 @@ func makeToplevelFunction(prog *compile.Program, predeclared StringDict) *Functi
 	}
 }
 
-// Eval calls [EvalOptions] using [syntax.LegacyFileOptions].
-//
-// Deprecated: use [EvalOptions] with [syntax.FileOptions] instead,
-// because this function relies on legacy global variables.
-func Eval(thread *Thread, filename string, src interface{}, env StringDict) (Value, error) {
-	return EvalOptions(syntax.LegacyFileOptions(), thread, filename, src, env)
-}
-
-// EvalOptions parses, resolves, and evaluates an expression within the
+// Eval parses, resolves, and evaluates an expression within the
 // specified (predeclared) environment.
 //
 // Evaluation cannot mutate the environment dictionary itself,
@@ -543,75 +520,58 @@ func Eval(thread *Thread, filename string, src interface{}, env StringDict) (Val
 //
 // The filename and src parameters are as for syntax.Parse.
 //
-// If EvalOptions fails during evaluation, it returns an *EvalError
+// If Eval fails during evaluation, it returns an *EvalError
 // containing a backtrace.
-func EvalOptions(opts *syntax.FileOptions, thread *Thread, filename string, src interface{}, env StringDict) (Value, error) {
-	expr, err := opts.ParseExpr(filename, src, 0)
+func Eval(thread *Thread, filename string, src interface{}, env StringDict) (Value, error) {
+	expr, err := syntax.ParseExpr(filename, src, 0)
 	if err != nil {
 		return nil, err
 	}
-	f, err := makeExprFunc(opts, expr, env)
+	f, err := makeExprFunc(expr, env)
 	if err != nil {
 		return nil, err
 	}
 	return Call(thread, f, nil, nil)
 }
 
-// EvalExpr calls [EvalExprOptions] using [syntax.LegacyFileOptions].
-//
-// Deprecated: use [EvalExprOptions] with [syntax.FileOptions] instead,
-// because this function relies on legacy global variables.
-func EvalExpr(thread *Thread, expr syntax.Expr, env StringDict) (Value, error) {
-	return EvalExprOptions(syntax.LegacyFileOptions(), thread, expr, env)
-}
-
-// EvalExprOptions resolves and evaluates an expression within the
+// EvalExpr resolves and evaluates an expression within the
 // specified (predeclared) environment.
 // Evaluating a comma-separated list of expressions yields a tuple value.
 //
 // Resolving an expression mutates it.
-// Do not call EvalExprOptions more than once for the same expression.
+// Do not call EvalExpr more than once for the same expression.
 //
 // Evaluation cannot mutate the environment dictionary itself,
 // though it may modify variables reachable from the dictionary.
 //
-// If EvalExprOptions fails during evaluation, it returns an *EvalError
+// If Eval fails during evaluation, it returns an *EvalError
 // containing a backtrace.
-func EvalExprOptions(opts *syntax.FileOptions, thread *Thread, expr syntax.Expr, env StringDict) (Value, error) {
-	fn, err := makeExprFunc(opts, expr, env)
+func EvalExpr(thread *Thread, expr syntax.Expr, env StringDict) (Value, error) {
+	fn, err := makeExprFunc(expr, env)
 	if err != nil {
 		return nil, err
 	}
 	return Call(thread, fn, nil, nil)
 }
 
-// ExprFunc calls [ExprFuncOptions] using [syntax.LegacyFileOptions].
-//
-// Deprecated: use [ExprFuncOptions] with [syntax.FileOptions] instead,
-// because this function relies on legacy global variables.
-func ExprFunc(filename string, src interface{}, env StringDict) (*Function, error) {
-	return ExprFuncOptions(syntax.LegacyFileOptions(), filename, src, env)
-}
-
 // ExprFunc returns a no-argument function
 // that evaluates the expression whose source is src.
-func ExprFuncOptions(options *syntax.FileOptions, filename string, src interface{}, env StringDict) (*Function, error) {
-	expr, err := options.ParseExpr(filename, src, 0)
+func ExprFunc(filename string, src interface{}, env StringDict) (*Function, error) {
+	expr, err := syntax.ParseExpr(filename, src, 0)
 	if err != nil {
 		return nil, err
 	}
-	return makeExprFunc(options, expr, env)
+	return makeExprFunc(expr, env)
 }
 
 // makeExprFunc returns a no-argument function whose body is expr.
-// The options must be consistent with those used when parsing expr.
-func makeExprFunc(opts *syntax.FileOptions, expr syntax.Expr, env StringDict) (*Function, error) {
-	locals, err := resolve.ExprOptions(opts, expr, env.Has, Universe.Has)
+func makeExprFunc(expr syntax.Expr, env StringDict) (*Function, error) {
+	locals, err := resolve.Expr(expr, env.Has, Universe.Has)
 	if err != nil {
 		return nil, err
 	}
 
-	return makeToplevelFunction(compile.Expr(opts, expr, "<expr>", locals), env), nil
+	return makeToplevelFunction(compile.Expr(expr, "<expr>", locals), env), nil
 }
 
 // The following functions are primitive operations of the byte code interpreter.
@@ -834,12 +794,6 @@ func Binary(op syntax.Token, x, y Value) (Value, error) {
 					return nil, err
 				}
 				return x - yf, nil
-			}
-		case *Set: // difference
-			if y, ok := y.(*Set); ok {
-				iter := y.Iterate()
-				defer iter.Done()
-				return x.Difference(iter)
 			}
 		}
 
@@ -1112,9 +1066,17 @@ func Binary(op syntax.Token, x, y Value) (Value, error) {
 			}
 		case *Set: // intersection
 			if y, ok := y.(*Set); ok {
-				iter := y.Iterate()
-				defer iter.Done()
-				return x.Intersection(iter)
+				set := new(Set)
+				if x.Len() > y.Len() {
+					x, y = y, x // opt: range over smaller set
+				}
+				for xe := x.ht.head; xe != nil; xe = xe.next {
+					// Has, Insert cannot fail here.
+					if found, _ := y.Has(xe.key); found {
+						set.Insert(xe.key)
+					}
+				}
+				return set, nil
 			}
 		}
 
@@ -1126,9 +1088,18 @@ func Binary(op syntax.Token, x, y Value) (Value, error) {
 			}
 		case *Set: // symmetric difference
 			if y, ok := y.(*Set); ok {
-				iter := y.Iterate()
-				defer iter.Done()
-				return x.SymmetricDifference(iter)
+				set := new(Set)
+				for xe := x.ht.head; xe != nil; xe = xe.next {
+					if found, _ := y.Has(xe.key); !found {
+						set.Insert(xe.key)
+					}
+				}
+				for ye := y.ht.head; ye != nil; ye = ye.next {
+					if found, _ := x.Has(ye.key); !found {
+						set.Insert(ye.key)
+					}
+				}
+				return set, nil
 			}
 		}
 
@@ -1669,14 +1640,9 @@ func interpolate(format string, x Value) (Value, error) {
 		index++
 	}
 
-	if index < nargs && !is[Mapping](x) {
+	if index < nargs {
 		return nil, fmt.Errorf("too many arguments for format string")
 	}
 
 	return String(buf.String()), nil
-}
-
-func is[T any](x any) bool {
-	_, ok := x.(T)
-	return ok
 }

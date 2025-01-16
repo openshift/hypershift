@@ -711,6 +711,10 @@ func (c *CertificateRevocationController) prunePreviousSignerCertificates(ctx co
 
 		var existingLeafCerts []*certificateSecret
 		for _, secret := range secrets {
+			if _, hasTLSCertKey := secret.Data[corev1.TLSCertKey]; !hasTLSCertKey {
+				continue
+			}
+
 			certKeyInfo, err := certgraphanalysis.InspectSecret(secret)
 			if err != nil {
 				klog.Warningf("failed to load cert/key pair from secret %s/%s: %v", secret.Namespace, secret.Name, err)
@@ -725,12 +729,14 @@ func (c *CertificateRevocationController) prunePreviousSignerCertificates(ctx co
 				return true, nil, false, fmt.Errorf("could not parse certificate in secret %s/%s: %w", secret.Namespace, secret.Name, err)
 			}
 
-			if isLeafCertificate(certKeyInfo) {
-				existingLeafCerts = append(existingLeafCerts, &certificateSecret{
-					namespace: secret.Namespace,
-					name:      secret.Name,
-					cert:      certs[0],
-				})
+			for _, cert := range certKeyInfo {
+				if isLeafCertificate(cert) {
+					existingLeafCerts = append(existingLeafCerts, &certificateSecret{
+						namespace: secret.Namespace,
+						name:      secret.Name,
+						cert:      certs[0],
+					})
+				}
 			}
 		}
 

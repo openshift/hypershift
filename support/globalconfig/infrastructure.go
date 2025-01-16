@@ -40,9 +40,10 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
 	infra.Status.Platform = configv1.PlatformType(platformType)
-	infra.Status.PlatformStatus = &configv1.PlatformStatus{
-		Type: configv1.PlatformType(platformType),
+	if infra.Status.PlatformStatus == nil {
+		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
 	}
+	infra.Status.PlatformStatus.Type = configv1.PlatformType(platformType)
 
 	switch hcp.Spec.InfrastructureAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
@@ -53,10 +54,13 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 
 	switch platformType {
 	case hyperv1.AWSPlatform:
-		infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
-		infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{
-			Region: hcp.Spec.Platform.AWS.Region,
+		if infra.Spec.PlatformSpec.AWS == nil {
+			infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
 		}
+		if infra.Status.PlatformStatus.AWS == nil {
+			infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{}
+		}
+		infra.Status.PlatformStatus.AWS.Region = hcp.Spec.Platform.AWS.Region
 		tags := []configv1.AWSResourceTag{}
 		for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
 			// This breaks the AWS CSI driver as it ends up being used there as an extra tag

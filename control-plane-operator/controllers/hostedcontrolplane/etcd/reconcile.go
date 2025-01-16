@@ -666,7 +666,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			Scheme: "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: "etcd-client",
+					ServerName: ptr.To("etcd-client"),
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{

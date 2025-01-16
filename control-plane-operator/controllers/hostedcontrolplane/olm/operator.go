@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
@@ -187,7 +188,7 @@ func ReconcileOLMOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor,
 			Scheme:     "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: "olm-operator-metrics",
+					ServerName: ptr.To("olm-operator-metrics"),
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{

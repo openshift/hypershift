@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
@@ -65,7 +66,7 @@ func (r *NonRequestServingNodeAutoscaler) SetupWithManager(mgr ctrl.Manager) err
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).
 		Watches(&machinev1beta1.MachineSet{}, &handler.EnqueueRequestForObject{}).
@@ -126,7 +127,7 @@ func (r *MachineSetDescaler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Node{}).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).
 		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(mapHostedClusterToNodesFn(r.Client, mgr))).
@@ -305,7 +306,7 @@ func (r *RequestServingNodeAutoscaler) SetupWithManager(mgr ctrl.Manager) error 
 		For(&corev1.Pod{}).
 		WatchesRawSource(source.Channel(tickerChannel, &handler.EnqueueRequestForObject{})).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).Named(autoscalerControllerName)
 
