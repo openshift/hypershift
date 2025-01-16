@@ -10,10 +10,12 @@ import (
 	supportassets "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/upsert"
 
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -153,7 +155,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileEC2NodeClassOwnedFields(ctx, userDataSecret); err != nil {
+	if err := r.reconcileEC2NodeClassOwnedFields(ctx, userDataSecret, hcp); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -166,6 +168,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if err := r.reconcileCRDs(ctx, false); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileVAP(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -208,7 +214,70 @@ func (r *Reconciler) reconcileCRDs(ctx context.Context, onlyCreate bool) error {
 	return nil
 }
 
-func (r *Reconciler) reconcileEC2NodeClassOwnedFields(ctx context.Context, userDataSecret *corev1.Secret) error {
+func (r *Reconciler) reconcileVAP(ctx context.Context) error {
+	vap := &admissionv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "karpenter.hypershift.io",
+		},
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r.GuestClient, vap, func() error {
+		vap.Spec.MatchConstraints = &admissionv1.MatchResources{
+			ResourceRules: []admissionv1.NamedRuleWithOperations{
+				{
+					RuleWithOperations: admissionv1.RuleWithOperations{
+						Operations: []admissionv1.OperationType{
+							admissionv1.Update,
+						},
+						Rule: admissionv1.Rule{
+							APIGroups:   []string{"karpenter.k8s.aws"},
+							APIVersions: []string{"v1"},
+							Resources:   []string{"ec2nodeclasses"},
+						},
+					},
+				},
+			},
+		}
+		vap.Spec.MatchConditions = []admissionv1.MatchCondition{
+			{
+				Name:       "exclude-hcco-user",
+				Expression: "'system:hosted-cluster-config' != request.userInfo.username",
+			},
+		}
+
+		expressionTemplate := "has(oldObject.spec.%[1]s) ? has(object.spec.%[1]s) && object.spec.%[1]s == oldObject.spec.%[1]s : !has(object.spec.%[1]s)"
+		messageTemplate := "'.spec.%[1]s' is a managed field and can't be updated from the guest cluster"
+		validatedFields := []string{"userData", "amiFamily", "amiSelectorTerms"}
+
+		validations := []admissionv1.Validation{}
+		for _, field := range validatedFields {
+			validations = append(validations, admissionv1.Validation{
+				Expression: fmt.Sprintf(expressionTemplate, field),
+				Message:    fmt.Sprintf(messageTemplate, field),
+			})
+		}
+		vap.Spec.Validations = validations
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	vapBinding := &admissionv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "karpenter-binding.hypershift.io",
+		},
+	}
+
+	_, err := r.CreateOrUpdate(ctx, r.GuestClient, vapBinding, func() error {
+		vapBinding.Spec.PolicyName = vap.Name
+		vapBinding.Spec.ValidationActions = []admissionv1.ValidationAction{admissionv1.Deny}
+		return nil
+	})
+	return err
+}
+
+func (r *Reconciler) reconcileEC2NodeClassOwnedFields(ctx context.Context, userDataSecret *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	ec2NodeClassList := &unstructured.UnstructuredList{}
@@ -237,6 +306,28 @@ func (r *Reconciler) reconcileEC2NodeClassOwnedFields(ctx context.Context, userD
 					"id": string(userDataSecret.Labels[userDataAMILabel]),
 				},
 			}
+
+			// default subnetSelectorTerms if not set.
+			if ec2NodeClass.Object["spec"].(map[string]interface{})["subnetSelectorTerms"] == nil {
+				ec2NodeClass.Object["spec"].(map[string]interface{})["subnetSelectorTerms"] = []map[string]interface{}{
+					{
+						"tags": map[string]interface{}{
+							"karpenter.sh/discovery": hcp.Spec.InfraID,
+						},
+					},
+				}
+			}
+			// default securityGroupSelectorTerms if not set.
+			if ec2NodeClass.Object["spec"].(map[string]interface{})["securityGroupSelectorTerms"] == nil {
+				ec2NodeClass.Object["spec"].(map[string]interface{})["securityGroupSelectorTerms"] = []map[string]interface{}{
+					{
+						"tags": map[string]interface{}{
+							"karpenter.sh/discovery": hcp.Spec.InfraID,
+						},
+					},
+				}
+			}
+
 			return nil
 		})
 		if err != nil {
