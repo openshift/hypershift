@@ -14,7 +14,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/spf13/cobra"
@@ -91,14 +90,6 @@ func run(ctx context.Context) error {
 
 	if err := mgr.Add(managementCluster); err != nil {
 		return fmt.Errorf("failed to add managementCluster to controller runtime manager: %v", err)
-	}
-
-	// Add health check endpoints
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		return fmt.Errorf("failed to setup healthz check: %w", err)
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		return fmt.Errorf("failed to setup readyz check: %w", err)
 	}
 
 	r := karpenter.Reconciler{
