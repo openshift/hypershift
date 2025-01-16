@@ -9,12 +9,12 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,8 +43,6 @@ const (
 	OSDFleetManagerPairedNodesLabel   = "osd-fleet-manager.openshift.io/paired-nodes"
 	HostedClusterNameLabel            = "hypershift.openshift.io/cluster-name"
 	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
-	goMemLimitLabel                   = "hypershift.openshift.io/request-serving-gomemlimit"
-	lbSubnetsLabel                    = "hypershift.openshift.io/request-serving-subnets"
 
 	// PlaceholderLabel is used as a label on Deployments that are used to keep nodes warm.
 	PlaceholderLabel = "hypershift.openshift.io/placeholder"
@@ -256,11 +254,11 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	for _, node := range nodesToUse {
 		originalNode := node.DeepCopy()
 
-		if node.Labels[goMemLimitLabel] != "" && nodeGoMemLimit == "" {
-			nodeGoMemLimit = node.Labels[goMemLimitLabel]
+		if node.Labels[schedulerutil.GoMemLimitLabel] != "" && nodeGoMemLimit == "" {
+			nodeGoMemLimit = node.Labels[schedulerutil.GoMemLimitLabel]
 		}
-		if node.Labels[lbSubnetsLabel] != "" && lbSubnets == "" {
-			lbSubnets = node.Labels[lbSubnetsLabel]
+		if node.Labels[schedulerutil.LBSubnetsLabel] != "" && lbSubnets == "" {
+			lbSubnets = node.Labels[schedulerutil.LBSubnetsLabel]
 			// If subnets are separated by periods, replace them with commas
 			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
 		}
@@ -544,7 +542,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		}
 	} else {
 		// If there isn't a current pair label, then we can select from available nodes selected by placeholders.
-		sizeConfig := sizeConfiguration(&config, desiredSize)
+		sizeConfig := schedulerutil.SizeConfiguration(&config, desiredSize)
 		if sizeConfig == nil {
 			return ctrl.Result{}, fmt.Errorf("could not find size configuration for size %s", desiredSize)
 		}
@@ -589,7 +587,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 	if len(nodesByZone) > 1 {
 		log.Info("sufficient nodes exist for placement")
 		// If we have enough nodes, update the hosted cluster.
-		if err := r.updateHostedCluster(ctx, hc, desiredSize, &config, goalNodes); err != nil {
+		if err := schedulerutil.UpdateHostedCluster(ctx, r.Client, hc, desiredSize, &config, goalNodes); err != nil {
 			return ctrl.Result{}, err
 		}
 		// Ensure we don't have a placeholder deployment, since we have nodes
@@ -751,84 +749,6 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensureHostedClusterLabelAnd
 
 	if err := r.Patch(ctx, node, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update labels and taints on node %s: %w", node.Name, err)
-	}
-	return nil
-}
-
-func (r *DedicatedServingComponentSchedulerAndSizer) updateHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster, size string, config *schedulingv1alpha1.ClusterSizingConfiguration, nodes []corev1.Node) error {
-	original := hc.DeepCopy()
-	hc.Annotations[hyperv1.HostedClusterScheduledAnnotation] = "true"
-	sizeConfig := sizeConfiguration(config, size)
-	if sizeConfig == nil {
-		return fmt.Errorf("could not find size configuration for size %s", size)
-	}
-
-	goMemLimit := ""
-	if sizeConfig.Effects != nil && sizeConfig.Effects.KASGoMemLimit != nil {
-		goMemLimit = sizeConfig.Effects.KASGoMemLimit.String()
-	}
-	for _, node := range nodes {
-		if node.Labels[goMemLimitLabel] != "" {
-			goMemLimit = node.Labels[goMemLimitLabel]
-			break
-		}
-	}
-	if goMemLimit != "" {
-		hc.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = goMemLimit
-	}
-
-	if sizeConfig.Effects != nil && sizeConfig.Effects.ControlPlanePriorityClassName != nil {
-		hc.Annotations[hyperv1.ControlPlanePriorityClass] = *sizeConfig.Effects.ControlPlanePriorityClassName
-	}
-	if sizeConfig.Effects != nil && sizeConfig.Effects.EtcdPriorityClassName != nil {
-		hc.Annotations[hyperv1.EtcdPriorityClass] = *sizeConfig.Effects.EtcdPriorityClassName
-	}
-	if sizeConfig.Effects != nil && sizeConfig.Effects.APICriticalPriorityClassName != nil {
-		hc.Annotations[hyperv1.APICriticalPriorityClass] = *sizeConfig.Effects.APICriticalPriorityClassName
-	}
-	if sizeConfig.Effects != nil && sizeConfig.Effects.MachineHealthCheckTimeout != nil {
-		hc.Annotations[hyperv1.MachineHealthCheckTimeoutAnnotation] = sizeConfig.Effects.MachineHealthCheckTimeout.Duration.String()
-	} else {
-		// If mhc timeout is configured for any size in the config, remove the annotation
-		// to fallback to the default
-		if configHasMHCTimeout(config) {
-			delete(hc.Annotations, hyperv1.MachineHealthCheckTimeoutAnnotation)
-		}
-	}
-	if sizeConfig.Effects != nil && sizeConfig.Effects.MaximumRequestsInflight != nil {
-		hc.Annotations[hyperv1.KubeAPIServerMaximumRequestsInFlight] = fmt.Sprint(*sizeConfig.Effects.MaximumRequestsInflight)
-	}
-	if sizeConfig.Effects != nil && sizeConfig.Effects.MaximumMutatingRequestsInflight != nil {
-		hc.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight] = fmt.Sprint(*sizeConfig.Effects.MaximumMutatingRequestsInflight)
-	}
-
-	var resourceRequestAnnotations map[string]string
-	if sizeConfig.Effects != nil {
-		resourceRequestAnnotations = resourceRequestsToOverrideAnnotations(sizeConfig.Effects.ResourceRequests)
-	}
-	for k, v := range resourceRequestAnnotations {
-		hc.Annotations[k] = v
-	}
-
-	lbSubnets := ""
-	for _, node := range nodes {
-		if node.Labels[lbSubnetsLabel] != "" {
-			lbSubnets = node.Labels[lbSubnetsLabel]
-			break
-		}
-	}
-	if lbSubnets != "" {
-		// If subnets are separated by periods, replace them with commas
-		lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
-		hc.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
-	}
-
-	hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, size)
-
-	if !equality.Semantic.DeepEqual(hc, original) {
-		if err := r.Patch(ctx, hc, client.MergeFrom(original)); err != nil {
-			return fmt.Errorf("failed to update hostedcluster: %w", err)
-		}
 	}
 	return nil
 }
@@ -1006,41 +926,4 @@ func placeholderDeployment(hc *hyperv1.HostedCluster) *appsv1.Deployment {
 
 func clusterKey(hc *hyperv1.HostedCluster) string {
 	return fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)
-}
-
-func sizeConfiguration(config *schedulingv1alpha1.ClusterSizingConfiguration, size string) *schedulingv1alpha1.SizeConfiguration {
-	for i := range config.Spec.Sizes {
-		if config.Spec.Sizes[i].Name == size {
-			return &config.Spec.Sizes[i]
-		}
-	}
-	return nil
-}
-
-func resourceRequestsToOverrideAnnotations(requests []schedulingv1alpha1.ResourceRequest) map[string]string {
-	annotations := map[string]string{}
-	for _, request := range requests {
-		key := fmt.Sprintf("%s/%s.%s", hyperv1.ResourceRequestOverrideAnnotationPrefix, request.DeploymentName, request.ContainerName)
-		var value string
-		if request.Memory != nil {
-			value = fmt.Sprintf("memory=%s", request.Memory.String())
-		}
-		if request.CPU != nil {
-			if value != "" {
-				value += ","
-			}
-			value += fmt.Sprintf("cpu=%s", request.CPU.String())
-		}
-		annotations[key] = value
-	}
-	return annotations
-}
-
-func configHasMHCTimeout(config *schedulingv1alpha1.ClusterSizingConfiguration) bool {
-	for _, size := range config.Spec.Sizes {
-		if size.Effects != nil && size.Effects.MachineHealthCheckTimeout != nil {
-			return true
-		}
-	}
-	return false
 }

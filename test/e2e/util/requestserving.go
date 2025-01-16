@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
+	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -71,9 +71,9 @@ func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconf
 		np.Spec.Replicas = ptr.To[int32](1)
 		np.Spec.AutoScaling = nil
 		np.Spec.NodeLabels = map[string]string{
-			hyperv1.RequestServingComponentLabel:      "true",
-			scheduler.OSDFleetManagerPairedNodesLabel: "true",
-			"hypershift.openshift.io/control-plane":   "true",
+			hyperv1.RequestServingComponentLabel:         "true",
+			awsscheduler.OSDFleetManagerPairedNodesLabel: "true",
+			"hypershift.openshift.io/control-plane":      "true",
 		}
 		np.Spec.Taints = []hyperv1.Taint{
 			{

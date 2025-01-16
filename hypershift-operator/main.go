@@ -32,7 +32,8 @@ import (
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
+	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
+	azurescheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/azure"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
@@ -40,6 +41,7 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -460,37 +462,37 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controllers to manage dedicated request serving isolation
-	if opts.EnableDedicatedRequestServingIsolation {
+	if opts.EnableDedicatedRequestServingIsolation && !azureutil.IsAroHCP() {
 		// Use the new scheduler if we support size tagging on hosted clusters
 		if enableSizeTagging {
-			hcScheduler := scheduler.DedicatedServingComponentSchedulerAndSizer{}
+			hcScheduler := awsscheduler.DedicatedServingComponentSchedulerAndSizer{}
 			if err := hcScheduler.SetupWithManager(ctx, mgr, createOrUpdate); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component scheduler/resizer controller: %w", err)
 			}
-			placeholderScheduler := scheduler.PlaceholderScheduler{}
+			placeholderScheduler := awsscheduler.PlaceholderScheduler{}
 			if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
 				return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
 			}
-			autoScaler := scheduler.RequestServingNodeAutoscaler{}
+			autoScaler := awsscheduler.RequestServingNodeAutoscaler{}
 			if err := autoScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create autoscaler controller: %w", err)
 			}
-			deScaler := scheduler.MachineSetDescaler{}
+			deScaler := awsscheduler.MachineSetDescaler{}
 			if err := deScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create machine set descaler controller: %w", err)
 			}
-			nonRequestServingNodeAutoscaler := scheduler.NonRequestServingNodeAutoscaler{}
+			nonRequestServingNodeAutoscaler := awsscheduler.NonRequestServingNodeAutoscaler{}
 			if err := nonRequestServingNodeAutoscaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create non request serving node autoscaler controller: %w", err)
 			}
 		} else {
-			nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+			nodeReaper := awsscheduler.DedicatedServingComponentNodeReaper{
 				Client: mgr.GetClient(),
 			}
 			if err := nodeReaper.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
 			}
-			hcScheduler := scheduler.DedicatedServingComponentScheduler{
+			hcScheduler := awsscheduler.DedicatedServingComponentScheduler{
 				Client: mgr.GetClient(),
 			}
 			if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
@@ -499,6 +501,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	} else {
 		log.Info("Dedicated request serving isolation controllers disabled")
+	}
+
+	if enableSizeTagging && azureutil.IsAroHCP() {
+		hcScheduler := azurescheduler.Scheduler{}
+		if err := hcScheduler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create aro scheduler controller: %w", err)
+		}
 	}
 
 	// If it exists, block default ingress controller from admitting HCP private routes
