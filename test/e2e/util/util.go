@@ -44,7 +44,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
-	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 
@@ -926,56 +925,6 @@ func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespac
 	return stdOut.String(), err
 }
 
-func getPrometheusToken(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {
-	if secretName == "" {
-		return createPrometheusToken(ctx)
-	} else {
-		return getTokenFromSecret(ctx, secretName, client)
-	}
-}
-
-func createPrometheusToken(ctx context.Context) ([]byte, error) {
-	cli, err := createK8sClient()
-	if err != nil {
-		return nil, err
-	}
-
-	tokenReq, err := cli.CoreV1().ServiceAccounts("openshift-monitoring").CreateToken(
-		ctx,
-		"prometheus-k8s",
-		&authenticationv1.TokenRequest{
-			Spec: authenticationv1.TokenRequestSpec{
-				// Avoid specifying any audiences so that the token will be
-				// issued for the default audience of the issuer.
-			},
-		},
-		metav1.CreateOptions{},
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token; %w", err)
-	}
-
-	return []byte(tokenReq.Status.Token), nil
-}
-
-func getTokenFromSecret(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {
-	tokenSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: "hypershift",
-		},
-	}
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
-		return nil, fmt.Errorf("failed to get hypershift operator token secret: %w", err)
-	}
-	token, ok := tokenSecret.Data["token"]
-	if !ok {
-		return nil, fmt.Errorf("token secret did not contain a token value")
-	}
-	return token, nil
-}
-
 func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureHCPContainersHaveResourceRequests", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1095,20 +1044,6 @@ func ensureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedClus
 	if !strings.Contains(out.String(), expectedPrefix) {
 		t.Errorf("secret is not encrypted using kms")
 	}
-}
-
-func createK8sClient() (*k8s.Clientset, error) {
-	config, err := GetConfig()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
-	}
-
-	cli, err := k8s.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
-	}
-
-	return cli, nil
 }
 
 func NewLogr(t *testing.T) logr.Logger {
