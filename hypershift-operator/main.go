@@ -32,7 +32,7 @@ import (
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
+	rosascheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/rosa"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
@@ -463,34 +463,34 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if opts.EnableDedicatedRequestServingIsolation {
 		// Use the new scheduler if we support size tagging on hosted clusters
 		if enableSizeTagging {
-			hcScheduler := scheduler.DedicatedServingComponentSchedulerAndSizer{}
+			hcScheduler := rosascheduler.DedicatedServingComponentSchedulerAndSizer{}
 			if err := hcScheduler.SetupWithManager(ctx, mgr, createOrUpdate); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component scheduler/resizer controller: %w", err)
 			}
-			placeholderScheduler := scheduler.PlaceholderScheduler{}
+			placeholderScheduler := rosascheduler.PlaceholderScheduler{}
 			if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
 				return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
 			}
-			autoScaler := scheduler.RequestServingNodeAutoscaler{}
+			autoScaler := rosascheduler.RequestServingNodeAutoscaler{}
 			if err := autoScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create autoscaler controller: %w", err)
 			}
-			deScaler := scheduler.MachineSetDescaler{}
+			deScaler := rosascheduler.MachineSetDescaler{}
 			if err := deScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create machine set descaler controller: %w", err)
 			}
-			nonRequestServingNodeAutoscaler := scheduler.NonRequestServingNodeAutoscaler{}
+			nonRequestServingNodeAutoscaler := rosascheduler.NonRequestServingNodeAutoscaler{}
 			if err := nonRequestServingNodeAutoscaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create non request serving node autoscaler controller: %w", err)
 			}
 		} else {
-			nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+			nodeReaper := rosascheduler.DedicatedServingComponentNodeReaper{
 				Client: mgr.GetClient(),
 			}
 			if err := nodeReaper.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
 			}
-			hcScheduler := scheduler.DedicatedServingComponentScheduler{
+			hcScheduler := rosascheduler.DedicatedServingComponentScheduler{
 				Client: mgr.GetClient(),
 			}
 			if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
