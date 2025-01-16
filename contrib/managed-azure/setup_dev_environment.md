@@ -42,6 +42,12 @@ PARENT_DNS_RG="os4-common"
 HC_NAME=<HC_NAME>
 ```
 
+You can look up `USER_ACCOUNT_ID` by searching for your account in azure portal's search box and selecting Microsoft Entra ID.You can
+use value of `Object ID` as shown in azure portal.
+
+
+Value of `$PARENT_DNS_ZONE` may be different for different teams. Check `os4-common` resourcegroup associated with your subscription-id.
+
 ## Steps
 Note: Steps 1-7 set up the environment so that if created in a persistent group they can be
 reused for creation of clusters in the future. Reusing these helps with reducing the quota used which has previously
@@ -264,7 +270,7 @@ hypershift create cluster azure \
 --azure-creds $SP_AKS_CREDS \
 --location eastus \
 --node-pool-replicas 2 \
---base-domain hypershift.azure.devcluster.openshift.com \
+--base-domain $PARENT_DNS_ZONE \
 --pull-secret $PULL_SECRET \
 --generate-ssh \
 --release-image $RELEASE_IMAGE \
