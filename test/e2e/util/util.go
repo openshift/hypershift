@@ -198,7 +198,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	if IsLessThan(Version415) {
 		// SelfSubjectReview API is only available in 4.15+
 		// Use the old method to check if the API server is up
-		err = wait.PollImmediateWithContext(ctx, 35*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 			_, err = crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 			if err != nil {
 				t.Logf("attempt to connect failed: %s", err)
@@ -206,6 +206,9 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 			}
 			return true, nil
 		})
+		if err != nil {
+			t.Fatalf("failed to connect to guest cluster: %v", err)
+		}
 	} else {
 		EventuallyObject(t, ctx, "a successful connection to the guest API server",
 			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
