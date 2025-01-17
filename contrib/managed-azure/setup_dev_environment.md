@@ -46,7 +46,7 @@ You can look up `USER_ACCOUNT_ID` by searching for your account in azure portal'
 use value of `Object ID` as shown in azure portal.
 
 
-Value of `$PARENT_DNS_ZONE` may be different for different teams. Check `os4-common` resourcegroup associated with your subscription-id.
+Value of `$PARENT_DNS_ZONE` may be different for different teams. Check `os4-common` resourcegroup associated with your subscription-id for pre existing DNS zones.  If there are multiple DNS zones more than likely the parent DNS zone is the common suffix among them.
 
 ## Steps
 Note: Steps 1-7 set up the environment so that if created in a persistent group they can be
