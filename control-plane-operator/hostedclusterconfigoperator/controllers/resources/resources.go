@@ -44,6 +44,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	"github.com/openshift/api/annotations"
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
@@ -441,6 +442,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "openshift-kube-apiserver-operator",
 			Name:      "kube-control-plane-signer",
+			Annotations: map[string]string{
+				annotations.OpenShiftComponent: "kube-apiserver",
+			},
 		},
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, kubeControlPlaneSignerSecret, func() error {
@@ -455,6 +459,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ConfigManagedNamespace,
 			Name:      "kubelet-serving-ca",
+			Annotations: map[string]string{
+				annotations.OpenShiftComponent: "kube-controller-manager",
+			},
 		},
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, kubeletServingCAConfigMap, func() error {
