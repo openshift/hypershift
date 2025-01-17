@@ -2084,6 +2084,41 @@ spec:
                 - HighlyAvailable
                 - SingleReplica
                 type: string
+              disabledCapabilities:
+                description: |-
+                  DisabledCapabilities when specified, sets the cluster version BaselineCapabilitySet to None
+                  and sets all AdditionalEnabledCapabilities BUT the ones supplied in DisabledCapabilities.
+                  This effectively disables that capability on the hosted cluster.
+
+                  When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+                  OpenShift version.
+                items:
+                  allOf:
+                  - enum:
+                    - openshift-samples
+                    - baremetal
+                    - marketplace
+                    - Console
+                    - Insights
+                    - Storage
+                    - CSISnapshot
+                    - NodeTuning
+                    - MachineAPI
+                    - Build
+                    - DeploymentConfig
+                    - ImageRegistry
+                    - OperatorLifecycleManager
+                    - CloudCredential
+                    - Ingress
+                    - CloudControllerManager
+                    - OperatorLifecycleManagerV1
+                  - enum:
+                    - ImageRegistry
+                  description: ClusterVersionCapability enumerates optional, core
+                    cluster components.
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
               dns:
                 description: dns specifies the DNS configuration for the hosted cluster
                   ingress.
