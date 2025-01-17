@@ -68,6 +68,10 @@ So, we need to check over the Step registry config and make sure that the hypers
 
 [Example Release Repo PR](https://github.com/openshift/release/pull/59120/files)
 
+We should also ensure that the latest release branch is using the Hypershift Operator and e2e from main.
+
+[Example Release Branch PR](https://github.com/openshift/release/pull/60531/files)
+
 ### Notes
 If test platform are testing new OCP releases before the release is cut the hypershift test will fail and block payloads until:
 - There are at least two accepted nightly payloads for the new release.
