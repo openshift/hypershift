@@ -5,7 +5,8 @@ WORKDIR /hypershift
 COPY . .
 
 RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
-    dnf install -y https://packages.microsoft.com/config/rhel/9.0/packages-microsoft-prod.rpm && \
+    dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm && \
+    mv /etc/yum.repos.d/microsoft-prod.repo /etc/yum.repos.art/ci/ && \
     dnf install -y azure-cli
 
 RUN make e2e
