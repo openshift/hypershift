@@ -653,6 +653,24 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>disabledCapabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
+[]OptionalCapability
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DisabledCapabilities when specified, sets the cluster version BaselineCapabilitySet to None
+and sets all AdditionalEnabledCapabilities BUT the ones supplied in DisabledCapabilities.
+This effectively disables that capability on the hosted cluster.</p>
+<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -5374,6 +5392,24 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>disabledCapabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
+[]OptionalCapability
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DisabledCapabilities when specified, sets the cluster version BaselineCapabilitySet to None
+and sets all AdditionalEnabledCapabilities BUT the ones supplied in DisabledCapabilities.
+This effectively disables that capability on the hosted cluster.</p>
+<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1beta1.HostedClusterStatus }
@@ -9183,6 +9219,24 @@ This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###OptionalCapability { #hypershift.openshift.io/v1beta1.OptionalCapability }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###PayloadArchType { #hypershift.openshift.io/v1beta1.PayloadArchType }
 <p>

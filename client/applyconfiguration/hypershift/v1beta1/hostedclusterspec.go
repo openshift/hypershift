@@ -56,6 +56,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
 	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
 	Labels                           map[string]string                                    `json:"labels,omitempty"`
+	DisabledCapabilities             []hypershiftv1beta1.OptionalCapability               `json:"disabledCapabilities,omitempty"`
 }
 
 // HostedClusterSpecApplyConfiguration constructs an declarative configuration of the HostedClusterSpec type for use with
@@ -324,6 +325,16 @@ func (b *HostedClusterSpecApplyConfiguration) WithLabels(entries map[string]stri
 	}
 	for k, v := range entries {
 		b.Labels[k] = v
+	}
+	return b
+}
+
+// WithDisabledCapabilities adds the given value to the DisabledCapabilities field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the DisabledCapabilities field.
+func (b *HostedClusterSpecApplyConfiguration) WithDisabledCapabilities(values ...hypershiftv1beta1.OptionalCapability) *HostedClusterSpecApplyConfiguration {
+	for i := range values {
+		b.DisabledCapabilities = append(b.DisabledCapabilities, values[i])
 	}
 	return b
 }

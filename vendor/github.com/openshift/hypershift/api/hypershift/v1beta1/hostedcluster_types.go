@@ -353,6 +353,11 @@ const (
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
 )
 
+// +kubebuilder:validation:Enum=ImageRegistry
+type OptionalCapability configv1.ClusterVersionCapability
+
+const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
+
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
@@ -634,6 +639,17 @@ type HostedClusterSpec struct {
 	// +optional
 	// +openshift:enable:FeatureGate=HCPPodsLabels
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// DisabledCapabilities when specified, sets the cluster version BaselineCapabilitySet to None
+	// and sets all AdditionalEnabledCapabilities BUT the ones supplied in DisabledCapabilities.
+	// This effectively disables that capability on the hosted cluster.
+	//
+	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+	// OpenShift version.
+	//
+	// +listType=atomic
+	// +optional
+	DisabledCapabilities []OptionalCapability `json:"disabledCapabilities,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
