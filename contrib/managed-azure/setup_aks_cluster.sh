@@ -8,6 +8,8 @@ LOCATION="eastus"
 AKS_CLUSTER_NAME=${PREFIX}"-aks-cluster"
 SUBSCRIPTION_ID="<your-subscription-id-here>"
 KV_NAME="<your-key-vault-name-here>"
+AKS_MI="<your-persistent-MI-resource-id-for-aks>"
+AKS_KUBELET_MI="<your-persistent-MI-resource-id-for-aks-kubelet>"
 
 # I got this from searching my login name in Azure and pulling up my user profile
 OBJECT_ID="<your-object-id>"
@@ -30,7 +32,12 @@ az aks create \
 --os-sku AzureLinux \
 --node-vm-size Standard_D4s_v4 \
 --enable-fips-image \
---enable-addons azure-keyvault-secrets-provider
+--kubernetes-version 1.31.1 \
+--enable-addons azure-keyvault-secrets-provider \
+--enable-secret-rotation \
+--rotation-poll-interval 1m \
+--assign-identity ${AKS_MI} \
+--assign-kubelet-identity ${AKS_KUBELET_MI}
 
 # Create Management Azure Key Vault
 az keyvault create \

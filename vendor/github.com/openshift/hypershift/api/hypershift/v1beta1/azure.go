@@ -466,7 +466,11 @@ type AzureResourceManagedIdentities struct {
 	// +kubebuilder:validation:Required
 	ControlPlane ControlPlaneManagedIdentities `json:"controlPlane"`
 
-	// Future placeholder - DataPlaneMIs * DataPlaneManagedIdentities
+	// dataPlane contains the client IDs of all the managed identities on the data plane needing to authenticate with
+	// Azure's API.
+	//
+	// +kubebuilder:validation:Required
+	DataPlane DataPlaneManagedIdentities `json:"dataPlane"`
 }
 
 // ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
@@ -539,6 +543,26 @@ type ControlPlaneManagedIdentities struct {
 	//
 	// +kubebuilder:validation:Required
 	File ManagedIdentity `json:"file"`
+}
+
+// DataPlaneManagedIdentities contains the client IDs of all the managed identities on the data plane needing to
+// authenticate with Azure's API.
+type DataPlaneManagedIdentities struct {
+	// imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
+	//registry controller.
+	//
+	// +kubebuilder:validation:Required
+	ImageRegistryMSIClientID string `json:"imageRegistryMSIClientID"`
+
+	// diskMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI Disk driver.
+	//
+	// +kubebuilder:validation:Required
+	DiskMSIClientID string `json:"diskMSIClientID"`
+
+	// fileMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI File driver.
+	//
+	// +kubebuilder:validation:Required
+	FileMSIClientID string `json:"fileMSIClientID"`
 }
 
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault

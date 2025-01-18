@@ -67,23 +67,25 @@ type CreateInfraOptions struct {
 	SubnetID                    string
 	TechPreviewEnabled          bool
 	ManagedIdentitiesFile       string
+	DataPlaneIdentitiesFile     string
 	AssignServicePrincipalRoles bool
 	DNSZoneRG                   string
 }
 
 type CreateInfraOutput struct {
-	BaseDomain        string                                 `json:"baseDomain"`
-	PublicZoneID      string                                 `json:"publicZoneID"`
-	PrivateZoneID     string                                 `json:"privateZoneID"`
-	Location          string                                 `json:"region"`
-	ResourceGroupName string                                 `json:"resourceGroupName"`
-	VNetID            string                                 `json:"vnetID"`
-	SubnetID          string                                 `json:"subnetID"`
-	BootImageID       string                                 `json:"bootImageID"`
-	InfraID           string                                 `json:"infraID"`
-	MachineIdentityID string                                 `json:"machineIdentityID"`
-	SecurityGroupID   string                                 `json:"securityGroupID"`
-	ControlPlaneMIs   hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
+	BaseDomain          string                                 `json:"baseDomain"`
+	PublicZoneID        string                                 `json:"publicZoneID"`
+	PrivateZoneID       string                                 `json:"privateZoneID"`
+	Location            string                                 `json:"region"`
+	ResourceGroupName   string                                 `json:"resourceGroupName"`
+	VNetID              string                                 `json:"vnetID"`
+	SubnetID            string                                 `json:"subnetID"`
+	BootImageID         string                                 `json:"bootImageID"`
+	InfraID             string                                 `json:"infraID"`
+	MachineIdentityID   string                                 `json:"machineIdentityID"`
+	SecurityGroupID     string                                 `json:"securityGroupID"`
+	ControlPlaneMIs     hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
+	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities     `json:"dataPlaneIdentities"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -251,6 +253,16 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 					return nil, err
 				}
 			}
+		}
+	}
+
+	if o.DataPlaneIdentitiesFile != "" {
+		dataPlaneIdentitiesRaw, err := os.ReadFile(o.DataPlaneIdentitiesFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --data-plane-identities-file %s: %w", o.DataPlaneIdentitiesFile, err)
+		}
+		if err := yaml.Unmarshal(dataPlaneIdentitiesRaw, &result.DataPlaneIdentities); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal --data-plane-identities-file: %w", err)
 		}
 	}
 
