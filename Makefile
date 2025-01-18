@@ -202,7 +202,7 @@ api-docs: $(GENAPIDOCS)
 
 .PHONY: clients
 clients: delegating_client
-	GO=GO111MODULE=on GOFLAGS=-mod=readonly hack/update-codegen.sh
+	GOWORK=off GO=GO111MODULE=on GOFLAGS=-mod=readonly hack/update-codegen.sh
 
 .PHONY: release
 release:
