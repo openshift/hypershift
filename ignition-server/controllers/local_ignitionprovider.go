@@ -85,8 +85,11 @@ type LocalIgnitionProvider struct {
 
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 
-const pullSecretName = "pull-secret"
-const additionalTrustBundleName = "user-ca-bundle"
+const (
+	pullSecretName            = "pull-secret"
+	additionalTrustBundleName = "user-ca-bundle"
+	managedTrustBundleName    = "trusted-ca-bundle-managed"
+)
 
 func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
 	p.lock.Lock()
@@ -134,6 +137,10 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		}
 		additionalTrustBundle = data
 	}
+	// NOTE: the additionalTrustBundle only contains the bundle in hc.spec.additionalTrustBundle. The hash is generated
+	// by the nodepool controller only based on that bundle, so we test a match here. However, the bundle that we want
+	// to pass to the MCO is the aggregate of the hc.spec.additionalTrustBundle and hc.spec.configuration.proxy.trustedCA
+	// That is contained in the trusted-ca-bundle-managed configmap.
 	if additionalTrustBundleHash != "" && util.HashSimple(additionalTrustBundle) != additionalTrustBundleHash {
 		return nil, fmt.Errorf("additionalTrustBundle does not match hash")
 	}
@@ -170,12 +177,20 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to unmarshal user-ca-bundle-config.yaml: %w", err)
 	}
 
-	// Verify that all the keys and values from additionalTrustBundle are in the user-ca-bundle-config.yaml
-	if atbCM.Data != nil {
-		for key, value := range atbCM.Data {
-			if userCaBundleConfigCM.Data[key] != value {
-				return nil, fmt.Errorf("user-ca-bundle-config.yaml in machine-config-server configmap does not contain all additionalTrustBundles")
-			}
+	managedTrustedBundle := &corev1.ConfigMap{}
+	if err = p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: managedTrustBundleName}, managedTrustedBundle); err != nil {
+		if !errors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get %s configmap: %w", managedTrustBundleName, err)
+		}
+	}
+
+	// Verify that the ca-bundle.crt value in the user-ca-bundle-config.yaml is the same as in managedTrustedBundle
+	// NOTE: Here we compare the contents of the MCS user-ca-bundle-config.yaml and the trusted-ca-bundle-managed
+	// ConfigMap. Both should contain the aggregate of hc.spec.additionalTrustBundle and hc.spec.configuration.proxy.trustedCA
+	// and should match.
+	if managedTrustedBundle.Data != nil {
+		if managedTrustedBundle.Data["ca-bundle.crt"] != userCaBundleConfigCM.Data["ca-bundle.crt"] {
+			return nil, fmt.Errorf("user-ca-bundle-config.yaml in machine-config-server configmap does not contain the same ca-bundle.crt value as in trusted-ca-bundle-managed")
 		}
 	}
 
