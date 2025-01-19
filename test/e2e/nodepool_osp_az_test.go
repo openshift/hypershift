@@ -110,8 +110,8 @@ func (o OpenStackAZTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool)
 }
 
 func getAZName() string {
-	if globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone != "" {
-		return globalOpts.configurableClusterOptions.OpenStackNodeAvailabilityZone
+	if globalOpts.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone != "" {
+		return globalOpts.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone
 	}
 	return defaultAvailabilityZone
 }
