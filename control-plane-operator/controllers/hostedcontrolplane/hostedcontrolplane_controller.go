@@ -64,6 +64,7 @@ import (
 	ccov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator"
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
+	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
@@ -242,6 +243,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		powervsccmv2.NewComponent(),
 		ccov2.NewComponent(),
 		storagev2.NewComponent(),
+		kubevirtcsiv2.NewComponent(),
 	)
 }
 
@@ -1328,6 +1330,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			if err := r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 				return fmt.Errorf("failed to reconcile cluster storage operator: %w", err)
 			}
+
+			// Reconcile cloud csi driver
+			r.Log.Info("Reconciling CSI Driver")
+			if err := r.reconcileCSIDriver(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile csi driver: %w", err)
+			}
 		}
 	}
 
@@ -1340,12 +1348,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	if IsStorageAndCSIManaged(hostedControlPlane) {
-		// Reconcile cloud csi driver
-		r.Log.Info("Reconciling CSI Driver")
-		if err := r.reconcileCSIDriver(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile csi driver: %w", err)
-		}
-
 		// Reconcile CSI snapshot controller operator
 		r.Log.Info("Reconciling CSI snapshot controller operator")
 		if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
