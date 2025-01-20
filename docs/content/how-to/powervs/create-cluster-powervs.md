@@ -30,9 +30,10 @@ Use the `hypershift create cluster powervs` command:
         --vpc-region $VPC_REGION \
         --base-domain $BASEDOMAIN \
         --resource-group $RESOURCE_GROUP \
-        --release-image $RELEASE_IMAGE
+        --release-image $RELEASE_IMAGE \
         --pull-secret $PULL_SECRET \
-        --node-pool-replicas=2
+        --node-pool-replicas=2 \
+        --transit-gateway-location $TRANSIT_GATEWAY_LOCATION
 
 where
 
@@ -44,28 +45,10 @@ where
 * RESOURCE_GROUP is the resource group in IBM Cloud where your infrastructure resources will be created.
 * RELEASE_IMAGE is the latest multi arch release image.
 * PULL_SECRET is a file that contains a valid OpenShift pull secret.
-* node-pool-replicas is worker node count
+* node-pool-replicas is worker node count. 
+* TRANSIT_GATEWAY_LOCATION is the location where you want to create the transit gateway. 
 
 Running this command will create [infra](create-infra-separately.md) and manifests for the hosted cluster and deploys it.
-
-## Utilizing Power Edge Router(PER) via Transit Gateway
-To use IBM Cloud's PER feature via transit gateway, need to pass `--use-power-edge-router` and `--transit-gateway-location $TRANSIT_GATEWAY_LOCATION` flags to create cluster command like below.
-
-    TRANSIT_GATEWAY_LOCATION=us-south
-    ./bin/hypershift create cluster powervs \
-        --name $CLUSTER_NAME \
-        --region $REGION \
-        --zone $ZONE \
-        --vpc-region $VPC_REGION \
-        --base-domain $BASEDOMAIN \
-        --resource-group $RESOURCE_GROUP \
-        --release-image $RELEASE_IMAGE
-        --pull-secret $PULL_SECRET \
-        --node-pool-replicas=2 \
-        --use-power-edge-router \
-        --transit-gateway-location $TRANSIT_GATEWAY_LOCATION
-
-Read [here](https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-per) to know more about PER and data centers where its deployed currently.
 
 !!! important
 

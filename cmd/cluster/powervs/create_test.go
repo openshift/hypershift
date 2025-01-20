@@ -42,7 +42,6 @@ func TestCreateCluster(t *testing.T) {
 		DHCPSubnet:        "fakeDHCPSubnet",
 		DHCPSubnetID:      "fakeDHCPSubnetID",
 		DHCPID:            "fakeDHCPID",
-		CloudConnectionID: "fakeCloudConnectionID",
 		VPCName:           "fakeVPCName",
 		VPCID:             "fakeVPCID",
 		VPCCRN:            "fakeVPCCRN",
@@ -54,7 +53,6 @@ func TestCreateCluster(t *testing.T) {
 			VPCSubnet:           powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 1}, Status: "b"},
 			CloudInstance:       powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 2}, Status: "c"},
 			DHCPService:         powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 3}, Status: "d"},
-			CloudConnState:      powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 4}, Status: "e"},
 			TransitGatewayState: powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 5}, Status: "f"},
 		},
 		Secrets: powervsinfra.Secrets{

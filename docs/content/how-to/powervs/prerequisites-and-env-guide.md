@@ -42,7 +42,8 @@ API Key used should have below services with respective roles for hypershift clu
 | IAM Identity Service                       | User API key creator, Service ID creator, Administrator |
 | All account management services            | Administrator                                           |
 | All Identity and Access enabled services   | Manager, Editor                                         |
-| Cloud Object Storage                       | Manager, Administrator                                         |
+| Cloud Object Storage                       | Manager, Administrator                                  |
+| Transit Gateway                            | Manager, Editor                                         |
 
 
 ## Base Domain
