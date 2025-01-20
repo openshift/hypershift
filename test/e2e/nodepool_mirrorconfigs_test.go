@@ -60,9 +60,6 @@ func NewMirrorConfigsTest(ctx context.Context, mgmtClient crclient.Client, hoste
 func (mc *MirrorConfigsTest) Setup(t *testing.T) {
 	t.Log("Starting test MirrorConfigsTest")
 
-	if globalOpts.Platform == hyperv1.OpenStackPlatform {
-		t.Skip("test is being skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
-	}
 	if e2eutil.IsLessThan(e2eutil.Version418) {
 		t.Skip("test only applicable for 4.18+")
 	}
