@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -193,41 +194,34 @@ func NewCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	var opts Options
-	opts.PrivatePlatform = string(hyperv1.NonePlatform)
-	opts.MetricsSet = metrics.DefaultMetricsSet
-	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
-	opts.ExternalDNSImage = ExternalDNSImage
-	opts.CertRotationScale = 24 * time.Hour
-	opts.EnableSizeTagging = false
-	opts.EnableEtcdRecovery = true
+	opts := NewInstallOptionsWithDefaults()
 
-	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
-	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
-	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
-	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", false, "Enable webhook for defaulting hypershift API types")
-	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
-	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", true, "Enable webhook for converting hypershift API types")
-	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
+	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace in which to install HyperShift")
+	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", opts.HyperShiftImage, "The HyperShift image to deploy")
+	cmd.PersistentFlags().BoolVar(&opts.Development, "development", opts.Development, "Enable tweaks to facilitate local development")
+	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", opts.EnableDefaultingWebhook, "Enable webhook for defaulting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", opts.EnableConversionWebhook, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
 	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
-	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", "credentials", "Name of the secret key containing the AWS private link credentials.")
+	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", opts.AWSPrivateCredentialsSecretKey, "Name of the secret key containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "Region of the OIDC bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for writing the OIDC documents into the S3 bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecret, "oidc-storage-provider-s3-secret", "", "Name of an existing secret containing the OIDC S3 credentials.")
-	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecretKey, "oidc-storage-provider-s3-secret-key", "credentials", "Name of the secret key containing the OIDC S3 credentials.")
+	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecretKey, "oidc-storage-provider-s3-secret-key", opts.OIDCStorageProviderS3CredentialsSecretKey, "Name of the secret key containing the OIDC S3 credentials.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSProvider, "external-dns-provider", opts.ExternalDNSProvider, "Provider to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentials, "external-dns-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specified domain.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
-	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
+	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", opts.EnableAdminRBACGeneration, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
@@ -239,7 +233,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
 	cmd.PersistentFlags().DurationVar(&opts.CertRotationScale, "cert-rotation-scale", opts.CertRotationScale, "The scaling factor for certificate rotation. It is not supported to set this to anything other than 24h.")
-	cmd.PersistentFlags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
+	cmd.PersistentFlags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", opts.EnableDedicatedRequestServingIsolation, "If true, enables scheduling of request serving components to dedicated nodes")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO-HCP, ROSA-HCP")
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
@@ -250,40 +244,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		opts.ApplyDefaults()
-
-		if err := opts.Validate(); err != nil {
-			return err
-		}
-
-		crds, objects, err := hyperShiftOperatorManifests(opts)
-		if err != nil {
-			return err
-		}
-
-		err = apply(cmd.Context(), crds)
-		if err != nil {
-			return err
-		}
-
-		if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
-			if err := waitUntilEstablished(cmd.Context(), crds); err != nil {
-				return err
-			}
-		}
-
-		err = apply(cmd.Context(), objects)
-		if err != nil {
-			return err
-		}
-
-		if opts.WaitUntilAvailable {
-			if err := waitUntilAvailable(cmd.Context(), opts); err != nil {
-				return err
-			}
-		}
-
-		return nil
+		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
 	}
 
 	cmd.AddCommand(NewRenderCommand(&opts))
@@ -292,7 +253,69 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func apply(ctx context.Context, objects []crclient.Object) error {
+// InstallHyperShiftOperator generates and applies the manifests needed to install the HyperShift Operator starting
+// with the all the HyperShift CRDs.
+func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options) error {
+	opts.ApplyDefaults()
+
+	if err := opts.Validate(); err != nil {
+		return err
+	}
+
+	crds, objects, err := hyperShiftOperatorManifests(opts)
+	if err != nil {
+		return err
+	}
+
+	err = apply(ctx, out, crds)
+	if err != nil {
+		return err
+	}
+
+	if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
+		if err := waitUntilEstablished(ctx, crds); err != nil {
+			return err
+		}
+	}
+
+	err = apply(ctx, out, objects)
+	if err != nil {
+		return err
+	}
+
+	if opts.WaitUntilAvailable {
+		if _, err := WaitUntilAvailable(ctx, opts); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// NewInstallOptionsWithDefaults returns an Options instance with the default values sets.
+func NewInstallOptionsWithDefaults() Options {
+	opts := Options{}
+	opts.AWSPrivateCredentialsSecretKey = "credentials"
+	opts.CertRotationScale = 24 * time.Hour
+	opts.Development = false
+	opts.EnableAdminRBACGeneration = false
+	opts.EnableConversionWebhook = true
+	opts.EnableDedicatedRequestServingIsolation = true
+	opts.EnableDefaultingWebhook = false
+	opts.EnableEtcdRecovery = true
+	opts.EnableSizeTagging = false
+	opts.EnableValidatingWebhook = false
+	opts.ExcludeEtcdManifests = false
+	opts.ExternalDNSImage = ExternalDNSImage
+	opts.HyperShiftImage = version.HyperShiftImage
+	opts.MetricsSet = metrics.DefaultMetricsSet
+	opts.Namespace = "hypershift"
+	opts.OIDCStorageProviderS3CredentialsSecretKey = "credentials"
+	opts.PrivatePlatform = string(hyperv1.NonePlatform)
+
+	return opts
+}
+
+func apply(ctx context.Context, out io.Writer, objects []crclient.Object) error {
 	client, err := util.GetClient()
 	if err != nil {
 		return err
@@ -309,18 +332,18 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 			// PriorityClasses can not be patched as the value field is immutable
 			if err := client.Create(ctx, object, &crclient.CreateOptions{}); err != nil {
 				if apierrors.IsAlreadyExists(err) {
-					fmt.Printf("already exists: %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+					fmt.Fprintf(out, "already exists: %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 				} else {
 					return err
 				}
 			} else {
-				fmt.Printf("created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
+				fmt.Fprintf(out, "created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
 			}
 		} else {
 			if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
 				errs = append(errs, err)
 			}
-			fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+			fmt.Fprintf(out, "applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 		}
 	}
 
@@ -357,22 +380,22 @@ func waitUntilEstablished(ctx context.Context, crds []crclient.Object) error {
 	return eg.Wait()
 }
 
-func waitUntilAvailable(ctx context.Context, opts Options) error {
+func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, error) {
 	client, err := util.GetClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	deployment := operatorDeployment(opts)
+	deployment := getOperatorDeployment(opts)
 	fmt.Printf("Waiting for deployment %q in namespace %q rollout for operator...\n", deployment.Name, deployment.Namespace)
 	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
 			return false, err
 		}
 		if deployment.Generation <= deployment.Status.ObservedGeneration {
-			cond := getDeploymentCondition(deployment.Status, appsv1.DeploymentProgressing)
+			cond := GetDeploymentCondition(deployment.Status, appsv1.DeploymentProgressing)
 			if cond != nil && cond.Reason == "ProgressDeadlineExceeded" {
 				return false, fmt.Errorf("deployment %q in namespace %q exceeded its progress deadline", deployment.Name, deployment.Namespace)
 			}
@@ -396,11 +419,11 @@ func waitUntilAvailable(ctx context.Context, opts Options) error {
 		}
 	})
 	if err != nil {
-		return fmt.Errorf("failed to wait for operator deployment: %w", err)
+		return nil, fmt.Errorf("failed to wait for operator deployment: %w", err)
 	}
 
 	if opts.Development {
-		return nil
+		return deployment, nil
 	}
 	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
 		endpoints := operatorEndpoints(opts)
@@ -420,13 +443,13 @@ func waitUntilAvailable(ctx context.Context, opts Options) error {
 
 	})
 	if err != nil {
-		return fmt.Errorf("failed to wait for operator service endpoints: %w", err)
+		return nil, fmt.Errorf("failed to wait for operator service endpoints: %w", err)
 	}
-	return nil
+	return deployment, nil
 }
 
-// getDeploymentCondition returns the condition with the provided type.
-func getDeploymentCondition(status appsv1.DeploymentStatus, condType appsv1.DeploymentConditionType) *appsv1.DeploymentCondition {
+// GetDeploymentCondition returns the condition with the provided type.
+func GetDeploymentCondition(status appsv1.DeploymentStatus, condType appsv1.DeploymentConditionType) *appsv1.DeploymentCondition {
 	for i := range status.Conditions {
 		c := status.Conditions[i]
 		if c.Type == condType {
@@ -436,7 +459,7 @@ func getDeploymentCondition(status appsv1.DeploymentStatus, condType appsv1.Depl
 	return nil
 }
 
-func operatorDeployment(opts Options) *appsv1.Deployment {
+func getOperatorDeployment(opts Options) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: "operator", Namespace: opts.Namespace},
 	}
