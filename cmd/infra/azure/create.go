@@ -257,12 +257,42 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	if o.DataPlaneIdentitiesFile != "" {
+		managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroupName)
+
 		dataPlaneIdentitiesRaw, err := os.ReadFile(o.DataPlaneIdentitiesFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read --data-plane-identities-file %s: %w", o.DataPlaneIdentitiesFile, err)
 		}
 		if err := yaml.Unmarshal(dataPlaneIdentitiesRaw, &result.DataPlaneIdentities); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal --data-plane-identities-file: %w", err)
+		}
+
+		// Setup Data Plane MI role assignments
+		objectID, err := findObjectId(result.DataPlaneIdentities.ImageRegistryMSIClientID)
+		if err != nil {
+			return nil, err
+		}
+		err = assignRole(objectID, "Azure Red Hat OpenShift Image Registry Operator Role", managedRG)
+		if err != nil {
+			return nil, err
+		}
+
+		objectID, err = findObjectId(result.DataPlaneIdentities.DiskMSIClientID)
+		if err != nil {
+			return nil, err
+		}
+		err = assignRole(objectID, "Azure Red Hat OpenShift Storage Operator Role", managedRG)
+		if err != nil {
+			return nil, err
+		}
+
+		objectID, err = findObjectId(result.DataPlaneIdentities.FileMSIClientID)
+		if err != nil {
+			return nil, err
+		}
+		err = assignRole(objectID, "Azure Red Hat OpenShift Azure Files Storage Operator Role", managedRG)
+		if err != nil {
+			return nil, err
 		}
 	}
 
