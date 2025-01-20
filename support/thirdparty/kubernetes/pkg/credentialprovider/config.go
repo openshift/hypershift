@@ -22,14 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
-)
-
-const (
-	maxReadLength = 10 * 1 << 20 // 10MB
 )
 
 // DockerConfigJSON represents ~/.docker/config.json file info
@@ -51,19 +44,6 @@ type DockerConfigEntry struct {
 	Password string
 	Email    string
 }
-
-var (
-	preferredPathLock sync.Mutex
-	preferredPath     = ""
-	workingDirPath    = ""
-	homeDirPath, _    = os.UserHomeDir()
-	rootDirPath       = "/"
-	homeJSONDirPath   = filepath.Join(homeDirPath, ".docker")
-	rootJSONDirPath   = filepath.Join(rootDirPath, ".docker")
-
-	configFileName     = ".dockercfg"
-	configJSONFileName = "config.json"
-)
 
 // ReadSpecificDockerConfigJSONFile attempts to read docker configJSON from a given file path.
 func ReadSpecificDockerConfigJSONFile(filePath string) (cfg DockerConfig, err error) {

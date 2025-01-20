@@ -204,7 +204,6 @@ func NewFakeEtcdClient(members []*etcdserverpb.Member, opts ...FakeClientOption)
 }
 
 type FakeClientOptions struct {
-	client          *clientv3.Client
 	unhealthyMember int
 	healthyMember   int
 	status          []*clientv3.StatusResponse

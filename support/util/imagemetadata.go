@@ -128,12 +128,6 @@ func (r *RegistryClientImageMetadataProvider) GetOverride(ctx context.Context, i
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
 	}
 
-	// There are no ICSPs/IDMSs to process.
-	// That means the image reference should be pulled from the external registry
-	if len(r.OpenShiftImageRegistryOverrides) == 0 {
-		ref = &parsedImageRef
-	}
-
 	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
 
 	return ref, nil
