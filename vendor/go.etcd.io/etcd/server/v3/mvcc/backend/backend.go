@@ -36,10 +36,10 @@ var (
 
 	defragLimit = 10000
 
-	// initialMmapSize is the initial size of the mmapped region. Setting this larger than
+	// InitialMmapSize is the initial size of the mmapped region. Setting this larger than
 	// the potential max db size can prevent writer from blocking reader.
 	// This only works for linux.
-	initialMmapSize = uint64(10 * 1024 * 1024 * 1024)
+	InitialMmapSize = uint64(10 * 1024 * 1024 * 1024)
 
 	// minSnapshotWarningTimeout is the minimum threshold to trigger a long running snapshot warning.
 	minSnapshotWarningTimeout = 30 * time.Second
@@ -151,11 +151,13 @@ type BackendConfig struct {
 	Hooks Hooks
 }
 
+type BackendConfigOption func(*BackendConfig)
+
 func DefaultBackendConfig() BackendConfig {
 	return BackendConfig{
 		BatchInterval: defaultBatchInterval,
 		BatchLimit:    defaultBatchLimit,
-		MmapSize:      initialMmapSize,
+		MmapSize:      InitialMmapSize,
 	}
 }
 
@@ -163,9 +165,19 @@ func New(bcfg BackendConfig) Backend {
 	return newBackend(bcfg)
 }
 
-func NewDefaultBackend(path string) Backend {
+func WithMmapSize(size uint64) BackendConfigOption {
+	return func(bcfg *BackendConfig) {
+		bcfg.MmapSize = size
+	}
+}
+
+func NewDefaultBackend(path string, opts ...BackendConfigOption) Backend {
 	bcfg := DefaultBackendConfig()
 	bcfg.Path = path
+	for _, opt := range opts {
+		opt(&bcfg)
+	}
+
 	return newBackend(bcfg)
 }
 
@@ -465,10 +477,6 @@ func (b *backend) defrag() error {
 	b.readTx.Lock()
 	defer b.readTx.Unlock()
 
-	b.batchTx.unsafeCommit(true)
-
-	b.batchTx.tx = nil
-
 	// Create a temporary file to ensure we start with a clean slate.
 	// Snapshotter.cleanupSnapdir cleans up any of these that are found during startup.
 	dir := filepath.Dir(b.db.Path())
@@ -476,11 +484,14 @@ func (b *backend) defrag() error {
 	if err != nil {
 		return err
 	}
+
 	options := bolt.Options{}
 	if boltOpenOptions != nil {
 		options = *boltOpenOptions
 	}
 	options.OpenFile = func(_ string, _ int, _ os.FileMode) (file *os.File, err error) {
+		// gofail: var defragOpenFileError string
+		// return nil, fmt.Errorf(defragOpenFileError)
 		return temp, nil
 	}
 	// Don't load tmp db into memory regardless of opening options
@@ -488,6 +499,15 @@ func (b *backend) defrag() error {
 	tdbp := temp.Name()
 	tmpdb, err := bolt.Open(tdbp, 0600, &options)
 	if err != nil {
+		temp.Close()
+		if rmErr := os.Remove(temp.Name()); rmErr != nil && b.lg != nil {
+			b.lg.Error(
+				"failed to remove temporary file",
+				zap.String("path", temp.Name()),
+				zap.Error(rmErr),
+			)
+		}
+
 		return err
 	}
 
@@ -503,6 +523,11 @@ func (b *backend) defrag() error {
 			zap.String("current-db-size-in-use", humanize.Bytes(uint64(sizeInUse1))),
 		)
 	}
+
+	// Commit/stop and then reset current transactions (including the readTx)
+	b.batchTx.unsafeCommit(true)
+	b.batchTx.tx = nil
+
 	// gofail: var defragBeforeCopy struct{}
 	err = defragdb(b.db, tmpdb, defragLimit)
 	if err != nil {
@@ -510,6 +535,11 @@ func (b *backend) defrag() error {
 		if rmErr := os.RemoveAll(tmpdb.Path()); rmErr != nil {
 			b.lg.Error("failed to remove db.tmp after defragmentation completed", zap.Error(rmErr))
 		}
+
+		// restore the bbolt transactions if defragmentation fails
+		b.batchTx.tx = b.unsafeBegin(true)
+		b.readTx.tx = b.unsafeBegin(false)
+
 		return err
 	}
 
@@ -562,6 +592,9 @@ func (b *backend) defrag() error {
 }
 
 func defragdb(odb, tmpdb *bolt.DB, limit int) error {
+	// gofail: var defragdbFail string
+	// return fmt.Errorf(defragdbFail)
+
 	// open a tx on tmpdb for writes
 	tmptx, err := tmpdb.Begin(true)
 	if err != nil {
