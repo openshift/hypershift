@@ -11,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -752,7 +753,7 @@ func TestResourceRequestsToOverrideAnnotations(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actual := resourceRequestsToOverrideAnnotations(test.input)
+			actual := util.ResourceRequestsToOverrideAnnotations(test.input)
 			g.Expect(actual).To(Equal(test.expected))
 		})
 	}
