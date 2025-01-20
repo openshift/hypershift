@@ -10,7 +10,6 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -74,11 +73,11 @@ func newReconciler(
 			if !ok {
 				return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 			}
-			controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
+			controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 			}
-			controlPlaneOperatorImageLabels, err := hostedcluster.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, pullSecretBytes, imageMetadataProvider)
+			controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, pullSecretBytes, imageMetadataProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 			}

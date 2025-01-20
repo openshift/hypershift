@@ -46,8 +46,6 @@ const (
 
 	EnableEtcdRecoveryEnvVar = "ENABLE_ETCD_RECOVERY"
 
-	CPOOverridesEnvVar = "ENABLE_CPO_OVERRIDES"
-
 	AuditWebhookService = "audit-webhook"
 
 	// DefaultMachineNetwork is the default network CIDR for the machine network.

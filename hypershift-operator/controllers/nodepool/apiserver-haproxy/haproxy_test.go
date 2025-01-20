@@ -1,4 +1,4 @@
-package nodepool
+package haproxy
 
 import (
 	"context"
@@ -245,7 +245,7 @@ kind: Config`
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			r := &NodePoolReconciler{
+			r := HAProxy{
 				Client: fake.NewClientBuilder().WithObjects(tc.other...).Build(),
 			}
 			cfg, _, err := r.reconcileHAProxyIgnitionConfig(context.Background(),

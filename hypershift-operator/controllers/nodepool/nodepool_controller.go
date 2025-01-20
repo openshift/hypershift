@@ -9,8 +9,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -811,7 +811,7 @@ func (r *NodePoolReconciler) getNodePoolNamespacedName(nodePoolName string, cont
 	}); err != nil || len(hcpList.Items) < 1 {
 		return types.NamespacedName{Name: nodePoolName}, err
 	}
-	hostedCluster, ok := hcpList.Items[0].Annotations[hostedcluster.HostedClusterAnnotation]
+	hostedCluster, ok := hcpList.Items[0].Annotations[supportutil.HostedClusterAnnotation]
 	if !ok {
 		return types.NamespacedName{Name: nodePoolName}, fmt.Errorf("failed to get Hosted Cluster name for HostedControlPlane %s", hcpList.Items[0].Name)
 	}
@@ -881,7 +881,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	if err != nil {
 		return nil, err
 	}
-	controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := supportutil.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
@@ -936,6 +936,17 @@ func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hoste
 		return additionalTrustBundle, fmt.Errorf(" additionalTrustBundle %s/%s missing %q key", additionalTrustBundle.Namespace, additionalTrustBundle.Name, "ca-bundle.crt")
 	}
 	return additionalTrustBundle, nil
+}
+
+func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	haproxy := haproxy.HAProxy{
+		Client:                  r.Client,
+		ReleaseProvider:         r.ReleaseProvider,
+		HypershiftOperatorImage: r.HypershiftOperatorImage,
+		ImageMetadataProvider:   r.ImageMetadataProvider,
+	}
+
+	return haproxy.GenerateHAProxyRawConfig(ctx, hcluster, releaseImage)
 }
 
 // machinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.

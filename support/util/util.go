@@ -19,6 +19,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/blang/semver"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
@@ -84,6 +87,13 @@ func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Ob
 
 func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
 	return DeleteIfNeededWithOptions(ctx, c, o)
+}
+
+func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		return hcluster.Spec.ControlPlaneRelease.Image
+	}
+	return hcluster.Spec.Release.Image
 }
 
 func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
@@ -538,4 +548,75 @@ func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.Hosted
 	}
 
 	return pullSecretBytes, nil
+}
+
+// GetControlPlaneOperatorImage resolves the appropriate control plane operator
+// image based on the following order of precedence (from most to least
+// preferred):
+//
+//  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
+//     HostedCluster resource itself
+//  2. The hypershift image specified in the release payload indicated by the
+//     HostedCluster's release field
+//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
+//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//     version 4.8
+//
+// If no image can be found according to these rules, an error is returned.
+func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
+		return val, nil
+	}
+	releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
+	if err != nil {
+		return "", err
+	}
+	version, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return "", err
+	}
+	if controlplaneoperatoroverrides.IsOverridesEnabled() {
+		overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
+		if overrideImage != "" {
+			return overrideImage, nil
+		}
+	}
+
+	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
+		return hypershiftImage, nil
+	}
+
+	if version.Minor < 9 {
+		return "", fmt.Errorf("unsupported release image with version %s", version.String())
+	}
+	return hypershiftOperatorImage, nil
+}
+
+// GetControlPlaneOperatorImageLabels resolves the appropriate control plane
+// operator image labels based on the following order of precedence (from most
+// to least preferred):
+//
+//  1. The labels specified by the ControlPlaneOperatorImageLabelsAnnotation on the
+//     HostedCluster resource itself
+//  2. The image labels in the medata of the image as resolved by GetControlPlaneOperatorImage
+func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedCluster, controlPlaneOperatorImage string, pullSecret []byte, imageMetadataProvider ImageMetadataProvider) (map[string]string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageLabelsAnnotation]; ok {
+		annotatedLabels := map[string]string{}
+		rawLabels := strings.Split(val, ",")
+		for i, rawLabel := range rawLabels {
+			parts := strings.Split(rawLabel, "=")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("hosted cluster %s/%s annotation %d malformed: label %s not in key=value form", hc.Namespace, hc.Name, i, rawLabel)
+			}
+			annotatedLabels[parts[0]] = parts[1]
+		}
+		return annotatedLabels, nil
+	}
+
+	controlPlaneOperatorImageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
+	}
+
+	return ImageLabels(controlPlaneOperatorImageMetadata), nil
 }

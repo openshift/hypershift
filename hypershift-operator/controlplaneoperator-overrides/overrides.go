@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openshift/hypershift/support/config"
-
 	"gopkg.in/yaml.v2"
+)
+
+const (
+	CPOOverridesEnvVar = "ENABLE_CPO_OVERRIDES"
 )
 
 type CPOOverrides struct {
@@ -38,7 +40,7 @@ func init() {
 }
 
 func IsOverridesEnabled() bool {
-	return os.Getenv(config.CPOOverridesEnvVar) == "1"
+	return os.Getenv(CPOOverridesEnvVar) == "1"
 }
 
 func CPOImage(version string) string {

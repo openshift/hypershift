@@ -11,12 +11,12 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -330,7 +330,7 @@ func TestGetNodePoolNamespacedName(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testControlPlaneNamespace,
 					Annotations: map[string]string{
-						hostedcluster.HostedClusterAnnotation: types.NamespacedName{Name: "hosted-cluster-1", Namespace: testNodePoolNamespace}.String(),
+						util.HostedClusterAnnotation: types.NamespacedName{Name: "hosted-cluster-1", Namespace: testNodePoolNamespace}.String(),
 					},
 				},
 			},

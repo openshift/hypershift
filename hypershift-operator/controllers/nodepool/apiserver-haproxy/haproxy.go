@@ -1,4 +1,4 @@
-package nodepool
+package haproxy
 
 import (
 	"bytes"
@@ -14,7 +14,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
@@ -45,7 +44,15 @@ const (
 	haProxyRouterImageName                                = "haproxy-router"
 )
 
-func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster) (m bool, cpoImage string, err error) {
+type HAProxy struct {
+	crclient.Client
+
+	ReleaseProvider         releaseinfo.Provider
+	HypershiftOperatorImage string
+	ImageMetadataProvider   util.ImageMetadataProvider
+}
+
+func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster) (m bool, cpoImage string, err error) {
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return false, "", fmt.Errorf("failed to get pull secret: %w", err)
@@ -54,7 +61,7 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 	if !ok {
 		return false, "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := util.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
@@ -68,7 +75,7 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 
-func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, componentImages map[string]string, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
+func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, componentImages map[string]string, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
 	var apiServerExternalAddress string
 	var apiServerExternalPort int32
 	var apiServerInternalAddress string
@@ -221,7 +228,7 @@ type fileToAdd struct {
 	params   map[string]any
 }
 
-//go:embed apiserver-haproxy/*
+//go:embed assets/*
 var content embed.FS
 
 func MustAsset(name string) string {
@@ -233,9 +240,9 @@ func MustAsset(name string) string {
 }
 
 var (
-	setupAPIServerIPScriptTemplate    = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("apiserver-haproxy/setup-apiserver-ip.sh")))
-	teardownAPIServerIPScriptTemplate = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("apiserver-haproxy/teardown-apiserver-ip.sh")))
-	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(MustAsset("apiserver-haproxy/haproxy.cfg")))
+	setupAPIServerIPScriptTemplate    = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("assets/setup-apiserver-ip.sh")))
+	teardownAPIServerIPScriptTemplate = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("assets/teardown-apiserver-ip.sh")))
+	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(MustAsset("assets/haproxy.cfg")))
 )
 
 func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
@@ -472,7 +479,7 @@ func fileFromBytes(path string, mode int, contents []byte) ignitionapi.File {
 }
 
 func apiServerIPUnit() ignitionapi.Unit {
-	content := MustAsset("apiserver-haproxy/apiserver-ip.service")
+	content := MustAsset("assets/apiserver-ip.service")
 	return ignitionapi.Unit{
 		Name:     "apiserver-ip.service",
 		Contents: &content,
@@ -500,7 +507,7 @@ func joinDefaultPortIfMissing(addr string) (string, error) {
 	return parsedUrl.String(), nil
 }
 
-func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	var haproxyRawConfig string
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)

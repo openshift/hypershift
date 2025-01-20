@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
@@ -543,7 +544,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 
 	if o.EnableCPOOverrides {
 		envVars = append(envVars, corev1.EnvVar{
-			Name:  config.CPOOverridesEnvVar,
+			Name:  controlplaneoperatoroverrides.CPOOverridesEnvVar,
 			Value: "1",
 		})
 	}
