@@ -3552,8 +3552,10 @@ func (r *NodePoolReconciler) SetPerformanceProfileConditions(ctx context.Context
 	// Get performance profile status configmap
 	cmList := &corev1.ConfigMapList{}
 	if err := r.Client.List(ctx, cmList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{NodeTuningGeneratedPerformanceProfileStatusLabel: "true"}),
-		Namespace:     controlPlaneNamespace,
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+			hyperv1.NodePoolLabel:                            nodePool.Name}),
+		Namespace: controlPlaneNamespace,
 	}); err != nil {
 		return err
 	}
