@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: web-app
+              topologyKey: "kubernetes.io/hostname"    
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 2000
+      containers:
+      - image: quay.io/openshift/origin-pod:4.19.0
+        name: web-app
+        resources:
+          requests:
+            cpu: "1"
+            memory: 256M
+        securityContext:
+          allowPrivilegeEscalation: false
+      nodeSelector:
+        node.kubernetes.io/instance-type: "t3.large"
