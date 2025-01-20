@@ -15,6 +15,7 @@ Here are the available options specific to the OpenStack platform:
 | `--openstack-node-availability-zone`| Availability zone for the nodepool                                                        | No       |               |
 | `--openstack-node-flavor`        | Flavor for the nodepool                                                                      | Yes      |               |
 | `--openstack-node-image-name`    | Image name for the nodepool                                                                  | Yes      |               |
+| `--openstack-dns-nameservers`    | List of DNS server addresses that will be provided when creating the subnet                  | No       |               |
 
 Below is an example of how to create a cluster using environment variables and the `hcp` cli tool.
 
@@ -55,6 +56,9 @@ export CLOUDS_YAML="$HOME/clouds.yaml"
 # SSH Key for the nodepool VMs
 export SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
+# DNS nameserver for the subnet
+export DNS_NAMESERVERS="1.1.1.1"
+
 hcp create cluster openstack \
 --name $CLUSTER_NAME \
 --base-domain $BASE_DOMAIN \
@@ -66,7 +70,8 @@ hcp create cluster openstack \
 --openstack-external-network-id $EXTERNAL_NETWORK_ID \
 --openstack-node-image-name $IMAGE_NAME \
 --openstack-node-flavor $FLAVOR \
---openstack-ingress-floating-ip $INGRESS_FLOATING_IP
+--openstack-ingress-floating-ip $INGRESS_FLOATING_IP \
+--openstack-dns-nameservers $DNS_NAMESERVERS
 ```
 
 !!! note

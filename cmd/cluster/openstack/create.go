@@ -44,6 +44,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
+	flags.StringSliceVar(&opts.OpenStackDNSNameservers, "openstack-dns-nameservers", opts.OpenStackDNSNameservers, "List of DNS nameservers to use for the cluster (optional)")
 }
 
 type RawCreateOptions struct {
@@ -52,6 +53,7 @@ type RawCreateOptions struct {
 	OpenStackCACertFile        string
 	OpenStackExternalNetworkID string
 	OpenStackIngressFloatingIP string
+	OpenStackDNSNameservers    []string
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
@@ -168,6 +170,19 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 
 	if o.OpenStackIngressFloatingIP != "" {
 		cluster.Spec.Platform.OpenStack.IngressFloatingIP = o.OpenStackIngressFloatingIP
+	}
+
+	// If the user has specified DNS nameservers, it'll be used when creating the managed subnet(s).
+	// In the case where the user wants to override the other fields of the managed subnets, they can
+	// first render the cluster spec and then provide the needed configuration as API allows (for
+	// example the allocation pools).
+	if len(o.OpenStackDNSNameservers) > 0 {
+		if len(cluster.Spec.Platform.OpenStack.ManagedSubnets) == 0 {
+			cluster.Spec.Platform.OpenStack.ManagedSubnets = make([]hyperv1.SubnetSpec, 1)
+		}
+		for i := range cluster.Spec.Platform.OpenStack.ManagedSubnets {
+			cluster.Spec.Platform.OpenStack.ManagedSubnets[i].DNSNameservers = o.OpenStackDNSNameservers
+		}
 	}
 
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
