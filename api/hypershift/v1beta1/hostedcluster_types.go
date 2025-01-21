@@ -164,6 +164,10 @@ const (
 	// of the cluster will be removed, including image registry storage, ingress dns records, load balancers, and persistent storage.
 	CleanupCloudResourcesAnnotation = "hypershift.openshift.io/cleanup-cloud-resources"
 
+	// CleanupOrcImageResourcesAnnotation is an annotation that indicates whether an OpenStack Image should be
+	// removed when deleting the corresponding ORC Image. If set to "true", the OpenStack Image will be removed.
+	CleanupOrcImageResourcesAnnotation = "hypershift.openshift.io/cleanup-orc-image-resource"
+
 	// ResourceRequestOverrideAnnotationPrefix is a prefix for an annotation to override resource requests for a particular deployment/container
 	// in a hosted control plane. The format of the annotation is:
 	// resource-request-override.hypershift.openshift.io/[deployment-name].[container-name]: [resource-type-1]=[value1],[resource-type-2]=[value2],...

@@ -162,6 +162,9 @@ func reconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 			},
 		},
 	}
+	if hcluster.Annotations != nil && hcluster.Annotations[hyperv1.CleanupOrcImageResourcesAnnotation] == "false" {
+		openStackImageSpec.ManagedOptions = &orc.ManagedOptions{OnDelete: orc.OnDeleteDetach}
+	}
 
 	return nil
 }
