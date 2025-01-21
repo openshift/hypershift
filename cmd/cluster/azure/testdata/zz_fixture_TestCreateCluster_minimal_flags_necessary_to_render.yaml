@@ -105,6 +105,10 @@ spec:
           nodePoolManagement:
             certificateName: ""
             clientID: ""
+        dataPlane:
+          diskMSIClientID: ""
+          fileMSIClientID: ""
+          imageRegistryMSIClientID: ""
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
