@@ -260,7 +260,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 			}
 
 			if kvPlatform.RootVolume.Persistent.Size != nil {
-				storageSpec.Resources = corev1.ResourceRequirements{
+				storageSpec.Resources = corev1.VolumeResourceRequirements{
 					Requests: map[corev1.ResourceName]apiresource.Quantity{
 						corev1.ResourceStorage: *kvPlatform.RootVolume.Persistent.Size,
 					},

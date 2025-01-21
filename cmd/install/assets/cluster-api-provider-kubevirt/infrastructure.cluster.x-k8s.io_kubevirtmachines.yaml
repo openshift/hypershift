@@ -695,38 +695,6 @@ spec:
                                         Resources represents the minimum resources the volume should have.
                                         More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
                                       properties:
-                                        claims:
-                                          description: |-
-                                            Claims lists the names of resources, defined in spec.resourceClaims,
-                                            that are used by this container.
-
-                                            This is an alpha field and requires enabling the
-                                            DynamicResourceAllocation feature gate.
-
-                                            This field is immutable. It can only be set for containers.
-                                          items:
-                                            description: ResourceClaim references
-                                              one entry in PodSpec.ResourceClaims.
-                                            properties:
-                                              name:
-                                                description: |-
-                                                  Name must match the name of one entry in pod.spec.resourceClaims of
-                                                  the Pod where this field is used. It makes that resource available
-                                                  inside a container.
-                                                type: string
-                                              request:
-                                                description: |-
-                                                  Request is the name chosen for a request in the referenced claim.
-                                                  If empty, everything from the claim is made available, otherwise
-                                                  only the result of this request.
-                                                type: string
-                                            required:
-                                            - name
-                                            type: object
-                                          type: array
-                                          x-kubernetes-list-map-keys:
-                                          - name
-                                          x-kubernetes-list-type: map
                                         limits:
                                           additionalProperties:
                                             anyOf:
@@ -901,6 +869,7 @@ spec:
                         description: |-
                           Running controls whether the associatied VirtualMachineInstance is created or not
                           Mutually exclusive with RunStrategy
+                          Deprecated: VirtualMachineInstance field "Running" is now deprecated, please use RunStrategy instead.
                         type: boolean
                       template:
                         description: Template is the direct specification of VirtualMachineInstance
@@ -1022,6 +991,7 @@ spec:
                                       - source
                                       type: object
                                   type: object
+                                maxItems: 256
                                 type: array
                                 x-kubernetes-list-type: atomic
                               affinity:
@@ -2433,6 +2403,7 @@ spec:
                                           required:
                                           - name
                                           type: object
+                                        maxItems: 256
                                         type: array
                                       downwardMetrics:
                                         description: DownwardMetrics creates a virtio
@@ -2636,8 +2607,10 @@ spec:
                                                 DE-AD-00-00-BE-AF.'
                                               type: string
                                             macvtap:
-                                              description: Deprecated, please refer
-                                                to Kubevirt user guide for alternatives.
+                                              description: |-
+                                                DeprecatedMacvtap is an alias to the deprecated Macvtap interface,
+                                                please refer to Kubevirt user guide for alternatives.
+                                                Deprecated: Removed in v1.3
                                               type: object
                                             masquerade:
                                               description: InterfaceMasquerade connects
@@ -2647,7 +2620,7 @@ spec:
                                             model:
                                               description: |-
                                                 Interface model.
-                                                One of: e1000, e1000e, ne2k_pci, pcnet, rtl8139, virtio.
+                                                One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
                                                 Defaults to virtio.
                                               type: string
                                             name:
@@ -2656,8 +2629,10 @@ spec:
                                                 Must match the Name of a Network.
                                               type: string
                                             passt:
-                                              description: Deprecated, please refer
-                                                to Kubevirt user guide for alternatives.
+                                              description: |-
+                                                DeprecatedPasst is an alias to the deprecated Passt interface,
+                                                please refer to Kubevirt user guide for alternatives.
+                                                Deprecated: Removed in v1.3
                                               type: object
                                             pciAddress:
                                               description: 'If specified, the virtual
@@ -2696,9 +2671,9 @@ spec:
                                                 type: object
                                               type: array
                                             slirp:
-                                              description: InterfaceSlirp connects
-                                                to a given network using QEMU user
-                                                networking mode.
+                                              description: |-
+                                                DeprecatedSlirp is an alias to the deprecated Slirp interface
+                                                Deprecated: Removed in v1.3
                                               type: object
                                             sriov:
                                               description: InterfaceSRIOV connects
@@ -2719,6 +2694,7 @@ spec:
                                           required:
                                           - name
                                           type: object
+                                        maxItems: 256
                                         type: array
                                       logSerialConsole:
                                         description: |-
@@ -2997,6 +2973,16 @@ spec:
                                                   Defaults to true.
                                                 type: boolean
                                             type: object
+                                        type: object
+                                      hypervPassthrough:
+                                        description: |-
+                                          This enables all supported hyperv flags automatically.
+                                          Bear in mind that if this enabled hyperV features cannot
+                                          be enabled explicitly. In addition, a Virtual Machine
+                                          using it will be non-migratable.
+                                        properties:
+                                          enabled:
+                                            type: boolean
                                         type: object
                                       kvm:
                                         description: Configure how KVM presence is
@@ -3443,6 +3429,7 @@ spec:
                                   required:
                                   - name
                                   type: object
+                                maxItems: 256
                                 type: array
                               nodeSelector:
                                 additionalProperties:
@@ -4318,11 +4305,16 @@ spec:
                                   required:
                                   - name
                                   type: object
+                                maxItems: 256
                                 type: array
                             required:
                             - domain
                             type: object
                         type: object
+                      updateVolumesStrategy:
+                        description: UpdateVolumesStrategy is the strategy to apply
+                          on volumes updates
+                        type: string
                     required:
                     - template
                     type: object

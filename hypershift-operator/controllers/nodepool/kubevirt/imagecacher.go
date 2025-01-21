@@ -273,7 +273,7 @@ func (qi *cachedBootImage) buildDVForCache(nodePool *hyperv1.NodePool, uid strin
 	if kvPlatform.RootVolume != nil && kvPlatform.RootVolume.Persistent != nil {
 		storageSpec := &v1beta1.StorageSpec{}
 		if kvPlatform.RootVolume.Persistent.Size != nil {
-			storageSpec.Resources = corev1.ResourceRequirements{
+			storageSpec.Resources = corev1.VolumeResourceRequirements{
 				Requests: map[corev1.ResourceName]apiresource.Quantity{
 					corev1.ResourceStorage: *kvPlatform.RootVolume.Persistent.Size,
 				},
