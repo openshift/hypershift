@@ -1260,7 +1260,7 @@ func memoryTmpltOpt(memory string) nodeTemplateOption {
 
 func storageTmpltOpt(volumeSize string) nodeTemplateOption {
 	storage := &v1beta1.StorageSpec{
-		Resources: corev1.ResourceRequirements{
+		Resources: corev1.VolumeResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceStorage: apiresource.MustParse(volumeSize),
 			},
