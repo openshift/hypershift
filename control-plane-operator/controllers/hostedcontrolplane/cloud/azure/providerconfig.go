@@ -105,13 +105,11 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 // Now the source is https://github.com/kubernetes-sigs/cloud-provider-azure/blob/e5d670328a51e31787fc949ddf41a3efcd90d651/examples/out-of-tree/cloud-controller-manager.yaml#L232
 // https://github.com/kubernetes-sigs/cloud-provider-azure/tree/e5d670328a51e31787fc949ddf41a3efcd90d651/pkg/provider/config
 type AzureConfig struct {
-	Cloud                       string `json:"cloud"`
-	TenantID                    string `json:"tenantId"`
-	UseManagedIdentityExtension bool   `json:"useManagedIdentityExtension"`
-	SubscriptionID              string `json:"subscriptionId"`
-	AADClientID                 string `json:"aadClientId"`
-	// TODO HOSTEDCP-1542 - Bryan - drop client secret once we have WorkloadIdentity working
-	AADClientSecret              string `json:"aadClientSecret"`
+	Cloud                        string `json:"cloud"`
+	TenantID                     string `json:"tenantId"`
+	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
+	SubscriptionID               string `json:"subscriptionId"`
+	AADClientID                  string `json:"aadClientId"`
 	AADClientCertPath            string `json:"aadClientCertPath"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`

@@ -19,8 +19,6 @@ metadata:
 ---
 apiVersion: v1
 data:
-  AZURE_CLIENT_ID: ZmFrZUNsaWVudElE
-  AZURE_CLIENT_SECRET: ZmFrZUNsaWVudFNlY3JldA==
   AZURE_SUBSCRIPTION_ID: ZmFrZVN1YnNjcmlwdGlvbklE
   AZURE_TENANT_ID: ZmFrZVRlbmFudElE
 kind: Secret
