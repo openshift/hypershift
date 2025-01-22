@@ -292,7 +292,6 @@ func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3ifa
 			if err != nil {
 				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
 					o.Log.Info("S3 Bucket already deleted", "name", *bucket.Name)
-					err = nil
 				} else {
 					errs = append(errs, err)
 				}

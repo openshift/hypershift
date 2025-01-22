@@ -347,8 +347,6 @@ func (c *Context) repositoryTransport(t http.RoundTripper, registry *url.URL, re
 	return c.cachedTransport(t, c.scopes(repoName))
 }
 
-var nowFn = time.Now
-
 type retryRepository struct {
 	distribution.Repository
 
