@@ -288,9 +288,6 @@ func (r *Reconciler) reconcileEC2NodeClassDefault(ctx context.Context, userDataS
 				},
 			},
 		}
-		if hcp.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
-			ec2NodeClass.Object["spec"].(map[string]interface{})["associatePublicIPAddress"] = true
-		}
 		return nil
 	})
 	if err != nil {

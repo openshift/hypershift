@@ -77,8 +77,6 @@ var expectedKasManagementComponents = []string{
 	"cloud-controller-manager",
 	"olm-collect-profiles",
 	"aws-ebs-csi-driver-operator",
-	"karpenter",
-	"karpenter-operator",
 }
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -270,10 +268,6 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 
 func WaitForReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType, opts ...NodePoolPollOption) []corev1.Node {
 	return WaitForNReadyNodesWithOptions(t, ctx, client, *np.Spec.Replicas, platform, fmt.Sprintf("for NodePool %s/%s", np.Namespace, np.Name), append(opts, WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: np.Name})}))...)
-}
-
-func WaitForReadyNodesByLabels(t *testing.T, ctx context.Context, client crclient.Client, platform hyperv1.PlatformType, replicas int32, nodeLabels map[string]string) []corev1.Node {
-	return WaitForNReadyNodesWithOptions(t, ctx, client, replicas, platform, "", WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))}))
 }
 
 func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool) {
@@ -511,10 +505,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: Figure out why Karpenter needs restaring some times https://issues.redhat.com/browse/HOSTEDCP-2254.
-			if strings.HasPrefix(pod.Name, "karpenter") {
-				continue
-			}
 			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
 			if strings.HasPrefix(pod.Name, "ingress-operator-") {
 				continue
@@ -1170,8 +1160,6 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"redhat-marketplace-catalog":             "app",
 			"openstack-cinder-csi-driver-controller": "app",
 			"openstack-manila-csi":                   "app",
-			"karpenter":                              "app",
-			"karpenter-operator":                     "app",
 		}
 
 		hcpPods := &corev1.PodList{}

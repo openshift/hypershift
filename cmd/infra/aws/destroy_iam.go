@@ -166,9 +166,6 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	if err := o.DestroyOIDCRole(iamClient, "kms-provider", false); err != nil {
 		return err
 	}
-	if err := o.DestroyOIDCRole(iamClient, "karpenter", false); err != nil {
-		return err
-	}
 
 	return nil
 }

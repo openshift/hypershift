@@ -228,16 +228,7 @@ func (o *CreateInfraOptions) CreatePrivateSubnet(l logr.Logger, client ec2iface.
 }
 
 func (o *CreateInfraOptions) CreatePublicSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	karpenterDiscoveryTag := []*ec2.Tag{}
-	if o.PublicOnly {
-		karpenterDiscoveryTag = []*ec2.Tag{
-			{
-				Key:   ptr.To("karpenter.sh/discovery"),
-				Value: ptr.To(o.InfraID),
-			},
-		}
-	}
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), tagNameSubnetPublicELB, karpenterDiscoveryTag)
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), tagNameSubnetPublicELB, nil)
 }
 
 func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name, scopeTag string, additionalTags []*ec2.Tag) (string, error) {
@@ -249,7 +240,6 @@ func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API,
 		l.Info("Found existing subnet", "name", name, "id", subnetID)
 		return subnetID, nil
 	}
-
 	tagSpec := o.ec2TagSpecifications("subnet", name)
 	tagSpec[0].Tags = append(tagSpec[0].Tags, &ec2.Tag{
 		Key:   aws.String(scopeTag),

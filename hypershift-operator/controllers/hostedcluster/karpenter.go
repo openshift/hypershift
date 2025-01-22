@@ -21,12 +21,9 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
-
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (r *HostedClusterReconciler) reconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
@@ -74,61 +71,41 @@ spec:
 			Namespace: hcluster.Namespace,
 		},
 	}
-	spec := hyperv1.NodePoolSpec{
-		ClusterName: hcluster.Name,
-		Replicas:    ptr.To(int32(0)),
-		Release:     hcluster.Spec.Release,
-		Config: []corev1.LocalObjectReference{
-			{
-				Name: taintConfigName,
-			},
-		},
-		Management: hyperv1.NodePoolManagement{
-			UpgradeType: hyperv1.UpgradeTypeReplace,
-			Replace: &hyperv1.ReplaceUpgrade{
-				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
-				RollingUpdate: &hyperv1.RollingUpdate{
-					MaxUnavailable: ptr.To(intstr.FromInt(0)),
-					MaxSurge:       ptr.To(intstr.FromInt(1)),
+	_, err = createOrUpdate(ctx, r.Client, nodePool, func() error {
+		nodePool.Spec = hyperv1.NodePoolSpec{
+			ClusterName: hcluster.Name,
+			Replicas:    ptr.To(int32(0)),
+			Release:     hcluster.Spec.Release,
+			Config: []corev1.LocalObjectReference{
+				{
+					Name: taintConfigName,
 				},
 			},
-			AutoRepair: false,
-		},
-		Platform: hyperv1.NodePoolPlatform{
-			Type: hyperv1.AWSPlatform,
-			AWS: &hyperv1.AWSNodePoolPlatform{
-				InstanceType: "m5.large",
-				Subnet: hyperv1.AWSResourceReference{
-					// TODO(alberto): this is just to pass cel.
-					// Setting an ID instead of filter would break publicAndPrivate topology because the AWSEndpointService won't find the subnet.
-					// We'll move to generate the userdata for karpenter programatically.
-					Filters: []hyperv1.Filter{
-						{
-							Name:   "subnet-none",
-							Values: []string{"none"},
-						},
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeReplace,
+				Replace: &hyperv1.ReplaceUpgrade{
+					Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+					RollingUpdate: &hyperv1.RollingUpdate{
+						MaxUnavailable: ptr.To(intstr.FromInt(0)),
+						MaxSurge:       ptr.To(intstr.FromInt(1)),
+					},
+				},
+				AutoRepair: false,
+			},
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					InstanceType: "m5.large",
+					Subnet: hyperv1.AWSResourceReference{
+						ID: ptr.To("subnet-none"),
 					},
 				},
 			},
-		},
-	}
-
-	if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
-		if apierrors.IsNotFound(err) {
-			nodePool.Spec = spec
-			if err := r.Client.Create(ctx, nodePool); err != nil {
-				return fmt.Errorf("failed to create NodePool: %w", err)
-			}
-		} else {
-			return err
 		}
-	}
-
-	original := nodePool.DeepCopy()
-	nodePool.Spec = spec
-	err = r.Client.Patch(ctx, nodePool, crclient.MergeFrom(original))
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("failed to patch NodePool: %w", err)
+		return fmt.Errorf("failed to create configmap: %w", err)
 	}
 	// TODO(alberto): Ensure deletion if autoNode is disabled.
 
