@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 )
@@ -138,6 +139,8 @@ func reconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 	if err != nil {
 		return fmt.Errorf("failed to lookup RHCOS image: %w", err)
 	}
+	log := ctrllog.Log
+	log.Info("################## reconcileOpenStackImageSpec ###############")
 
 	openStackImageSpec.CloudCredentialsRef = orc.CloudCredentialsReference{
 		SecretName: hcluster.Spec.Platform.OpenStack.IdentityRef.Name,
@@ -162,8 +165,13 @@ func reconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 			},
 		},
 	}
-	if hcluster.Annotations != nil && hcluster.Annotations[hyperv1.CleanupOrcImageResourcesAnnotation] == "false" {
-		openStackImageSpec.ManagedOptions = &orc.ManagedOptions{OnDelete: orc.OnDeleteDetach}
+	log.Info("Checking annotation!!!!")
+	if hcluster.Annotations != nil {
+		cleanup, ok := hcluster.Annotations[hyperv1.CleanupOrcImageResourcesAnnotation]
+		if ok && cleanup == "false" {
+			log.Info("Setting ManagedOptions!!!!")
+			openStackImageSpec.ManagedOptions = &orc.ManagedOptions{OnDelete: orc.OnDeleteDetach}
+		}
 	}
 
 	return nil
