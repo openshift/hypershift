@@ -30,7 +30,6 @@ CNCC_NAME="cncc-<PERSONAL_SP_NAME>"
 CONTROL_PLANE_SP_NAME="cpo-<PERSONAL_SP_NAME>"
 IMAGE_REGISTRY_SP_NAME="ciro-<PERSONAL_SP_NAME>"
 INGRESS_SP_NAME="ingress-<PERSONAL_SP_NAME>"
-USER_ACCOUNT_ID=<ID_OF_USER_ACCOUNT_OR_SP>
 SP_OUTPUT_FILE=<OUTPUT_FILE_FOR_CREATED_SPs>
 AKS_CLUSTER_RG_NAME=<AKS_CLUSTER_RG_NAME>
 DNS_RECORD_NAME=<DNS_RECORD_NAME>
@@ -93,6 +92,7 @@ export AKS_KUBELET_MI_ID=$(az identity show --name $AKS_KUBELET_MI_NAME --resour
 ### 4. Create Key Vault for Certificate Storage
 
 ```sh
+export USER_ACCOUNT_ID=$(az ad signed-in-user show | jq .id)
 az keyvault create --name $KV_NAME --resource-group $PERSISTENT_RG_NAME --location $LOCATION --enable-rbac-authorization
 az role assignment create --assignee ${USER_ACCOUNT_ID} --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PERSISTENT_RG_NAME}/providers/Microsoft.KeyVault/vaults/${KV_NAME} --role "Key Vault Administrator"
 ```
