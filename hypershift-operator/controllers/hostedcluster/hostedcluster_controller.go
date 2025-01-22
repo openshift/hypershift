@@ -4420,7 +4420,7 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 	}
 
 	var errs []error
-	for _, expectedKey := range []string{"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"} {
+	for _, expectedKey := range []string{"AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"} {
 		if _, found := credentialsSecret.Data[expectedKey]; !found {
 			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
 		}

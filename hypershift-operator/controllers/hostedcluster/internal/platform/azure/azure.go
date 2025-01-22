@@ -213,8 +213,6 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 	// Sync CNCC secret
 	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
 	secretData := map[string][]byte{
-		"azure_client_id":       azureCredsInfo.Data["AZURE_CLIENT_ID"],
-		"azure_client_secret":   azureCredsInfo.Data["AZURE_CLIENT_SECRET"],
 		"azure_region":          []byte(hcluster.Spec.Platform.Azure.Location),
 		"azure_resource_prefix": []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
 		"azure_resourcegroup":   []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),

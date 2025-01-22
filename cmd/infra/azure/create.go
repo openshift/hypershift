@@ -838,6 +838,8 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 		scopes = append(scopes, nsgRG, vnetRG)
 	case nodePoolMgmt:
 		scopes = append(scopes, vnetRG)
+	case cncc:
+		scopes = append(scopes, vnetRG)
 	}
 
 	// Assign contributor role to service principal
