@@ -169,9 +169,7 @@ func ProcessManifestList(ctx context.Context, srcDigest digest.Digest, srcManife
 		manifestList := t
 
 		filtered := make([]manifestlist.ManifestDescriptor, 0, len(t.Manifests))
-		for _, manifest := range t.Manifests {
-			filtered = append(filtered, manifest)
-		}
+		filtered = append(filtered, t.Manifests...)
 
 		if len(filtered) == 0 {
 			return nil, nil, "", nil
