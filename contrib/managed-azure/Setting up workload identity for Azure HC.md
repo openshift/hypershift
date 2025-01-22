@@ -125,7 +125,7 @@ CSI_DISK_CLIENT_ID=$(az identity show --name "${CSI_DISK_MSI_NAME}" --resource-g
 #Federated ID
 az identity federated-credential create --name "${CSI_DISK_MSI_NAME}"-fed-id \
 --identity-name "${CSI_DISK_MSI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
+--resource-group "${MANAGED_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa \
 --audience openshift
@@ -151,7 +151,7 @@ CSI_FILE_MSI_CLIENT_ID=$(az identity show --name "${CSI_FILE_CCM_MSI_NAME}" --re
 #Federated ID
 az identity federated-credential create --name "${CSI_FILE_CCM_MSI_NAME}"-fed-id \
 --identity-name "${CSI_FILE_CCM_MSI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
+--resource-group "${MANAGED_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa \
 --audience openshift
@@ -177,14 +177,14 @@ IR_MSI_CLIENT_ID=$(az identity show --name "${IR_MSI_NAME}" --resource-group "${
 #Federated ID
 az identity federated-credential create --name "${IR_MSI_NAME}"-fed-id \
 --identity-name "${IR_MSI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
+--resource-group "${MANAGED_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-image-registry:cluster-image-registry-operator \
 --audience openshift
 
 az identity federated-credential create --name "${IR_MSI_NAME}"-fed-id \
 --identity-name "${IR_MSI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
+--resource-group "${MANAGED_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-image-registry:registry \
 --audience openshift
