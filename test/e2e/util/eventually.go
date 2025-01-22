@@ -176,7 +176,7 @@ func evaluatePredicates[T any](object T, predicates []Predicate[T]) ([]predicate
 			return nil, err
 		}
 		if !done && len(reason) == 0 {
-			panic(fmt.Sprintf("programmer error: predicate returned false with no message"))
+			panic("programmer error: predicate returned false with no message")
 		}
 		results[i] = predicateResult{done: done, reason: reason}
 	}

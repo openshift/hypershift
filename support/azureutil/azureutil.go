@@ -131,7 +131,7 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("virtual network has no name")
 	}
 
-	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) == 0 {
+	if len(vnet.Properties.Subnets) == 0 {
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnets found for resource group '%s'", vnetResourceGroupName)
 	}
 

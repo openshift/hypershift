@@ -93,7 +93,7 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 		}
 	}
 	if opts.WaitForInfrastructureResource {
-		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-infrastructure-resource"))
+		availabilityProberContainer.Command = append(availabilityProberContainer.Command, "--wait-for-infrastructure-resource")
 	}
 	if opts.WaitForLabeledPodsGone != "" {
 		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-labeled-pods-gone=%s", opts.WaitForLabeledPodsGone))
