@@ -957,7 +957,8 @@ func TestSetPerformanceProfileStatus(t *testing.T) {
 			// In case performance profile is applied, a config map holding the performance profile status is generated
 			// by NTO should exist on the hosted control plane namespace.
 			if tc.hasPerformanceProfileApplied {
-				r.Create(ctx, tc.PerformanceProfileStatusCM)
+				err := r.Create(ctx, tc.PerformanceProfileStatusCM)
+				g.Expect(err).ToNot(HaveOccurred())
 			}
 			err := r.SetPerformanceProfileConditions(ctx, logr.Discard(), nodePool, controlPlaneNamespace, false)
 			g.Expect(err).ToNot(HaveOccurred())

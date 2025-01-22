@@ -34,10 +34,13 @@ func setupConfigMapObserver(cfg *operator.HostedClusterConfigOperatorConfig) err
 		return err
 	}
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(targetKubeClient, 10*time.Hour, informers.WithNamespace(ManagedConfigNamespace))
-	cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
+	err = cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		informerFactory.Start(ctx.Done())
 		return nil
 	}))
+	if err != nil {
+		return err
+	}
 
 	configMaps := informerFactory.Core().V1().ConfigMaps()
 	reconciler := &ManagedCAObserver{

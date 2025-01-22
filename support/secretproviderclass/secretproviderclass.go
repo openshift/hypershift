@@ -26,7 +26,7 @@ array:
 func ReconcileManagedAzureSecretProviderClass(secretProviderClass *secretsstorev1.SecretProviderClass, hcp *hyperv1.HostedControlPlane, managedIdentity hyperv1.ManagedIdentity, isMIv3 ...bool) {
 	// TODO - MIv3 - this if can be removed once CS supports only CredentialsSecret and it can be passed in directly to formatSecretProviderClassObject; also remove isMIv3 once everything has been converted over in 4.19 and 4.18 to MIv3
 	var secretName string
-	if isMIv3 != nil && len(isMIv3) > 0 && isMIv3[0] {
+	if len(isMIv3) > 0 && isMIv3[0] {
 		secretName = managedIdentity.CredentialsSecretName
 	} else {
 		secretName = managedIdentity.CertificateName

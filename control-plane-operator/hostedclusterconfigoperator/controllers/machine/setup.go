@@ -50,9 +50,9 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Setup")
 	kubevirtScheme := runtime.NewScheme()
-	corev1.AddToScheme(kubevirtScheme)
-	kubevirtv1.AddToScheme(kubevirtScheme)
-	discoveryv1.AddToScheme(kubevirtScheme)
+	_ = corev1.AddToScheme(kubevirtScheme)
+	_ = kubevirtv1.AddToScheme(kubevirtScheme)
+	_ = discoveryv1.AddToScheme(kubevirtScheme)
 
 	kubevirtHttpClient, err := rest.HTTPClientFor(opts.KubevirtInfraConfig)
 	if err != nil {
@@ -110,7 +110,9 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &capiv1.Machine{}, &handler.EnqueueRequestForObject{})); err != nil {
 		return fmt.Errorf("failed to watch Machines: %w", err)
 	}
-	go kubevirtInfraCache.Start(ctx)
+	go func() {
+		_ = kubevirtInfraCache.Start(ctx)
+	}()
 	allNodes := func(watchContext context.Context, obj client.Object) []reconcile.Request {
 		machineList := &capiv1.MachineList{}
 		if err := r.client.List(watchContext, machineList); err != nil {

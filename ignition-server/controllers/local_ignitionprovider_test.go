@@ -60,14 +60,18 @@ func TestExtractMCOBinaries(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create temporary directory: %v", err)
 			}
-			defer os.RemoveAll(tempDir)
+			defer func(path string) {
+				err = os.RemoveAll(path)
+				g.Expect(err).ToNot(HaveOccurred())
+			}(tempDir)
 
 			// Set up the necessary variables for testing.
 			ctx := context.Background()
 			mcoImage := "fake"
 			pullSecret := []byte{}
 			binDir := filepath.Join(tempDir, "bin")
-			os.Mkdir(binDir, 0755)
+			err = os.Mkdir(binDir, 0755)
+			g.Expect(err).ToNot(HaveOccurred())
 
 			// Create a fake file cache that returns the expected binaries.
 			imageFileCache := &imageFileCache{

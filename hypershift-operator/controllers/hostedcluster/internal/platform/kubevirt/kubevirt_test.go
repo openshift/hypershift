@@ -65,7 +65,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 				f controllerutil.MutateFn,
 			) (controllerutil.OperationResult, error) {
 				fnCallsCount++
-				f()
+				_ = f()
 				return "", tc.expectedErr
 			}
 			result, err := kubevirt.ReconcileCAPIInfraCR(

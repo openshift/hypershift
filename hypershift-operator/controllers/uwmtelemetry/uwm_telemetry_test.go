@@ -211,7 +211,8 @@ prometheus:
 					"config.yaml": test.initial,
 				}
 			}
-			reconcileUWMConfigContent(cm, nil)
+			err := reconcileUWMConfigContent(cm, nil)
+			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(cm.Data["config.yaml"]).To(Equal(test.expected))
 		})
 	}

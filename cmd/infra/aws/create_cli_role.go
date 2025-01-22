@@ -171,7 +171,7 @@ func NewCreateCLIRoleCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.RoleName, "name", opts.RoleName, "Role name")
 	cmd.Flags().StringToStringVarP(&opts.AdditionalTags, "additional-tags", "t", opts.AdditionalTags, "Additional tags to apply to the role created (e.g. 'key1=value1,key2=value2')")
 
-	cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
