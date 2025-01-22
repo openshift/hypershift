@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	hypershiftconfig "github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +50,13 @@ func ReconcileAzureFileCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedContr
 	config := initializeAzureCSIControllerConfig(hcp, tenantID)
 	config.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ClientID
 	config.AADClientCertPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName)
+
+	var getVnetNameAndResourceGroupErr error
+	// aro hcp csi nfs protocol provision volumes needs the vnetName/vnetResourceGroup config
+	config.VnetName, config.VnetResourceGroup, getVnetNameAndResourceGroupErr = hyperazureutil.GetVnetNameAndResourceGroupFromVnetID(hcp.Spec.Platform.Azure.VnetID)
+	if getVnetNameAndResourceGroupErr != nil {
+		return fmt.Errorf("failed to get vnet info: %w", getVnetNameAndResourceGroupErr)
+	}
 
 	serializedConfig, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {

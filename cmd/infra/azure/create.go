@@ -836,6 +836,8 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
 		scopes = append(scopes, nsgRG, vnetRG)
+	case azureFile:
+		scopes = append(scopes, nsgRG, vnetRG)
 	case nodePoolMgmt:
 		scopes = append(scopes, vnetRG)
 	}
