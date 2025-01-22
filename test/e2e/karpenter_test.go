@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -18,6 +19,9 @@ import (
 
 func TestKarpenter(t *testing.T) {
 	e2eutil.AtLeast(t, e2eutil.Version419)
+	if os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
+		t.Skipf("Only tested when CI sets TECH_PREVIEW_NO_UPGRADE=true and the Hypershift Operator is installed with --tech-preview-no-upgrade")
+	}
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
