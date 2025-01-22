@@ -43,7 +43,7 @@ require (
 	github.com/onsi/gomega v1.34.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/openshift/api v0.0.0-20240524162738-d899f8877d22
+	github.com/openshift/api v0.0.0-20241210155609-29859d55727b
 	github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
 	github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
@@ -76,9 +76,9 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.30.3
+	k8s.io/api v0.31.1
 	k8s.io/apiextensions-apiserver v0.30.3
-	k8s.io/apimachinery v0.30.3
+	k8s.io/apimachinery v0.31.1
 	k8s.io/apiserver v0.30.3
 	k8s.io/cli-runtime v0.30.3
 	k8s.io/client-go v0.30.3
@@ -88,7 +88,7 @@ require (
 	k8s.io/kube-scheduler v0.30.2
 	k8s.io/kubectl v0.30.3
 	k8s.io/pod-security-admission v0.30.2
-	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0
+	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
 	kubevirt.io/api v1.2.1
 	kubevirt.io/containerized-data-importer-api v1.59.0
 	sigs.k8s.io/cluster-api v1.8.4
@@ -134,6 +134,7 @@ require (
 	github.com/evanphx/json-patch v5.9.0+incompatible // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20210407135951-1de76d718b3f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
@@ -180,7 +181,7 @@ require (
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/moby/spdystream v0.2.0 // indirect
+	github.com/moby/spdystream v0.4.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -204,6 +205,7 @@ require (
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.etcd.io/bbolt v1.3.9 // indirect
