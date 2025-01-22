@@ -21,15 +21,11 @@ import (
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	karpenterName = "karpenter"
-)
-
 func KarpenterDeployment(namespace string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      karpenterName,
+			Name:      "karpenter",
 		},
 	}
 }
@@ -38,7 +34,7 @@ func KarpenterServiceAccount(controlPlaneNamespace string) *corev1.ServiceAccoun
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      karpenterName,
+			Name:      "karpenter",
 		},
 	}
 }
@@ -47,7 +43,7 @@ func KarpenterRole(controlPlaneNamespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      karpenterName,
+			Name:      "karpenter",
 		},
 	}
 }
@@ -56,14 +52,14 @@ func KarpenterRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      karpenterName,
+			Name:      "karpenter",
 		},
 	}
 }
 
 func karpenterSelector() map[string]string {
 	return map[string]string{
-		"app": karpenterName,
+		"karpenter": "karpenter",
 	}
 }
 
@@ -74,20 +70,6 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 	availabilityProberImage, tokenMinterImage string,
 	setDefaultSecurityContext bool,
 	ownerRef config.OwnerRef) error {
-
-	// Preserve existing resource requirements.
-	karpenterResources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("60Mi"),
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-		},
-	}
-	mainContainer := util.FindContainer(karpenterName, deployment.Spec.Template.Spec.Containers)
-	if mainContainer != nil {
-		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
-			karpenterResources = mainContainer.Resources
-		}
-	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -139,11 +121,10 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 				},
 				Containers: []corev1.Container{
 					{
-						Name:      karpenterName,
-						Resources: karpenterResources,
+						Name: "karpenter",
 						// TODO(alberto): lifecycle this image.
 						Image:           "public.ecr.aws/karpenter/controller:1.0.7",
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "target-kubeconfig",
@@ -206,7 +187,7 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 							},
 							{
 								Name:  "CLUSTER_NAME",
-								Value: hcp.Spec.InfraID,
+								Value: "none",
 							},
 						},
 						// Command: []string{""},
