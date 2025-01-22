@@ -5135,7 +5135,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		// This is related to https://github.com/openshift/csi-operator/pull/290.
 		azureFileCSISecret := manifests.AzureFileConfigWithCredentials(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, azureFileCSISecret, func() error {
-			return storage.ReconcileAzureFileCSISecret(azureFileCSISecret, hcp, tenantID)
+			return storage.ReconcileAzureFileCSISecret(ctx, azureFileCSISecret, hcp, tenantID)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure File CSI config: %w", err)
 		}
@@ -5766,23 +5766,7 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 
 // verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
 func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane, tenantID string) error {
-	// Retrieve the CPO certificate
-	certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CertificateName
-	certsContent, err := os.ReadFile(certPath)
-	if err != nil {
-		return fmt.Errorf("failed to read certificate: %v", err)
-	}
-
-	// Authenticate to Azure with the certificate
-	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
-	if err != nil {
-		return err
-	}
-
-	options := &azidentity.ClientCertificateCredentialOptions{
-		SendCertificateChain: true,
-	}
-	creds, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ClientID, parsedCertificate, key, options)
+	creds, err := hyperazureutil.GetAzureCredsForCPOManagedIdentity(hcp, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
 	}
