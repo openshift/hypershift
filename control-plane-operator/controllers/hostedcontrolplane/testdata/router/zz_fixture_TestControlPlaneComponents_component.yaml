@@ -25,4 +25,4 @@ status:
   - group: policy
     kind: PodDisruptionBudget
     name: router
-  version: "4.18"
+  version: 4.18.0

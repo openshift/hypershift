@@ -34,4 +34,4 @@ status:
   - group: monitoring.coreos.com
     kind: ServiceMonitor
     name: kube-controller-manager
-  version: "4.18"
+  version: 4.18.0

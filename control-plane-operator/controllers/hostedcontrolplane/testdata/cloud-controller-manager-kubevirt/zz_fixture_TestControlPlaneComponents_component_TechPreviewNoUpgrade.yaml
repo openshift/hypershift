@@ -33,4 +33,4 @@ status:
   - group: ""
     kind: ServiceAccount
     name: kubevirt-cloud-controller-manager
-  version: "4.18"
+  version: 4.18.0

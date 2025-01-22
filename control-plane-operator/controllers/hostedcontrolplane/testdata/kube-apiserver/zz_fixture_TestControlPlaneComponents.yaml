@@ -339,7 +339,7 @@ spec:
         - /bin/bash
         env:
         - name: PAYLOAD_VERSION
-          value: "4.18"
+          value: 4.18.0
         - name: FEATURE_GATE_YAML
           value: |
             apiVersion: config.openshift.io/v1
