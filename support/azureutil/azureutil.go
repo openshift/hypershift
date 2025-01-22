@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
@@ -228,4 +229,31 @@ func CreateVolumeForAzureSecretStoreProviderClass(secretStoreVolumeName, secretP
 			},
 		},
 	}
+}
+
+// GetAzureCredsForCPOManagedIdentity reads the client certificate for the CPO, creates Azure credentials from the
+// certificate, and returns the Azure credentials.
+func GetAzureCredsForCPOManagedIdentity(hcp *hyperv1.HostedControlPlane, tenantID string) (*azidentity.ClientCertificateCredential, error) {
+	// Retrieve the CPO certificate
+	certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CertificateName
+	certsContent, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read certificate: %v", err)
+	}
+
+	// Authenticate to Azure with the certificate
+	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	options := &azidentity.ClientCertificateCredentialOptions{
+		SendCertificateChain: true,
+	}
+	creds, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ClientID, parsedCertificate, key, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+	}
+
+	return creds, nil
 }
