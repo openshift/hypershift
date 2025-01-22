@@ -17,6 +17,13 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	OpenStack featuregate.Feature = "OpenStack"
+
+	// DisableClusterCapabilities gates whether Hypershift supports
+	// disabling cluster capabilities at install time.
+	// owner: @fmissi
+	// alpha: v0.1.54
+	// beta: x.y.z
+	DisableClusterCapabilities featuregate.Feature = "DisableClusterCapabilities"
 )
 
 func init() {
@@ -25,8 +32,9 @@ func init() {
 
 var defaultHypershiftFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	// Every feature should be initiated here:
-	AROHCPManagedIdentities: {Default: false, PreRelease: featuregate.Alpha},
-	OpenStack:               {Default: false, PreRelease: featuregate.Alpha},
+	AROHCPManagedIdentities:    {Default: false, PreRelease: featuregate.Alpha},
+	OpenStack:                  {Default: false, PreRelease: featuregate.Alpha},
+	DisableClusterCapabilities: {Default: false, PreRelease: featuregate.Alpha},
 
 	// TODO(alberto): Add the rest of the features here
 	// CPOV2:         {Default: false, PreRelease: featuregate.Alpha},
