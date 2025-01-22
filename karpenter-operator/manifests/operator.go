@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
@@ -116,7 +117,7 @@ func ReconcileKarpenterOperatorDeployment(deployment *appsv1.Deployment,
 								DefaultMode: k8sutilspointer.To(int32(0640)),
 								Items: []corev1.KeyToPath{
 									{
-										Key:  "value",
+										Key:  "kubeconfig",
 										Path: "target-kubeconfig",
 									},
 								},
@@ -407,21 +408,16 @@ func ReconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.Creat
 
 	// The deployment depends on the kubeconfig being reported.
 	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret for CAPI which is used for karpeneter for convenience
-		capiKubeConfigSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: hcp.Namespace,
-				Name:      fmt.Sprintf("%s-kubeconfig", hcp.Spec.InfraID),
-			},
-		}
-		err = c.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
+		// Resolve the kubeconfig secret for HCCO which is used for karpeneter for convenience
+		kubeConfigSecret := manifests.HCCOKubeconfigSecret(hcp.Namespace)
+		err = c.Get(ctx, client.ObjectKeyFromObject(kubeConfigSecret), kubeConfigSecret)
 		if err != nil {
-			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
+			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", kubeConfigSecret.Name, err)
 		}
 
 		deployment := KarpenterOperatorDeployment(hcp.Namespace)
 		_, err = createOrUpdate(ctx, c, deployment, func() error {
-			return ReconcileKarpenterOperatorDeployment(deployment, hcp, serviceAccount, capiKubeConfigSecret, hypershiftOperatorImage, controlPlaneOperatorImage, setDefaultSecurityContext, ownerRef)
+			return ReconcileKarpenterOperatorDeployment(deployment, hcp, serviceAccount, kubeConfigSecret, hypershiftOperatorImage, controlPlaneOperatorImage, setDefaultSecurityContext, ownerRef)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile karpenter deployment: %w", err)

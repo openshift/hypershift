@@ -105,6 +105,10 @@ hypershift-operator:
 karpenter-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/karpenter-operator ./karpenter-operator
 
+.PHONY: karpenter-api
+karpenter-api:
+	./karpenter-operator/controllers/karpenter/assets/adjust-cel.sh
+
 .PHONY: control-plane-operator
 control-plane-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
