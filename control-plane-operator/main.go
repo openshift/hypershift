@@ -69,7 +69,7 @@ func main() {
 	cmd.Version = version.GetRevision()
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
@@ -125,7 +125,7 @@ func defaultCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "control-plane-operator",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}

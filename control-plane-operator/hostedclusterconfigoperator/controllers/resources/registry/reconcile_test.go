@@ -94,7 +94,8 @@ func TestReconcileRegistryConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			config := tc.inputConfig
-			ReconcileRegistryConfig(config, tc.inputPlatform, tc.inputAvailabilityPolicy)
+			err := ReconcileRegistryConfig(config, tc.inputPlatform, tc.inputAvailabilityPolicy)
+			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(config.Spec.Storage).To(BeEquivalentTo(tc.expectedConfig.Spec.Storage))
 			g.Expect(config.Spec.Replicas).To(BeEquivalentTo(tc.expectedConfig.Spec.Replicas))
 			g.Expect(config.Spec.ManagementState).To(BeEquivalentTo(tc.expectedConfig.Spec.ManagementState))

@@ -220,12 +220,12 @@ func NewCreateCommand() *cobra.Command {
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("transit-gateway")
-	cmd.MarkFlagRequired("base-domain")
-	cmd.MarkFlagRequired("resource-group")
-	cmd.MarkFlagRequired("infra-id")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("resource-group")
+	_ = cmd.MarkFlagRequired("infra-id")
 
 	logger := hypershiftLog.Log.WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -278,7 +278,9 @@ func (options *CreateInfraOptions) Output(infra *Infra, logger logr.Logger) {
 		if err != nil {
 			logger.Error(err, "cannot create output file")
 		}
-		defer out.Close()
+		defer func(out *os.File) {
+			_ = out.Close()
+		}(out)
 	}
 	outputBytes, err := json.MarshalIndent(infra, "", "  ")
 	if err != nil {
@@ -409,7 +411,10 @@ func (infra *Infra) setupSecrets(logger logr.Logger, options *CreateInfraOptions
 	}
 
 	if options.RecreateSecrets {
-		deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
+		err = deleteSecrets(options.Name, options.Namespace, powerVsCloudInstanceID, infra.AccountID, infra.ResourceGroupID)
+		if err != nil {
+			return err
+		}
 	}
 
 	logger.Info("Creating Secrets ...")

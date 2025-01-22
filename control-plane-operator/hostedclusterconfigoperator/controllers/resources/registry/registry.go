@@ -10,7 +10,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
-func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.PlatformType, availabilityPolicy hyperv1.AvailabilityPolicy) {
+func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.PlatformType, availabilityPolicy hyperv1.AvailabilityPolicy) error {
 	// Only initialize number of replicas if creating the config
 	if cfg.ResourceVersion == "" {
 		switch availabilityPolicy {
@@ -24,7 +24,11 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.Platf
 		cfg.Spec.ManagementState = operatorv1.Managed
 	}
 	if cfg.Spec.HTTPSecret == "" {
-		cfg.Spec.HTTPSecret = generateImageRegistrySecret()
+		var err error
+		cfg.Spec.HTTPSecret, err = generateImageRegistrySecret()
+		if err != nil {
+			return err
+		}
 	}
 
 	// Initially assign storage as emptyDir for KubevirtPlatform and NonePlatform
@@ -44,10 +48,14 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.Platf
 			cfg.Spec.Storage = imageregistryv1.ImageRegistryConfigStorage{EmptyDir: &imageregistryv1.ImageRegistryConfigStorageEmptyDir{}}
 		}
 	}
+	return nil
 }
 
-func generateImageRegistrySecret() string {
+func generateImageRegistrySecret() (string, error) {
 	num := make([]byte, 64)
-	rand.Read(num)
-	return hex.EncodeToString(num)
+	_, err := rand.Read(num)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(num), nil
 }

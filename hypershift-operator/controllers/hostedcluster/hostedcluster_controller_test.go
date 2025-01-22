@@ -2394,7 +2394,8 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
 			if len(previousClusterID) > 0 {

@@ -522,21 +522,13 @@ func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Pred
 func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
 	hostedClusterName := ""
 	nodePoolName := ""
-	switch obj.(type) {
+	switch obj := obj.(type) {
 	case *hyperv1.HostedCluster:
-		hc, ok := obj.(*hyperv1.HostedCluster)
-		if !ok {
-			return ""
-		}
-		if hc.GetAnnotations() != nil {
-			return hc.GetAnnotations()[HostedClustersScopeAnnotation]
+		if obj.GetAnnotations() != nil {
+			return obj.GetAnnotations()[HostedClustersScopeAnnotation]
 		}
 	case *hyperv1.NodePool:
-		np, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return ""
-		}
-		hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
+		hostedClusterName = fmt.Sprintf("%s/%s", obj.Namespace, obj.Spec.ClusterName)
 	default:
 		if obj.GetAnnotations() != nil {
 			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]

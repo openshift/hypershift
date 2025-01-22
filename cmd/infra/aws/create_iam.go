@@ -90,12 +90,12 @@ func NewCreateIAMCommand() *cobra.Command {
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("public-zone-id")
-	cmd.MarkFlagRequired("private-zone-id")
-	cmd.MarkFlagRequired("local-zone-id")
-	cmd.MarkFlagRequired("oidc-bucket-name")
-	cmd.MarkFlagRequired("oidc-bucket-region")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("public-zone-id")
+	_ = cmd.MarkFlagRequired("private-zone-id")
+	_ = cmd.MarkFlagRequired("local-zone-id")
+	_ = cmd.MarkFlagRequired("oidc-bucket-name")
+	_ = cmd.MarkFlagRequired("oidc-bucket-region")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -135,7 +135,9 @@ func (o *CreateIAMOptions) Output(results *CreateIAMOutput) error {
 		if err != nil {
 			return fmt.Errorf("cannot create output file: %w", err)
 		}
-		defer out.Close()
+		defer func(out *os.File) {
+			_ = out.Close()
+		}(out)
 	}
 	outputBytes, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {

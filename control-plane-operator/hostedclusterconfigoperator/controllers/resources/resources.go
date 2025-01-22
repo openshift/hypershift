@@ -381,7 +381,10 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		} else {
 			log.Info("reconciling registry config")
 			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-				registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
+				err = registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
+				if err != nil {
+					return err
+				}
 				return nil
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))

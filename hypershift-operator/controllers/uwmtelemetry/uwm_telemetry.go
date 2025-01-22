@@ -162,7 +162,10 @@ func reconcileMonitoringConfigContent(cm *corev1.ConfigMap) error {
 			return fmt.Errorf("cannot parse current configuration content: %w", err)
 		}
 	}
-	unstructured.SetNestedField(content, true, "enableUserWorkload")
+	err := unstructured.SetNestedField(content, true, "enableUserWorkload")
+	if err != nil {
+		return err
+	}
 	contentBytes, err := yaml.Marshal(content)
 	if err != nil {
 		return fmt.Errorf("cannot serialize configuration content: %w", err)
@@ -202,7 +205,10 @@ func reconcileUWMConfigContent(cm *corev1.ConfigMap, relabelConfig *monv1.Relabe
 	}
 	if !found {
 		remoteWriteConfigs = []interface{}{}
-		unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+		err = unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+		if err != nil {
+			return err
+		}
 	}
 	foundIndex := -1
 	for i, rwConfig := range remoteWriteConfigs {
@@ -257,7 +263,10 @@ func reconcileUWMConfigContent(cm *corev1.ConfigMap, relabelConfig *monv1.Relabe
 	} else {
 		remoteWriteConfigs = append(remoteWriteConfigs, telemetryRemoteWriteMap)
 	}
-	unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+	err = unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+	if err != nil {
+		return err
+	}
 	contentBytes, err := yaml.Marshal(content)
 	if err != nil {
 		return fmt.Errorf("cannot serialize configuration content: %w", err)

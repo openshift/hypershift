@@ -47,8 +47,8 @@ func NewCommand() *cobra.Command {
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("name")
-	cmd.MarkFlagRequired("output-dir")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("output-dir")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

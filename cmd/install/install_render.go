@@ -225,7 +225,10 @@ func applyPatchesToObjects(objects []crclient.Object, patches []ObjectPatch) ([]
 		patchedObject := &unstructured.Unstructured{Object: content}
 		for _, p := range patches {
 			if p.CanBeAppliedTo(patchedObject) {
-				unstructured.SetNestedField(patchedObject.Object, p.Value, p.Path...)
+				err = unstructured.SetNestedField(patchedObject.Object, p.Value, p.Path...)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 		patchedObjects[i] = patchedObject

@@ -145,8 +145,8 @@ func NewDestroyCommand() *cobra.Command {
 	BindOptions(opts.AWSCredentialsOpts, cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {

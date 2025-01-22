@@ -489,7 +489,7 @@ func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGr
 		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no ID or name")
 	}
 
-	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) < 1 {
+	if len(vnet.Properties.Subnets) < 1 {
 		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no subnets: %+v", vnet)
 	}
 
