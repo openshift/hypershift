@@ -587,7 +587,11 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 			return nil, fmt.Errorf("could not retrieve kube clientset: %w", err)
 		}
 		if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc); err != nil {
-			return nil, err
+			if strings.Contains(err.Error(), "failed to retrieve manifest") {
+				opts.Log.Info("WARNING: Unable to access the payload, skipping the Architectures check.", "error", err.Error())
+			} else {
+				return nil, err
+			}
 		}
 	}
 
