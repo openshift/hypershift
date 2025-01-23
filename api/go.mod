@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift/api
 
-go 1.22.0
+go 1.23.0
 
 require (
 	github.com/openshift/api v0.0.0-20241114175301-1d987ad446cf
