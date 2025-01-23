@@ -49,7 +49,10 @@ func NewKubeVirtAdvancedMultinetTest(ctx context.Context, mgmtClient crclient.Cl
 
 func (k KubeVirtAdvancedMultinetTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.KubevirtPlatform {
-		t.Skip("test only supported on platform KubeVirt")
+		t.Skip("test only supported on KubeVirt platform")
+	}
+	if e2eutil.IsLessThan(e2eutil.Version415) {
+		t.Skip("test only supported from version 4.15")
 	}
 
 	t.Log("Starting test KubeVirtAdvancedMultinetTest")
