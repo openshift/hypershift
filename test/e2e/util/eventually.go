@@ -152,7 +152,7 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 						matches = matches || matcher.Matches(condition)
 					}
 					if matches {
-						t.Logf(condition.String())
+						t.Logf("%s", condition.String())
 					}
 				}
 			}
@@ -332,7 +332,7 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 							matches = matches || matcher.Matches(condition)
 						}
 						if matches {
-							t.Logf(condition.String())
+							t.Logf("%s", condition.String())
 						}
 					}
 				}
