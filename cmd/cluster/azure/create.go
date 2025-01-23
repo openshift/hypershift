@@ -467,8 +467,6 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 	secret.Data = map[string][]byte{
 		"AZURE_SUBSCRIPTION_ID": []byte(o.creds.SubscriptionID),
 		"AZURE_TENANT_ID":       []byte(o.creds.TenantID),
-		"AZURE_CLIENT_ID":       []byte(o.creds.ClientID),
-		"AZURE_CLIENT_SECRET":   []byte(o.creds.ClientSecret),
 	}
 	return []crclient.Object{secret}, nil
 }
