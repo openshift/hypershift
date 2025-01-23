@@ -47,7 +47,6 @@ const (
 	powerVSCloudInstanceRemovedState = "removed"
 	powerVSJobCompletedState         = "completed"
 	powerVSJobFailedState            = "failed"
-	dhcpInstanceShutOffState         = "SHUTOFF"
 
 	// Resource name prefix
 	vpcLbNamePrefix = "kube"
@@ -268,7 +267,12 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, logger log
 	}
 
 	if !skipPowerVs {
-		if err = destroyPowerVsCloudInstance(ctx, logger, options, infra, powerVsCloudInstanceID, session); err != nil {
+		// destroy DHCP server first, to not rely on PowerVs Cloud Instance recursive delete
+		// NOTE: not calling dhcp destroy inside the destroyPowerVsCloudInstance, to avoid Private Network deletion getting stuck on modified
+		if err = destroyPowerVsDhcpServer(ctx, logger, powerVsCloudInstanceID, options, session); err != nil {
+			logger.Error(err, "error destroying DhcpServer")
+		}
+		if err = destroyPowerVsCloudInstance(ctx, logger, options, powerVsCloudInstanceID); err != nil {
 			errL = append(errL, fmt.Errorf("error destroying powervs cloud instance: %w", err))
 			logger.Error(err, "error destroying powervs cloud instance")
 		}
@@ -370,8 +374,70 @@ func deleteSecrets(name, namespace, cloudInstanceID string, accountID string, re
 	return nil
 }
 
+// destroyPowerVsDhcpServer destroying powervs dhcp server
+func destroyPowerVsDhcpServer(ctx context.Context, logger logr.Logger, cloudInstanceID string, options *DestroyInfraOptions, session *ibmpisession.IBMPISession) error {
+	// Attempt dhcp server deletion only when cloud instance is created by hypershift
+	// Do not clean up, if PowerVS instance is user provided
+	if options.CloudInstanceID != "" {
+		return nil
+	}
+
+	client := instance.NewIBMPIDhcpClient(ctx, session, cloudInstanceID)
+
+	dhcpServers, err := client.GetAll()
+	if err != nil {
+		return err
+	}
+
+	if len(dhcpServers) == 0 {
+		logger.Info("No DHCP servers available to delete in PowerVS")
+		return nil
+	}
+
+	dhcpID := *dhcpServers[0].ID
+	logger.Info("Deleting DHCP server", "id", dhcpID)
+	if err = client.Delete(dhcpID); err != nil {
+		return err
+	}
+
+	instanceClient := instance.NewIBMPIInstanceClient(ctx, session, cloudInstanceID)
+
+	// TO-DO: need to replace the logic of waiting for dhcp service deletion by using jobReference.
+	// jobReference is not yet added in SDK
+	f := func() (bool, error) {
+		dhcpInstance, err := instanceClient.Get(dhcpID)
+		if err != nil {
+			if err = isNotRetryableError(err, timeoutErrorKeywords); err == nil {
+				return false, nil
+			}
+
+			errMsg := err.Error()
+
+			switch {
+			case strings.Contains(errMsg, "pvm-instance does not exist"):
+				// Instance does not exist; proceed with destruction
+				err = nil
+				return true, nil
+
+			case strings.Contains(errMsg, "unable to get the server volume attachment list"):
+				// There is flaky internal server error in pvm-instance get call; retry destroy
+				return false, nil
+
+			default:
+				return false, err
+			}
+		}
+
+		logger.Info("Waiting for DhcpServer to destroy", "id", *dhcpInstance.PvmInstanceID, "status", *dhcpInstance.Status)
+		return false, nil
+	}
+
+	return wait.PollImmediate(pollingInterval, dhcpServerDeletionTimeout, f)
+
+}
+
 // destroyPowerVsCloudInstance destroying powervs cloud instance
-func destroyPowerVsCloudInstance(ctx context.Context, logger logr.Logger, options *DestroyInfraOptions, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession) error {
+func destroyPowerVsCloudInstance(ctx context.Context, logger logr.Logger, options *DestroyInfraOptions, cloudInstanceID string) error {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
 		return err
