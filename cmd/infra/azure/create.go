@@ -831,7 +831,7 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 
 	switch component {
 	case cloudProvider:
-		scopes = append(scopes, nsgRG)
+		scopes = append(scopes, nsgRG, vnetRG)
 	case ingress:
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
