@@ -152,6 +152,7 @@ func TestGetManifest(t *testing.T) {
 		})
 	}
 }
+
 func TestGetDigest(t *testing.T) {
 	ctx := context.TODO()
 	pullSecret := []byte("{}")
@@ -166,7 +167,7 @@ func TestGetDigest(t *testing.T) {
 	}{
 		{
 			name:        "if failed to parse image reference",
-			imageRef:    "invalid-image-ref",
+			imageRef:    "::invalid-image-ref",
 			pullSecret:  pullSecret,
 			expectedErr: true,
 		},

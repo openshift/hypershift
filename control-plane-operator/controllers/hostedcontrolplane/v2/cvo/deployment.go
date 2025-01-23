@@ -10,7 +10,6 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -260,31 +259,26 @@ func discoverCVOReleaseImages(cpContext component.WorkloadContext) (string, stri
 	if err := cpContext.Client.Get(cpContext.Context, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return "", "", fmt.Errorf("failed to get pull secret for namespace %s: %w", cpContext.HCP.Namespace, err)
 	}
+	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
 
-	cpRef, err := registryclient.GetCorrectArchImage(cpContext.Context, "cluster-version-operator", cpContext.HCP.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey], cpContext.ImageMetadataProvider)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to parse control plane release image %s: %w", cpRef, err)
+	cpReleaseImage := cpContext.HCP.Spec.ReleaseImage
+	if cpContext.HCP.Spec.ControlPlaneReleaseImage != nil {
+		cpReleaseImage = *cpContext.HCP.Spec.ControlPlaneReleaseImage
 	}
 
-	_, cpReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
+	_, controlPlaneReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpReleaseImage, pullSecretBytes)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get control plane release image digest %s: %w", cpRef, err)
+		return "", "", fmt.Errorf("failed to get control plane release image digest %s: %w", controlPlaneReleaseImageRef, err)
 	}
+	controlPlaneReleaseImage = controlPlaneReleaseImageRef.String()
 
-	controlPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", cpReleaseImageRef.Registry, cpReleaseImageRef.Namespace, cpReleaseImageRef.NameString())
-
-	if cpContext.HCP.Spec.ControlPlaneReleaseImage != nil && *cpContext.HCP.Spec.ControlPlaneReleaseImage != cpContext.HCP.Spec.ReleaseImage {
-		dpRef, err := registryclient.GetCorrectArchImage(cpContext.Context, "cluster-version-operator", cpContext.HCP.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey], cpContext.ImageMetadataProvider)
+	if cpReleaseImage != cpContext.HCP.Spec.ReleaseImage {
+		_, dataPlaneReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpContext.HCP.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 		if err != nil {
-			return "", "", fmt.Errorf("failed to parse data plane release image %s: %w", dpRef, err)
+			return "", "", fmt.Errorf("failed to get data plane release image digest %s: %w", cpContext.HCP.Spec.ReleaseImage, err)
 		}
 
-		_, dpReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, dpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
-		if err != nil {
-			return "", "", fmt.Errorf("failed to get data plane release image digest %s: %w", dpRef, err)
-		}
-
-		dataPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", dpReleaseImageRef.Registry, dpReleaseImageRef.Namespace, dpReleaseImageRef.NameString())
+		dataPlaneReleaseImage = dataPlaneReleaseImageRef.String()
 	} else {
 		dataPlaneReleaseImage = controlPlaneReleaseImage
 	}
