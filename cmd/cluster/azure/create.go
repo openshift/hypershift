@@ -479,12 +479,11 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 	var objects []crclient.Object
 
+	// This secret is primarily generated because we need a way to pass the tenant ID to the HCP
 	secret := credentialSecret(o.namespace, o.name)
 	secret.Data = map[string][]byte{
 		"AZURE_SUBSCRIPTION_ID": []byte(o.creds.SubscriptionID),
 		"AZURE_TENANT_ID":       []byte(o.creds.TenantID),
-		"AZURE_CLIENT_ID":       []byte(o.creds.ClientID),
-		"AZURE_CLIENT_SECRET":   []byte(o.creds.ClientSecret),
 	}
 	objects = append(objects, secret)
 
