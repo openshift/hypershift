@@ -657,11 +657,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	return nil
 }
 
-func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, dep *appsv1.Deployment, c config.DeploymentConfig) error {
-	if c.AdditionalAnnotations[hyperv1.RestartDateAnnotation] == "" {
-		return nil
-	}
-
+func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, dep *appsv1.Deployment, restartAnnotation string) error {
 	if err := crclient.Get(ctx, client.ObjectKeyFromObject(dep), dep); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -674,7 +670,7 @@ func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, d
 	if podMeta.Annotations == nil {
 		podMeta.Annotations = map[string]string{}
 	}
-	podMeta.Annotations[hyperv1.RestartDateAnnotation] = c.AdditionalAnnotations[hyperv1.RestartDateAnnotation]
+	podMeta.Annotations[hyperv1.RestartDateAnnotation] = restartAnnotation
 
 	if err := crclient.Patch(ctx, patch, client.MergeFrom(dep)); err != nil {
 		return fmt.Errorf("failed to set restart annotation: %w", err)
