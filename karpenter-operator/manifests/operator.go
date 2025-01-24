@@ -16,7 +16,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	intstr "k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/ptr"
 
 	client "sigs.k8s.io/controller-runtime/pkg/client"
@@ -64,7 +63,7 @@ func KarpenterOperatorRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBind
 
 func karpenterOperatorSelector() map[string]string {
 	return map[string]string{
-		"karpenter": "karpenter",
+		"app": "karpenter-operator",
 	}
 }
 
@@ -76,6 +75,20 @@ func ReconcileKarpenterOperatorDeployment(deployment *appsv1.Deployment,
 	controlPlaneOperatorImage string,
 	setDefaultSecurityContext bool,
 	ownerRef config.OwnerRef) error {
+
+	// Preserve existing resource requirements.
+	karpenterOperatorResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("60Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	operatorContainer := util.FindContainer(name, deployment.Spec.Template.Spec.Containers)
+	if operatorContainer != nil {
+		if len(operatorContainer.Resources.Requests) > 0 || len(operatorContainer.Resources.Limits) > 0 {
+			karpenterOperatorResources = operatorContainer.Resources
+		}
+	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -116,9 +129,10 @@ func ReconcileKarpenterOperatorDeployment(deployment *appsv1.Deployment,
 	}
 
 	mainContainer := corev1.Container{
+		Resources:       karpenterOperatorResources,
 		Name:            name,
 		Image:           hypershiftOperatorImage,
-		ImagePullPolicy: corev1.PullAlways,
+		ImagePullPolicy: corev1.PullIfNotPresent,
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      "target-kubeconfig",
@@ -142,45 +156,6 @@ func ReconcileKarpenterOperatorDeployment(deployment *appsv1.Deployment,
 			"--target-kubeconfig=/mnt/kubeconfig/target-kubeconfig",
 			"--namespace=$(MY_NAMESPACE)",
 			"--control-plane-operator-image=" + controlPlaneOperatorImage,
-		},
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromString("http"),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 60,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    5,
-			TimeoutSeconds:      5,
-		},
-
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/readyz",
-					Port:   intstr.FromString("http"),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			PeriodSeconds:    10,
-			SuccessThreshold: 1,
-			FailureThreshold: 3,
-			TimeoutSeconds:   5,
-		},
-		Ports: []corev1.ContainerPort{
-			{
-				Name:          "metrics",
-				ContainerPort: 8000,
-			},
-			{
-				Name:          "http",
-				ContainerPort: 8081,
-				Protocol:      corev1.ProtocolTCP,
-			},
 		},
 	}
 
