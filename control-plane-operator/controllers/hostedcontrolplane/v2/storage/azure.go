@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	hyperconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
@@ -36,6 +37,13 @@ func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hy
 		Location:          azureSpec.Location,
 		AADClientID:       managedIdentity.ClientID,
 		AADClientCertPath: path.Join(hyperconfig.ManagedAzureCertificatePath, managedIdentity.CertificateName),
+	}
+
+	var getVnetNameAndResourceGroupErr error
+	// aro hcp csi nfs protocol provision volumes needs the vnetName/vnetResourceGroup config
+	azureConfig.VnetName, azureConfig.VnetResourceGroup, getVnetNameAndResourceGroupErr = hyperazureutil.GetVnetNameAndResourceGroupFromVnetID(azureSpec.VnetID)
+	if getVnetNameAndResourceGroupErr != nil {
+		return fmt.Errorf("failed to get vnet info: %w", getVnetNameAndResourceGroupErr)
 	}
 
 	serializedConfig, err := json.MarshalIndent(azureConfig, "", "  ")
