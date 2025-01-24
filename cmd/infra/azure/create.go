@@ -825,28 +825,36 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
 	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
 
-	contributorRole := "Contributor"
+	role := "Contributor"
 
 	scopes := []string{managedRG}
 
+	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
 	switch component {
 	case cloudProvider:
+		role = "Azure Red Hat OpenShift Cloud Controller Manager Role"
 		scopes = append(scopes, nsgRG, vnetRG)
 	case ingress:
+		role = "Azure Red Hat OpenShift Cluster Ingress Operator Role"
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
 		scopes = append(scopes, nsgRG, vnetRG)
 	case azureFile:
+		role = "Azure Red Hat OpenShift Azure Files Storage Operator Role"
 		scopes = append(scopes, nsgRG, vnetRG)
-	case nodePoolMgmt:
-		scopes = append(scopes, vnetRG)
+	case azureDisk:
+		role = "Azure Red Hat OpenShift Storage Operator Role"
 	case cncc:
+		role = "Azure Red Hat OpenShift Network Operator Role"
+	case ciro:
+		role = "Azure Red Hat OpenShift Image Registry Operator Role"
+	case nodePoolMgmt:
 		scopes = append(scopes, vnetRG)
 	}
 
 	// Assign contributor role to service principal
 	for _, scope := range scopes {
-		if err := assignRole(assigneeID, contributorRole, scope); err != nil {
+		if err := assignRole(assigneeID, role, scope); err != nil {
 			return err
 		}
 	}
