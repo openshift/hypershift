@@ -71,6 +71,7 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
+	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
@@ -246,6 +247,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		storagev2.NewComponent(),
 		kubevirtcsiv2.NewComponent(),
 		cnov2.NewComponent(),
+		ntov2.NewComponent(),
 	)
 }
 
@@ -1274,15 +1276,15 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
 		}
+
+		r.Log.Info("Reconciling Cluster Node Tuning Operator")
+		if err := r.reconcileClusterNodeTuningOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cluster node tuning operator: %w", err)
+		}
 	}
 
 	if err := r.cleanupClusterNetworkOperatorResources(ctx, hostedControlPlane, r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute)); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator operands: %w", err)
-	}
-
-	r.Log.Info("Reconciling Cluster Node Tuning Operator")
-	if err := r.reconcileClusterNodeTuningOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cluster node tuning operator: %w", err)
 	}
 
 	r.Log.Info("Reconciling DNSOperator")
