@@ -8,8 +8,8 @@ further help. Please reach out to #project-hypershift on Red Hat Slack.
 Review each of the scripts beforehand to make sure you are accomplishing any prerequisites required for running the 
 script. If you are starting out with nothing set up, you'll want to go through the scripts in this order:
 
-1. [Set up your developer environment](setup_dev_environment.md)
-2. [Creat an AKS management cluster](setup_aks_cluster.sh)
+1. [Review Steps 1-7 to Set Up Environment Variables and Such](../managed-azure/create_basic_hosted_cluster.sh)
+2. [Create an AKS management cluster](setup_aks_cluster.sh)
 3. [Set up externalDNS](setup_external_dns.sh)
 4. [Install the HyperShift Operator](setup_install_ho_on_aks.sh)
 5. [Create a HostedCluster](create_basic_hosted_cluster.sh)
