@@ -128,6 +128,7 @@ type ConfigurableClusterOptions struct {
 	OpenStackNodeAvailabilityZone         string
 	OpenStackNodeFlavor                   string
 	OpenStackNodeImageName                string
+	OpenStackDNSNameservers               stringSliceVar
 	PowerVSCloudConnection                string
 	PowerVSCloudInstanceID                string
 	PowerVSMemory                         int
@@ -229,6 +230,7 @@ func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 				AvailabityZone: p.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone,
 			},
 		},
+		OpenStackDNSNameservers: p.ConfigurableClusterOptions.OpenStackDNSNameservers,
 	}
 
 	return opts
