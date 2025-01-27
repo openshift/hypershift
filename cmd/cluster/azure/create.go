@@ -406,10 +406,9 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 					EncryptionSetID:        o.DiskEncryptionSetID,
 					DiskStorageAccountType: hyperv1.AzureDiskStorageAccountType(o.DiskStorageAccountType),
 				},
-				AvailabilityZone:  availabilityZone,
-				SubnetID:          o.infra.SubnetID,
-				MachineIdentityID: o.infra.MachineIdentityID,
-				EncryptionAtHost:  o.EncryptionAtHost,
+				AvailabilityZone: availabilityZone,
+				SubnetID:         o.infra.SubnetID,
+				EncryptionAtHost: o.EncryptionAtHost,
 			}
 
 			if o.EnableEphemeralOSDisk {
@@ -441,11 +440,10 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		azureNodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 	}
 	azureNodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:            instanceType,
-		Image:             vmImage,
-		SubnetID:          o.infra.SubnetID,
-		MachineIdentityID: o.infra.MachineIdentityID,
-		EncryptionAtHost:  o.EncryptionAtHost,
+		VMSize:           instanceType,
+		Image:            vmImage,
+		SubnetID:         o.infra.SubnetID,
+		EncryptionAtHost: o.EncryptionAtHost,
 		OSDisk: hyperv1.AzureNodePoolOSDisk{
 			SizeGiB:                o.NodePoolOpts.DiskSize,
 			EncryptionSetID:        o.DiskEncryptionSetID,

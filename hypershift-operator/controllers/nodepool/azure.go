@@ -61,13 +61,6 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 	}
 
-	if nodePool.Spec.Platform.Azure.MachineIdentityID != "" {
-		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
-		azureMachineTemplate.Template.Spec.UserAssignedIdentities = []capiazure.UserAssignedIdentity{{
-			ProviderID: nodePool.Spec.Platform.Azure.MachineIdentityID,
-		}}
-	}
-
 	if nodePool.Spec.Platform.Azure.OSDisk.EncryptionSetID != "" {
 		azureMachineTemplate.Template.Spec.OSDisk.ManagedDisk.DiskEncryptionSet = &capiazure.DiskEncryptionSetParameters{
 			ID: nodePool.Spec.Platform.Azure.OSDisk.EncryptionSetID,

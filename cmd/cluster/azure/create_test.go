@@ -56,7 +56,6 @@ func TestCreateCluster(t *testing.T) {
 		SubnetID:          "fakeSubnetID",
 		BootImageID:       "fakeBootImageID",
 		InfraID:           "fakeInfraID",
-		MachineIdentityID: "fakeMachineIdentityID",
 		SecurityGroupID:   "fakeSecurityGroupID",
 	})
 	if err != nil {
