@@ -3130,25 +3130,6 @@ Diagnostics
 If not specified, then Boot diagnostics will be disabled.</p>
 </td>
 </tr>
-<tr>
-<td>
-<code>machineIdentityID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>machineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. The
-identify is expected to exist under the same resource group as HostedCluster.Spec.Platform.Azure.ResourceGroupName. This
-user assigned identity is expected to have the Contributor role assigned to it and scoped to the resource group
-under HostedCluster.Spec.Platform.Azure.ResourceGroupName.</p>
-<p>If this field is not supplied, the Service Principal credentials will be written to a file on the disk of each VM
-in order to be accessible by the cloud provider; the aforementioned credentials provided are the same ones as
-HostedCluster.Spec.Platform.Azure.Credentials. However, this is less secure than using a managed identity.</p>
-<p>TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
-</td>
-</tr>
 </tbody>
 </table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1beta1.AzurePlatformSpec }
