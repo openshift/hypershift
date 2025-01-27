@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -36,7 +37,8 @@ const (
 
 	konnectivityHTTPSProxyPort = 8090
 
-	certsTrustPath = "/etc/pki/tls/certs"
+	certsTrustPath         = "/etc/pki/tls/certs"
+	managedTrustBundlePath = "managed-trust-bundle.crt"
 )
 
 var (
@@ -165,6 +167,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 		util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
 		util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
 		util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
+		util.BuildVolume(oasVolumeProxyManagedTrustBundle(), buildOASVolumeProxyManagedTrustBundle),
 		util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
 		util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
 			v.Secret = &corev1.SecretVolumeSource{
@@ -368,6 +371,12 @@ func buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage string, prox
 			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",
 		}}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      oasVolumeProxyManagedTrustBundle().Name,
+			MountPath: path.Join(certsTrustPath, managedTrustBundlePath),
+			SubPath:   managedTrustBundlePath,
+		})
+		proxy.SetEnvVars(&c.Env)
 	}
 }
 
@@ -546,6 +555,24 @@ func oasVolumeKonnectivityProxyCA() *corev1.Volume {
 func oasTrustAnchorVolume() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "oas-trust-anchor",
+	}
+}
+
+func oasVolumeProxyManagedTrustBundle() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "managed-trust-bundle",
+	}
+}
+
+func buildOASVolumeProxyManagedTrustBundle(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
+	v.ConfigMap.Name = manifests.TrustedCABundleConfigMap("").Name
+	v.ConfigMap.Items = []corev1.KeyToPath{
+		{
+			Key:  certs.UserCABundleMapKey,
+			Path: managedTrustBundlePath,
+		},
 	}
 }
 
