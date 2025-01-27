@@ -1,6 +1,17 @@
 #!/bin/bash
 set -x
 
+# Prerequisites:
+# 1. This guide assumes you've already created an Azure Key Vault. Here is how to do that:
+#    az keyvault create \
+#    --name ${KV_NAME} \
+#    --resource-group ${AKS_RG} \
+#    --location ${LOCATION} \
+#    --enable-rbac-authorization
+#
+#    For Red Hat developers, it is best to create your KV and the managed identities, listed as AKS_MI and
+#    AKS_KUBELET_MI, in a resource group that is persistent in your tenant/subscription.
+
 # Constants
 PREFIX="<your-prefix-here>"
 AKS_RG=${PREFIX}"-aks-rg"
@@ -13,9 +24,6 @@ AKS_KUBELET_MI="<your-persistent-MI-resource-id-for-aks-kubelet>"
 
 # I got this from searching my login name in Azure and pulling up my user profile
 OBJECT_ID="<your-object-id>"
-
-# Clear out existing Azure RG
-az group delete -n ${AKS_RG} --yes
 
 # Create Azure RG
 az group create \
@@ -38,13 +46,6 @@ az aks create \
 --rotation-poll-interval 1m \
 --assign-identity ${AKS_MI} \
 --assign-kubelet-identity ${AKS_KUBELET_MI}
-
-# Create Management Azure Key Vault
-az keyvault create \
---name ${KV_NAME} \
---resource-group ${AKS_RG} \
---location ${LOCATION} \
---enable-rbac-authorization
 
 # Save the KV MI Info
 AZURE_KEY_VAULT_AUTHORIZED_USER_ID=$(az aks show -n ${AKS_CLUSTER_NAME} -g ${AKS_RG} | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.clientId -r)
