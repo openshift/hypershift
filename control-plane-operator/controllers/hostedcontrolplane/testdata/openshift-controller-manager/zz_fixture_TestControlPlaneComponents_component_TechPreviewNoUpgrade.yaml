@@ -28,4 +28,4 @@ status:
   - group: monitoring.coreos.com
     kind: ServiceMonitor
     name: openshift-controller-manager
-  version: "4.18"
+  version: 4.18.0

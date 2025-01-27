@@ -72,9 +72,9 @@ spec:
         - start
         env:
         - name: OPERATOR_IMAGE_VERSION
-          value: "4.18"
+          value: 4.18.0
         - name: OPERAND_IMAGE_VERSION
-          value: "4.18"
+          value: 4.18.0
         - name: AWS_EBS_DRIVER_OPERATOR_IMAGE
           value: aws-ebs-csi-driver-operator
         - name: AWS_EBS_DRIVER_IMAGE

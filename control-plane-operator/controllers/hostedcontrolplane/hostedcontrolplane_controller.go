@@ -63,6 +63,7 @@ import (
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
 	ccov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator"
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
+	cnov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cno"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
@@ -244,6 +245,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		ccov2.NewComponent(),
 		storagev2.NewComponent(),
 		kubevirtcsiv2.NewComponent(),
+		cnov2.NewComponent(),
 	)
 }
 
@@ -1267,11 +1269,15 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 		}
+
+		r.Log.Info("Reconciling ClusterNetworkOperator")
+		if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
+		}
 	}
 
-	r.Log.Info("Reconciling ClusterNetworkOperator")
-	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute), createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
+	if err := r.cleanupClusterNetworkOperatorResources(ctx, hostedControlPlane, r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute)); err != nil {
+		return fmt.Errorf("failed to reconcile cluster network operator operands: %w", err)
 	}
 
 	r.Log.Info("Reconciling Cluster Node Tuning Operator")
@@ -3708,7 +3714,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, hasRouteCap bool, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
 	// Create SecretProviderClass when deploying on ARO HCP
@@ -3757,16 +3763,23 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 		return fmt.Errorf("failed to reconcile cluster network operator deployment: %w", err)
 	}
 
-	// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
-	multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
-	if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, p.DeploymentConfig); err != nil {
-		return fmt.Errorf("failed to restart multus admission controller: %w", err)
-	}
+	return nil
+}
 
-	// CNO manages overall network-node-identity deployment. CPO manages restarts.
-	networkNodeIdentityDeployment := manifests.NetworkNodeIdentityDeployment(hcp.Namespace)
-	if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, p.DeploymentConfig); err != nil {
-		return fmt.Errorf("failed to restart network node identity: %w", err)
+func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, hasRouteCap bool) error {
+	if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
+		// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
+		// TODO: why is this not doen in CNO?
+		multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
+		if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
+			return fmt.Errorf("failed to restart multus admission controller: %w", err)
+		}
+
+		// CNO manages overall network-node-identity deployment. CPO manages restarts.
+		networkNodeIdentityDeployment := manifests.NetworkNodeIdentityDeployment(hcp.Namespace)
+		if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, restartAnnotation); err != nil {
+			return fmt.Errorf("failed to restart network node identity: %w", err)
+		}
 	}
 
 	// Clean up ovnkube-sbdb Route if exists

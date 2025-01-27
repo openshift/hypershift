@@ -28,4 +28,4 @@ status:
   - group: ""
     kind: ConfigMap
     name: azure-cloud-config
-  version: "4.18"
+  version: 4.18.0

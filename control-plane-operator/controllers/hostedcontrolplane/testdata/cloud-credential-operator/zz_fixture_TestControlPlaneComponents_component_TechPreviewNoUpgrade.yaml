@@ -22,4 +22,4 @@ status:
   - group: ""
     kind: Secret
     name: cloud-credential-operator-kubeconfig
-  version: "4.18"
+  version: 4.18.0

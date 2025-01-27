@@ -28,4 +28,4 @@ status:
   - group: ""
     kind: ServiceAccount
     name: cluster-autoscaler
-  version: "4.18"
+  version: 4.18.0
