@@ -12,6 +12,8 @@ to set up the AKS cluster, to set up external DNS, install the HyperShift Operat
 - oc (OpenShift CLI)
 - kubectl
 - ccoctl tool
+  - The ccoctl tool provides various commands to assist with the creating and maintenance of cloud credentials from outside
+    a cluster. More information on the tool can be found [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md).
 
 ## Variables
 Set the following variables according to your environment.
@@ -307,12 +309,23 @@ Save the public and private key path off as you will need it in the next steps. 
 `SA_TOKEN_ISSUER_PUBLIC_KEY_PATH` and `SA_TOKEN_ISSUER_PRIVATE_KEY_PATH` in the rest of this guide.
 
 ### 16. Create the OIDC Issuer URL and ServiceAccount Keys
+Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-openid-connect-issuer)
+to run this command.
+
+The NAME provided in the ccoctl tool below can only be alphanumerical characters and must be between 3 and 24 characters 
+in length.
+
+If you are using `os4-common` for the PERSISTENT_RG_NAME, this is in the `centralus` region.
+
 ```shell
+NAME="wiOIDC"
+PERSISTENT_RG_LOCATION="centralus"
+
 ./ccoctl azure create-oidc-issuer \
 --oidc-resource-group-name $PERSISTENT_RG_NAME \
 --tenant-id $TENANT_ID \
---region ${LOCATION} \
---name workload-identity-oidc \
+--region ${PERSISTENT_RG_LOCATION} \
+--name $NAME \
 --subscription-id $SUBSCRIPTION_ID \
 --public-key-file $SA_TOKEN_ISSUER_PUBLIC_KEY_PATH
 ```
@@ -380,8 +393,8 @@ hypershift create cluster azure \
 
 ### 19. Deleting the Azure Hosted Cluster
 You can delete the cluster by using the following command:
-```
+```shell
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
 --name $CLUSTER_NAME \
---azure-creds $AZURE_CREDS 
+--azure-creds $ASP_AKS_CREDS
 ```
