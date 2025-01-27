@@ -147,10 +147,8 @@ const (
 	awsEndpointDeletionGracePeriod = 10 * time.Minute
 )
 
-var (
-	// NoopReconcile is just a default mutation function that does nothing.
-	NoopReconcile controllerutil.MutateFn = func() error { return nil }
-)
+// NoopReconcile is just a default mutation function that does nothing.
+var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
@@ -284,7 +282,6 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 // check status of the ignition service
 func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 	return svc != nil && len(svc.Spec.Ports) > 0 && svc.Spec.Ports[0].NodePort > 0
-
 }
 
 // pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
@@ -314,7 +311,6 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling")
 
@@ -2118,7 +2114,8 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 // reconcileCAPIProvider orchestrates reconciliation of the CAPI provider
 // components for a given platform.
 func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
-	capiProviderDeploymentSpec *appsv1.DeploymentSpec, p platform.Platform) error {
+	capiProviderDeploymentSpec *appsv1.DeploymentSpec, p platform.Platform,
+) error {
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
@@ -2403,7 +2400,6 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 		util.DeleteWithClusterLabelName: "true",
 		util.AutoInfraLabelName:         hcluster.Spec.InfraID,
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to retrieve cli created secrets: %v", err)
 	}
@@ -2441,8 +2437,8 @@ func reconcileControlPlaneOperatorDeployment(
 	cpoHasUtilities bool,
 	metricsSet metrics.MetricsSet,
 	certRotationScale time.Duration,
-	enableCVOManagementClusterMetricsAccess bool) error {
-
+	enableCVOManagementClusterMetricsAccess bool,
+) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -3200,7 +3196,7 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 }
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
-	defaultMode := int32(0640)
+	defaultMode := int32(0o640)
 	selectorLabels := map[string]string{
 		"name":                             "cluster-api",
 		"app":                              "cluster-api",
@@ -3262,7 +3258,8 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 								},
 							},
 						},
-						Args: []string{"--namespace", "$(MY_NAMESPACE)",
+						Args: []string{
+							"--namespace", "$(MY_NAMESPACE)",
 							"--v=4",
 							"--leader-elect=true",
 							fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
@@ -4300,7 +4297,6 @@ func (r *HostedClusterReconciler) validateKubevirtConfig(ctx context.Context, hc
 			// and we need to maintain the ability to use unsupported versions
 			return nil
 		}
-
 	}
 
 	var creds *hyperv1.KubevirtPlatformCredentials
@@ -4511,7 +4507,6 @@ func validateNetworkStackAddresses(hc *hyperv1.HostedCluster) field.ErrorList {
 	}
 
 	return errs
-
 }
 
 // checkAdvertiseAddressOverlapping validates that the AdvertiseAddress defined does not overlap with
@@ -4789,8 +4784,8 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
-	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
-
+	infraCR client.Object, namespace, clusterName, hcpNamespace string,
+) error {
 	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", clusterName, err)
@@ -4917,7 +4912,6 @@ func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Rele
 
 	// Upgradeable is false and no exception criteria were met, cluster is not upgradable
 	return true, "", fmt.Errorf("cluster version is not upgradeable")
-
 }
 
 func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (string, error) {
@@ -4966,6 +4960,7 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 	}
 	return nil
 }
+
 func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster, targetNamespace string, createOrUpdate upsert.CreateOrUpdateFN) error {
 	privateBytes, publicBytes, err := r.serviceAccountSigningKeyBytes(ctx, hc)
 	if err != nil {
@@ -5134,7 +5129,6 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 			ownerRef.ApplyTo(etcdEncSec)
 			return nil
 		})
-
 		if err != nil {
 			return fmt.Errorf("failed to create ETCD SecretEncryption key for KubeVirt platform HostedCluster: %w", err)
 		}
