@@ -194,7 +194,6 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 					Args: []string{
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
-						"--metrics-bind-addr=127.0.0.1:8080",
 						"--v=2",
 					},
 					Resources: corev1.ResourceRequirements{
