@@ -101,7 +101,7 @@ export AKS_KUBELET_MI_ID=$(az identity show --name $AKS_KUBELET_MI_NAME --resour
 ### 4. Create Key Vault for Certificate Storage
 
 ```sh
-export USER_ACCOUNT_ID=$(az ad signed-in-user show | jq .id)
+export USER_ACCOUNT_ID=$(az ad signed-in-user show | jq -r .id)
 az keyvault create --name $KV_NAME --resource-group $PERSISTENT_RG_NAME --location $LOCATION --enable-rbac-authorization
 az role assignment create --assignee ${USER_ACCOUNT_ID} --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PERSISTENT_RG_NAME}/providers/Microsoft.KeyVault/vaults/${KV_NAME} --role "Key Vault Administrator"
 ```
