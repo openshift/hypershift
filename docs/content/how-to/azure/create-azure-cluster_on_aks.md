@@ -304,9 +304,10 @@ to run this command. It should look something like this:
 ```
 
 Save the public and private key path off as you will need it in the next steps. We will refer to them as
-SA_TOKEN_ISSUER_PUBLIC_KEY_PATH and SA_TOKEN_ISSUER_PRIVATE_KEY_PATH in the rest of this guide.
+`SA_TOKEN_ISSUER_PUBLIC_KEY_PATH` and `SA_TOKEN_ISSUER_PRIVATE_KEY_PATH` in the rest of this guide.
 
 ### 16. Create the OIDC Issuer URL and ServiceAccount Keys
+```shell
 ./ccoctl azure create-oidc-issuer \
 --oidc-resource-group-name $PERSISTENT_RG_NAME \
 --tenant-id $TENANT_ID \
@@ -314,8 +315,9 @@ SA_TOKEN_ISSUER_PUBLIC_KEY_PATH and SA_TOKEN_ISSUER_PRIVATE_KEY_PATH in the rest
 --name workload-identity-oidc \
 --subscription-id $SUBSCRIPTION_ID \
 --public-key-file $SA_TOKEN_ISSUER_PUBLIC_KEY_PATH
+```
 
-Save your Issuer URL off as you will need it in the next step, let's call it OIDC_ISSUER_URL.
+Save your Issuer URL off as you will need it in the next step, let's call it `OIDC_ISSUER_URL`.
 
 ### 17. Create Federated Identities for Workload Identities
 
@@ -376,7 +378,7 @@ hypershift create cluster azure \
 --data-plane-identities-file $DP_OUTPUT_FILE
 ```
 
-## 19. Deleting the Azure Hosted Cluster
+### 19. Deleting the Azure Hosted Cluster
 You can delete the cluster by using the following command:
 ```
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
