@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -22,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -36,7 +36,8 @@ const (
 
 	konnectivityHTTPSProxyPort = 8090
 
-	certsTrustPath = "/etc/pki/tls/certs"
+	certsTrustPath         = "/etc/pki/tls/certs"
+	managedTrustBundlePath = "managed-trust-bundle.crt"
 )
 
 var (
@@ -147,34 +148,33 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 	deployment.Spec.Template.Annotations[configHashAnnotation] = configHash
 	deployment.Spec.Template.Annotations[auditConfigHashAnnotation] = auditConfigHash
 
-	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.Bool(false),
-		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
-		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
-			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage, proxyConfig, noProxy)),
-		},
-		Volumes: []corev1.Volume{
-			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
-			util.BuildVolume(oasVolumeConfig(), buildOASVolumeConfig),
-			util.BuildVolume(oasVolumeAuditConfig(), buildOASVolumeAuditConfig),
-			util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
-			util.BuildVolume(oasVolumeEtcdClientCA(), buildOASVolumeEtcdClientCA),
-			util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
-			util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
-			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
-			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
-			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
-			util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
-			util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
-			util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
-				v.Secret = &corev1.SecretVolumeSource{
-					DefaultMode: pointer.Int32(0640),
-					SecretName:  common.PullSecret(deployment.Namespace).Name,
-					Items:       []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
-				}
-			}),
-		},
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
+	deployment.Spec.Template.Spec.InitContainers = []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))}
+	deployment.Spec.Template.Spec.Containers = []corev1.Container{
+		util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
+		util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage, proxyConfig, noProxy)),
+	}
+	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
+		util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
+		util.BuildVolume(oasVolumeConfig(), buildOASVolumeConfig),
+		util.BuildVolume(oasVolumeAuditConfig(), buildOASVolumeAuditConfig),
+		util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
+		util.BuildVolume(oasVolumeEtcdClientCA(), buildOASVolumeEtcdClientCA),
+		util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
+		util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
+		util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
+		util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
+		util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
+		util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
+		util.BuildVolume(oasVolumeProxyManagedTrustBundle(), buildOASVolumeProxyManagedTrustBundle),
+		util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
+		util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
+			v.Secret = &corev1.SecretVolumeSource{
+				DefaultMode: ptr.To[int32](0640),
+				SecretName:  common.PullSecret(deployment.Namespace).Name,
+				Items:       []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
+			}
+		}),
 	}
 
 	if auditConfig.Data[auditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
@@ -370,6 +370,12 @@ func buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage string, prox
 			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",
 		}}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      oasVolumeProxyManagedTrustBundle().Name,
+			MountPath: path.Join(certsTrustPath, managedTrustBundlePath),
+			SubPath:   managedTrustBundlePath,
+		})
+		proxy.SetEnvVars(&c.Env)
 	}
 }
 
@@ -548,6 +554,24 @@ func oasVolumeKonnectivityProxyCA() *corev1.Volume {
 func oasTrustAnchorVolume() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "oas-trust-anchor",
+	}
+}
+
+func oasVolumeProxyManagedTrustBundle() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "managed-trust-bundle",
+	}
+}
+
+func buildOASVolumeProxyManagedTrustBundle(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
+	v.ConfigMap.Name = manifests.TrustedCABundleConfigMap("").Name
+	v.ConfigMap.Items = []corev1.KeyToPath{
+		{
+			Key:  certs.UserCABundleMapKey,
+			Path: managedTrustBundlePath,
+		},
 	}
 }
 
