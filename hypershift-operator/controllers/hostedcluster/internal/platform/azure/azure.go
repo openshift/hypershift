@@ -60,7 +60,7 @@ func (a Azure) ReconcileCAPIInfraCR(
 	}
 
 	if _, err := createOrUpdate(ctx, c, azureClusterIdentity, func() error {
-		return reconcileAzureClusterIdentity(ctx, c, hcluster, azureClusterIdentity, controlPlaneNamespace)
+		return reconcileAzureClusterIdentity(hcluster, azureClusterIdentity, controlPlaneNamespace)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile Azure cluster identity: %w", err)
 	}
@@ -217,8 +217,8 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		"azure_region":          []byte(hcluster.Spec.Platform.Azure.Location),
 		"azure_resource_prefix": []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
 		"azure_resourcegroup":   []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),
-		"azure_subscription_id": azureCredsInfo.Data["AZURE_SUBSCRIPTION_ID"],
-		"azure_tenant_id":       azureCredsInfo.Data["AZURE_TENANT_ID"],
+		"azure_subscription_id": []byte(hcluster.Spec.Platform.Azure.SubscriptionID),
+		"azure_tenant_id":       []byte(hcluster.Spec.Platform.Azure.TenantID),
 	}
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
 		cloudNetworkConfigCreds.Data = secretData
@@ -275,15 +275,10 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	return nil
 }
 
-func reconcileAzureClusterIdentity(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
-	credentialsSecret := manifests.AzureCredentialInformation(controlPlaneNamespace)
-	if err := c.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-	}
-
+func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
 	azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
 		ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
-		TenantID: string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+		TenantID: hc.Spec.Platform.Azure.TenantID,
 		CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
 		Type:     capiazure.ServicePrincipalCertificate,
 		AllowedNamespaces: &capiazure.AllowedNamespaces{
