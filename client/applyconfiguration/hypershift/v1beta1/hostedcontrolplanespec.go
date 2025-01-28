@@ -57,6 +57,7 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
 	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
 	Labels                           map[string]string                                    `json:"labels,omitempty"`
+	Capabilities                     *CapabilitiesApplyConfiguration                      `json:"capabilities,omitempty"`
 }
 
 // HostedControlPlaneSpecApplyConfiguration constructs an declarative configuration of the HostedControlPlaneSpec type for use with
@@ -334,5 +335,13 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithLabels(entries map[string
 	for k, v := range entries {
 		b.Labels[k] = v
 	}
+	return b
+}
+
+// WithCapabilities sets the Capabilities field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Capabilities field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithCapabilities(value *CapabilitiesApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
+	b.Capabilities = value
 	return b
 }

@@ -197,6 +197,34 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              capabilities:
+                description: |-
+                  capabilities allows for disabling optional components at cluster install time.
+                  This field is optional and once set cannot be changed.
+                properties:
+                  disabledCapabilities:
+                    description: |-
+                      disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
+                      and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
+                      This effectively disables that capability on the hosted cluster.
+
+                      When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+                      OpenShift version.
+
+                      Once set, this field cannot be changed.
+                    items:
+                      enum:
+                      - ImageRegistry
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: disabledCapabilities is immutable
+                      rule: self == oldSelf
+                type: object
+                x-kubernetes-validations:
+                - message: disabledCapabilities is required once set
+                  rule: '!has(oldSelf.disabledCapabilities) || has(self.disabledCapabilities)'
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
