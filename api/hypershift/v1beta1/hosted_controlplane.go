@@ -200,6 +200,12 @@ type HostedControlPlaneSpec struct {
 	// +kubebuilder:validation:MaxProperties=20
 	// +optional
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// capabilities allows for disabling optional components at cluster install time.
+	// This field is optional and once set cannot be changed.
+	// +optional
+	// +openshift:enable:FeatureGate=DisableClusterCapabilities
+	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
 
 // availabilityPolicy specifies a high level availability policy for components.
