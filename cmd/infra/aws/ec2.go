@@ -448,7 +448,7 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(l logr.Logger, client ec2if
 	}
 
 	// Everything below this is only needed if direct internet access is used
-	if o.EnableProxy {
+	if o.EnableProxy || o.EnableSecureProxy {
 		return aws.StringValue(routeTable.RouteTableId), nil
 	}
 
