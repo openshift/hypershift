@@ -78,6 +78,7 @@ spec:
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
       subscriptionID: fakeSubscriptionID
+      tenantID: fakeTenantID
       vnetID: fakeVNetID
     type: Azure
   pullSecret:
