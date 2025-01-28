@@ -184,32 +184,6 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 }
 
 func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	var source corev1.Secret
-
-	// Sync user cloud-credentials secret
-	name := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Azure.Credentials.Name}
-	if err := c.Get(ctx, name, &source); err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", name, err)
-	}
-
-	// Reconcile the user cloud-credentials secret contents into the control plane version of the same secret,
-	// azure-credential-information. This secret is primarily used in retrieving the tenant ID, which is needed anytime
-	// an HCP component needs to authenticate with Azure Cloud. The operators needing this information are ingress
-	// cluster network config controller, azure disk/file CSI drivers, CAPZ, cloud provider, control plane operator, and
-	// KMS.
-	azureCredsInfo := manifests.AzureCredentialInformation(controlPlaneNamespace)
-	if _, err := createOrUpdate(ctx, c, azureCredsInfo, func() error {
-		if azureCredsInfo.Data == nil {
-			azureCredsInfo.Data = map[string][]byte{}
-		}
-		for k, v := range source.Data {
-			azureCredsInfo.Data[k] = v
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
 	// Sync CNCC secret
 	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
 	secretData := map[string][]byte{
