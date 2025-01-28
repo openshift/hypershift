@@ -735,17 +735,6 @@ spec:
                             and forbidden otherwise
                           rule: 'has(self.type) && self.type == ''AzureMarketplace''
                             ?  has(self.azureMarketplace) : !has(self.azureMarketplace)'
-                      machineIdentityID:
-                        description: |
-                          machineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. The
-                          identify is expected to exist under the same resource group as HostedCluster.Spec.Platform.Azure.ResourceGroupName. This
-                          user assigned identity is expected to have the Contributor role assigned to it and scoped to the resource group
-                          under HostedCluster.Spec.Platform.Azure.ResourceGroupName.
-
-                          If this field is not supplied, the Service Principal credentials will be written to a file on the disk of each VM
-                          in order to be accessible by the cloud provider; the aforementioned credentials provided are the same ones as
-                          HostedCluster.Spec.Platform.Azure.Credentials. However, this is less secure than using a managed identity.
-                        type: string
                       osDisk:
                         description: |-
                           osDisk provides configuration for the OS disk for the nodepool.

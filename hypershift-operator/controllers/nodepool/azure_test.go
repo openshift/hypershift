@@ -63,7 +63,6 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							Marketplace:    nil,
 							ComputeGallery: nil,
 						},
-						Identity:                   "",
 						UserAssignedIdentities:     nil,
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
@@ -121,7 +120,6 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								SizeGiB:                30,
 								DiskStorageAccountType: "Standard_LRS",
 							},
-							MachineIdentityID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
 						},
 					},
 				},
@@ -139,12 +137,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							Marketplace:    nil,
 							ComputeGallery: nil,
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{
@@ -206,7 +199,6 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								SizeGiB:                30,
 								DiskStorageAccountType: "Standard_LRS",
 							},
-							MachineIdentityID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
 						},
 					},
 				},
@@ -229,12 +221,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								ThirdPartyImage: false,
 							},
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{
@@ -302,7 +289,6 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "Managed",
 							},
-							MachineIdentityID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
 						},
 					},
 				},
@@ -325,12 +311,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								ThirdPartyImage: false,
 							},
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{
@@ -404,7 +385,6 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 									StorageAccountURI: "www.test.com",
 								},
 							},
-							MachineIdentityID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
 						},
 					},
 				},
@@ -427,12 +407,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								ThirdPartyImage: false,
 							},
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{

@@ -160,7 +160,6 @@ spec:
       image:
         imageID: fakeBootImageID
         type: ImageID
-      machineIdentityID: fakeMachineIdentityID
       osDisk:
         diskStorageAccountType: Standard_LRS
         persistence: Ephemeral

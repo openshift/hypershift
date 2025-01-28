@@ -160,7 +160,6 @@ spec:
       image:
         imageID: fakeBootImageID
         type: ImageID
-      machineIdentityID: fakeMachineIdentityID
       osDisk:
         diskStorageAccountType: Premium_LRS
         sizeGiB: 120

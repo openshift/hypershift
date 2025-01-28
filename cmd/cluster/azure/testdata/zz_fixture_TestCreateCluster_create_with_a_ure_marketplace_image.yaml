@@ -131,7 +131,6 @@ spec:
           sku: aro_414
           version: 414.92.2024021
         type: AzureMarketplace
-      machineIdentityID: fakeMachineIdentityID
       osDisk:
         diskStorageAccountType: Standard_LRS
         persistence: Ephemeral

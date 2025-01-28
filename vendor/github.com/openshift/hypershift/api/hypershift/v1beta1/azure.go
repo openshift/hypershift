@@ -97,20 +97,6 @@ type AzureNodePoolPlatform struct {
 	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
-
-	// machineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. The
-	// identify is expected to exist under the same resource group as HostedCluster.Spec.Platform.Azure.ResourceGroupName. This
-	// user assigned identity is expected to have the Contributor role assigned to it and scoped to the resource group
-	// under HostedCluster.Spec.Platform.Azure.ResourceGroupName.
-	//
-	// If this field is not supplied, the Service Principal credentials will be written to a file on the disk of each VM
-	// in order to be accessible by the cloud provider; the aforementioned credentials provided are the same ones as
-	// HostedCluster.Spec.Platform.Azure.Credentials. However, this is less secure than using a managed identity.
-	//
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
-	//
-	// +optional
-	MachineIdentityID string `json:"machineIdentityID,omitempty"`
 }
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
