@@ -6,7 +6,6 @@ import (
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
@@ -15,23 +14,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 )
 
 func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hyperv1.ManagedIdentity, secret *corev1.Secret) error {
-	// Get the credentials secret so we can retrieve the tenant ID for the configuration
-	credentialsSecret := manifests.AzureCredentialInformation(cpContext.HCP.Namespace)
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-	}
-
-	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
 	azureSpec := cpContext.HCP.Spec.Platform.Azure
 
 	azureConfig := azure.AzureConfig{
 		Cloud:             azureSpec.Cloud,
-		TenantID:          tenantID,
+		TenantID:          azureSpec.TenantID,
 		SubscriptionID:    azureSpec.SubscriptionID,
 		ResourceGroup:     azureSpec.ResourceGroupName,
 		Location:          azureSpec.Location,

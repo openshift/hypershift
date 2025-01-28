@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
@@ -12,7 +11,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 )
 
@@ -61,11 +59,6 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 	hcp := cpContext.HCP
 	azureplatform := hcp.Spec.Platform.Azure
 
-	credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		return AzureConfig{}, fmt.Errorf("failed to get Azure credentials secret: %w", err)
-	}
-
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(azureplatform.SubnetID)
 	if err != nil {
 		return AzureConfig{}, fmt.Errorf("failed to determine subnet name from SubnetID: %w", err)
@@ -83,7 +76,7 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 
 	azureConfig := AzureConfig{
 		Cloud:                        azureplatform.Cloud,
-		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+		TenantID:                     azureplatform.TenantID,
 		UseManagedIdentityExtension:  true,
 		SubscriptionID:               azureplatform.SubscriptionID,
 		ResourceGroup:                azureplatform.ResourceGroupName,
