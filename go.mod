@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift
 
-go 1.18
+go 1.20
 
 require (
 	github.com/Azure/azure-sdk-for-go v63.4.0+incompatible
