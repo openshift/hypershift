@@ -3338,11 +3338,19 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, deployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	observedConfig *globalconfig.ObservedConfig,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
+	createOrUpdate upsert.CreateOrUpdateFN,
+	deployment *appsv1.Deployment,
+) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oapicfg, func() error {
-		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project)
+		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL,
+			p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver config: %w", err)
 	}
@@ -3526,11 +3534,20 @@ func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(c
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	observedConfig *globalconfig.ObservedConfig,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) error {
 	p := ocm.NewOpenShiftControllerManagerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, config, func() error {
-		return ocm.ReconcileOpenShiftControllerManagerConfig(config, p.OwnerRef, p.DeployerImage, p.DockerBuilderImage, p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Build, p.Network)
+		return ocm.ReconcileOpenShiftControllerManagerConfig(config,
+			p.OwnerRef, p.DeployerImage, p.DockerBuilderImage,
+			p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Build,
+			p.Network)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
 	}
@@ -3687,7 +3704,21 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess, p.FeatureSet)
+		return cvo.ReconcileDeployment(
+			deployment,
+			p.OwnerRef,
+			p.DeploymentConfig,
+			controlPlaneReleaseImage,
+			dataPlaneReleaseImage,
+			p.CLIImage,
+			p.AvailabilityProberImage,
+			p.ClusterID,
+			hcp.Spec.UpdateService,
+			p.PlatformType,
+			util.HCPOAuthEnabled(hcp),
+			r.EnableCVOManagementClusterMetricsAccess,
+			p.FeatureSet,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}

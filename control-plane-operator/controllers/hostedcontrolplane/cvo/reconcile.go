@@ -118,7 +118,21 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet) error {
+func ReconcileDeployment(
+	deployment *appsv1.Deployment,
+	ownerRef config.OwnerRef,
+	deploymentConfig config.DeploymentConfig,
+	controlPlaneReleaseImage,
+	dataPlaneReleaseImage,
+	cliImage,
+	availabilityProberImage,
+	clusterID string,
+	updateService configv1.URL,
+	platformType hyperv1.PlatformType,
+	oauthEnabled,
+	enableCVOManagementClusterMetricsAccess bool,
+	featureSet configv1.FeatureSet,
+) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -340,7 +354,7 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 
 func cvoBootrapScript(clusterID string) string {
 	payloadDir := volumeMounts.Path(cvoContainerBootstrap().Name, cvoVolumePayload().Name)
-	var scriptTemplate = `#!/bin/bash
+	scriptTemplate := `#!/bin/bash
 set -euo pipefail
 cat > /tmp/clusterversion.yaml <<EOF
 apiVersion: config.openshift.io/v1
@@ -447,7 +461,7 @@ func buildCVOVolumeUpdatePayloads(v *corev1.Volume) {
 func buildCVOVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = ptr.To[int32](0640)
+	v.Secret.DefaultMode = ptr.To[int32](0o640)
 }
 
 func buildCVOVolumePayload(v *corev1.Volume) {
@@ -464,7 +478,7 @@ func buildCVOVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = ptr.To[int32](0640)
+	v.Secret.DefaultMode = ptr.To[int32](0o640)
 	v.Secret.SecretName = manifests.ClusterVersionOperatorServerCertSecret("").Name
 }
 
