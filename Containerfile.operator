@@ -4,29 +4,25 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make build
+RUN make hypershift \
+  && make hypershift-operator \
+  && make product-cli \
+  && make karpenter-operator
 
 FROM registry.redhat.io/rhel9-4-els/rhel:9.4
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
-                    /hypershift/bin/control-plane-operator \
-                    /hypershift/bin/control-plane-pki-operator \
+                    /hypershift/bin/karpenter-operator \
      /usr/bin/
-
-RUN cd /usr/bin && \
-  ln -s control-plane-operator ignition-server && \
-  ln -s control-plane-operator konnectivity-socks5-proxy && \
-  ln -s control-plane-operator availability-prober && \
-  ln -s control-plane-operator token-minter
 
 ENTRYPOINT ["/usr/bin/hypershift"]
 
 LABEL name="multicluster-engine/hypershift-operator"
 LABEL description="HyperShift Operator is an operator to manage the lifecycle of Hosted Clusters"
 LABEL summary="HyperShift Operator"
-LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-rhel8-operator/"
-LABEL version=4.16
+LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-rhel9-operator/"
+LABEL version=4.19
 LABEL com.redhat.component="multicluster-engine-hypershift-operator"
 LABEL io.k8s.description="HyperShift Operator"
 LABEL io.k8s.display-name="hypershift-operator"

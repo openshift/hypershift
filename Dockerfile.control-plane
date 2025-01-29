@@ -4,7 +4,8 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make control-plane-operator control-plane-pki-operator
+RUN make control-plane-operator \
+  && make control-plane-pki-operator
 
 FROM registry.ci.openshift.org/ocp/4.19:base-rhel9
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
