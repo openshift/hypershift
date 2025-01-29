@@ -23,7 +23,15 @@ const (
 	ConfigKey = "config.yaml"
 )
 
-func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
+func ReconcileOpenShiftControllerManagerConfig(
+	cm *corev1.ConfigMap,
+	ownerRef config.OwnerRef,
+	deployerImage, dockerBuilderImage, minTLSVersion string,
+	cipherSuites []string,
+	imageConfig *configv1.ImageSpec,
+	buildConfig *configv1.Build,
+	networkConfig *configv1.NetworkSpec,
+) error {
 	ownerRef.ApplyTo(cm)
 
 	if cm.Data == nil {
@@ -36,7 +44,8 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 			return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
 		}
 	}
-	if err := reconcileConfig(config, deployerImage, dockerBuilderImage, minTLSVersion, cipherSuites, imageConfig, buildConfig, networkConfig); err != nil {
+	if err := reconcileConfig(config, deployerImage, dockerBuilderImage, minTLSVersion,
+		cipherSuites, imageConfig, buildConfig, networkConfig); err != nil {
 		return err
 	}
 	configStr, err := util.SerializeResource(config, api.Scheme)
@@ -47,7 +56,14 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
+func reconcileConfig(
+	cfg *openshiftcpv1.OpenShiftControllerManagerConfig,
+	deployerImage, dockerBuilderImage, minTLSVersion string,
+	cipherSuites []string,
+	imageConfig *configv1.ImageSpec,
+	buildConfig *configv1.Build,
+	networkConfig *configv1.NetworkSpec,
+) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(ocmContainerMain().Name, volume)
 		return path.Join(dir, file)
