@@ -75,14 +75,14 @@ func TestKarpenter(t *testing.T) {
 
 		// Wait for Karpenter Nodes to go away.
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
-		t.Logf("Waiting for Karpenter Nodes to dissapear")
+		t.Logf("Waiting for Karpenter Nodes to disappear")
 
 		// TODO(alberto): increase coverage:
 		// - Karpenter operator plumbing, e.g:
 		// -- validate the CRDs are installed
 		// -- validate the default class is created and has expected values
 		// -- validate admin can't modify fields owned by the service, e.g. ami.
-		// - Karpenter functionallity:
+		// - Karpenter functionality:
 		// -- Drift and Upgrades
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }

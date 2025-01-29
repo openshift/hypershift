@@ -101,7 +101,7 @@ spec:
 				Subnet: hyperv1.AWSResourceReference{
 					// TODO(alberto): this is just to pass cel.
 					// Setting an ID instead of filter would break publicAndPrivate topology because the AWSEndpointService won't find the subnet.
-					// We'll move to generate the userdata for karpenter programatically.
+					// We'll move to generate the userdata for karpenter programmatically.
 					Filters: []hyperv1.Filter{
 						{
 							Name:   "subnet-none",

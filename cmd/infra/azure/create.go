@@ -255,7 +255,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 	}
 
-	if o.DataPlaneIdentitiesFile != "" {
+	if o.DataPlaneIdentitiesFile != "" && o.AssignServicePrincipalRoles {
 		managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroupName)
 
 		dataPlaneIdentitiesRaw, err := os.ReadFile(o.DataPlaneIdentitiesFile)
