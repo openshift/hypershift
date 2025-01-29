@@ -13,8 +13,7 @@ const (
 
 var _ component.ComponentOptions = &imageRegistryOperator{}
 
-type imageRegistryOperator struct {
-}
+type imageRegistryOperator struct{}
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
 func (r *imageRegistryOperator) IsRequestServing() bool {
