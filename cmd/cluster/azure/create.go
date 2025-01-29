@@ -270,6 +270,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		Azure: &hyperv1.AzurePlatformSpec{
 			Credentials:       corev1.LocalObjectReference{Name: credentialSecret(cluster.Namespace, cluster.Name).Name},
 			SubscriptionID:    o.creds.SubscriptionID,
+			TenantID:          o.creds.TenantID,
 			Location:          o.infra.Location,
 			ResourceGroupName: o.infra.ResourceGroupName,
 			VnetID:            o.infra.VNetID,

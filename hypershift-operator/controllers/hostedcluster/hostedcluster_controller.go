@@ -4136,7 +4136,7 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
-	if err := r.validateAzureConfig(ctx, hc); err != nil {
+	if err := r.validateAzureConfig(hc); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -4414,7 +4414,7 @@ func (r *HostedClusterReconciler) validatePublishingStrategyMapping(hc *hyperv1.
 	return nil
 }
 
-func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster) error {
 	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
 		return nil
 	}
@@ -4424,23 +4424,7 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 		return errors.New("azurecluster needs .spec.platform.azure to be filled")
 	}
 
-	// Verify the credentials secret contains the data fields we expect
-	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Namespace: hc.Namespace,
-		Name:      hc.Spec.Platform.Azure.Credentials.Name,
-	}}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		return fmt.Errorf("failed to get credentials secret for cluster: %w", err)
-	}
-
-	var errs []error
-	for _, expectedKey := range []string{"AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"} {
-		if _, found := credentialsSecret.Data[expectedKey]; !found {
-			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
-		}
-	}
-
-	return utilerrors.NewAggregate(errs)
+	return nil
 }
 
 func (r *HostedClusterReconciler) validateAgentConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {

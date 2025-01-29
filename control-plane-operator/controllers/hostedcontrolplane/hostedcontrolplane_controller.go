@@ -892,14 +892,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 	}
 
 	if hyperazureutil.IsAroHCP() {
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-
-		tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-
-		if err := verifyResourceGroupLocationsMatch(ctx, hcp, tenantID); err != nil {
+		if err := verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
 			return err
 		}
 	}
@@ -2743,15 +2736,10 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return fmt.Errorf("failed to reconcile aws provider config: %w", err)
 		}
 	case hyperv1.AzurePlatform:
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-
 		// We need different configs for KAS/KCM and Kubelet in Nodes
 		cfg := manifests.AzureProviderConfig(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, cfg, func() error {
-			return azure.ReconcileCloudConfig(cfg, hcp, credentialsSecret)
+			return azure.ReconcileCloudConfig(cfg, hcp)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
 		}
@@ -2759,7 +2747,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		// Reconcile the Cloud Provider configuration secret
 		withSecrets := manifests.AzureProviderConfigWithCredentials(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, withSecrets, func() error {
-			return azure.ReconcileCloudConfigWithCredentials(withSecrets, hcp, credentialsSecret)
+			return azure.ReconcileCloudConfigWithCredentials(withSecrets, hcp)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
@@ -3715,12 +3703,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 			return fmt.Errorf("failed to reconcile ingressoperator secret provider class: %w", err)
 		}
 
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-
-		p.AzureTenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+		p.AzureTenantID = hcp.Spec.Platform.Azure.TenantID
 	}
 
 	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
@@ -3884,12 +3867,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 			return fmt.Errorf("failed to reconcile ingress operator secret provider class: %w", err)
 		}
 
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-
-		p.AzureTenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+		p.AzureTenantID = hcp.Spec.Platform.Azure.TenantID
 	}
 
 	if _, exists := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
@@ -4257,12 +4235,7 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx contex
 			return fmt.Errorf("failed to reconcile image registry operator secret provider class: %w", err)
 		}
 
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-
-		params.AzureTenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+		params.AzureTenantID = hcp.Spec.Platform.Azure.TenantID
 	}
 
 	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
@@ -4873,12 +4846,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return fmt.Errorf("failed to reconcile azure cloud provider secret provider class: %w", err)
 		}
 
-		// Retrieve the credentials secret to get the tenant ID
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-		p.TenantID = string(credentialsSecret.Data["AZURE_TENANT_ID"])
+		p.TenantID = hcp.Spec.Platform.Azure.TenantID
 
 		// Reconcile the CCM Deployment
 		deployment := azure.CCMDeployment(hcp.Namespace)
@@ -5116,12 +5084,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 			return fmt.Errorf("failed to reconcile Azure File Secret Provider Class: %w", err)
 		}
 
-		// Get the credentials secret so we can retrieve the tenant ID for the configuration
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-		tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+		tenantID := hcp.Spec.Platform.Azure.TenantID
 
 		// Reconcile the secret needed for azure-disk-csi-controller
 		// This is related to https://github.com/openshift/csi-operator/pull/290.
@@ -5602,20 +5565,6 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            fmt.Sprintf("failed to get azure credentials secret: %v", err),
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
-	}
-	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
-
 	// Retrieve the KMS certificate
 	certPath := config.ManagedAzureCertificateMountPath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CertificateName
 	certsContent, err := os.ReadFile(certPath)
@@ -5662,7 +5611,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	options := &azidentity.ClientCertificateCredentialOptions{
 		SendCertificateChain: true,
 	}
-	cred, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.SecretEncryption.KMS.Azure.KMS.ClientID, parsedCertificate, key, options)
+	cred, err := azidentity.NewClientCertificateCredential(hcp.Spec.Platform.Azure.TenantID, hcp.Spec.SecretEncryption.KMS.Azure.KMS.ClientID, parsedCertificate, key, options)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 			fmt.Sprintf("failed to obtain azure client credential: %v", err))
@@ -5766,7 +5715,7 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 }
 
 // verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
-func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane, tenantID string) error {
+func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	// Retrieve the CPO certificate
 	certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CertificateName
 	certsContent, err := os.ReadFile(certPath)
@@ -5783,7 +5732,7 @@ func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedC
 	options := &azidentity.ClientCertificateCredentialOptions{
 		SendCertificateChain: true,
 	}
-	creds, err := azidentity.NewClientCertificateCredential(tenantID, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ClientID, parsedCertificate, key, options)
+	creds, err := azidentity.NewClientCertificateCredential(hcp.Spec.Platform.Azure.TenantID, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ClientID, parsedCertificate, key, options)
 	if err != nil {
 		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
 	}

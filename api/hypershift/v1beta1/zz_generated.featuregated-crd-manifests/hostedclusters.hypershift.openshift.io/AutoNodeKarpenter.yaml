@@ -3154,6 +3154,10 @@ spec:
                         x-kubernetes-validations:
                         - message: SubscriptionID is immutable
                           rule: self == oldSelf
+                      tenantID:
+                        description: tenantID is a unique identifier for the tenant
+                          where Azure resources will be created and managed in.
+                        type: string
                       vnetID:
                         description: |-
                           VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
@@ -3174,6 +3178,7 @@ spec:
                     - securityGroupID
                     - subnetID
                     - subscriptionID
+                    - tenantID
                     - vnetID
                     type: object
                   ibmcloud:

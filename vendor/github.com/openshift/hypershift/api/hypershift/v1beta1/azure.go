@@ -428,6 +428,11 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:Required
 	// +openshift:enable:FeatureGate=AROHCPManagedIdentities
 	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
+
+	// tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.
+	//
+	// +required
+	TenantID string `json:"tenantID"`
 }
 
 // ManagedAzureKeyVault is an Azure Key Vault on the management cluster.

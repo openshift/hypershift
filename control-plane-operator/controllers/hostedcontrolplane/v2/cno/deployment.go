@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -16,8 +15,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
 )
@@ -147,11 +144,6 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 	// For ARO HCP deployments, we pass the env variable for the SecretProviderClass for the Secrets Store CSI driver
 	// to use on the CNCC deployment.
 	if azureutil.IsAroHCP() {
-		credentialsSecret := manifests.AzureCredentialInformation(hcp.Namespace)
-		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
-			return nil, fmt.Errorf("failed to get Azure credentials secret: %w", err)
-		}
-
 		cnoEnv = append(cnoEnv,
 			corev1.EnvVar{
 				Name:  config.ManagedAzureClientIdEnvVarKey,
@@ -159,7 +151,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 			},
 			corev1.EnvVar{
 				Name:  config.ManagedAzureTenantIdEnvVarKey,
-				Value: string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+				Value: hcp.Spec.Platform.Azure.TenantID,
 			},
 			corev1.EnvVar{
 				Name:  config.ManagedAzureCertificateNameEnvVarKey,
