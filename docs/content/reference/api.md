@@ -3251,6 +3251,17 @@ AzureResourceManagedIdentities
 authenticate with Azure&rsquo;s API.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>tenantID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
