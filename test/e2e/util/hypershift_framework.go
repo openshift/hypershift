@@ -154,7 +154,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
 		// HCCO installs the admission policies, however, NonePlatform clusters can be ready before
 		// the HCCO is fully up and reconciling, resulting in a potential race and flaky test assertions.
-		if platform != hyperv1.NonePlatform {
+		if platform != hyperv1.NonePlatform && platform != hyperv1.OpenStackPlatform {
 			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
 		}
 		ValidateMetrics(t, context.Background(), hostedCluster, []string{
