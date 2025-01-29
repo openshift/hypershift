@@ -215,7 +215,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 			runtimeConfig = append(runtimeConfig, "admissionregistration.k8s.io/v1beta1=true")
 		}
 		if gate == "DynamicResourceAllocation=true" {
-			runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1alpha3=true")
+			runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1beta1=true")
 		}
 	}
 	args.Set("runtime-config", runtimeConfig...)
