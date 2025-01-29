@@ -440,6 +440,10 @@ type AzurePlatformSpec struct {
 	TenantID string `json:"tenantID"`
 }
 
+// ObjectEncodingFormat is the type of encoding for an Azure Key Vault secret
+// +kubebuilder:validation:Enum:=utf-8;hex;base64
+type ObjectEncodingFormat string
+
 // ManagedAzureKeyVault is an Azure Key Vault on the management cluster.
 type ManagedAzureKeyVault struct {
 	// name is the name of the Azure Key Vault on the management cluster.
@@ -483,6 +487,20 @@ type ManagedIdentity struct {
 	//
 	// +kubebuilder:validation:Required
 	CertificateName string `json:"certificateName"`
+
+	// objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+	// CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+	// Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+	// unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+	// SecretProviderClass custom resource related to the managed identity.
+	//
+	// The default value is utf-8.
+	//
+	// See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+	//
+	// +kubebuilder:validation:Enum:=utf-8;hex;base64
+	// +kubebuilder:default:="utf-8"
+	ObjectEncoding ObjectEncodingFormat `json:"objectEncoding"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
