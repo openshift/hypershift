@@ -65,8 +65,14 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		log.Error(err, "error getting nodepool")
 		return ctrl.Result{}, err
 	} else if apierrors.IsNotFound(err) {
+		// this is expected, don't delete the secret.
+		if strings.HasSuffix(nodePoolName, "karpenter") {
+			return ctrl.Result{}, nil
+		}
+
 		log.Info("removing secret as nodePool is missing")
 		return ctrl.Result{}, r.Client.Delete(ctx, secret)
+
 	}
 
 	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)

@@ -939,14 +939,19 @@ func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hoste
 }
 
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	haproxy := haproxy.HAProxy{
-		Client:                  r.Client,
-		ReleaseProvider:         r.ReleaseProvider,
-		HypershiftOperatorImage: r.HypershiftOperatorImage,
-		ImageMetadataProvider:   r.ImageMetadataProvider,
+	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
+	if !ok {
+		return "", fmt.Errorf("release image doesn't have a %s image", haproxy.HAProxyRouterImageName)
 	}
 
-	return haproxy.GenerateHAProxyRawConfig(ctx, hcluster, releaseImage)
+	haProxy := haproxy.HAProxy{
+		Client:                  r.Client,
+		HAProxyImage:            haProxyImage,
+		HypershiftOperatorImage: r.HypershiftOperatorImage,
+		ReleaseProvider:         r.ReleaseProvider,
+		ImageMetadataProvider:   r.ImageMetadataProvider,
+	}
+	return haProxy.GenerateHAProxyRawConfig(ctx, hcluster)
 }
 
 // machinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.

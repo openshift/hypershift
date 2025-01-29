@@ -40,16 +40,18 @@ import (
 )
 
 const (
-	controlPlaneOperatorSkipsHAProxyConfigGenerationLabel = "io.openshift.hypershift.control-plane-operator-skips-haproxy"
-	haProxyRouterImageName                                = "haproxy-router"
+	ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel = "io.openshift.hypershift.control-plane-operator-skips-haproxy"
+	HAProxyRouterImageName                                = "haproxy-router"
 )
 
 type HAProxy struct {
 	crclient.Client
 
-	ReleaseProvider         releaseinfo.Provider
+	HAProxyImage            string
 	HypershiftOperatorImage string
-	ImageMetadataProvider   util.ImageMetadataProvider
+
+	ReleaseProvider       releaseinfo.Provider
+	ImageMetadataProvider util.ImageMetadataProvider
 }
 
 func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster) (m bool, cpoImage string, err error) {
@@ -71,11 +73,11 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 		return false, "", fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
 
-	_, cpoSkips := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorSkipsHAProxyConfigGenerationLabel]
+	_, cpoSkips := util.ImageLabels(controlPlaneOperatorImageMetadata)[ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel]
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 
-func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, componentImages map[string]string, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
+func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, err error) {
 	var apiServerExternalAddress string
 	var apiServerExternalPort int32
 	var apiServerInternalAddress string
@@ -85,40 +87,35 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, componentI
 		apiServerExternalPort = util.APIPortForLocalZone(util.IsLBKASByHC(hcluster))
 	} else {
 		if hcluster.Status.KubeConfig == nil {
-			return "", true, nil
+			return "", fmt.Errorf("waiting on hcluster.Status.KubeConfig to be set")
 		}
 		var kubeconfig corev1.Secret
 		if err := r.Get(ctx, crclient.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Status.KubeConfig.Name}, &kubeconfig); err != nil {
-			return "", true, fmt.Errorf("failed to get kubeconfig: %w", err)
+			return "", fmt.Errorf("failed to get kubeconfig: %w", err)
 		}
 		kubeconfigBytes, found := kubeconfig.Data["kubeconfig"]
 		if !found {
-			return "", true, fmt.Errorf("kubeconfig secret %s has no 'kubeconfig' key", crclient.ObjectKeyFromObject(&kubeconfig))
+			return "", fmt.Errorf("kubeconfig secret %s has no 'kubeconfig' key", crclient.ObjectKeyFromObject(&kubeconfig))
 		}
 		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
 		if err != nil {
-			return "", true, fmt.Errorf("failed to parse kubeconfig from secret %s: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
+			return "", fmt.Errorf("failed to parse kubeconfig from secret %s: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
 		}
 		hostURL, err := url.Parse(restConfig.Host)
 		if err != nil {
-			return "", true, fmt.Errorf("failed to parse host in kubeconfig from secret %s as url: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
+			return "", fmt.Errorf("failed to parse host in kubeconfig from secret %s as url: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
 		}
 		apiServerExternalPort, err = urlPort(hostURL)
 		if err != nil {
-			return "", true, fmt.Errorf("cannot determine api server external port: %w", err)
+			return "", fmt.Errorf("cannot determine api server external port: %w", err)
 		}
 		apiServerExternalAddress = hostURL.Hostname()
-	}
-
-	haProxyImage, ok := componentImages[haProxyRouterImageName]
-	if !ok {
-		return "", true, fmt.Errorf("release image doesn't have a %s image", haProxyRouterImageName)
 	}
 
 	// This provides support for HTTP Proxy on IPv6 scenarios
 	ipv4, err := util.IsIPv4CIDR(hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String())
 	if err != nil {
-		return "", true, fmt.Errorf("error checking the stack in the first ServiceNetworkCIDR %s: %w", hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String(), err)
+		return "", fmt.Errorf("error checking the stack in the first ServiceNetworkCIDR %s: %w", hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String(), err)
 	}
 
 	// Set the default
@@ -141,7 +138,7 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, componentI
 	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" && util.ConnectsThroughInternetToControlplane(hcluster.Spec.Platform) {
 		apiserverProxy, err = joinDefaultPortIfMissing(hcluster.Spec.Configuration.Proxy.HTTPSProxy)
 		if err != nil {
-			return "", true, fmt.Errorf("failed to parse .Spec.Configuration.Proxy.HTTPSProxy: %v", err)
+			return "", fmt.Errorf("failed to parse .Spec.Configuration.Proxy.HTTPSProxy: %v", err)
 		}
 		noProxy = hcluster.Spec.Configuration.Proxy.NoProxy
 	}
@@ -167,21 +164,21 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, componentI
 			},
 		}
 		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
-			return "", true, err
+			return "", err
 		}
 		if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
-			return "", true, nil
+			return "", fmt.Errorf("waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress")
 		}
 		apiServerExternalAddress = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
 		apiServerExternalPort = sharedingress.KASSVCLBPort
 	}
 
-	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, hcluster.Spec.ClusterID,
+	serializedConfig, err := apiServerProxyConfig(r.HAProxyImage, controlPlaneOperatorImage, hcluster.Spec.ClusterID,
 		apiServerExternalAddress, apiServerInternalAddress,
 		apiServerExternalPort, apiServerInternalPort,
 		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
 	if err != nil {
-		return "", true, fmt.Errorf("failed to create apiserver haproxy config: %w", err)
+		return "", fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}
 	machineConfig.Spec.Config.Raw = serializedConfig
 
@@ -189,10 +186,10 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, componentI
 	machineConfig.APIVersion = mcfgv1.SchemeGroupVersion.String()
 	machineConfig.Kind = "MachineConfig"
 	if err := api.YamlSerializer.Encode(machineConfig, buf); err != nil {
-		return "", true, fmt.Errorf("failed to serialize haproxy machine config: %w", err)
+		return "", fmt.Errorf("failed to serialize haproxy machine config: %w", err)
 	}
 
-	return buf.String(), false, nil
+	return buf.String(), nil
 }
 
 // TODO (alberto): Technically anything should be calling util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
@@ -231,7 +228,7 @@ type fileToAdd struct {
 //go:embed assets/*
 var content embed.FS
 
-func MustAsset(name string) string {
+func mustAsset(name string) string {
 	b, err := content.ReadFile(name)
 	if err != nil {
 		panic(err)
@@ -240,9 +237,9 @@ func MustAsset(name string) string {
 }
 
 var (
-	setupAPIServerIPScriptTemplate    = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("assets/setup-apiserver-ip.sh")))
-	teardownAPIServerIPScriptTemplate = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("assets/teardown-apiserver-ip.sh")))
-	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(MustAsset("assets/haproxy.cfg")))
+	setupAPIServerIPScriptTemplate    = template.Must(template.New("setupAPIServerIP").Parse(mustAsset("assets/setup-apiserver-ip.sh")))
+	teardownAPIServerIPScriptTemplate = template.Must(template.New("teardownAPIServerIP").Parse(mustAsset("assets/teardown-apiserver-ip.sh")))
+	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(mustAsset("assets/haproxy.cfg")))
 )
 
 func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
@@ -479,7 +476,7 @@ func fileFromBytes(path string, mode int, contents []byte) ignitionapi.File {
 }
 
 func apiServerIPUnit() ignitionapi.Unit {
-	content := MustAsset("assets/apiserver-ip.service")
+	content := mustAsset("assets/apiserver-ip.service")
 	return ignitionapi.Unit{
 		Name:     "apiserver-ip.service",
 		Contents: &content,
@@ -507,7 +504,7 @@ func joinDefaultPortIfMissing(addr string) (string, error) {
 	return parsedUrl.String(), nil
 }
 
-func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster) (string, error) {
 	var haproxyRawConfig string
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)
@@ -528,14 +525,11 @@ func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv
 			}
 		}
 
-		var missing bool
-		haproxyRawConfig, missing, err = r.reconcileHAProxyIgnitionConfig(ctx, releaseImage.ComponentImages(), hcluster, cpoImage)
+		haproxyRawConfig, err = r.reconcileHAProxyIgnitionConfig(ctx, hcluster, cpoImage)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate haproxy ignition config: %w", err)
 		}
-		if missing {
-			return "", fmt.Errorf("failed to generate haproxy ignition config: waiting for missing component")
-		}
+
 	}
 	return haproxyRawConfig, nil
 }
