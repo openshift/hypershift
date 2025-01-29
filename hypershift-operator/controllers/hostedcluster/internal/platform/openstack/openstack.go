@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	// foo
 	sgRuleDescription = "Managed by the Hypershift Control Plane Operator"
 )
 
