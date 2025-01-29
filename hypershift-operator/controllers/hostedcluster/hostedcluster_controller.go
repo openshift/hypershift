@@ -1066,6 +1066,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	hcluster.Status.PayloadArch = payloadArch
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 	if err != nil {
@@ -1080,7 +1084,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Message:            "HostedCluster is at expected version",
 			Reason:             hyperv1.AsExpectedReason,
 		}
-		progressing, err := isProgressing(hcluster, releaseImage)
+		refWithDigest := func() (string, error) {
+			_, ref, err := registryClientImageMetadataProvider.GetDigest(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+			if err != nil {
+				return "", err
+			}
+			return ref.String(), nil
+		}
+
+		progressing, err := isProgressing(hcluster, releaseImage, refWithDigest)
 		if err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
@@ -1172,10 +1184,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 	controlPlaneOperatorImage, err := GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
@@ -4239,7 +4247,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 
-func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, error) {
+func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, refWithDigest func() (string, error)) (bool, error) {
 	for _, condition := range hc.Status.Conditions {
 		switch string(condition.Type) {
 		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
@@ -4254,7 +4262,12 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		}
 	}
 
-	if hc.Status.Version == nil || hc.Spec.Release.Image != hc.Status.Version.Desired.Image {
+	withDigest, err := refWithDigest()
+	if err != nil {
+		return false, err
+	}
+
+	if hc.Status.Version == nil || (hc.Spec.Release.Image != hc.Status.Version.Desired.Image && withDigest != hc.Status.Version.Desired.Image) {
 		// cluster is doing initial rollout or upgrading
 		return true, nil
 	}
