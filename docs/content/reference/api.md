@@ -8001,6 +8001,25 @@ string
 reside in an Azure Key Vault on the management cluster.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>objectEncoding</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ObjectEncodingFormat">
+ObjectEncodingFormat
+</a>
+</em>
+</td>
+<td>
+<p>objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+Azure Key Vault. If objectEncoding doesn&rsquo;t match the encoding format of the certificate, the certificate will
+unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+SecretProviderClass custom resource related to the managed identity.</p>
+<p>The default value is utf-8.</p>
+<p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
+</td>
+</tr>
 </tbody>
 </table>
 ###MultiQueueSetting { #hypershift.openshift.io/v1beta1.MultiQueueSetting }
@@ -8949,6 +8968,14 @@ the management cluster.</p>
 </td>
 </tr></tbody>
 </table>
+###ObjectEncodingFormat { #hypershift.openshift.io/v1beta1.ObjectEncodingFormat }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>)
+</p>
+<p>
+<p>ObjectEncodingFormat is the type of encoding for an Azure Key Vault secret</p>
+</p>
 ###OpenStackIdentityReference { #hypershift.openshift.io/v1beta1.OpenStackIdentityReference }
 <p>
 (<em>Appears on:</em>
