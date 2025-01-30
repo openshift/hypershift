@@ -3643,31 +3643,19 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 	}
-
-	cpRef, err := registryclient.GetCorrectArchImage(ctx, "cluster-version-operator", p.ControlPlaneImage, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider)
+	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+	_, controlPlaneReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, p.ControlPlaneImage, pullSecretBytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse control plane release image %s: %w", cpRef, err)
+		return fmt.Errorf("failed to get control plane release image digest %s: %w", p.ControlPlaneImage, err)
 	}
-
-	_, cpReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, cpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
-	if err != nil {
-		return fmt.Errorf("failed to get control plane release image digest %s: %w", cpRef, err)
-	}
-
-	controlPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", cpReleaseImageRef.Registry, cpReleaseImageRef.Namespace, cpReleaseImageRef.NameString())
+	controlPlaneReleaseImage = controlPlaneReleaseImageRef.String()
 
 	if p.ControlPlaneImage != hcp.Spec.ReleaseImage {
-		dpRef, err := registryclient.GetCorrectArchImage(ctx, "cluster-version-operator", hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider)
+		_, dataPlaneReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, hcp.Spec.ReleaseImage, pullSecretBytes)
 		if err != nil {
-			return fmt.Errorf("failed to parse data plane release image %s: %w", dpRef, err)
+			return fmt.Errorf("failed to get release image digest %s: %w", hcp.Spec.ReleaseImage, err)
 		}
-
-		_, dpReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, dpRef, pullSecret.Data[corev1.DockerConfigJsonKey])
-		if err != nil {
-			return fmt.Errorf("failed to get data plane release image digest %s: %w", dpRef, err)
-		}
-
-		dataPlaneReleaseImage = fmt.Sprintf("%s/%s/%s", dpReleaseImageRef.Registry, dpReleaseImageRef.Namespace, dpReleaseImageRef.NameString())
+		dataPlaneReleaseImage = dataPlaneReleaseImageRef.String()
 	} else {
 		dataPlaneReleaseImage = controlPlaneReleaseImage
 	}

@@ -223,7 +223,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, err
 	}
 
-	mcoComposedImage := fmt.Sprintf("%s/%s/%s", checkedMcoImage.Registry, checkedMcoImage.Namespace, checkedMcoImage.NameString())
+	mcoComposedImage := checkedMcoImage.String()
 	if mcoComposedImage != mcoImage {
 		mcoImage = mcoComposedImage
 		log.Info(fmt.Sprintf("using mirrored %s image %v", component, mcoImage))
@@ -374,7 +374,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 			return err
 		}
 
-		ccaComposedImage := fmt.Sprintf("%s/%s/%s", checkedClusterConfigImage.Registry, checkedClusterConfigImage.Namespace, checkedClusterConfigImage.NameString())
+		ccaComposedImage := checkedClusterConfigImage.String()
 		if ccaComposedImage != clusterConfigImage {
 			clusterConfigImage = ccaComposedImage
 			log.Info(fmt.Sprintf("using mirrored %s image %v", clusterConfigComponent, ccaComposedImage))
