@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift
 
-go 1.22.0
+go 1.22.5
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0
@@ -21,7 +21,8 @@ require (
 	github.com/IBM/platform-services-go-sdk v0.64.4
 	github.com/IBM/vpc-go-sdk v0.50.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/aws/aws-sdk-go v1.52.6
+	github.com/aws/aws-sdk-go v1.55.5
+	github.com/aws/karpenter-provider-aws v1.0.8
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
 	github.com/coreos/ignition/v2 v2.18.0
@@ -99,6 +100,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.11.0
 	sigs.k8s.io/controller-runtime v0.19.0
+	sigs.k8s.io/karpenter v1.0.5
 	sigs.k8s.io/secrets-store-csi-driver v1.4.5
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1
 	sigs.k8s.io/yaml v1.4.0
@@ -118,6 +120,7 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
+	github.com/awslabs/operatorpkg v0.0.0-20240805231134-67d0acfb6306 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
@@ -182,6 +185,7 @@ require (
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
+	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/spdystream v0.4.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
@@ -200,7 +204,9 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/samber/lo v1.46.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
@@ -243,6 +249,7 @@ require (
 	k8s.io/kms v0.31.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240521193020-835d969ad83a // indirect
 	k8s.io/kubelet v0.31.1 // indirect
+	knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
