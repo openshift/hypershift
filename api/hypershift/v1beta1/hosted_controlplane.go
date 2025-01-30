@@ -139,6 +139,12 @@ type HostedControlPlaneSpec struct {
 	// +kubebuilder:validation:Optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 
+	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
+	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
+
 	// ImageContentSources lists sources/repositories for the release-image content.
 	// +optional
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
