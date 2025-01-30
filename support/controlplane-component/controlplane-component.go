@@ -133,12 +133,12 @@ func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
 	workloadContext := cpContext.workloadContext()
 
 	if !cpContext.SkipPredicate && c.predicate != nil {
-		shouldReconcile, err := c.predicate(workloadContext)
+		isEnabled, err := c.predicate(workloadContext)
 		if err != nil {
 			return err
 		}
-		if !shouldReconcile {
-			return nil
+		if !isEnabled {
+			return c.delete(cpContext)
 		}
 	}
 
@@ -165,6 +165,56 @@ func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
 		return err
 	}
 	return reconcilationError
+}
+
+func (c *controlPlaneWorkload) delete(cpContext ControlPlaneContext) error {
+	var workloadObj client.Object
+
+	switch c.workloadType {
+	case deploymentWorkloadType:
+		dep, err := assets.LoadDeploymentManifest(c.Name())
+		if err != nil {
+			return fmt.Errorf("failed loading deployment manifest: %v", err)
+		}
+		workloadObj = dep
+	case statefulSetWorkloadType:
+		sts, err := assets.LoadStatefulSetManifest(c.Name())
+		if err != nil {
+			return fmt.Errorf("failed loading statefulset manifest: %v", err)
+		}
+		workloadObj = sts
+	}
+	// make sure that the Deployment/Statefulset name matches the component name.
+	workloadObj.SetName(c.Name())
+	workloadObj.SetNamespace(cpContext.HCP.Namespace)
+
+	_, err := util.DeleteIfNeeded(cpContext, cpContext.Client, workloadObj)
+	if err != nil {
+		return err
+	}
+
+	// delete all resources.
+	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
+		obj, _, err := assets.LoadManifest(c.name, manifestName)
+		if err != nil {
+			return err
+		}
+		obj.SetNamespace(cpContext.HCP.Namespace)
+
+		_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
+		return err
+	}); err != nil {
+		return err
+	}
+
+	component := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      c.Name(),
+			Namespace: cpContext.HCP.Namespace,
+		},
+	}
+	_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, component)
+	return err
 }
 
 // reconcile implements ControlPlaneComponent.
