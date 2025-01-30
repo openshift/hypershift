@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
 
@@ -64,7 +65,7 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 
 func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("error getting %T: %w", o, err)

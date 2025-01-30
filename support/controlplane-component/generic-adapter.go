@@ -3,6 +3,7 @@ package controlplanecomponent
 import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -35,17 +36,18 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 
-	if ga.predicate != nil && !ga.predicate(workloadContext) {
-		return nil
-	}
-
 	obj, _, err := assets.LoadManifest(componentName, manifestName)
 	if err != nil {
 		return err
 	}
 	obj.SetNamespace(cpContext.HCP.Namespace)
-	ownerRef.ApplyTo(obj)
 
+	if ga.predicate != nil && !ga.predicate(workloadContext) {
+		_, err := util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
+		return err
+	}
+
+	ownerRef.ApplyTo(obj)
 	if ga.adapt != nil {
 		if err := ga.adapt(workloadContext, obj); err != nil {
 			return err
