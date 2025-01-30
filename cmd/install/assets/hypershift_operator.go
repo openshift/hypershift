@@ -1266,6 +1266,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
 				Resources: []string{"secretproviderclasses"},
 				Verbs: []string{
+					"get",
 					"list",
 					"create",
 					"update",

@@ -3055,6 +3055,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
 				Resources: []string{"secretproviderclasses"},
 				Verbs: []string{
+					"get",
 					"list",
 					"create",
 					"update",
