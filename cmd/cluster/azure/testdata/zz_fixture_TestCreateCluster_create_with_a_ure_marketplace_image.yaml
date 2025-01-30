@@ -46,30 +46,38 @@ spec:
           cloudProvider:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
           controlPlaneOperator:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
           disk:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
           file:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
           imageRegistry:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
           ingress:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
           managedIdentitiesKeyVault:
             name: ""
             tenantID: ""
           network:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
           nodePoolManagement:
             certificateName: ""
             clientID: ""
+            objectEncoding: ""
         dataPlane:
           diskMSIClientID: ""
           fileMSIClientID: ""
