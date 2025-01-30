@@ -17,8 +17,8 @@ const (
 )
 
 // ReconcileCloudConfig reconciles as expected by Nodes Kubelet.
-func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
+	cfg, err := azureConfigWithoutCredentials(hcp)
 	if err != nil {
 		return err
 	}
@@ -37,8 +37,8 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane,
 }
 
 // ReconcileCloudConfigWithCredentials reconciles as expected by KAS/KCM.
-func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
+	cfg, err := azureConfigWithoutCredentials(hcp)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 	return nil
 }
 
-func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) (AzureConfig, error) {
+func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane) (AzureConfig, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(hcp.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return AzureConfig{}, fmt.Errorf("failed to determine subnet name from SubnetID: %w", err)
@@ -78,7 +78,7 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 
 	azureConfig := AzureConfig{
 		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
-		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+		TenantID:                     hcp.Spec.Platform.Azure.TenantID,
 		UseManagedIdentityExtension:  true,
 		SubscriptionID:               hcp.Spec.Platform.Azure.SubscriptionID,
 		ResourceGroup:                hcp.Spec.Platform.Azure.ResourceGroupName,

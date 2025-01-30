@@ -1635,9 +1635,6 @@ func TestControlPlaneComponents(t *testing.T) {
 					SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
 					SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
 					VnetID:          "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
-					Credentials: corev1.LocalObjectReference{
-						Name: "fake-cloud-credentials-secret",
-					},
 				},
 				OpenStack: &hyperv1.OpenStackPlatformSpec{
 					IdentityRef: hyperv1.OpenStackIdentityReference{

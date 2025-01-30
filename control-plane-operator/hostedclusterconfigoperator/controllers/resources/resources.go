@@ -1498,18 +1498,13 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			}
 		}
 	case hyperv1.AzurePlatform:
-		referenceCredentialsSecret := cpomanifests.AzureCredentialInformation(hcp.Namespace)
-		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(referenceCredentialsSecret), referenceCredentialsSecret); err != nil {
-			return []error{fmt.Errorf("failed to get cloud credentials secret in hcp namespace: %w", err)}
-		}
-
 		secretData := map[string][]byte{
 			"azure_federated_token_file": []byte("/var/run/secrets/openshift/serviceaccount/token"),
 			"azure_region":               []byte(hcp.Spec.Platform.Azure.Location),
 			"azure_resource_prefix":      []byte(hcp.Name + "-" + hcp.Spec.InfraID),
 			"azure_resourcegroup":        []byte(hcp.Spec.Platform.Azure.ResourceGroupName),
-			"azure_subscription_id":      referenceCredentialsSecret.Data["AZURE_SUBSCRIPTION_ID"],
-			"azure_tenant_id":            referenceCredentialsSecret.Data["AZURE_TENANT_ID"],
+			"azure_subscription_id":      []byte(hcp.Spec.Platform.Azure.SubscriptionID),
+			"azure_tenant_id":            []byte(hcp.Spec.Platform.Azure.TenantID),
 		}
 
 		// The ingress controller fails if this secret is not provided. The controller runs on the control plane side. In managed azure, we are
