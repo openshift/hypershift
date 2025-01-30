@@ -778,10 +778,10 @@ func TestReportEtcdManualInterventionRequired(t *testing.T) {
 			Metric: []*dto.Metric{{
 				Label: []*dto.LabelPair{
 					{Name: ptr.To("_id"), Value: ptr.To("id")},
+					{Name: ptr.To("environment"), Value: ptr.To("")},
+					{Name: ptr.To("internal_id"), Value: ptr.To("")},
 					{Name: ptr.To("name"), Value: ptr.To("hc")},
 					{Name: ptr.To("namespace"), Value: ptr.To("any")},
-					{Name: ptr.To("rosa_environment"), Value: ptr.To("")},
-					{Name: ptr.To("rosa_id"), Value: ptr.To("")},
 				},
 				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
 			}},
@@ -1039,6 +1039,95 @@ func TestProxyCAExpiry(t *testing.T) {
 				clientBuilder.Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
 				ProxyCAExpiryTimestampName,
+				tc.expected)
+		})
+	}
+}
+
+func TestReportClusterSizeOverride(t *testing.T) {
+	wrapExpectedValueAsMetric := func(size string, expectedValue float64) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name: ptr.To(ClusterSizeOverrideMetricName),
+			Help: ptr.To(clusterSizeOverrideMetricHelp),
+			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+			Metric: []*dto.Metric{{
+				Label: []*dto.LabelPair{
+					{Name: ptr.To("_id"), Value: ptr.To("id")},
+					{Name: ptr.To("environment"), Value: ptr.To("")},
+					{Name: ptr.To("internal_id"), Value: ptr.To("")},
+					{Name: ptr.To("name"), Value: ptr.To("hc")},
+					{Name: ptr.To("namespace"), Value: ptr.To("any")},
+					{Name: ptr.To("size"), Value: ptr.To(size)},
+				},
+				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
+			}},
+		}
+	}
+
+	testCases := []struct {
+		name        string
+		timestamp   time.Time
+		tags        map[string]string
+		annotations map[string]string
+		expected    *dto.MetricFamily
+	}{
+		{
+			name:      "When cluster does not have the cluster override annotation, metric is not reported",
+			timestamp: now,
+		},
+		{
+			name:      "When cluster has the cluster size annotation with a large value, metric is reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			annotations: map[string]string{
+				hyperv1.ClusterSizeOverrideAnnotation: "large",
+			},
+			expected: wrapExpectedValueAsMetric("large", 1.0),
+		},
+		{
+			name:      "When cluster has the cluster size annotation with a small value, metric is reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			annotations: map[string]string{
+				hyperv1.ClusterSizeOverrideAnnotation: "small",
+			},
+			expected: wrapExpectedValueAsMetric("small", 1.0),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "hc",
+					Namespace:   "any",
+					Annotations: tc.annotations,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: func() []hyperv1.AWSResourceTag {
+								var tags []hyperv1.AWSResourceTag
+								for k, v := range tc.tags {
+									tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+								}
+								return tags
+							}(),
+						},
+					},
+				},
+			}
+
+			checkMetric(t,
+				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
+				clocktesting.NewFakeClock(tc.timestamp),
+				ClusterSizeOverrideMetricName,
 				tc.expected)
 		})
 	}
