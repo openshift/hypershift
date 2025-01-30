@@ -3740,7 +3740,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, hasRouteCap bool) error {
 	if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
 		// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
-		// TODO: why is this not doen in CNO?
+		// TODO: why is this not done in CNO?
 		multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
 		if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
 			return fmt.Errorf("failed to restart multus admission controller: %w", err)
