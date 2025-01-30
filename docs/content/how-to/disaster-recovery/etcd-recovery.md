@@ -16,7 +16,7 @@ If this is enabled, then the HyperShift operator will attempt to recover the hea
 
 The recovery procedure consists of the following:
 * If a member has been removed from the etcd cluster, re-add the missing member by executing the `member add` command
-* Delete the etcd member's pod and pvc
+* The administrator should [delete the etcd member's pod and pvc](#single-node-recovery), after which the HyperShift operator will automatically provision a replacement etcd member Pod and PersistentVolume.
 
 Once this is done, the `reset-member` init container of the removed pod should be able to complete the recovery.
 
