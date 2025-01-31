@@ -17,21 +17,21 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	karpenteroperatormanifest "github.com/openshift/hypershift/karpenter-operator/manifests"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	hyperutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
-
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (r *HostedClusterReconciler) reconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
 	if hcluster.Spec.AutoNode == nil || hcluster.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
-		hcluster.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform {
+		hcluster.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hcluster.Status.KubeConfig == nil {
 		return nil
 	}
 
@@ -65,76 +65,85 @@ spec:
 		return fmt.Errorf("failed to create configmap: %w", err)
 	}
 
-	// Managed a NodePool to generate userData for Karpenter instances
-	// TODO(alberto): consider invoking the token library to manage the karpenter userdata programmatically,
-	// instead of via NodePool API.
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "karpenter",
 			Namespace: hcluster.Namespace,
 		},
-	}
-	spec := hyperv1.NodePoolSpec{
-		ClusterName: hcluster.Name,
-		Replicas:    ptr.To(int32(0)),
-		Release:     hcluster.Spec.Release,
-		Config: []corev1.LocalObjectReference{
-			{
-				Name: taintConfigName,
-			},
-		},
-		Management: hyperv1.NodePoolManagement{
-			UpgradeType: hyperv1.UpgradeTypeReplace,
-			Replace: &hyperv1.ReplaceUpgrade{
-				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
-				RollingUpdate: &hyperv1.RollingUpdate{
-					MaxUnavailable: ptr.To(intstr.FromInt(0)),
-					MaxSurge:       ptr.To(intstr.FromInt(1)),
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcluster.Name,
+			Replicas:    ptr.To(int32(0)),
+			Release:     hcluster.Spec.Release,
+			Config: []corev1.LocalObjectReference{
+				{
+					Name: taintConfigName,
 				},
 			},
-			AutoRepair: false,
-		},
-		Platform: hyperv1.NodePoolPlatform{
-			Type: hyperv1.AWSPlatform,
-			AWS: &hyperv1.AWSNodePoolPlatform{
-				InstanceType: "m5.large",
-				Subnet: hyperv1.AWSResourceReference{
-					// TODO(alberto): this is just to pass cel.
-					// Setting an ID instead of filter would break publicAndPrivate topology because the AWSEndpointService won't find the subnet.
-					// We'll move to generate the userdata for karpenter programmatically.
-					Filters: []hyperv1.Filter{
-						{
-							Name:   "subnet-none",
-							Values: []string{"none"},
-						},
-					},
-				},
-			},
+			Arch: hyperv1.ArchitectureAMD64, // used to find default AMI
 		},
 	}
 
-	if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
-		if apierrors.IsNotFound(err) {
-			nodePool.Spec = spec
-			if err := r.Client.Create(ctx, nodePool); err != nil {
-				return fmt.Errorf("failed to create NodePool: %w", err)
-			}
-		} else {
-			return err
-		}
-	}
-
-	original := nodePool.DeepCopy()
-	nodePool.Spec = spec
-	err = r.Client.Patch(ctx, nodePool, crclient.MergeFrom(original))
+	releaseProvider, imageMetadataProvider, err := r.ReconcileMetadataProvidersImpl(ctx, r.RegistryOverrides)
 	if err != nil {
-		return fmt.Errorf("failed to patch NodePool: %w", err)
+		return err
 	}
+
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	if err != nil {
+		return err
+	}
+
+	releaseImage, err := releaseProvider.Lookup(ctx, nodePool.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return err
+	}
+
+	if err := r.reconcileKarpenterUserDataSecret(ctx, hcluster, releaseImage, nodePool, releaseProvider, imageMetadataProvider); err != nil {
+		return err
+	}
+
 	// TODO(alberto): Ensure deletion if autoNode is disabled.
 
 	// Run karpenter Operator to manage CRs management and guest side.
 	if err := karpenteroperatormanifest.ReconcileKarpenterOperator(ctx, createOrUpdate, r.Client, hypershiftOperatorImage, controlPlaneOperatorImage, hcp); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool, releaseProvider releaseinfo.Provider, imageMetadataProvider hyperutil.ImageMetadataProvider) error {
+	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
+	if !ok {
+		return fmt.Errorf("release image doesn't have %s image", haproxy.HAProxyRouterImageName)
+	}
+
+	haproxy := haproxy.HAProxy{
+		Client:                  r.Client,
+		HAProxyImage:            haProxyImage,
+		HypershiftOperatorImage: r.HypershiftOperatorImage,
+		ReleaseProvider:         releaseProvider,
+		ImageMetadataProvider:   imageMetadataProvider,
+	}
+	haproxyRawConfig, err := haproxy.GenerateHAProxyRawConfig(ctx, hcluster)
+	if err != nil {
+		return err
+	}
+
+	configGenerator, err := nodepool.NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	if err != nil {
+		return fmt.Errorf("failed to generate config: %w", err)
+	}
+
+	token, err := nodepool.NewToken(ctx, configGenerator, &nodepool.CPOCapabilities{
+		DecompressAndDecodeConfig: true,
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := token.Reconcile(ctx); err != nil {
+		return err
+	}
+
 	return nil
 }

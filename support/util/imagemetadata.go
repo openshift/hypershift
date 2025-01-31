@@ -374,13 +374,6 @@ func ImageLabels(metadata *dockerv1client.DockerImageConfig) map[string]string {
 	}
 }
 
-func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
-	if hcluster.Spec.ControlPlaneRelease != nil {
-		return hcluster.Spec.ControlPlaneRelease.Image
-	}
-	return hcluster.Spec.Release.Image
-}
-
 func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReference, source string, mirror string) (*reference.DockerImageReference, bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 

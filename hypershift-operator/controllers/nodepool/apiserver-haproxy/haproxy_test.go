@@ -1,4 +1,4 @@
-package nodepool
+package haproxy
 
 import (
 	"context"
@@ -245,11 +245,11 @@ kind: Config`
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			r := &NodePoolReconciler{
-				Client: fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+			r := HAProxy{
+				Client:       fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+				HAProxyImage: "some-image",
 			}
-			cfg, _, err := r.reconcileHAProxyIgnitionConfig(context.Background(),
-				map[string]string{"haproxy-router": "some-image"},
+			cfg, err := r.reconcileHAProxyIgnitionConfig(context.Background(),
 				tc.hc,
 				"cpo-image",
 			)
