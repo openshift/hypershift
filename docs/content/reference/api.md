@@ -2981,6 +2981,11 @@ A failure here is unlikely to resolve without the changing user input.</p>
 supported by the underlying management cluster.
 A failure here is unlikely to resolve without the changing user input.</p>
 </td>
+</tr><tr><td><p>&#34;ValidIDPConfiguration&#34;</p></td>
+<td><p>ValidIDPConfiguration indicates if the Identity Provider configuration is valid.
+A failure here may require external user intervention to resolve
+e.g. the user-provided IDP configuration provided is invalid or the IDP is not reachable.</p>
+</td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
 detected as invalid.
