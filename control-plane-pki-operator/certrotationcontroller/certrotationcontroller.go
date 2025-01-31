@@ -126,7 +126,7 @@ func NewCertRotationController(
 			Description:   "Client certificate for customer break-glass credentials.",
 		},
 		eventRecorder,
-		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
+		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, rotatorName, hypershiftClient),
 	)
 	ret.certRotators = append(ret.certRotators, certRotator)
 
@@ -178,7 +178,7 @@ func NewCertRotationController(
 			Description:   "Client certificate for SRE break-glass credentials.",
 		},
 		eventRecorder,
-		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
+		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, sreRotatorName, hypershiftClient),
 	)
 	ret.certRotators = append(ret.certRotators, sreCertRotator)
 
