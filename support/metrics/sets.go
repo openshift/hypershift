@@ -218,7 +218,7 @@ func KASRelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 			},
 			{
 				Action:       "drop",
-				Regex:        "apiserver_request_duration_seconds_bucket;(0.15|0.25|0.3|0.35|0.4|0.45|0.6|0.7|0.8|0.9|1.25|1.5|1.75|2.5|3|3.5|4.5|6|7|8|9|15|25|30|50)",
+				Regex:        "apiserver_request_duration_seconds_bucket;(0.15|0.25|0.3|0.35|0.4|0.45|0.6|0.7|0.8|0.9|1.25|1.5|1.75|2.5|3|3.5|4.5|6|7|8|9|15|25|30|50)(\\.0)?",
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
 			},
 		}
@@ -308,7 +308,7 @@ func OpenShiftAPIServerRelabelConfigs(set MetricsSet) []prometheusoperatorv1.Rel
 			},
 			{
 				Action:       "drop",
-				Regex:        "apiserver_request_duration_seconds_bucket;(0.15|0.25|0.3|0.35|0.4|0.45|0.6|0.7|0.8|0.9|1.25|1.5|1.75|2.5|3|3.5|4.5|6|7|8|9|15|25|30|50)",
+				Regex:        "apiserver_request_duration_seconds_bucket;(0.15|0.25|0.3|0.35|0.4|0.45|0.6|0.7|0.8|0.9|1.25|1.5|1.75|2.5|3|3.5|4.5|6|7|8|9|15|25|30|50)(\\.0)?",
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
 			},
 		}
