@@ -3127,20 +3127,6 @@ fields of the Hosted Cluster CR. An existing cloud resource is expected to exist
 <tbody>
 <tr>
 <td>
-<code>credentials</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>Credentials is the object containing existing Azure credentials needed for creating and managing cloud
-infrastructure resources.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>cloud</code></br>
 <em>
 string
