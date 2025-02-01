@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
@@ -30,7 +31,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 const (
@@ -102,6 +105,21 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 		return fmt.Errorf("failed to watch Deployment: %w", err)
 	}
 
+	namespacedPredicates := predicate.NewPredicateFuncs(func(object client.Object) bool {
+		return object.GetNamespace() == r.Namespace
+	})
+	// Watch the HCP management side.
+	if err := c.Watch(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{}, handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, o client.Object) []ctrl.Request {
+			if o.GetNamespace() != r.Namespace {
+				return nil
+			}
+			return []ctrl.Request{{NamespacedName: client.ObjectKeyFromObject(o)}}
+		},
+	), namespacedPredicates)); err != nil {
+		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
+	}
+
 	// Trigger initial sync.
 	initialSync := make(chan event.GenericEvent)
 	if err := c.Watch(source.Channel(initialSync, &handler.EnqueueRequestForObject{})); err != nil {
@@ -126,13 +144,43 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 	if hcp.DeletionTimestamp != nil {
-		// TODO(alberto): implement deletion. E.g. loop over nodeClaims delete them, wait and delete karpeneter deployment.
 		if controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
+			nodePoolList := &karpenterv1.NodePoolList{}
+			if err := r.GuestClient.List(ctx, nodePoolList); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to list NodePools: %w", err)
+			}
+
+			for _, nodePool := range nodePoolList.Items {
+				// If we still get the NodePool, but it's already marked as terminating, we don't need to call Delete again
+				if !nodePool.GetDeletionTimestamp().IsZero() {
+					continue
+				}
+				if err := r.GuestClient.Delete(ctx, &nodePool, &client.DeleteOptions{
+					PropagationPolicy: ptr.To(metav1.DeletePropagationForeground),
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to delete NodePool: %w", err)
+				}
+			}
+			// Wait until all NodePools are deleted before removing the finalizer
+			if len(nodePoolList.Items) > 0 {
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+
+			nodeClaimList := &karpenterv1.NodeClaimList{}
+			// Make sure all NodeClaims are actually gone
+			if err := r.GuestClient.List(ctx, nodeClaimList); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to list NodeClaims: %w", err)
+			}
+			if len(nodeClaimList.Items) > 0 {
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+
 			originalHCP := hcp.DeepCopy()
 			controllerutil.RemoveFinalizer(hcp, karpenterFinalizer)
 			if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
+			log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
 		}
 		return ctrl.Result{}, nil
 	}

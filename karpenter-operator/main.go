@@ -83,6 +83,8 @@ func run(ctx context.Context) error {
 	metav1.AddToGroupVersion(scheme, karpanterGroupVersion)
 	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodeClaim{})
 	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodeClaimList{})
+	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodePool{})
+	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodePoolList{})
 
 	managementCluster, err := cluster.New(managementKubeconfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
