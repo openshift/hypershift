@@ -2,8 +2,6 @@ package v1beta1
 
 import (
 	"fmt"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
 // AzureVMImageType is used to specify the source of the Azure VM boot image.
@@ -324,13 +322,6 @@ type AzureNodePoolOSDisk struct {
 // would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
 // fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
 type AzurePlatformSpec struct {
-	// Credentials is the object containing existing Azure credentials needed for creating and managing cloud
-	// infrastructure resources.
-	//
-	// +kubebuilder:validation:Required
-	// +required
-	Credentials corev1.LocalObjectReference `json:"credentials"`
-
 	// Cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
 	//
 	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud;AzureStackCloud
