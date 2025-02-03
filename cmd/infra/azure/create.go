@@ -70,6 +70,7 @@ type CreateInfraOptions struct {
 	DataPlaneIdentitiesFile     string
 	AssignServicePrincipalRoles bool
 	DNSZoneRG                   string
+	AssignCustomHCPRoles        bool
 }
 
 type CreateInfraOutput struct {
@@ -247,7 +248,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 				if err != nil {
 					return nil, err
 				}
-				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID)
+				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID, o.AssignCustomHCPRoles)
 				if err != nil {
 					return nil, err
 				}
@@ -818,7 +819,7 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 }
 
 // assignServicePrincipalRoles assigns the required roles to the service principal for each control plane managed identity component
-func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string) error {
+func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string, assignCustomHCPRoles bool) error {
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
 	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
@@ -838,6 +839,9 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
 		scopes = append(scopes, nsgRG, vnetRG)
+		if assignCustomHCPRoles {
+			role = "Azure Red Hat OpenShift Control Plane Operator Role"
+		}
 	case azureFile:
 		role = "Azure Red Hat OpenShift Azure Files Storage Operator Role"
 		scopes = append(scopes, nsgRG, vnetRG)
@@ -849,6 +853,9 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 		role = "Azure Red Hat OpenShift Image Registry Operator Role"
 	case nodePoolMgmt:
 		scopes = append(scopes, vnetRG)
+		if assignCustomHCPRoles {
+			role = "Azure Red Hat OpenShift NodePool Management Role"
+		}
 	}
 
 	// Assign contributor role to service principal
