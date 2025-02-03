@@ -14,11 +14,10 @@ import (
 	clientgoapplyconfig "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-func NewHostedControlPlaneStatusReporter(name, namespace, rotator string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
+func NewHostedControlPlaneStatusReporter(name, namespace string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
 	return &HostedControlPlaneStatusReporter{
 		namespace: namespace,
 		name:      name,
-		rotator:   rotator,
 		client:    client,
 	}
 }
@@ -26,9 +25,6 @@ func NewHostedControlPlaneStatusReporter(name, namespace, rotator string, client
 type HostedControlPlaneStatusReporter struct {
 	// namespace, name identify the HostedControlPlane we report to
 	namespace, name string
-
-	// name of the rotating controller
-	rotator string
 
 	client hypershiftv1beta1client.HostedControlPlanesGetter
 }
@@ -45,7 +41,7 @@ func (h *HostedControlPlaneStatusReporter) Report(ctx context.Context, condition
 		newCondition.Message = syncErr.Error()
 	}
 
-	return UpdateHostedControlPlaneStatusCondition(ctx, newCondition, h.namespace, h.name, h.rotator+"-cert-rotation-controller", h.client)
+	return UpdateHostedControlPlaneStatusCondition(ctx, newCondition, h.namespace, h.name, "cert-rotation-controller", h.client)
 }
 
 var _ certrotation.StatusReporter = (*HostedControlPlaneStatusReporter)(nil)

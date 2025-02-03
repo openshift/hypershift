@@ -132,7 +132,7 @@ func NewCertRotationController(
 			},
 		},
 		eventRecorder,
-		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, rotatorName, hypershiftClient),
+		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
 	)
 	ret.certRotators = append(ret.certRotators, certRotator)
 
@@ -190,7 +190,7 @@ func NewCertRotationController(
 			},
 		},
 		eventRecorder,
-		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, sreRotatorName, hypershiftClient),
+		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
 	)
 	ret.certRotators = append(ret.certRotators, sreCertRotator)
 
