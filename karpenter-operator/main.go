@@ -8,6 +8,11 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
+	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
+	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -15,6 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/spf13/cobra"
 )
@@ -64,12 +71,25 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	scheme := hyperapi.Scheme
+
+	awsKarpanterGroupVersion := schema.GroupVersion{Group: awskarpenterapis.Group, Version: "v1"}
+	metav1.AddToGroupVersion(scheme, awsKarpanterGroupVersion)
+	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClass{})
+	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClassList{})
+
+	karpanterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
+	metav1.AddToGroupVersion(scheme, karpanterGroupVersion)
+	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodeClaim{})
+	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodeClaimList{})
+
 	managementCluster, err := cluster.New(managementKubeconfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
 			DefaultNamespaces: map[string]cache.Config{namespace: {}},
-			Scheme:            hyperapi.Scheme,
+			Scheme:            scheme,
 		}
-		opt.Scheme = hyperapi.Scheme
+		opt.Scheme = scheme
 	})
 	if err != nil {
 		return err
@@ -81,7 +101,7 @@ func run(ctx context.Context) error {
 	}
 
 	mgr, err := ctrl.NewManager(guestKubeconfig, ctrl.Options{
-		Scheme:         hyperapi.Scheme,
+		Scheme:         scheme,
 		LeaderElection: false,
 	})
 	if err != nil {

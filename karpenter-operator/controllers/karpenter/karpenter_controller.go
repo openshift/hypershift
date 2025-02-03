@@ -10,16 +10,18 @@ import (
 	supportassets "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/upsert"
 
+	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
+	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
+
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,8 +37,6 @@ const (
 	karpenterFinalizer = "hypershift.openshift.io/karpenter-finalizer"
 	// userDataAMILabel is a label set in the userData secret generated for karpenter instances.
 	userDataAMILabel = "hypershift.openshift.io/ami"
-
-	ec2NodeClassGroup = "karpenter.k8s.aws"
 )
 
 var (
@@ -85,10 +85,8 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 	}
 
 	// Watch EC2NodeClass guest side.
-	if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "karpenter.k8s.aws/v1",
-		"kind":       "EC2NodeClass",
-	}}, &handler.EnqueueRequestForObject{})); err != nil {
+	if err := c.Watch(source.Kind(mgr.GetCache(), &awskarpenterv1.EC2NodeClass{},
+		&handler.TypedEnqueueRequestForObject[*awskarpenterv1.EC2NodeClass]{})); err != nil {
 		return fmt.Errorf("failed to watch EC2NodeClass: %w", err)
 	}
 
@@ -232,7 +230,7 @@ func (r *Reconciler) reconcileVAP(ctx context.Context) error {
 							admissionv1.Update,
 						},
 						Rule: admissionv1.Rule{
-							APIGroups:   []string{ec2NodeClassGroup},
+							APIGroups:   []string{awskarpenterapis.Group},
 							APIVersions: []string{"v1"},
 							Resources:   []string{"ec2nodeclasses"},
 						},
@@ -282,12 +280,7 @@ func (r *Reconciler) reconcileVAP(ctx context.Context) error {
 func (r *Reconciler) reconcileEC2NodeClassOwnedFields(ctx context.Context, userDataSecret *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	ec2NodeClassList := &unstructured.UnstructuredList{}
-	ec2NodeClassList.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   ec2NodeClassGroup,
-		Version: "v1",
-		Kind:    "EC2NodeClassList",
-	})
+	ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
 	err := r.GuestClient.List(ctx, ec2NodeClassList)
 	if err != nil {
 		return fmt.Errorf("failed to get EC2NodeClassList: %w", err)
@@ -295,35 +288,29 @@ func (r *Reconciler) reconcileEC2NodeClassOwnedFields(ctx context.Context, userD
 
 	errs := []error{}
 	for _, ec2NodeClass := range ec2NodeClassList.Items {
-		ec2NodeClass.SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   ec2NodeClassGroup,
-			Version: "v1",
-			Kind:    "EC2NodeClass",
-		})
 		op, err := r.CreateOrUpdate(ctx, r.GuestClient, &ec2NodeClass, func() error {
-			ec2NodeClass.Object["spec"].(map[string]interface{})["userData"] = string(userDataSecret.Data["value"])
-			ec2NodeClass.Object["spec"].(map[string]interface{})["amiFamily"] = "Custom"
-			ec2NodeClass.Object["spec"].(map[string]interface{})["amiSelectorTerms"] = []map[string]interface{}{
+			ec2NodeClass.Spec.UserData = ptr.To(string(userDataSecret.Data["value"]))
+			ec2NodeClass.Spec.AMIFamily = ptr.To("Custom")
+			ec2NodeClass.Spec.AMISelectorTerms = []awskarpenterv1.AMISelectorTerm{
 				{
-					"id": string(userDataSecret.Labels[userDataAMILabel]),
+					ID: string(userDataSecret.Labels[userDataAMILabel]),
 				},
 			}
-
 			// default subnetSelectorTerms if not set.
-			if ec2NodeClass.Object["spec"].(map[string]interface{})["subnetSelectorTerms"] == nil {
-				ec2NodeClass.Object["spec"].(map[string]interface{})["subnetSelectorTerms"] = []map[string]interface{}{
+			if ec2NodeClass.Spec.SubnetSelectorTerms == nil {
+				ec2NodeClass.Spec.SubnetSelectorTerms = []awskarpenterv1.SubnetSelectorTerm{
 					{
-						"tags": map[string]interface{}{
+						Tags: map[string]string{
 							"karpenter.sh/discovery": hcp.Spec.InfraID,
 						},
 					},
 				}
 			}
 			// default securityGroupSelectorTerms if not set.
-			if ec2NodeClass.Object["spec"].(map[string]interface{})["securityGroupSelectorTerms"] == nil {
-				ec2NodeClass.Object["spec"].(map[string]interface{})["securityGroupSelectorTerms"] = []map[string]interface{}{
+			if ec2NodeClass.Spec.SecurityGroupSelectorTerms == nil {
+				ec2NodeClass.Spec.SecurityGroupSelectorTerms = []awskarpenterv1.SecurityGroupSelectorTerm{
 					{
-						"tags": map[string]interface{}{
+						Tags: map[string]string{
 							"karpenter.sh/discovery": hcp.Spec.InfraID,
 						},
 					},
@@ -348,41 +335,37 @@ func (r *Reconciler) reconcileEC2NodeClassOwnedFields(ctx context.Context, userD
 func (r *Reconciler) reconcileEC2NodeClassDefault(ctx context.Context, userDataSecret *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Create an unstructured object for the EC2NodeClass
-	ec2NodeClass := &unstructured.Unstructured{}
-	ec2NodeClass.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   ec2NodeClassGroup,
-		Version: "v1",
-		Kind:    "EC2NodeClass",
-	})
+	ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
 	ec2NodeClass.SetName("default")
 
 	op, err := r.CreateOrUpdate(ctx, r.GuestClient, ec2NodeClass, func() error {
-		ec2NodeClass.Object["spec"] = map[string]interface{}{}
-		ec2NodeClass.Object["spec"].(map[string]interface{})["role"] = "KarpenterNodeRole-agl" // TODO(alberto): set a convention for this e.g. openshift-karpenter-infraID
-		ec2NodeClass.Object["spec"].(map[string]interface{})["userData"] = string(userDataSecret.Data["value"])
-		ec2NodeClass.Object["spec"].(map[string]interface{})["amiFamily"] = "Custom"
-		ec2NodeClass.Object["spec"].(map[string]interface{})["amiSelectorTerms"] = []map[string]interface{}{
-			{
-				"id": string(userDataSecret.Labels[userDataAMILabel]),
+		ec2NodeClass.Spec = awskarpenterv1.EC2NodeClassSpec{
+			Role:      "KarpenterNodeRole-agl", // TODO(alberto): set a convention for this e.g. openshift-karpenter-infraID
+			UserData:  ptr.To(string(userDataSecret.Data["value"])),
+			AMIFamily: ptr.To("Custom"),
+			AMISelectorTerms: []awskarpenterv1.AMISelectorTerm{
+				{
+					ID: string(userDataSecret.Labels[userDataAMILabel]),
+				},
 			},
-		}
-		ec2NodeClass.Object["spec"].(map[string]interface{})["subnetSelectorTerms"] = []map[string]interface{}{
-			{
-				"tags": map[string]interface{}{
-					"karpenter.sh/discovery": hcp.Spec.InfraID,
+			SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+				{
+					Tags: map[string]string{
+						"karpenter.sh/discovery": hcp.Spec.InfraID,
+					},
+				},
+			},
+			SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+				{
+					Tags: map[string]string{
+						"karpenter.sh/discovery": hcp.Spec.InfraID,
+					},
 				},
 			},
 		}
-		ec2NodeClass.Object["spec"].(map[string]interface{})["securityGroupSelectorTerms"] = []map[string]interface{}{
-			{
-				"tags": map[string]interface{}{
-					"karpenter.sh/discovery": hcp.Spec.InfraID,
-				},
-			},
-		}
+
 		if hcp.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
-			ec2NodeClass.Object["spec"].(map[string]interface{})["associatePublicIPAddress"] = true
+			ec2NodeClass.Spec.AssociatePublicIPAddress = ptr.To(true)
 		}
 		return nil
 	})

@@ -17,8 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	certificatesv1client "k8s.io/client-go/kubernetes/typed/certificates/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -27,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 const (
@@ -155,15 +154,14 @@ func (r *MachineApproverController) authorize(ctx context.Context, csr *certific
 	return false, nil
 }
 
-func getEC2InstancesDNSNames(ctx context.Context, nodeClaims *unstructured.UnstructuredList, ec2Client ec2iface.EC2API) ([]string, error) {
+func getEC2InstancesDNSNames(ctx context.Context, nodeClaims []karpenterv1.NodeClaim, ec2Client ec2iface.EC2API) ([]string, error) {
 	ec2InstanceIDs := []string{}
-	for _, claim := range nodeClaims.Items {
-		nodeName := claim.UnstructuredContent()["status"].(map[string]interface{})["nodeName"]
-		if nodeName != nil {
+	for _, claim := range nodeClaims {
+		if claim.Status.NodeName != "" {
 			// skip if a node is already created for this nodeClaim.
 			continue
 		}
-		providerID := claim.UnstructuredContent()["status"].(map[string]interface{})["providerID"].(string)
+		providerID := claim.Status.ProviderID
 		instanceID := providerID[strings.LastIndex(providerID, "/")+1:]
 
 		ec2InstanceIDs = append(ec2InstanceIDs, instanceID)
@@ -217,17 +215,12 @@ func getEC2Client() (ec2iface.EC2API, error) {
 	return ec2Client, nil
 }
 
-func listNodeClaims(ctx context.Context, client client.Client) (*unstructured.UnstructuredList, error) {
-	nodeClaimList := &unstructured.UnstructuredList{}
-	nodeClaimList.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "karpenter.sh",
-		Version: "v1",
-		Kind:    "NodeClaim",
-	})
+func listNodeClaims(ctx context.Context, client client.Client) ([]karpenterv1.NodeClaim, error) {
+	nodeClaimList := &karpenterv1.NodeClaimList{}
 	err := client.List(ctx, nodeClaimList)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list NodeClaims: %w", err)
 	}
 
-	return nodeClaimList, nil
+	return nodeClaimList.Items, nil
 }

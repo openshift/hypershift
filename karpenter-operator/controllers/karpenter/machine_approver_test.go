@@ -21,12 +21,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 type fakeEC2Client struct {
@@ -50,29 +50,22 @@ func TestAuthorize(t *testing.T) {
 	_ = hyperv1.AddToScheme(scheme)
 
 	// Register the NodeClaim GVK in the scheme
-	nodeClaimGVK := schema.GroupVersionKind{
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{
 		Group:   "karpenter.sh",
 		Version: "v1",
 		Kind:    "NodeClaim",
-	}
-	scheme.AddKnownTypeWithName(nodeClaimGVK, &unstructured.Unstructured{})
-	scheme.AddKnownTypeWithName(
-		schema.GroupVersionKind{
-			Group:   "karpenter.sh",
-			Version: "v1",
-			Kind:    "NodeClaimList",
-		},
-		&unstructured.UnstructuredList{},
-	)
+	}, &karpenterv1.NodeClaim{})
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{
+		Group:   "karpenter.sh",
+		Version: "v1",
+		Kind:    "NodeClaimList",
+	}, &karpenterv1.NodeClaimList{})
 
-	fakeNodeClaim := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"status": map[string]interface{}{
-				"providerID": "aws:///fakeproviderID",
-			},
+	fakeNodeClaim := &karpenterv1.NodeClaim{
+		Status: karpenterv1.NodeClaimStatus{
+			ProviderID: "aws:///fakeproviderID",
 		},
 	}
-	fakeNodeClaim.SetGroupVersionKind(nodeClaimGVK)
 
 	testCases := []struct {
 		name      string
