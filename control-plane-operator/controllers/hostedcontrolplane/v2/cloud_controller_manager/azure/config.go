@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/secretproviderclass"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -51,7 +51,7 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 }
 
 func adaptSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName, string(cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding))
+	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider)
 	return nil
 }
 

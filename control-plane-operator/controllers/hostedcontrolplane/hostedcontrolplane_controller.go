@@ -52,7 +52,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/registryoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/routecm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
@@ -95,6 +94,7 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -3110,7 +3110,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 				// Reconcile the SecretProviderClass
 				kmsSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
 				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
-					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS.CertificateName, string(hcp.Spec.SecretEncryption.KMS.Azure.KMS.ObjectEncoding))
+					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS)
 					return nil
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
@@ -3699,7 +3699,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	if hyperazureutil.IsAroHCP() {
 		cnccSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureNetworkSecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, cnccSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cnccSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CertificateName, string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ObjectEncoding))
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cnccSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ingressoperator secret provider class: %w", err)
@@ -3863,7 +3863,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	if hyperazureutil.IsAroHCP() {
 		ingressSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureIngressSecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ingressSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(ingressSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName, string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding))
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(ingressSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ingress operator secret provider class: %w", err)
@@ -4231,7 +4231,7 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx contex
 	if hyperazureutil.IsAroHCP() {
 		imageRegistrySecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureImageRegistrySecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, imageRegistrySecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(imageRegistrySecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName, string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding))
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(imageRegistrySecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile image registry operator secret provider class: %w", err)
@@ -4842,7 +4842,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		// Reconcile SecretProviderClass
 		azureCloudProviderSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureCloudProviderSecretProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, azureCloudProviderSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureCloudProviderSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName, string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding))
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureCloudProviderSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile azure cloud provider secret provider class: %w", err)
@@ -5072,7 +5072,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		// Reconcile SecretProviderClasses
 		azureDiskSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureDiskCSISecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, azureDiskSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureDiskSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName, string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ObjectEncoding))
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureDiskSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure Disk Secret Provider Class: %w", err)
@@ -5080,7 +5080,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 
 		azureFileSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureFileCSISecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, azureFileSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureFileSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CertificateName, string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ObjectEncoding))
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureFileSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure File Secret Provider Class: %w", err)

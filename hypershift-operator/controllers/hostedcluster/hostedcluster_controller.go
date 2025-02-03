@@ -34,7 +34,6 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -61,6 +60,7 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
+	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -1827,7 +1827,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	case hyperv1.AzurePlatform:
 		cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
 		if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CertificateName, string(hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding))
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator)
 			return nil
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
