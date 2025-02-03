@@ -71,8 +71,6 @@ spec:
   olmCatalogPlacement: management
   platform:
     azure:
-      credentials:
-        name: bryans-cluster-cloud-credentials
       location: fakeLocation
       managedIdentities:
         controlPlane:
