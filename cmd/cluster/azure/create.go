@@ -29,7 +29,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const SATokenIssuerSecret = "sa-token-issuer-key"
+const (
+	SATokenIssuerSecret = "sa-token-issuer-key"
+	ObjectEncoding      = "utf-8"
+)
 
 func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
 	rawCreateOptions := &RawCreateOptions{
@@ -281,6 +284,15 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	if o.TechPreviewEnabled {
 		cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
 		cluster.Spec.Platform.Azure.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
+
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
 	}
 
 	if o.encryptionKey != nil {
@@ -303,6 +315,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		cluster.Spec.SecretEncryption.KMS.Azure.KMS = hyperv1.ManagedIdentity{
 			ClientID:        o.KMSClientID,
 			CertificateName: o.KMSCertName,
+			ObjectEncoding:  ObjectEncoding,
 		}
 	}
 
