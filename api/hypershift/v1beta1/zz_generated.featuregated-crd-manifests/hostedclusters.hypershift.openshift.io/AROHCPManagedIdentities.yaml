@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/NetworkDiagnosticsConfig: "true"
+    feature-gate.release.openshift.io/AROHCPManagedIdentities: "true"
   name: hostedclusters.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -1186,152 +1186,6 @@ spec:
                                 x-kubernetes-list-type: atomic
                             type: object
                         type: object
-                      networkDiagnostics:
-                        description: |-
-                          networkDiagnostics defines network diagnostics configuration.
-
-                          Takes precedence over spec.disableNetworkDiagnostics in network.operator.openshift.io.
-                          If networkDiagnostics is not specified or is empty,
-                          and the spec.disableNetworkDiagnostics flag in network.operator.openshift.io is set to true,
-                          the network diagnostics feature will be disabled.
-                        properties:
-                          mode:
-                            description: |-
-                              mode controls the network diagnostics mode
-
-                              When omitted, this means the user has no opinion and the platform is left
-                              to choose reasonable defaults. These defaults are subject to change over time.
-                              The current default is All.
-                            enum:
-                            - ""
-                            - All
-                            - Disabled
-                            type: string
-                          sourcePlacement:
-                            description: |-
-                              sourcePlacement controls the scheduling of network diagnostics source deployment
-
-                              See NetworkDiagnosticsSourcePlacement for more details about default values.
-                            properties:
-                              nodeSelector:
-                                additionalProperties:
-                                  type: string
-                                description: |-
-                                  nodeSelector is the node selector applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is `kubernetes.io/os: linux`.
-                                type: object
-                              tolerations:
-                                description: |-
-                                  tolerations is a list of tolerations applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is an empty list.
-                                items:
-                                  description: |-
-                                    The pod this Toleration is attached to tolerates any taint that matches
-                                    the triple <key,value,effect> using the matching operator <operator>.
-                                  properties:
-                                    effect:
-                                      description: |-
-                                        Effect indicates the taint effect to match. Empty means match all taint effects.
-                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
-                                      type: string
-                                    key:
-                                      description: |-
-                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
-                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
-                                      type: string
-                                    operator:
-                                      description: |-
-                                        Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
-                                        Exists is equivalent to wildcard for value, so that a pod can
-                                        tolerate all taints of a particular category.
-                                      type: string
-                                    tolerationSeconds:
-                                      description: |-
-                                        TolerationSeconds represents the period of time the toleration (which must be
-                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
-                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
-                                        negative values will be treated as 0 (evict immediately) by the system.
-                                      format: int64
-                                      type: integer
-                                    value:
-                                      description: |-
-                                        Value is the taint value the toleration matches to.
-                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
-                                      type: string
-                                  type: object
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            type: object
-                          targetPlacement:
-                            description: |-
-                              targetPlacement controls the scheduling of network diagnostics target daemonset
-
-                              See NetworkDiagnosticsTargetPlacement for more details about default values.
-                            properties:
-                              nodeSelector:
-                                additionalProperties:
-                                  type: string
-                                description: |-
-                                  nodeSelector is the node selector applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is `kubernetes.io/os: linux`.
-                                type: object
-                              tolerations:
-                                description: |-
-                                  tolerations is a list of tolerations applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is `- operator: "Exists"` which means that all taints are tolerated.
-                                items:
-                                  description: |-
-                                    The pod this Toleration is attached to tolerates any taint that matches
-                                    the triple <key,value,effect> using the matching operator <operator>.
-                                  properties:
-                                    effect:
-                                      description: |-
-                                        Effect indicates the taint effect to match. Empty means match all taint effects.
-                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
-                                      type: string
-                                    key:
-                                      description: |-
-                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
-                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
-                                      type: string
-                                    operator:
-                                      description: |-
-                                        Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
-                                        Exists is equivalent to wildcard for value, so that a pod can
-                                        tolerate all taints of a particular category.
-                                      type: string
-                                    tolerationSeconds:
-                                      description: |-
-                                        TolerationSeconds represents the period of time the toleration (which must be
-                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
-                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
-                                        negative values will be treated as 0 (evict immediately) by the system.
-                                      format: int64
-                                      type: integer
-                                    value:
-                                      description: |-
-                                        Value is the taint value the toleration matches to.
-                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
-                                      type: string
-                                  type: object
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            type: object
-                        type: object
                       networkType:
                         description: |-
                           NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
@@ -1361,12 +1215,6 @@ spec:
                         pattern: ^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$
                         type: string
                     type: object
-                    x-kubernetes-validations:
-                    - message: cannot set networkDiagnostics.sourcePlacement and networkDiagnostics.targetPlacement
-                        when networkDiagnostics.mode is Disabled
-                      rule: '!has(self.networkDiagnostics) || !has(self.networkDiagnostics.mode)
-                        || self.networkDiagnostics.mode!=''Disabled'' || !has(self.networkDiagnostics.sourcePlacement)
-                        && !has(self.networkDiagnostics.targetPlacement)'
                   oauth:
                     description: |-
                       OAuth holds cluster-wide information about OAuth.
