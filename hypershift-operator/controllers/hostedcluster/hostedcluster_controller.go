@@ -242,6 +242,9 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 // managedResources are all the resources that are managed as childresources for a HostedCluster
 func (r *HostedClusterReconciler) managedResources() []client.Object {
 	managedResources := []client.Object{
+		// Watching nodePools to makesure we refresh the DisableClusterAutoscalerAnnotation within the HCP
+		// when nodepool.spec.autoScaling changes.
+		&hyperv1.NodePool{},
 		&capiaws.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
 		&capiv1.Cluster{},
