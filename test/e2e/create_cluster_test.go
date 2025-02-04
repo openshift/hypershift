@@ -1108,10 +1108,9 @@ func TestCreateCluster(t *testing.T) {
 	}
 	if !e2eutil.IsLessThan(e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
-	}
-
-	clusterOpts.PodsLabels = map[string]string{
-		"hypershift-e2e-test-label": "test",
+		clusterOpts.PodsLabels = map[string]string{
+			"hypershift-e2e-test-label": "test",
+		}
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -1139,15 +1138,14 @@ func TestCreateCluster(t *testing.T) {
 
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
-		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
+		// TODO: enable when CNO/CSI changes to add the Labels to their 2nd-level operands is added.
+		// e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // TestCreateClusterV2 tests the new CPO implementation, which is currently hidden behind an annotation.
 func TestCreateClusterV2(t *testing.T) {
-	e2eutil.AtLeast(t, e2eutil.Version419)
-
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
@@ -1172,11 +1170,6 @@ func TestCreateClusterV2(t *testing.T) {
 		}
 	}
 
-	clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
-	clusterOpts.PodsLabels = map[string]string{
-		"hypershift-e2e-test-label": "test",
-	}
-
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Sanity check the cluster by waiting for the nodes to report ready
 		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
@@ -1202,7 +1195,6 @@ func TestCreateClusterV2(t *testing.T) {
 
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
-		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 

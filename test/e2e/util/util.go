@@ -1934,7 +1934,7 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 
 func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureCustomLabels", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, Version418)
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		podList := &corev1.PodList{}
