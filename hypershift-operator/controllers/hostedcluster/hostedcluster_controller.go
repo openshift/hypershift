@@ -261,6 +261,7 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
+		&hyperv1.NodePool{},
 	}
 
 	if r.EnableEtcdRecovery {
@@ -3933,29 +3934,42 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
-		if metricsSet == metrics.MetricsSetSRE {
-			if _, isCM := obj.(*corev1.ConfigMap); isCM {
-				if obj.GetName() == metrics.SREConfigurationConfigMapName && obj.GetNamespace() == operatorNamespace {
-					// A change has occurred to the SRE metrics set configuration. We should requeue all HostedClusters
-					hcList := &hyperv1.HostedClusterList{}
-					if err := c.List(ctx, hcList); err != nil {
-						// An error occurred, report it.
-						log.Error(err, "failed to list hosted clusters while processing SRE config event")
-					}
-					requests := make([]reconcile.Request, 0, len(hcList.Items))
-					for _, hc := range hcList.Items {
-						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}})
-					}
-					return requests
-				}
+
+		handleDefault := func(obj client.Object) []reconcile.Request {
+			var hostedClusterName string
+			if obj.GetAnnotations() != nil {
+				hostedClusterName = obj.GetAnnotations()[hyperutil.HostedClusterAnnotation]
+			}
+			if hostedClusterName == "" {
+				return []reconcile.Request{}
+			}
+			return []reconcile.Request{
+				{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
 			}
 		}
-		if _, isStatefulset := obj.(*appsv1.StatefulSet); isStatefulset {
-			if obj.GetName() != "etcd" {
+
+		switch typedObj := obj.(type) {
+		case *corev1.ConfigMap:
+			if metricsSet == metrics.MetricsSetSRE && typedObj.Name == metrics.SREConfigurationConfigMapName && typedObj.Namespace == operatorNamespace {
+				// A change has occurred to the SRE metrics set configuration. We should requeue all HostedClusters
+				hcList := &hyperv1.HostedClusterList{}
+				if err := c.List(ctx, hcList); err != nil {
+					// An error occurred, report it.
+					log.Error(err, "failed to list hosted clusters while processing SRE config event")
+				}
+				requests := make([]reconcile.Request, 0, len(hcList.Items))
+				for _, hc := range hcList.Items {
+					requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}})
+				}
+				return requests
+			}
+			return handleDefault(typedObj)
+		case *appsv1.StatefulSet:
+			if typedObj.Name != "etcd" {
 				return []reconcile.Request{}
 			}
 			hcpList := &hyperv1.HostedControlPlaneList{}
-			if err := c.List(ctx, hcpList, client.InNamespace(obj.GetNamespace())); err != nil {
+			if err := c.List(ctx, hcpList, client.InNamespace(typedObj.Namespace)); err != nil {
 				log.Error(err, "failed to list hcp")
 				return []reconcile.Request{}
 			}
@@ -3966,28 +3980,20 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 				}
 			}
 			return []reconcile.Request{}
-		}
-		if _, isJob := obj.(*batchv1.Job); isJob {
-			if obj.GetName() != etcdrecoverymanifests.EtcdRecoveryJob("").Name {
+		case *batchv1.Job:
+			if typedObj.Name != etcdrecoverymanifests.EtcdRecoveryJob("").Name {
 				return []reconcile.Request{}
 			}
-			name := obj.GetLabels()[jobHostedClusterNameLabel]
-			namespace := obj.GetLabels()[jobHostedClusterNamespaceLabel]
+			name := typedObj.Labels[jobHostedClusterNameLabel]
+			namespace := typedObj.Labels[jobHostedClusterNamespaceLabel]
 			if name != "" && namespace != "" {
 				return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: name, Namespace: namespace}}}
 			}
 			return []reconcile.Request{}
-		}
-
-		var hostedClusterName string
-		if obj.GetAnnotations() != nil {
-			hostedClusterName = obj.GetAnnotations()[hyperutil.HostedClusterAnnotation]
-		}
-		if hostedClusterName == "" {
-			return []reconcile.Request{}
-		}
-		return []reconcile.Request{
-			{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
+		case *hyperv1.NodePool:
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: typedObj.Spec.ClusterName, Namespace: typedObj.Namespace}}}
+		default:
+			return handleDefault(typedObj)
 		}
 	}
 }
