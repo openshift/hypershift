@@ -7,11 +7,11 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -74,7 +74,7 @@ type HostedClusterConfigOperatorConfig struct {
 	OAuthPort                    int32
 	OperateOnReleaseImage        string
 	EnableCIDebugOutput          bool
-	ListDigestsFN                registryclient.DigestListerFN
+	GetDigestFN                  olm.GetDigestFN
 	ImageMetaDataProvider        util.RegistryClientImageMetadataProvider
 
 	kubeClient kubeclient.Interface

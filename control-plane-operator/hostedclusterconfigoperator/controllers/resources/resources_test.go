@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -141,11 +142,16 @@ func TestReconcileErrorHandling(t *testing.T) {
 		}
 		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 
-		fakeDigestLister := func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
-			return "", nil
-		}
 		imageMetaDataProvider := supportutil.RegistryClientImageMetadataProvider{
 			OpenShiftImageRegistryOverrides: map[string][]string{},
+		}
+
+		fakeGetDigest := func(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
+			dockerImageRef := &reference.DockerImageReference{
+				Registry:  "registry.redhat.io",
+				Namespace: "redhat",
+			}
+			return "", dockerImageRef, nil
 		}
 
 		r := &reconciler{
@@ -158,8 +164,8 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
-			DigestListerFN:         fakeDigestLister,
 			ImageMetaDataProvider:  imageMetaDataProvider,
+			GetDigestFN:            fakeGetDigest,
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -201,8 +207,8 @@ func TestReconcileOLM(t *testing.T) {
 	ctx := context.Background()
 	pullSecret := fakePullSecret()
 
-	fakeDigestLister := func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
-		return "", nil
+	fakeGetDigest := func(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
+		return "", nil, nil
 	}
 
 	testCases := []struct {
@@ -289,14 +295,15 @@ func TestReconcileOLM(t *testing.T) {
 		cpClient:               cpClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 		rootCA:                 "fake",
+		GetDigestFN:            fakeGetDigest,
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, fakeDigestLister)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 			hcp.Spec.Configuration = tc.hcpClusterConfig
 			hcp.Spec.OLMCatalogPlacement = tc.olmCatalogPlacement
-			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, fakeDigestLister)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 			g.Expect(errs).To(BeEmpty(), "unexpected errors")
 			hcOpHub := manifests.OperatorHub()
 			err := r.client.Get(ctx, client.ObjectKeyFromObject(hcOpHub), hcOpHub)
