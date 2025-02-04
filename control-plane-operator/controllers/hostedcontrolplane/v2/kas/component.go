@@ -4,6 +4,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	hyperutils "github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -49,6 +50,11 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"local-kubeconfig.yaml",
 			component.WithAdaptFunction(adaptLocalhostKubeconfigSecret),
+		).
+		WithManifestAdapter(
+			"custom-admin-kubeconfig.yaml",
+			component.WithAdaptFunction(adaptCustomAdminKubeconfigSecret),
+			component.WithPredicate(enableIfCustomKubeconfig),
 		).
 		WithManifestAdapter(
 			"external-admin-kubeconfig.yaml",
@@ -103,4 +109,9 @@ func NewComponent() component.ControlPlaneComponent {
 		RolloutOnConfigMapChange("kas-config", "kas-audit-config", "auth-config").
 		RolloutOnSecretChange("kas-secret-encryption-config").
 		Build()
+}
+
+// enableIfCustomKubeconfig is a helper predicate for the common use case of enabling a resource when a KubeAPICustomKubeconfig is specified.
+func enableIfCustomKubeconfig(cpContext component.WorkloadContext) bool {
+	return hyperutils.EnableIfCustomKubeconfig(cpContext.HCP)
 }
