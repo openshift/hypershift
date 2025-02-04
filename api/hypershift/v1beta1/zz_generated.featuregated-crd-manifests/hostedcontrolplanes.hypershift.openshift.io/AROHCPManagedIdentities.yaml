@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/DisableClusterCapabilities: "true"
+    feature-gate.release.openshift.io/AROHCPManagedIdentities: "true"
   name: hostedcontrolplanes.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -117,34 +117,6 @@ spec:
                     format: int32
                     type: integer
                 type: object
-              capabilities:
-                description: |-
-                  capabilities allows for disabling optional components at cluster install time.
-                  This field is optional and once set cannot be changed.
-                properties:
-                  disabledCapabilities:
-                    description: |-
-                      disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
-                      and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
-                      This effectively disables that capability on the hosted cluster.
-
-                      When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-                      OpenShift version.
-
-                      Once set, this field cannot be changed.
-                    items:
-                      enum:
-                      - ImageRegistry
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: atomic
-                    x-kubernetes-validations:
-                    - message: disabledCapabilities is immutable
-                      rule: self == oldSelf
-                type: object
-                x-kubernetes-validations:
-                - message: disabledCapabilities is required once set
-                  rule: '!has(oldSelf.disabledCapabilities) || has(self.disabledCapabilities)'
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default
@@ -1173,7 +1145,7 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
@@ -1978,7 +1950,7 @@ spec:
                         type: string
                       mastersSchedulable:
                         description: |-
-                          mastersSchedulable allows masters nodes to be schedulable. When this flag is
+                          MastersSchedulable allows masters nodes to be schedulable. When this flag is
                           turned on, all the master nodes in the cluster will be made schedulable,
                           so that workload pods can run on them. The default value for this field is false,
                           meaning none of the master nodes are schedulable.
@@ -2024,7 +1996,7 @@ spec:
                   If not defined, ReleaseImage is used
                 type: string
               controllerAvailabilityPolicy:
-                default: HighlyAvailable
+                default: SingleReplica
                 description: |-
                   ControllerAvailabilityPolicy specifies the availability policy applied to
                   critical control plane components. The default value is SingleReplica.
@@ -3031,6 +3003,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               controlPlaneOperator:
@@ -3094,6 +3067,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               disk:
@@ -3156,6 +3130,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               file:
@@ -3218,6 +3193,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               imageRegistry:
@@ -3280,6 +3256,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               ingress:
@@ -3342,6 +3319,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               managedIdentitiesKeyVault:
@@ -3426,6 +3404,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               nodePoolManagement:
@@ -3489,6 +3468,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                             required:
@@ -4245,6 +4225,7 @@ spec:
                             required:
                             - certificateName
                             - clientID
+                            - credentialsSecretName
                             - objectEncoding
                             type: object
                         required:
@@ -4963,12 +4944,12 @@ spec:
                                     fail to evaluate.
                                   properties:
                                     promql:
-                                      description: promql represents a cluster condition
+                                      description: promQL represents a cluster condition
                                         based on PromQL.
                                       properties:
                                         promql:
                                           description: |-
-                                            promql is a PromQL query classifying clusters. This query
+                                            PromQL is a PromQL query classifying clusters. This query
                                             query should return a 1 in the match case and a 0 in the
                                             does-not-match case. Queries which return no time
                                             series, or which return values besides 0 or 1, are
