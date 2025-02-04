@@ -171,62 +171,74 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
-			// TODO: enable this test when the API validation is enabled. The validation is currently disabled because it breaks cost budget,
-			// {
-			// 	name: "when Labels contain invalid entries it should fail",
-			// 	file: "hostedcluster-base.yaml",
-			// 	validations: []struct {
-			// 		name                   string
-			// 		mutateInput            func(*hyperv1.HostedCluster)
-			// 		expectedErrorSubstring string
-			// 	}{
-			// 		{
-			// 			name: "when label key is empty it should fail",
-			// 			mutateInput: func(hc *hyperv1.HostedCluster) {
-			// 				hc.Spec.Labels = map[string]string{
-			// 					"": "test-value",
-			// 				}
-			// 			},
-			// 			expectedErrorSubstring: "label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)",
-			// 		},
-			// 		{
-			// 			name: "when label key contains invalid prefix it should fail",
-			// 			mutateInput: func(hc *hyperv1.HostedCluster) {
-			// 				hc.Spec.Labels = map[string]string{
-			// 					"invalid-prefix/name": "test-value",
-			// 				}
-			// 			},
-			// 			expectedErrorSubstring: "label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)",
-			// 		},
-			// 		{
-			// 			name: "when label key has valid prefix but empty name it should fail",
-			// 			mutateInput: func(hc *hyperv1.HostedCluster) {
-			// 				hc.Spec.Labels = map[string]string{
-			// 					"valid.prefix.domain/": "test-value",
-			// 				}
-			// 			},
-			// 			expectedErrorSubstring: "label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)",
-			// 		},
-			// 		{
-			// 			name: "when label value is not valid it should fail",
-			// 			mutateInput: func(hc *hyperv1.HostedCluster) {
-			// 				hc.Spec.Labels = map[string]string{
-			// 					"test-key": "@",
-			// 				}
-			// 			},
-			// 			expectedErrorSubstring: "label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (_) or dots (.), and begin and end with an alphanumeric character",
-			// 		},
-			// 		{
-			// 			name: "when label key and value are valid it should pass",
-			// 			mutateInput: func(hc *hyperv1.HostedCluster) {
-			// 				hc.Spec.Labels = map[string]string{
-			// 					"valid.prefix.domain/test-name": "test-value",
-			// 				}
-			// 			},
-			// 			expectedErrorSubstring: "",
-			// 		},
-			// 	},
-			// },
+			{
+				name: "when Labels contain invalid entries it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when labels have more than 20 entries it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							labels := map[string]string{}
+							for i := 0; i < 25; i++ {
+								key := fmt.Sprintf("test%d", i)
+								labels[key] = key
+							}
+							hc.Spec.Labels = labels
+						},
+						expectedErrorSubstring: "must have at most 20 items",
+					},
+					// 			TODO: enable this test when the API validation is enabled. The validation is currently disabled because it breaks cost budget
+					// {
+					// 	name: "when label key is empty it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Labels = map[string]string{
+					// 			"": "test-value",
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)",
+					// },
+					// {
+					// 	name: "when label key contains invalid prefix it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Labels = map[string]string{
+					// 			"invalid-prefix/name": "test-value",
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)",
+					// },
+					// {
+					// 	name: "when label key has valid prefix but empty name it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Labels = map[string]string{
+					// 			"valid.prefix.domain/": "test-value",
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)",
+					// },
+					// {
+					// 	name: "when label value is not valid it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Labels = map[string]string{
+					// 			"test-key": "@",
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (_) or dots (.), and begin and end with an alphanumeric character",
+					// },
+					// {
+					// 	name: "when label key and value are valid it should pass",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Labels = map[string]string{
+					// 			"valid.prefix.domain/test-name": "test-value",
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "",
+					// },
+				},
+			},
 			{
 				name: "when updateService is not a valid url it should fail",
 				file: "hostedcluster-base.yaml",
