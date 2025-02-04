@@ -471,6 +471,20 @@ type HostedClusterSpec struct {
 	// +required
 	Platform PlatformSpec `json:"platform"`
 
+	// kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+	// When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+	// If it's set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+	// The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+	// This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+	// access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+	// for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+	// This API endpoint only works in OCP version 4.19 or later. Older versions will result in a no-op.
+	// +kubebuilder:validation:XValidation:rule=`self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')`,message="kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:example: "api.example.com"
+	// +optional
+	KubeAPIServerDNSName string `json:"kubeAPIServerDNSName,omitempty"`
+
 	// controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
 	// Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
 	// This field is immutable.
@@ -1477,6 +1491,11 @@ type HostedClusterStatus struct {
 	// for the cluster.
 	// +optional
 	KubeConfig *corev1.LocalObjectReference `json:"kubeconfig,omitempty"`
+
+	// CustomKubeconfig is a local secret reference to the external custom kubeconfig.
+	// Once the hypershift operator sets this status field, it will generate a secret with the specified name containing a kubeconfig within the `HostedCluster` namespace.
+	// +optional
+	CustomKubeconfig *corev1.LocalObjectReference `json:"customKubeconfig,omitempty"`
 
 	// KubeadminPassword is a reference to the secret that contains the initial
 	// kubeadmin user password for the guest cluster.

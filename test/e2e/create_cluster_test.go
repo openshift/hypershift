@@ -879,6 +879,51 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when kubeAPIServerDNSName is not valid it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when kubeAPIServerDNSName has invalid chars it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "@foo"
+						},
+						expectedErrorSubstring: "kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)",
+					},
+					{
+						name: "when kubeAPIServerDNSName is a valid hierarchical domain with two levels it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "foo.bar"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when kubeAPIServerDNSName is a valid hierarchical domain it with 3 levels should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "123.foo.bar"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when kubeAPIServerDNSName is a single subdomain it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "foo"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when kubeAPIServerDNSName is empty it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = ""
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {

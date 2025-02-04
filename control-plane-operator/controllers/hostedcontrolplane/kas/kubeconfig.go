@@ -52,7 +52,7 @@ func ReconcileLocalhostKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.
 	return pki.ReconcileKubeConfig(secret, cert, ca, localhostURL, "", manifests.KubeconfigScopeLocal, ownerRef)
 }
 
-func ReconcileExternalKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, externalURL, secretKey string) error {
+func ReconcileKASCustomKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, externalURL, secretKey string) error {
 	return pki.ReconcileKubeConfig(secret, cert, ca, externalURL, secretKey, manifests.KubeconfigScopeExternal, ownerRef)
 }
 

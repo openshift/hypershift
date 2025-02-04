@@ -88,6 +88,7 @@ nav:
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
     - how-to/aws/shared-vpc.md
+    - how-to/aws/define-custom-kube-api-name.md
     - 'Other SDN providers': how-to/aws/other-sdn-providers.md
     - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md
