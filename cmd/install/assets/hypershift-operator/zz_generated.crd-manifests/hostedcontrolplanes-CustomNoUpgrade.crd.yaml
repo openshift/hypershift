@@ -4260,6 +4260,15 @@ spec:
                         x-kubernetes-validations:
                         - message: floatingIP must be a valid IPv4 or IPv6 address
                           rule: isIP(self)
+                      kubeAPIServerVirtualIP:
+                        description: |-
+                          KubeAPIServerVirtualIP is an available floating IP in your OpenStack cluster that will
+                          be associated with the kubeapi-server load balancer port.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: kubeAPIServerVirtualIP must be a valid IPv4 or
+                            IPv6 address
+                          rule: isIP(self)
                       managedSubnets:
                         description: |-
                           ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,

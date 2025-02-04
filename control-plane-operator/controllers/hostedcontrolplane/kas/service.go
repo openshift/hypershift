@@ -74,6 +74,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
 		}
+		// OpenStack Load Balancer Virtual IP can be specified to expose the loadbalancer on a specific network instead
+		// of a default public network.
+		if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform && hcp.Spec.Platform.OpenStack != nil && hcp.Spec.Platform.OpenStack.KubeAPIServerVirtualIP != "" {
+			svc.Spec.LoadBalancerIP = hcp.Spec.Platform.OpenStack.KubeAPIServerVirtualIP
+		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {
