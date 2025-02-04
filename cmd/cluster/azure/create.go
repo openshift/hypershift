@@ -82,7 +82,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 		flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 		flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
 		flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
-		flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
+		flags.StringToStringVarP(&opts.CustomRoleNames, "custom-hcp-roles", "chr", opts.CustomRoleNames, "Overrides custom roles for each component as a key value mapping, e.g. ingress='Azure Red Hat OpenShift Control Plane Operator Role Dev',azureDisk='Azure Red Hat OpenShift Storage Operator Role'")
 	}
 }
 
@@ -110,9 +110,9 @@ type RawCreateOptions struct {
 	ManagedIdentitiesFile            string
 	DataPlaneIdentitiesFile          string
 	AssignServicePrincipalRoles      bool
-	AssignCustomHCPRoles             bool
 	IssuerURL                        string
 	ServiceAccountTokenIssuerKeyPath string
+	CustomRoleNames                  map[string]string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -583,7 +583,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		ManagedIdentitiesFile:       azureOpts.ManagedIdentitiesFile,
 		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
-		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
+		CustomRoleNames:             azureOpts.CustomRoleNames,
 	}, nil
 }
 
