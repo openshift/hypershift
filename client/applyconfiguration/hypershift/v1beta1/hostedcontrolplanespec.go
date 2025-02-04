@@ -43,6 +43,7 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	InfrastructureAvailabilityPolicy *hypershiftv1beta1.AvailabilityPolicy                `json:"infrastructureAvailabilityPolicy,omitempty"`
 	FIPS                             *bool                                                `json:"fips,omitempty"`
 	KubeConfig                       *KubeconfigSecretRefApplyConfiguration               `json:"kubeconfig,omitempty"`
+	KubeAPIServerDNSName             *string                                              `json:"kubeAPIServerDNSName,omitempty"`
 	Services                         []ServicePublishingStrategyMappingApplyConfiguration `json:"services,omitempty"`
 	AuditWebhook                     *corev1.LocalObjectReference                         `json:"auditWebhook,omitempty"`
 	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
@@ -200,6 +201,14 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithFIPS(value bool) *HostedC
 // If called multiple times, the KubeConfig field is set to the value of the last call.
 func (b *HostedControlPlaneSpecApplyConfiguration) WithKubeConfig(value *KubeconfigSecretRefApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
 	b.KubeConfig = value
+	return b
+}
+
+// WithKubeAPIServerDNSName sets the KubeAPIServerDNSName field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeAPIServerDNSName field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithKubeAPIServerDNSName(value string) *HostedControlPlaneSpecApplyConfiguration {
+	b.KubeAPIServerDNSName = &value
 	return b
 }
 

@@ -28,6 +28,7 @@ import (
 type HostedClusterStatusApplyConfiguration struct {
 	Version                  *ClusterVersionStatusApplyConfiguration `json:"version,omitempty"`
 	KubeConfig               *v1.LocalObjectReference                `json:"kubeconfig,omitempty"`
+	CustomKubeconfig         *v1.LocalObjectReference                `json:"customKubeconfig,omitempty"`
 	KubeadminPassword        *v1.LocalObjectReference                `json:"kubeadminPassword,omitempty"`
 	IgnitionEndpoint         *string                                 `json:"ignitionEndpoint,omitempty"`
 	ControlPlaneEndpoint     *APIEndpointApplyConfiguration          `json:"controlPlaneEndpoint,omitempty"`
@@ -56,6 +57,14 @@ func (b *HostedClusterStatusApplyConfiguration) WithVersion(value *ClusterVersio
 // If called multiple times, the KubeConfig field is set to the value of the last call.
 func (b *HostedClusterStatusApplyConfiguration) WithKubeConfig(value v1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
 	b.KubeConfig = &value
+	return b
+}
+
+// WithCustomKubeconfig sets the CustomKubeconfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CustomKubeconfig field is set to the value of the last call.
+func (b *HostedClusterStatusApplyConfiguration) WithCustomKubeconfig(value v1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
+	b.CustomKubeconfig = &value
 	return b
 }
 
