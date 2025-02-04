@@ -269,8 +269,11 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 	oauthDeployment := configmanifests.OAuthDeployment(hcpNamespace)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment)
 	g.Expect(err).ToNot(HaveOccurred())
-	// validate oauthDeployment has kubeadmin password hash annotation
-	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).To(HaveKey(oauth.KubeadminSecretHashAnnotation))
+
+	// validate oauthDeployment has kubeadmin password hash annotation if not using CPOV2.
+	if _, ok := hostedCluster.Annotations[hyperv1.ControlPlaneOperatorV2Annotation]; !ok {
+		g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).To(HaveKey(oauth.KubeadminSecretHashAnnotation))
+	}
 }
 
 func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {

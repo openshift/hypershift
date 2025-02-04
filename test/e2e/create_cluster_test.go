@@ -1267,6 +1267,48 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
+func TestCreateClusterCustomConfigV2(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
+	e2eutil.AtLeast(t, e2eutil.Version419)
+
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch obj := o.(type) {
+		case *hyperv1.HostedCluster:
+			if obj.Annotations == nil {
+				obj.Annotations = make(map[string]string)
+			}
+			obj.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] = "true"
+		}
+	}
+
+	// find kms key ARN using alias
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
+	if err != nil || kmsKeyArn == nil {
+		t.Fatal("failed to retrieve kms key arn")
+	}
+
+	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+
+		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
+		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
+
+		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
+		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
+		// test oauth with identity provider
+		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+}
+
 func TestNoneCreateCluster(t *testing.T) {
 	t.Parallel()
 
