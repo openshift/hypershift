@@ -2,10 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    api.openshift.io/merged-by-featuregates: "true"
-    include.release.openshift.io/ibm-cloud-managed: "true"
-    include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: Default
+    feature-gate.release.openshift.io/AROHCPManagedIdentities: "true"
   name: hostedclusters.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -587,243 +584,6 @@ spec:
                         required:
                         - name
                         type: object
-                      oidcProviders:
-                        description: |-
-                          oidcProviders are OIDC identity providers that can issue tokens
-                          for this cluster
-                          Can only be set if "Type" is set to "OIDC".
-
-                          At most one provider can be configured.
-                        items:
-                          properties:
-                            claimMappings:
-                              description: |-
-                                claimMappings describes rules on how to transform information from an
-                                ID token into a cluster identity
-                              properties:
-                                groups:
-                                  description: |-
-                                    groups is a name of the claim that should be used to construct
-                                    groups for the cluster identity.
-                                    The referenced claim must use array of strings values.
-                                  properties:
-                                    claim:
-                                      description: claim is a JWT token claim to be
-                                        used in the mapping
-                                      type: string
-                                    prefix:
-                                      description: |-
-                                        prefix is a string to prefix the value from the token in the result of the
-                                        claim mapping.
-
-                                        By default, no prefixing occurs.
-
-                                        Example: if `prefix` is set to "myoidc:"" and the `claim` in JWT contains
-                                        an array of strings "a", "b" and  "c", the mapping will result in an
-                                        array of string "myoidc:a", "myoidc:b" and "myoidc:c".
-                                      type: string
-                                  required:
-                                  - claim
-                                  type: object
-                                username:
-                                  description: |-
-                                    username is a name of the claim that should be used to construct
-                                    usernames for the cluster identity.
-
-                                    Default value: "sub"
-                                  properties:
-                                    claim:
-                                      description: claim is a JWT token claim to be
-                                        used in the mapping
-                                      type: string
-                                    prefix:
-                                      properties:
-                                        prefixString:
-                                          minLength: 1
-                                          type: string
-                                      required:
-                                      - prefixString
-                                      type: object
-                                    prefixPolicy:
-                                      description: |-
-                                        prefixPolicy specifies how a prefix should apply.
-
-                                        By default, claims other than `email` will be prefixed with the issuer URL to
-                                        prevent naming clashes with other plugins.
-
-                                        Set to "NoPrefix" to disable prefixing.
-
-                                        Example:
-                                            (1) `prefix` is set to "myoidc:" and `claim` is set to "username".
-                                                If the JWT claim `username` contains value `userA`, the resulting
-                                                mapped value will be "myoidc:userA".
-                                            (2) `prefix` is set to "myoidc:" and `claim` is set to "email". If the
-                                                JWT `email` claim contains value "userA@myoidc.tld", the resulting
-                                                mapped value will be "myoidc:userA@myoidc.tld".
-                                            (3) `prefix` is unset, `issuerURL` is set to `https://myoidc.tld`,
-                                                the JWT claims include "username":"userA" and "email":"userA@myoidc.tld",
-                                                and `claim` is set to:
-                                                (a) "username": the mapped value will be "https://myoidc.tld#userA"
-                                                (b) "email": the mapped value will be "userA@myoidc.tld"
-                                      enum:
-                                      - ""
-                                      - NoPrefix
-                                      - Prefix
-                                      type: string
-                                  required:
-                                  - claim
-                                  type: object
-                                  x-kubernetes-validations:
-                                  - message: prefix must be set if prefixPolicy is
-                                      'Prefix', but must remain unset otherwise
-                                    rule: 'has(self.prefixPolicy) && self.prefixPolicy
-                                      == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
-                                      > 0) : !has(self.prefix)'
-                              type: object
-                            claimValidationRules:
-                              description: claimValidationRules are rules that are
-                                applied to validate token claims to authenticate users.
-                              items:
-                                properties:
-                                  requiredClaim:
-                                    description: |-
-                                      requiredClaim allows configuring a required claim name and its expected
-                                      value
-                                    properties:
-                                      claim:
-                                        description: |-
-                                          claim is a name of a required claim. Only claims with string values are
-                                          supported.
-                                        minLength: 1
-                                        type: string
-                                      requiredValue:
-                                        description: requiredValue is the required
-                                          value for the claim.
-                                        minLength: 1
-                                        type: string
-                                    required:
-                                    - claim
-                                    - requiredValue
-                                    type: object
-                                  type:
-                                    default: RequiredClaim
-                                    description: type sets the type of the validation
-                                      rule
-                                    enum:
-                                    - RequiredClaim
-                                    type: string
-                                type: object
-                              type: array
-                              x-kubernetes-list-type: atomic
-                            issuer:
-                              description: issuer describes atributes of the OIDC
-                                token issuer
-                              properties:
-                                audiences:
-                                  description: |-
-                                    audiences is an array of audiences that the token was issued for.
-                                    Valid tokens must include at least one of these values in their
-                                    "aud" claim.
-                                    Must be set to exactly one value.
-                                  items:
-                                    minLength: 1
-                                    type: string
-                                  maxItems: 10
-                                  minItems: 1
-                                  type: array
-                                  x-kubernetes-list-type: set
-                                issuerCertificateAuthority:
-                                  description: |-
-                                    CertificateAuthority is a reference to a config map in the
-                                    configuration namespace. The .data of the configMap must contain
-                                    the "ca-bundle.crt" key.
-                                    If unset, system trust is used instead.
-                                  properties:
-                                    name:
-                                      description: name is the metadata.name of the
-                                        referenced config map
-                                      type: string
-                                  required:
-                                  - name
-                                  type: object
-                                issuerURL:
-                                  description: |-
-                                    URL is the serving URL of the token issuer.
-                                    Must use the https:// scheme.
-                                  pattern: ^https:\/\/[^\s]
-                                  type: string
-                              required:
-                              - audiences
-                              - issuerURL
-                              type: object
-                            name:
-                              description: name of the OIDC provider
-                              minLength: 1
-                              type: string
-                            oidcClients:
-                              description: |-
-                                oidcClients contains configuration for the platform's clients that
-                                need to request tokens from the issuer
-                              items:
-                                properties:
-                                  clientID:
-                                    description: clientID is the identifier of the
-                                      OIDC client from the OIDC provider
-                                    minLength: 1
-                                    type: string
-                                  clientSecret:
-                                    description: |-
-                                      clientSecret refers to a secret in the `openshift-config` namespace that
-                                      contains the client secret in the `clientSecret` key of the `.data` field
-                                    properties:
-                                      name:
-                                        description: name is the metadata.name of
-                                          the referenced secret
-                                        type: string
-                                    required:
-                                    - name
-                                    type: object
-                                  componentName:
-                                    description: |-
-                                      componentName is the name of the component that is supposed to consume this
-                                      client configuration
-                                    maxLength: 256
-                                    minLength: 1
-                                    type: string
-                                  componentNamespace:
-                                    description: |-
-                                      componentNamespace is the namespace of the component that is supposed to consume this
-                                      client configuration
-                                    maxLength: 63
-                                    minLength: 1
-                                    type: string
-                                  extraScopes:
-                                    description: extraScopes is an optional set of
-                                      scopes to request tokens with.
-                                    items:
-                                      type: string
-                                    type: array
-                                    x-kubernetes-list-type: set
-                                required:
-                                - clientID
-                                - componentName
-                                - componentNamespace
-                                type: object
-                              maxItems: 20
-                              type: array
-                              x-kubernetes-list-map-keys:
-                              - componentNamespace
-                              - componentName
-                              x-kubernetes-list-type: map
-                          required:
-                          - issuer
-                          - name
-                          type: object
-                        maxItems: 1
-                        type: array
-                        x-kubernetes-list-map-keys:
-                        - name
-                        x-kubernetes-list-type: map
                       serviceAccountIssuer:
                         description: |-
                           serviceAccountIssuer is the identifier of the bound service account token
@@ -840,11 +600,6 @@ spec:
                           type identifies the cluster managed, user facing authentication mode in use.
                           Specifically, it manages the component that responds to login attempts.
                           The default is IntegratedOAuth.
-                        enum:
-                        - ""
-                        - None
-                        - IntegratedOAuth
-                        - OIDC
                         type: string
                       webhookTokenAuthenticator:
                         description: |-
@@ -1431,155 +1186,9 @@ spec:
                                 x-kubernetes-list-type: atomic
                             type: object
                         type: object
-                      networkDiagnostics:
-                        description: |-
-                          networkDiagnostics defines network diagnostics configuration.
-
-                          Takes precedence over spec.disableNetworkDiagnostics in network.operator.openshift.io.
-                          If networkDiagnostics is not specified or is empty,
-                          and the spec.disableNetworkDiagnostics flag in network.operator.openshift.io is set to true,
-                          the network diagnostics feature will be disabled.
-                        properties:
-                          mode:
-                            description: |-
-                              mode controls the network diagnostics mode
-
-                              When omitted, this means the user has no opinion and the platform is left
-                              to choose reasonable defaults. These defaults are subject to change over time.
-                              The current default is All.
-                            enum:
-                            - ""
-                            - All
-                            - Disabled
-                            type: string
-                          sourcePlacement:
-                            description: |-
-                              sourcePlacement controls the scheduling of network diagnostics source deployment
-
-                              See NetworkDiagnosticsSourcePlacement for more details about default values.
-                            properties:
-                              nodeSelector:
-                                additionalProperties:
-                                  type: string
-                                description: |-
-                                  nodeSelector is the node selector applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is `kubernetes.io/os: linux`.
-                                type: object
-                              tolerations:
-                                description: |-
-                                  tolerations is a list of tolerations applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is an empty list.
-                                items:
-                                  description: |-
-                                    The pod this Toleration is attached to tolerates any taint that matches
-                                    the triple <key,value,effect> using the matching operator <operator>.
-                                  properties:
-                                    effect:
-                                      description: |-
-                                        Effect indicates the taint effect to match. Empty means match all taint effects.
-                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
-                                      type: string
-                                    key:
-                                      description: |-
-                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
-                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
-                                      type: string
-                                    operator:
-                                      description: |-
-                                        Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
-                                        Exists is equivalent to wildcard for value, so that a pod can
-                                        tolerate all taints of a particular category.
-                                      type: string
-                                    tolerationSeconds:
-                                      description: |-
-                                        TolerationSeconds represents the period of time the toleration (which must be
-                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
-                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
-                                        negative values will be treated as 0 (evict immediately) by the system.
-                                      format: int64
-                                      type: integer
-                                    value:
-                                      description: |-
-                                        Value is the taint value the toleration matches to.
-                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
-                                      type: string
-                                  type: object
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            type: object
-                          targetPlacement:
-                            description: |-
-                              targetPlacement controls the scheduling of network diagnostics target daemonset
-
-                              See NetworkDiagnosticsTargetPlacement for more details about default values.
-                            properties:
-                              nodeSelector:
-                                additionalProperties:
-                                  type: string
-                                description: |-
-                                  nodeSelector is the node selector applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is `kubernetes.io/os: linux`.
-                                type: object
-                              tolerations:
-                                description: |-
-                                  tolerations is a list of tolerations applied to network diagnostics components
-
-                                  When omitted, this means the user has no opinion and the platform is left
-                                  to choose reasonable defaults. These defaults are subject to change over time.
-                                  The current default is `- operator: "Exists"` which means that all taints are tolerated.
-                                items:
-                                  description: |-
-                                    The pod this Toleration is attached to tolerates any taint that matches
-                                    the triple <key,value,effect> using the matching operator <operator>.
-                                  properties:
-                                    effect:
-                                      description: |-
-                                        Effect indicates the taint effect to match. Empty means match all taint effects.
-                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
-                                      type: string
-                                    key:
-                                      description: |-
-                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
-                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
-                                      type: string
-                                    operator:
-                                      description: |-
-                                        Operator represents a key's relationship to the value.
-                                        Valid operators are Exists and Equal. Defaults to Equal.
-                                        Exists is equivalent to wildcard for value, so that a pod can
-                                        tolerate all taints of a particular category.
-                                      type: string
-                                    tolerationSeconds:
-                                      description: |-
-                                        TolerationSeconds represents the period of time the toleration (which must be
-                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
-                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
-                                        negative values will be treated as 0 (evict immediately) by the system.
-                                      format: int64
-                                      type: integer
-                                    value:
-                                      description: |-
-                                        Value is the taint value the toleration matches to.
-                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
-                                      type: string
-                                  type: object
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            type: object
-                        type: object
                       networkType:
                         description: |-
-                          networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
@@ -1606,12 +1215,6 @@ spec:
                         pattern: ^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$
                         type: string
                     type: object
-                    x-kubernetes-validations:
-                    - message: cannot set networkDiagnostics.sourcePlacement and networkDiagnostics.targetPlacement
-                        when networkDiagnostics.mode is Disabled
-                      rule: '!has(self.networkDiagnostics) || !has(self.networkDiagnostics.mode)
-                        || self.networkDiagnostics.mode!=''Disabled'' || !has(self.networkDiagnostics.sourcePlacement)
-                        && !has(self.networkDiagnostics.targetPlacement)'
                   oauth:
                     description: |-
                       OAuth holds cluster-wide information about OAuth.
@@ -2390,7 +1993,7 @@ spec:
                         type: string
                       mastersSchedulable:
                         description: |-
-                          mastersSchedulable allows masters nodes to be schedulable. When this flag is
+                          MastersSchedulable allows masters nodes to be schedulable. When this flag is
                           turned on, all the master nodes in the cluster will be made schedulable,
                           so that workload pods can run on them. The default value for this field is false,
                           meaning none of the master nodes are schedulable.
@@ -2427,27 +2030,6 @@ spec:
                         - HighNodeUtilization
                         - NoScoring
                         type: string
-                      profileCustomizations:
-                        description: profileCustomizations contains configuration
-                          for modifying the default behavior of existing scheduler
-                          profiles.
-                        properties:
-                          dynamicResourceAllocation:
-                            description: |-
-                              dynamicResourceAllocation allows to enable or disable dynamic resource allocation within the scheduler.
-                              Dynamic resource allocation is an API for requesting and sharing resources between pods and containers inside a pod.
-                              Third-party resource drivers are responsible for tracking and allocating resources.
-                              Different kinds of resources support arbitrary parameters for defining requirements and initialization.
-                              Valid values are Enabled, Disabled and omitted.
-                              When omitted, this means no opinion and the platform is left to choose a reasonable default,
-                              which is subject to change over time.
-                              The current default is Disabled.
-                            enum:
-                            - ""
-                            - Enabled
-                            - Disabled
-                            type: string
-                        type: object
                     type: object
                 type: object
               controlPlaneRelease:
@@ -2480,14 +2062,10 @@ spec:
                 description: |-
                   controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
                   Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
-                  This field is immutable.
                 enum:
                 - HighlyAvailable
                 - SingleReplica
                 type: string
-                x-kubernetes-validations:
-                - message: ControllerAvailabilityPolicy is immutable
-                  rule: self == oldSelf
               dns:
                 description: dns specifies the DNS configuration for the hosted cluster
                   ingress.
@@ -2967,14 +2545,6 @@ spec:
                         once set.
                       rule: self == oldSelf
                 type: object
-                x-kubernetes-validations:
-                - message: CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork
-                    must be unique and non-overlapping
-                  rule: (!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s,
-                    c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m,
-                    self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m,
-                    self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c,
-                    self.serviceNetwork.all(s, c.cidr != s.cidr)))))
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -3544,6 +3114,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               controlPlaneOperator:
@@ -3607,6 +3178,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               disk:
@@ -3669,6 +3241,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               file:
@@ -3731,6 +3304,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               imageRegistry:
@@ -3793,6 +3367,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               ingress:
@@ -3855,6 +3430,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               managedIdentitiesKeyVault:
@@ -3939,6 +3515,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               nodePoolManagement:
@@ -4002,6 +3579,7 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                             required:
@@ -4512,14 +4090,6 @@ spec:
                   type:
                     description: Type is the type of infrastructure provider for the
                       cluster.
-                    enum:
-                    - AWS
-                    - Azure
-                    - IBMCloud
-                    - KubeVirt
-                    - Agent
-                    - PowerVS
-                    - None
                     type: string
                     x-kubernetes-validations:
                     - message: Type is immutable
@@ -4790,6 +4360,7 @@ spec:
                             required:
                             - certificateName
                             - clientID
+                            - credentialsSecretName
                             - objectEncoding
                             type: object
                         required:
@@ -5163,6 +4734,14 @@ spec:
                 != "") : true'
             - message: If serviceAccountSigningKey is set, issuerURL must be set
               rule: has(self.issuerURL) || !has(self.serviceAccountSigningKey)
+            - message: CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork
+                must be unique and non-overlapping
+              rule: (self.platform.type == "IBMCloud" || !has(self.networking.machineNetwork)
+                && self.networking.clusterNetwork.all(c, self.networking.serviceNetwork.all(s,
+                c.cidr != s.cidr)) || (has(self.networking.machineNetwork) && (self.networking.machineNetwork.all(m,
+                self.networking.clusterNetwork.all(c, m.cidr != c.cidr)) && self.networking.machineNetwork.all(m,
+                self.networking.serviceNetwork.all(s, m.cidr != s.cidr)) && self.networking.clusterNetwork.all(c,
+                self.networking.serviceNetwork.all(s, c.cidr != s.cidr)))))
           status:
             description: Status is the latest observed status of the HostedCluster.
             properties:
@@ -5524,12 +5103,12 @@ spec:
                                     fail to evaluate.
                                   properties:
                                     promql:
-                                      description: promql represents a cluster condition
+                                      description: promQL represents a cluster condition
                                         based on PromQL.
                                       properties:
                                         promql:
                                           description: |-
-                                            promql is a PromQL query classifying clusters. This query
+                                            PromQL is a PromQL query classifying clusters. This query
                                             query should return a 1 in the match case and a 0 in the
                                             does-not-match case. Queries which return no time
                                             series, or which return values besides 0 or 1, are
