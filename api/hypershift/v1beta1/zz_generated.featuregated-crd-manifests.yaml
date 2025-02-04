@@ -99,7 +99,6 @@ hostedclusters.hypershift.openshift.io:
   - AutoNodeKarpenter
   - DynamicResourceAllocation
   - ExternalOIDC
-  - HCPPodsLabels
   - ImageStreamImportMode
   - NetworkDiagnosticsConfig
   - OpenStack

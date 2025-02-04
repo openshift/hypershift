@@ -632,7 +632,6 @@ type HostedClusterSpec struct {
 	// TODO: key/value validations break cost budget for <=4.17. We should figure why and enable it back.
 	// +kubebuilder:validation:MaxProperties=20
 	// +optional
-	// +openshift:enable:FeatureGate=HCPPodsLabels
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
