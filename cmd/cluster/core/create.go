@@ -2,9 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -41,7 +38,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/pflag"
-	"golang.org/x/crypto/ssh"
 )
 
 func DefaultOptions() *RawCreateOptions {
@@ -346,7 +342,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		}
 		sshKey = key
 	} else if opts.GenerateSSH {
-		sshKey, sshPrivateKey, err = generateSSHKeys()
+		sshKey, sshPrivateKey, err = util.GenerateSSHKeys()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ssh keys: %w", err)
 		}
@@ -493,28 +489,6 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 	}
 
 	return prototype, nil
-}
-
-func generateSSHKeys() ([]byte, []byte, error) {
-	privateKey, err := rsa.GenerateKey(certs.Reader(), 4096)
-	if err != nil {
-		return nil, nil, err
-	}
-	privateDER := x509.MarshalPKCS1PrivateKey(privateKey)
-	privatePEMBlock := pem.Block{
-		Type:    "RSA PRIVATE KEY",
-		Headers: nil,
-		Bytes:   privateDER,
-	}
-	privatePEM := pem.EncodeToMemory(&privatePEMBlock)
-
-	publicRSAKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	publicBytes := ssh.MarshalAuthorizedKey(publicRSAKey)
-
-	return publicBytes, privatePEM, nil
 }
 
 func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object)) error {

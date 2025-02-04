@@ -2,7 +2,9 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -42,6 +44,7 @@ type RawCreateOptions struct {
 	Zones                        []string
 	EtcdKMSKeyARN                string
 	EnableProxy                  bool
+	EnableSecureProxy            bool
 	ProxyVPCEndpointServiceName  string
 	SingleNATGateway             bool
 	MultiArch                    bool
@@ -67,6 +70,10 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
+	if o.EnableProxy && o.EnableSecureProxy {
+		return nil, errors.New("use --enable-proxy or --enable-secure-proxy but not both")
+	}
+
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -82,6 +89,7 @@ type completedCreateOptions struct {
 	iamInfo           *awsinfra.CreateIAMOutput
 	arch              string
 	externalDNSDomain string
+	namespace         string
 }
 
 type CreateOptions struct {
@@ -95,6 +103,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			ValidatedCreateOptions: o,
 			arch:                   opts.Arch,
 			externalDNSDomain:      opts.ExternalDNSDomain,
+			namespace:              opts.Namespace,
 		},
 	}
 
@@ -268,11 +277,21 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			o.iamInfo.SharedControlPlaneRoleARN)
 	}
 
-	if o.infra.ProxyAddr != "" {
+	switch {
+	case o.infra.SecureProxyAddr != "":
+		cluster.Spec.Configuration.Proxy = &configv1.ProxySpec{
+			HTTPProxy:  o.infra.ProxyAddr,
+			HTTPSProxy: o.infra.SecureProxyAddr,
+		}
+	case o.infra.ProxyAddr != "":
 		cluster.Spec.Configuration.Proxy = &configv1.ProxySpec{
 			HTTPProxy:  o.infra.ProxyAddr,
 			HTTPSProxy: o.infra.ProxyAddr,
 		}
+
+	}
+	if cluster.Spec.Configuration.Proxy != nil && o.infra.ProxyCA != "" {
+		cluster.Spec.Configuration.Proxy.TrustedCA.Name = o.proxyCAConfigMapName()
 	}
 
 	if len(o.iamInfo.KMSProviderRoleARN) > 0 {
@@ -371,8 +390,35 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	return nodePools
 }
 
+func (o *CreateOptions) proxyCAConfigMapName() string {
+	return fmt.Sprintf("%s-proxy-ca", o.infra.Name)
+}
+
+func (o *CreateOptions) proxyPrivateSSHKeySecretName() string {
+	return fmt.Sprintf("%s-proxy-ssh-key", o.infra.Name)
+}
+
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
-	return nil, nil
+	var result []client.Object
+	if o.infra.ProxyCA != "" {
+		cm := util.ConfigMapResource(o.namespace, o.proxyCAConfigMapName())
+		cm.Data = map[string]string{
+			"ca-bundle.crt": o.infra.ProxyCA,
+		}
+		result = append(result, cm)
+	}
+	if len(o.infra.ProxyPrivateSSHKey) > 0 {
+		decodedKey, err := base64.StdEncoding.DecodeString(o.infra.ProxyPrivateSSHKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode proxy private ssh key: %w", err)
+		}
+		secret := util.SecretResource(o.namespace, o.proxyPrivateSSHKeySecretName())
+		secret.Data = map[string][]byte{
+			"privatekey": decodedKey,
+		}
+		result = append(result, secret)
+	}
+	return result, nil
 }
 
 func DefaultOptions() *RawCreateOptions {
@@ -400,7 +446,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	flags.StringVar(&opts.EndpointAccess, "endpoint-access", opts.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
 	flags.StringVar(&opts.EtcdKMSKeyARN, "kms-key-arn", opts.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
-	flags.BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	flags.BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If true, a proxy should be set up, rather than allowing direct internet access from the nodes")
+	flags.BoolVar(&opts.EnableSecureProxy, "enable-secure-proxy", opts.EnableSecureProxy, "If true, a secure proxy should be set up, rather than allowing direct internet access from the nodes")
 	flags.StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
@@ -461,8 +508,8 @@ func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOption
 		AdditionalTags:               awsOpts.AdditionalTags,
 		Zones:                        awsOpts.Zones,
 		EnableProxy:                  awsOpts.EnableProxy,
+		EnableSecureProxy:            awsOpts.EnableSecureProxy,
 		ProxyVPCEndpointServiceName:  awsOpts.ProxyVPCEndpointServiceName,
-		SSHKeyFile:                   opts.SSHKeyFile,
 		SingleNATGateway:             awsOpts.SingleNATGateway,
 		VPCCIDR:                      awsOpts.VPCCIDR,
 		VPCOwnerCredentialOpts:       awsOpts.VPCOwnerCredentials,

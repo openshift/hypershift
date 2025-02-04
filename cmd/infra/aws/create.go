@@ -40,8 +40,8 @@ type CreateInfraOptions struct {
 	OutputFile                  string
 	AdditionalTags              []string
 	EnableProxy                 bool
+	EnableSecureProxy           bool
 	ProxyVPCEndpointServiceName string
-	SSHKeyFile                  string
 	SingleNATGateway            bool
 	VPCCIDR                     string
 
@@ -61,20 +61,23 @@ type CreateInfraOutputZone struct {
 }
 
 type CreateInfraOutput struct {
-	Region           string                   `json:"region"`
-	Zone             string                   `json:"zone"`
-	InfraID          string                   `json:"infraID"`
-	MachineCIDR      string                   `json:"machineCIDR"`
-	VPCID            string                   `json:"vpcID"`
-	Zones            []*CreateInfraOutputZone `json:"zones"`
-	Name             string                   `json:"Name"`
-	BaseDomain       string                   `json:"baseDomain"`
-	BaseDomainPrefix string                   `json:"baseDomainPrefix"`
-	PublicZoneID     string                   `json:"publicZoneID"`
-	PrivateZoneID    string                   `json:"privateZoneID"`
-	LocalZoneID      string                   `json:"localZoneID"`
-	ProxyAddr        string                   `json:"proxyAddr"`
-	PublicOnly       bool                     `json:"publicOnly"`
+	Region             string                   `json:"region"`
+	Zone               string                   `json:"zone"`
+	InfraID            string                   `json:"infraID"`
+	MachineCIDR        string                   `json:"machineCIDR"`
+	VPCID              string                   `json:"vpcID"`
+	Zones              []*CreateInfraOutputZone `json:"zones"`
+	Name               string                   `json:"Name"`
+	BaseDomain         string                   `json:"baseDomain"`
+	BaseDomainPrefix   string                   `json:"baseDomainPrefix"`
+	PublicZoneID       string                   `json:"publicZoneID"`
+	PrivateZoneID      string                   `json:"privateZoneID"`
+	LocalZoneID        string                   `json:"localZoneID"`
+	ProxyAddr          string                   `json:"proxyAddr"`
+	SecureProxyAddr    string                   `json:"secureProxyAddr"`
+	ProxyPrivateSSHKey string                   `json:"proxyPrivateSSHKey"`
+	PublicOnly         bool                     `json:"publicOnly"`
+	ProxyCA            string                   `json:"proxyCA"`
 
 	// Fields related to shared VPCs
 	VPCCreatorAccountID string `json:"vpcCreatorAccountID"`
@@ -110,7 +113,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availability zones in which NodePool can be created")
-	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If true, a proxy should be set up, rather than allowing direct internet access from the nodes")
+	cmd.Flags().BoolVar(&opts.EnableSecureProxy, "enable-secure-proxy", opts.EnableSecureProxy, "If true, a secure proxy should be set up, rather than allowing direct internet access from the nodes")
 	cmd.Flags().StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	cmd.Flags().StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC")
@@ -127,6 +131,9 @@ func NewCreateCommand() *cobra.Command {
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
+			return err
+		}
+		if err = opts.Validate(); err != nil {
 			return err
 		}
 		if err := opts.Run(cmd.Context(), l); err != nil {
@@ -146,6 +153,13 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) error {
 		return err
 	}
 	return o.Output(result)
+}
+
+func (o *CreateInfraOptions) Validate() error {
+	if o.EnableProxy && o.EnableSecureProxy {
+		return fmt.Errorf("specify either --enable-proxy or --enable-secure-proxy, but not both")
+	}
+	return nil
 }
 
 func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
@@ -273,7 +287,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 			return nil, err
 		}
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
-		if !o.PublicOnly && !o.EnableProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
+		if !o.PublicOnly && !o.EnableProxy && !o.EnableSecureProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
 			natGatewayID, err = o.CreateNATGateway(l, ec2Client, publicSubnetID, zone)
 			if err != nil {
 				return nil, err
@@ -344,7 +358,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		}
 	}
 
-	if o.EnableProxy {
+	if o.EnableProxy || o.EnableSecureProxy {
 		sgGroupID, err := o.createProxySecurityGroup(ctx, l, ec2Client, result.VPCID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create security group for proxy: %w", err)
@@ -356,17 +370,14 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 				return nil, err
 			}
 		} else {
-			var sshKeyFile []byte
-			if o.SSHKeyFile != "" {
-				sshKeyFile, err = os.ReadFile(o.SSHKeyFile)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
-				}
-			}
-			result.ProxyAddr, err = o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, string(sshKeyFile), sgGroupID)
+			proxyResult, err := o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, sgGroupID, o.EnableSecureProxy)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create proxy host: %w", err)
 			}
+			result.ProxyAddr = proxyResult.HTTPProxyURL
+			result.SecureProxyAddr = proxyResult.HTTPSProxyURL
+			result.ProxyCA = proxyResult.CA
+			result.ProxyPrivateSSHKey = proxyResult.PrivateKey
 		}
 	}
 	return result, nil
@@ -451,13 +462,33 @@ func (o *CreateInfraOptions) createProxyVPCEndpoint(ctx context.Context, l logr.
 	return fmt.Sprintf("http://%s:3128", *output.VpcEndpoint.DnsEntries[0].DnsName), nil
 }
 
-func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, sshKeys string, sgGroupID *string) (string, error) {
-	result, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
+type proxyInfo struct {
+	HTTPProxyURL  string
+	HTTPSProxyURL string
+	CA            string
+	PrivateKey    string
+}
+
+func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID string, sgGroupID *string, isSecure bool) (*proxyInfo, error) {
+
+	var result proxyInfo
+
+	publicSSHKey, privateSSHKey, err := util.GenerateSSHKeys()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate proxy ssh keys: %w", err)
+	}
+
+	instanceType := "t2.micro"
+	if isSecure {
+		instanceType = "t3.medium"
+	}
+
+	runResult, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
 		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
 		MaxCount:     aws.Int64(1),
 		MinCount:     aws.Int64(1),
-		InstanceType: aws.String("t2.micro"),
-		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(proxyConfigurationScript, sshKeys)))),
+		InstanceType: aws.String(instanceType),
+		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(proxyConfigScript(isSecure, string(publicSSHKey))))),
 		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
 			{
 				DeviceIndex:              aws.Int64(0),
@@ -469,11 +500,56 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 		TagSpecifications: o.ec2TagSpecifications("instance", o.InfraID+"-http-proxy"),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to launch proxy host: %w", err)
+		return nil, fmt.Errorf("failed to launch proxy host: %w", err)
 	}
 	l.Info("Created proxy host")
 
-	return fmt.Sprintf("http://%s:3128", *result.Instances[0].PrivateIpAddress), nil
+	privateIP := aws.StringValue(runResult.Instances[0].PrivateIpAddress)
+	if isSecure {
+		if err := client.WaitUntilInstanceRunningWithContext(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: []*string{runResult.Instances[0].InstanceId},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to wait for proxy host to be in running state: %w", err)
+		}
+
+		describeResult, err := client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: []*string{runResult.Instances[0].InstanceId},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe proxy instance: %w", err)
+		}
+
+		publicIP := aws.StringValue(describeResult.Reservations[0].Instances[0].PublicIpAddress)
+
+		backoff := wait.Backoff{
+			Steps:    10,
+			Duration: 10 * time.Second,
+			Factor:   1.0,
+			Jitter:   0.1,
+		}
+
+		var proxyCA string
+		err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+			var err error
+			proxyCA, err = fetchProxyCA(publicIP, privateIP, privateSSHKey)
+			if err != nil {
+				l.Info("Waiting to fetch proxy CA", "message", err.Error())
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch proxy CA trust bundle: %w", err)
+		}
+		l.Info("Obtained proxy CA trust bundle")
+		result.HTTPSProxyURL = fmt.Sprintf("https://%s:3128", privateIP)
+		result.CA = proxyCA
+	}
+
+	result.HTTPProxyURL = fmt.Sprintf("http://%s:3128", privateIP)
+	result.PrivateKey = base64.StdEncoding.EncodeToString(privateSSHKey)
+
+	return &result, nil
 }
 
 func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession, clusterSession *session.Session, publicSubnetIDs []string, output *CreateInfraOutput) error {
@@ -590,18 +666,6 @@ func ZoneName(clusterName, prefix, baseDomain string) string {
 	}
 	return fmt.Sprintf("%s.%s", prefix, baseDomain)
 }
-
-const proxyConfigurationScript = `#!/bin/bash
-yum install -y squid
-# By default, squid only allows connect on port 443
-sed -E 's/(^http_access deny CONNECT.*)/#\1/' -i /etc/squid/squid.conf
-systemctl enable --now squid
-mkdir -p /home/ec2-user/.ssh
-chmod 0700 /home/ec2-user/.ssh
-echo -e '%s' >/home/ec2-user/.ssh/authorized_keys
-chmod 0600 /home/ec2-user/.ssh/authorized_keys
-chown -R ec2-user:ec2-user /home/ec2-user/.ssh
-`
 
 func copyIPNet(in *net.IPNet) *net.IPNet {
 	result := *in
