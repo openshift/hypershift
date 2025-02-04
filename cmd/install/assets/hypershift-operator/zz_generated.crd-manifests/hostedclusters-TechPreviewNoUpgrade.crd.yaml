@@ -3463,9 +3463,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                               controlPlaneOperator:
                                 description: controlPlaneOperator is a pre-existing
@@ -3487,9 +3510,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                               disk:
                                 description: diskClientID is a pre-existing managed
@@ -3510,9 +3556,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                               file:
                                 description: fileClientID is a pre-existing managed
@@ -3533,9 +3602,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                               imageRegistry:
                                 description: imageRegistry is a pre-existing managed
@@ -3556,9 +3648,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                               ingress:
                                 description: ingress is a pre-existing managed identity
@@ -3579,9 +3694,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                               managedIdentitiesKeyVault:
                                 description: |-
@@ -3624,9 +3762,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                               nodePoolManagement:
                                 description: nodePoolManagement is a pre-existing
@@ -3648,9 +3809,32 @@ spec:
                                         of hyphen separated hexadecimal characters
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                                  objectEncoding:
+                                    allOf:
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    - enum:
+                                      - utf-8
+                                      - hex
+                                      - base64
+                                    default: utf-8
+                                    description: |-
+                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                      SecretProviderClass custom resource related to the managed identity.
+
+                                      The default value is utf-8.
+
+                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    type: string
                                 required:
                                 - certificateName
                                 - clientID
+                                - objectEncoding
                                 type: object
                             required:
                             - cloudProvider
@@ -4876,9 +5060,32 @@ spec:
                                     be a valid UUID. It should be 5 groups of hyphen
                                     separated hexadecimal characters in the form 8-4-4-4-12.
                                   rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                              objectEncoding:
+                                allOf:
+                                - enum:
+                                  - utf-8
+                                  - hex
+                                  - base64
+                                - enum:
+                                  - utf-8
+                                  - hex
+                                  - base64
+                                default: utf-8
+                                description: |-
+                                  objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+                                  CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+                                  Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+                                  unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+                                  SecretProviderClass custom resource related to the managed identity.
+
+                                  The default value is utf-8.
+
+                                  See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                type: string
                             required:
                             - certificateName
                             - clientID
+                            - objectEncoding
                             type: object
                         required:
                         - activeKey
