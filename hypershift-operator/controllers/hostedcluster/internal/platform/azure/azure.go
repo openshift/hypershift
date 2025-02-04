@@ -78,7 +78,7 @@ func (a Azure) ReconcileCAPIInfraCR(
 		if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 			return err
 		}
-		secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName)
+		secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName, string(hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding))
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)

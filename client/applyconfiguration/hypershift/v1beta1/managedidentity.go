@@ -17,11 +17,16 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // ManagedIdentityApplyConfiguration represents an declarative configuration of the ManagedIdentity type for use
 // with apply.
 type ManagedIdentityApplyConfiguration struct {
-	ClientID        *string `json:"clientID,omitempty"`
-	CertificateName *string `json:"certificateName,omitempty"`
+	ClientID        *string                       `json:"clientID,omitempty"`
+	CertificateName *string                       `json:"certificateName,omitempty"`
+	ObjectEncoding  *v1beta1.ObjectEncodingFormat `json:"objectEncoding,omitempty"`
 }
 
 // ManagedIdentityApplyConfiguration constructs an declarative configuration of the ManagedIdentity type for use with
@@ -43,5 +48,13 @@ func (b *ManagedIdentityApplyConfiguration) WithClientID(value string) *ManagedI
 // If called multiple times, the CertificateName field is set to the value of the last call.
 func (b *ManagedIdentityApplyConfiguration) WithCertificateName(value string) *ManagedIdentityApplyConfiguration {
 	b.CertificateName = &value
+	return b
+}
+
+// WithObjectEncoding sets the ObjectEncoding field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ObjectEncoding field is set to the value of the last call.
+func (b *ManagedIdentityApplyConfiguration) WithObjectEncoding(value v1beta1.ObjectEncodingFormat) *ManagedIdentityApplyConfiguration {
+	b.ObjectEncoding = &value
 	return b
 }
