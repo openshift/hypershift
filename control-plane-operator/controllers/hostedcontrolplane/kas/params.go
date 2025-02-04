@@ -50,7 +50,9 @@ type KubeAPIServerParams struct {
 	ServiceCIDRs         []string `json:"serviceCIDRs"`
 	ClusterCIDRs         []string `json:"clusterCIDRs"`
 	AdvertiseAddress     string   `json:"advertiseAddress"`
-	ExternalAddress      string   `json:"externalAddress"`
+	// CustomizedExternalAddress is the external address that is customized by the user using the field KubeAPIServerDNSName.
+	CustomizedExternalAddress string `json:"customizedExternalAddress"`
+	ExternalAddress           string `json:"externalAddress"`
 	// ExternalPort is the port coming from the status of the SVC which is exposing the KAS, e.g. common router LB, dedicated private/public/ LB...
 	// This is used to build kas urls for generated internal kubeconfigs for example.
 	ExternalPort    int32  `json:"externalPort"`
@@ -62,6 +64,7 @@ type KubeAPIServerParams struct {
 	OIDCCAConfigMap      *corev1.LocalObjectReference `json:"oidcCAConfigMap"`
 	EtcdURL              string                       `json:"etcdAddress"`
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
+	CustomKubeConfigRef  *hyperv1.KubeconfigSecretRef `json:"customKubeConfigRef"`
 	AuditWebhookRef      *corev1.LocalObjectReference `json:"auditWebhookRef"`
 	ConsolePublicURL     string                       `json:"consolePublicURL"`
 	DisableProfiling     bool                         `json:"disableProfiling"`
@@ -120,6 +123,11 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
 	}
+
+	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
+		params.CustomizedExternalAddress = hcp.Spec.KubeAPIServerDNSName
+	}
+
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
 		params.Authentication = hcp.Spec.Configuration.Authentication
@@ -334,6 +342,10 @@ func (p *KubeAPIServerParams) AuditPolicyConfig() configv1.Audit {
 	}
 }
 
+func (p *KubeAPIServerParams) CustomExternalURL() string {
+	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(p.CustomizedExternalAddress), p.ExternalPort)
+}
+
 func (p *KubeAPIServerParams) ExternalURL() string {
 	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(p.ExternalAddress), p.ExternalPort)
 }
@@ -341,6 +353,13 @@ func (p *KubeAPIServerParams) ExternalURL() string {
 // InternalURL is used by ReconcileBootstrapKubeconfigSecret.
 func (p *KubeAPIServerParams) InternalURL() string {
 	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(p.InternalAddress), p.ExternalPort)
+}
+
+func (p *KubeAPIServerParams) CustomExternalKubeconfigKey() string {
+	if p.CustomKubeConfigRef == nil {
+		return ""
+	}
+	return p.CustomKubeConfigRef.Key
 }
 
 func (p *KubeAPIServerParams) ExternalKubeconfigKey() string {
