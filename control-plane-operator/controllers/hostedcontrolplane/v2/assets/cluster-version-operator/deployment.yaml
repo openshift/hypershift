@@ -88,13 +88,8 @@ spec:
         - |
           #!/bin/bash
           set -euo pipefail
-          cat > /tmp/clusterversion.yaml <<EOF
-          apiVersion: config.openshift.io/v1
-          kind: ClusterVersion
-          metadata:
-            name: version
-          spec:
-            clusterID: ${CLUSTER_ID}
+          cat > /tmp/clusterversion.json <<EOF
+          ${CLUSTER_VERSION_JSON}
           EOF
           oc get ns openshift-config &> /dev/null || oc create ns openshift-config
           oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
@@ -106,7 +101,7 @@ spec:
             fi
             sleep 1
           done
-          oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.yaml
+          oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.json
         command:
         - /bin/bash
         env:

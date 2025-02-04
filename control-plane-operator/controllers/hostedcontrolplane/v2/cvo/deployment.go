@@ -1,6 +1,7 @@
 package cvo
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
@@ -51,10 +52,30 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		}
 		c.Image = controlPlaneReleaseImage
 	})
+
+	// the ClusterVersion resource is created by the CVO bootstrap container.
+	// we marshal it to json as a means to validate its formatting, which protects
+	// us against easily preventable mistakes, such as typos.
+	cv := &configv1.ClusterVersion{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterVersion",
+			APIVersion: "config.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: configv1.ClusterID(cpContext.HCP.Spec.ClusterID),
+		},
+	}
+	clusterVersionJSON, err := json.Marshal(cv)
+	if err != nil {
+		return err
+	}
 	util.UpdateContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env, corev1.EnvVar{
-			Name:  "CLUSTER_ID",
-			Value: cpContext.HCP.Spec.ClusterID,
+			Name:  "CLUSTER_VERSION_JSON",
+			Value: string(clusterVersionJSON),
 		})
 	})
 
