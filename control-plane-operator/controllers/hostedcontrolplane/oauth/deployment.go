@@ -10,8 +10,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -35,6 +37,9 @@ const (
 
 	httpKonnectivityProxyPort   = 8092
 	socks5KonnectivityProxyPort = 8090
+
+	certsTrustPath         = "/etc/pki/tls/certs"
+	managedTrustBundlePath = "managed-trust-bundle.crt"
 )
 
 var (
@@ -148,6 +153,7 @@ func ReconcileDeployment(ctx context.Context, client crclient.Client, deployment
 			util.BuildVolume(oauthVolumeAuditConfig(), buildOAuthVolumeAuditConfig),
 			util.BuildVolume(oauthVolumeKonnectivityProxyClientCert(), buildOAuthVolumeKonnectivityProxyClientCert),
 			util.BuildVolume(oauthVolumeKonnectivityProxyTrustBundle(), buildOAuthVolumeKonnectivityProxyTrustBundle),
+			util.BuildVolume(oauthVolumeProxyManagedTrustBundle(), buildOAuthVolumeProxyManagedTrustBundle),
 		},
 	}
 
@@ -268,6 +274,12 @@ func buildOAuthContainerHTTPProxy(image string, proxyConfig *configv1.ProxySpec,
 			Value: fmt.Sprintf("%s/kubeconfig", volumeMounts.Path(c.Name, oauthVolumeKubeconfig().Name)),
 		}}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      oauthVolumeProxyManagedTrustBundle().Name,
+			MountPath: path.Join(certsTrustPath, managedTrustBundlePath),
+			SubPath:   managedTrustBundlePath,
+		})
+		proxy.SetEnvVars(&c.Env)
 	}
 }
 
@@ -463,6 +475,24 @@ func oauthVolumeKonnectivityProxyTrustBundle() *corev1.Volume {
 func buildOAuthVolumeKonnectivityProxyTrustBundle(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{DefaultMode: ptr.To[int32](0640)}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
+}
+
+func oauthVolumeProxyManagedTrustBundle() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "managed-trust-bundle",
+	}
+}
+
+func buildOAuthVolumeProxyManagedTrustBundle(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
+	v.ConfigMap.Name = manifests.TrustedCABundleConfigMap("").Name
+	v.ConfigMap.Items = []corev1.KeyToPath{
+		{
+			Key:  certs.UserCABundleMapKey,
+			Path: managedTrustBundlePath,
+		},
+	}
 }
 
 func applyOauthAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {
