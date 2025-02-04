@@ -910,11 +910,9 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
 	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
-
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
-
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
 	r.Log.Info("Reconciling infrastructure services")
@@ -1319,9 +1317,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	// Reconcile image registry operator
-	r.Log.Info("Reconciling Image Registry Operator")
-	if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
+	if capabilities.IsImageRegistryCapabilityEnabled(hostedControlPlane.Spec.Capabilities) {
+		r.Log.Info("Reconciling Image Registry Operator")
+		if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile image registry operator: %w", err)
+		}
 	}
 
 	if !r.IsCPOV2 {
@@ -2535,12 +2535,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
 	}
 
-	// Image Registry Operator Serving Cert
-	imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
-		return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		// Image Registry Operator Serving Cert
+		imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
+			return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
+		}
 	}
 
 	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
@@ -4806,7 +4808,6 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 		Reason:  hyperv1.EtcdWaitingForQuorumReason,
 		Message: message,
 	}, nil
-
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -4903,10 +4904,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 
 		r.Log.Info("creating kubevirt cloud-config ConfigMap")
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
-
 			r.Log.Info("reconciling kubevirt CCM ConfigMap")
 			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
-
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud config: %w", hcp.Spec.Platform.Type, err)
 		}
@@ -4966,7 +4965,6 @@ func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlan
 }
 
 func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Removing cloud resources")
 

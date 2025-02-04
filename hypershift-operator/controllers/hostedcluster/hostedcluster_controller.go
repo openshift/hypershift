@@ -1987,6 +1987,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Configuration = nil
 	}
 
+	hcp.Spec.Capabilities = hcluster.Spec.Capabilities
+
 	return nil
 }
 
