@@ -42,7 +42,6 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -105,8 +104,6 @@ var (
 	// only once.
 	deleteDNSOperatorDeploymentOnce sync.Once
 	deleteCVORemovedResourcesOnce   sync.Once
-	olmCatalogImagesOnce            sync.Once
-	p                               *olm.OperatorLifecycleManagerParams
 )
 
 const azureCCMScript = `
@@ -139,8 +136,7 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
-	ImageMetaDataProvider     util.RegistryClientImageMetadataProvider
-	registryclient.DigestListerFN
+	ImageMetaDataProvider     util.ImageMetadataProvider
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -196,7 +192,6 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
-		DigestListerFN:            registryclient.GetListDigest,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
 	}})
 	if err != nil {
@@ -646,7 +641,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling olm resources")
-	errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret, r.DigestListerFN)...)
+	errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 
 	log.Info("reconciling kubelet configs")
 	if err := r.reconcileKubeletConfig(ctx); err != nil {
@@ -1664,7 +1659,7 @@ func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *conf
 	return nil
 }
 
-func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret *corev1.Secret, digestLister registryclient.DigestListerFN) []error {
+func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret *corev1.Secret) []error {
 	var errs []error
 
 	operatorHub := manifests.OperatorHub()
@@ -1693,14 +1688,10 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	olmCatalogImagesOnce.Do(func() {
-		var err error
-		p, err = olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, digestLister, &r.ImageMetaDataProvider)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to create OperatorLifecycleManagerParams: %w", err))
-			return
-		}
-	})
+	p, err := olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, r.ImageMetaDataProvider)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to create OperatorLifecycleManagerParams: %w", err))
+	}
 
 	// Check if the defaultSources are disabled
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
