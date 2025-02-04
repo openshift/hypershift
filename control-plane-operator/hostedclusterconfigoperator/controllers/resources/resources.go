@@ -380,58 +380,60 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
 	// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
 	// exist at this point.
-	if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
-		log.Info("skipping registry config to let CIRO bootstrap")
-	} else {
-		log.Info("reconciling registry config")
-		if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-			registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
-		}
-		if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
-			log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
-			ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
-			if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
-				if ocmConfigMap.Data == nil {
-					// CPO has not created the configmap yet, wait for create
-					// This should not happen as we are started by the CPO after the configmap should be created
-					return nil
-				}
-				config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-				if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
-					err := util.DeserializeResource(configStr, config, api.Scheme)
-					if err != nil {
-						return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
-					}
-				}
-				config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
-				configStr, err := util.SerializeResource(config, api.Scheme)
-				if err != nil {
-					return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
-				}
-				ocmConfigMap.Data[ocm.ConfigKey] = configStr
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
+			log.Info("skipping registry config to let CIRO bootstrap")
+		} else {
+			log.Info("reconciling registry config")
+			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+				registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
 				return nil
 			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
+				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+			}
+			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
+				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
+				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
+				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
+					if ocmConfigMap.Data == nil {
+						// CPO has not created the configmap yet, wait for create
+						// This should not happen as we are started by the CPO after the configmap should be created
+						return nil
+					}
+					config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+					if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+						err := util.DeserializeResource(configStr, config, api.Scheme)
+						if err != nil {
+							return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+						}
+					}
+					config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+					configStr, err := util.SerializeResource(config, api.Scheme)
+					if err != nil {
+						return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
+					}
+					ocmConfigMap.Data[ocm.ConfigKey] = configStr
+					return nil
+				}); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
+				}
 			}
 		}
-	}
 
-	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Image != nil && hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name != "" {
-		additionalTrustedCAName := hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name
-		src := &corev1.ConfigMap{}
-		err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: additionalTrustedCAName}, src)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to get image registry additional trusted CA configmap %s: %w", additionalTrustedCAName, err))
-		} else {
-			dst := manifests.ImageRegistryAdditionalTrustedCAConfigMap(additionalTrustedCAName)
-			if _, err := r.CreateOrUpdate(ctx, r.client, dst, func() error {
-				dst.Data = src.Data
-				return nil
-			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile image registry additional trusted CA configmap %s: %w", additionalTrustedCAName, err))
+		if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Image != nil && hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name != "" {
+			additionalTrustedCAName := hcp.Spec.Configuration.Image.AdditionalTrustedCA.Name
+			src := &corev1.ConfigMap{}
+			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: additionalTrustedCAName}, src)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to get image registry additional trusted CA configmap %s: %w", additionalTrustedCAName, err))
+			} else {
+				dst := manifests.ImageRegistryAdditionalTrustedCAConfigMap(additionalTrustedCAName)
+				if _, err := r.CreateOrUpdate(ctx, r.client, dst, func() error {
+					dst.Data = src.Data
+					return nil
+				}); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile image registry additional trusted CA configmap %s: %w", additionalTrustedCAName, err))
+				}
 			}
 		}
 	}
@@ -1495,11 +1497,19 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			return nil
 		}
 		for arn, secret := range map[string]*corev1.Secret{
-			hcp.Spec.Platform.AWS.RolesRef.IngressARN:       manifests.AWSIngressCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.RolesRef.StorageARN:       manifests.AWSStorageCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.RolesRef.ImageRegistryARN: manifests.AWSImageRegistryCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.IngressARN: manifests.AWSIngressCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.StorageARN: manifests.AWSStorageCloudCredsSecret(),
 		} {
 			err := syncSecret(secret, arn)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			err := syncSecret(
+				manifests.AWSImageRegistryCloudCredsSecret(),
+				hcp.Spec.Platform.AWS.RolesRef.ImageRegistryARN,
+			)
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -1536,13 +1546,15 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster CSI secret: %w", err))
 		}
 
-		imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
-			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
-			imageRegistrySecret.Data = secretData
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
+			if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
+				secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
+				imageRegistrySecret.Data = secretData
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
+			}
 		}
 
 		azureFileCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
@@ -1618,22 +1630,24 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			errs = append(errs, fmt.Errorf("failed to reconcile powervs storage cloud credentials secret %w", err))
 		}
 
-		var imageRegistryCredentials corev1.Secret
-		err = r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name}, &imageRegistryCredentials)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to get image registry operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name, err))
-			return errs
-		}
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			var imageRegistryCredentials corev1.Secret
+			err = r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name}, &imageRegistryCredentials)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to get image registry operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name, err))
+				return errs
+			}
 
-		imageRegistryInstallerCloudCredentials := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "openshift-image-registry",
-				Name:      "installer-cloud-credentials",
-			},
-		}
-		err = createPowerVSSecret(&imageRegistryCredentials, imageRegistryInstallerCloudCredentials)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile powervs image registry cloud credentials secret %w", err))
+			imageRegistryInstallerCloudCredentials := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "openshift-image-registry",
+					Name:      "installer-cloud-credentials",
+				},
+			}
+			err = createPowerVSSecret(&imageRegistryCredentials, imageRegistryInstallerCloudCredentials)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile powervs image registry cloud credentials secret %w", err))
+			}
 		}
 	}
 	return errs
@@ -2037,18 +2051,20 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		return remaining, err
 	}
 	var errs []error
-	log.Info("Ensuring image registry storage is removed")
-	removed, err := r.ensureImageRegistryStorageRemoved(ctx)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	if !removed {
-		remaining.Insert("image-registry")
-	} else {
-		log.Info("Image registry is removed")
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		log.Info("Ensuring image registry storage is removed")
+		removed, err := r.ensureImageRegistryStorageRemoved(ctx)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !removed {
+			remaining.Insert("image-registry")
+		} else {
+			log.Info("Image registry is removed")
+		}
 	}
 	log.Info("Ensuring ingress controllers are removed")
-	removed, err = r.ensureIngressControllersRemoved(ctx, hcp)
+	removed, err := r.ensureIngressControllersRemoved(ctx, hcp)
 	if err != nil {
 		errs = append(errs, err)
 	}
