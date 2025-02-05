@@ -262,6 +262,7 @@ nav:
     - "Agent": reference/infrastructure/agent.md
   - 'Architecture':
     - reference/architecture/index.md
+    - 'Hosted Control Planes in Azure Red Hat OpenShift': reference/architecture/aro.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
   - 'Manifests':
     - reference/manifests/index.md
