@@ -56,7 +56,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		schedulerContainerMain().Name: {
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
+					Path:   "/livez",
 					Port:   intstr.FromInt(schedulerSecurePort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
