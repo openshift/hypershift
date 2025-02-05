@@ -1273,6 +1273,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"list",
 					"create",
 					"update",
+					"watch",
 				},
 			})
 	}

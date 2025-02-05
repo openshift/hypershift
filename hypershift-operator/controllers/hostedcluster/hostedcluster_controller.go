@@ -2997,6 +2997,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 					"list",
 					"create",
 					"update",
+					"watch",
 				},
 			})
 	}
