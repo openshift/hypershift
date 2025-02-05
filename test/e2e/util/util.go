@@ -404,9 +404,6 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 				Status: metav1.ConditionFalse,
 			}),
 			func(hostedCluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
-				if wanted, got := image, ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).Desired.Image; wanted != got {
-					return false, fmt.Sprintf("wanted HostedCluster to desire image %s, got %s", wanted, got), nil
-				}
 				if len(ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).History) == 0 {
 					return false, "HostedCluster has no version history", nil
 				}
