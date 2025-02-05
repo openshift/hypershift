@@ -44,26 +44,32 @@ spec:
           cloudProvider:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
           controlPlaneOperator:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
           disk:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
           file:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
           imageRegistry:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
           ingress:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
           managedIdentitiesKeyVault:
             name: ""
@@ -71,10 +77,12 @@ spec:
           network:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
           nodePoolManagement:
             certificateName: ""
             clientID: ""
+            credentialsSecretName: ""
             objectEncoding: ""
         dataPlane:
           diskMSIClientID: ""
