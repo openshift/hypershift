@@ -192,6 +192,7 @@ func ResolveDNSHostname(ctx context.Context, hostName string) error {
 func InsecureHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true,
 			},
