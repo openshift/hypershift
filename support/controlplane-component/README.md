@@ -4,7 +4,7 @@
 
 Every component needs to create a directory under `/control-plane-operator/controllers/hostedcontrolplane/v2/assets` to host its manifests, the name of the directory is your component's name
 ```shell
-mkdir /control-plane-operator/controllers/hostedcontrolplane/v2/my-component
+mkdir /control-plane-operator/controllers/hostedcontrolplane/v2/assets/my-component
 ```
 
 ### Creating Workload manifest
@@ -12,7 +12,7 @@ mkdir /control-plane-operator/controllers/hostedcontrolplane/v2/my-component
 Create a new file named `deployment.yaml` containing the Deployment's manifest of your component
 
 ```yaml
-cat <<EOF > /control-plane-operator/controllers/hostedcontrolplane/v2/my-component/deployment.yaml
+cat <<EOF > /control-plane-operator/controllers/hostedcontrolplane/v2/assets/my-component/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,7 +46,7 @@ Place any other required resource under the same directory, such as configMaps, 
 To create a configMap for example:
 
 ```yaml
-cat <<EOF > /control-plane-operator/controllers/hostedcontrolplane/v2/my-component/my-config.yaml
+cat <<EOF > /control-plane-operator/controllers/hostedcontrolplane/v2/assets/my-component/my-config.yaml
 apiVersion: v1
 data:
   config.yaml: "test-config"
@@ -141,7 +141,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 
 ## Customizing your component
 
-Some components require dynamic additional config, arguments, env variables, etc. based on the `HostedControlPlane` spec. You can adapt your manifests dynamically by defining adapt functions with the following signature `func(ControlPlaneContext, resourceType) error`
+Some components require dynamic additional config, arguments, env variables, etc. based on the `HostedControlPlane` spec. You can adapt your manifests dynamically by defining adapt functions with the following signature `func(WorkloadContext, resourceType) error`
 
 To adapt your deployment, first define your adapt function:
 ```go
@@ -152,7 +152,7 @@ import (
     component "github.com/openshift/hypershift/support/controlplane-component"
 )
 
-func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
     // for example, append a new arg to a container
     util.UpdateContainer("container-name", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
@@ -189,7 +189,7 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func adaptMyConfig(cpContext component.ControlPlaneContext, config *corev1.ConfigMap) error {
+func adaptMyConfig(cpContext component.WorkloadContext, config *corev1.ConfigMap) error {
     config.Data["config.yaml"] = "dynamic-content"
 }
 ```
@@ -201,7 +201,7 @@ If your component has any prerequisites or depends on external resources to exis
 ```go
 // control-plane-operator/controllers/hostedcontrolplane/v2/mycomponent/component.go
 
-func myPredicate(cpContext component.ControlPlaneContext) (bool, error) {
+func myPredicate(cpContext component.WorkloadContext) (bool, error) {
     // reconcile only if platform is AWS
     if cpContext.HCP.Spec.Platform.Type == "AWS" {
         return true
@@ -237,7 +237,7 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-func myConfigPredicate(cpContext ControlPlaneContext) bool {
+func myConfigPredicate(cpContext component.WorkloadContext) bool {
     if _, exists := cpContext.HCP.Annotations["disable_my_config"]; exists {
         return false
     }
@@ -245,7 +245,7 @@ func myConfigPredicate(cpContext ControlPlaneContext) bool {
 }
 ```
 
-### Watching ConfigMap/Secrets
+### Rollout on ConfigMap/Secrets changes
 
 If your workload(Deployment/StatefulSet) requires a rollout if a configMap or Secret data is changed, you can configure your component to watch those resources as follows:
 
@@ -254,8 +254,8 @@ If your workload(Deployment/StatefulSet) requires a rollout if a configMap or Se
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &MyComponent{}).
-        WatchResource(&corev1.ConfigMap{}, "my-config").
-        WatchResource(&corev1.Secret{}, "my-secret").
+        RolloutOnConfigMapChange("my-config1", ...).
+        RolloutOnSecretChange("my-secret", ...).
 		Build()
 }
 ```
@@ -268,9 +268,13 @@ If your component depends on other components being `Available` before it can st
 ```go hl_lines="5"
 // control-plane-operator/controllers/hostedcontrolplane/v2/mycomponent/component.go
 
+import (
+    oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+)
+
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &MyComponent{}).
-        WithDependencies("component1", "component2").
+        WithDependencies(oapiv2.ComponentName, "other-component"). // most components depend on openshift-api-server(oapi) component.
 		Build()
 }
 ```
