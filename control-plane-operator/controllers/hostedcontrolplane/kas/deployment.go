@@ -806,8 +806,33 @@ while true; do
   fi
   sleep 1
 done
+
+# Fetch the current FeatureGate object in JSON
+oc get featuregate cluster -o json > /tmp/current.json
+
+# Check if "status" exists and contains "featureGates" that is a list.
+hasStatus=$(python3 -c '
+import sys, json
+data = json.load(sys.stdin)
+if "featureGates" in data.get("status", {}) and isinstance(data["status"]["featureGates"], list):
+    print("true")
+else:
+    print("false")
+' < /tmp/current.json)
+
+# If not found, initialize status.featureGates to an empty array so the final patch does not fail.
+if [ "$hasStatus" = "false" ]; then
+    echo "Initializing status.featureGates to an empty array..."
+    oc patch featuregate cluster --subresource=status --patch '{"status": {"featureGates": []}}' --type=merge
+fi
+
+# We need to convert to json as otherwise merge type patch with yaml would replace the slice completely.
+python3 -c "import json; print(json.dumps(json.load(open('work/99_feature-gate.yaml')), indent=2))" > /tmp/output.json
+python3 -c "import json; d=json.load(open('./tmp/output.json', 'r')); print(json.dumps(d['status']['featureGates'][0], indent=2))" > /tmp/patch.json
+python3 -c "import json; d=json.load(open('/tmp/patch.json')); print('- op: add'); print('  path: \"/status/featureGates/-\"'); print('  value:'); print('\n'.join('    '+line for line in json.dumps(d, indent=2).splitlines()))" > /tmp/final_patch.yaml
+
 while true; do
-  if oc replace --subresource=status -f %[1]s/99_feature-gate.yaml; then
+  if oc patch --subresource=status --patch-file /tmp/final_patch.yaml --type=json featuregate cluster; then
     echo "FeatureGate status applied successfully."
     break
   fi
