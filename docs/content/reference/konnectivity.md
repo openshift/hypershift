@@ -382,7 +382,7 @@ oc get secret kas-kubelet-client-crt -n ${cp_namespace} -o jsonpath='{ .data.tls
 # Obtain a node IP from local machines
 nodeip="$(oc get machines -n ${cp_namespace} -o json | jq -r '.items[0].status.addresses[] | select(.type=="InternalIP") | .address')"
 
-# Forward the konnectivity server endpdoint to the local machine
+# Forward the konnectivity server endpoint to the local machine
 oc port-forward -n ${cp_namespace} svc/konnectivity-server-local 8090:8090 &
 
 # Allow some time for the port-forwarding to start
