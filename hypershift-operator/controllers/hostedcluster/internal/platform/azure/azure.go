@@ -7,11 +7,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/secretproviderclass"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -77,7 +77,7 @@ func (a Azure) ReconcileCAPIInfraCR(
 		if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 			return err
 		}
-		secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName, string(hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding))
+		secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement)
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
