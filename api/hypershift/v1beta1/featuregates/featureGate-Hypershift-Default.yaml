@@ -24,6 +24,9 @@
                     {
                         "name": "OpenStack"
                     },
+                    {
+                        "name": "DisableClusterCapabilities"
+                    }
                 ],
                 "enabled": [
                     # We enable all OCP feature gates only so the CRD contains the fields.

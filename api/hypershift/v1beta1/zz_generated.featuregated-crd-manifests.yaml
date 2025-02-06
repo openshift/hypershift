@@ -97,6 +97,7 @@ hostedclusters.hypershift.openshift.io:
   FeatureGates:
   - AROHCPManagedIdentities
   - AutoNodeKarpenter
+  - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
@@ -151,6 +152,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   FeatureGates:
   - AROHCPManagedIdentities
   - AutoNodeKarpenter
+  - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
