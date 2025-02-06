@@ -35,17 +35,42 @@ What do I need to do to test...
 
         $ bin/hypershift-operator run
 
+### Building Custom Images
+To build images that can be both used for HyperShift installation and Hosted Cluster creation
+
+         docker build -f ./Dockerfile.dev --platform=linux/amd64 -t quay.io/blah/hypershift:${TAG} .
+         docker push quay.io/blah/hypershift:${TAG}
+
+
+To build only the HyperShift image for installation
+
+         make IMG=quay.io/my/hypershift:latest docker-build docker-push
+
+
+To build controlplane-operator image for Hosted Cluster creation
+
+         docker build --platform linux/amd64 -t quay.io/blah/controlplaneoperator:<tag> -f Dockerfile.control-plane .
+         docker push  docker push quay.io/blah/controlplaneoperator:<tag>
+
+
+(Optional) If you need to build a release image containing changes from multiple pull requests you can do so by using Cluster Bot in slack.
+   For example to build a 4.18 release image using the below PRs as examples
+   * https://github.com/openshift/cluster-storage-operator/pull/522
+   * https://github.com/openshift/hypershift/pull/4791
+
+Run the following in Cluster Bot
+
+    build 4.18,openshift/cluster-storage-operator#522,openshift/hypershift#4791
+
+The bot will build a release image and link the job that created it, the image can be found at the bottom of the logs.
+
+
 ### How to install HyperShift with a custom image
-
-1. Build and push a custom image build to your own repository.
-
-        make IMG=quay.io/my/hypershift:latest docker-build docker-push
-
-2. Install HyperShift using the custom image:
+1. Install HyperShift using the custom image:
 
         $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest
 
-3. (Optional) If your repository is private, create a secret:
+2. (Optional) If your repository is private, create a secret:
 
         oc create secret generic hypershift-operator-pull-secret  -n hypershift --from-file=.dockerconfig=/my/pull-secret --type=kubernetes.io/dockerconfig
 
@@ -54,10 +79,7 @@ What do I need to do to test...
        oc patch serviceaccount operator -n hypershift -p '{"imagePullSecrets": [{"name": "hypershift-operator-pull-secret"}]}'
 
 ### How to create a HyperShift Guest Cluster with a custom image
-
-1. Build and push a custom release image to your own repository.
-
-2. Create a guest cluster using the custom image:
+1. Create a guest cluster using the custom image:
 
         $ bin/hypershift create cluster openstack --release-image quay.io ...
 
