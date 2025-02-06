@@ -35,6 +35,8 @@ func ReconcileCollectProfilesCronJob(cronJob *batchv1.CronJob, ownerRef config.O
 			cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args[i] = hcp.Namespace
 		}
 	}
+
+	cronJob.Spec.JobTemplate.Spec.Template.Labels = mockDC.AdditionalLabels
 	cronJob.Spec.JobTemplate.Spec.Template.Spec.Tolerations = mockDC.Scheduling.Tolerations
 	cronJob.Spec.JobTemplate.Spec.Template.Spec.Affinity = mockDC.Scheduling.Affinity
 	cronJob.Spec.Schedule = generateModularDailyCronSchedule([]byte(cronJob.Namespace))
