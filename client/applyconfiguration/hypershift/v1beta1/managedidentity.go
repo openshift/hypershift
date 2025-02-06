@@ -24,9 +24,10 @@ import (
 // ManagedIdentityApplyConfiguration represents an declarative configuration of the ManagedIdentity type for use
 // with apply.
 type ManagedIdentityApplyConfiguration struct {
-	ClientID        *string                       `json:"clientID,omitempty"`
-	CertificateName *string                       `json:"certificateName,omitempty"`
-	ObjectEncoding  *v1beta1.ObjectEncodingFormat `json:"objectEncoding,omitempty"`
+	ClientID              *string                       `json:"clientID,omitempty"`
+	CertificateName       *string                       `json:"certificateName,omitempty"`
+	ObjectEncoding        *v1beta1.ObjectEncodingFormat `json:"objectEncoding,omitempty"`
+	CredentialsSecretName *string                       `json:"credentialsSecretName,omitempty"`
 }
 
 // ManagedIdentityApplyConfiguration constructs an declarative configuration of the ManagedIdentity type for use with
@@ -56,5 +57,13 @@ func (b *ManagedIdentityApplyConfiguration) WithCertificateName(value string) *M
 // If called multiple times, the ObjectEncoding field is set to the value of the last call.
 func (b *ManagedIdentityApplyConfiguration) WithObjectEncoding(value v1beta1.ObjectEncodingFormat) *ManagedIdentityApplyConfiguration {
 	b.ObjectEncoding = &value
+	return b
+}
+
+// WithCredentialsSecretName sets the CredentialsSecretName field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CredentialsSecretName field is set to the value of the last call.
+func (b *ManagedIdentityApplyConfiguration) WithCredentialsSecretName(value string) *ManagedIdentityApplyConfiguration {
+	b.CredentialsSecretName = &value
 	return b
 }
