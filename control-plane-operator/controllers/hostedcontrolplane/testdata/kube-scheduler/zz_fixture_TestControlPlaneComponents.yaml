@@ -168,7 +168,7 @@ spec:
         livenessProbe:
           failureThreshold: 5
           httpGet:
-            path: /healthz
+            path: /livez
             port: 10259
             scheme: HTTPS
           initialDelaySeconds: 60
