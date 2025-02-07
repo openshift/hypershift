@@ -340,7 +340,6 @@ func (r *Reconciler) reconcileEC2NodeClassDefault(ctx context.Context, userDataS
 
 	op, err := r.CreateOrUpdate(ctx, r.GuestClient, ec2NodeClass, func() error {
 		ec2NodeClass.Spec = awskarpenterv1.EC2NodeClassSpec{
-			Role:      "KarpenterNodeRole-agl", // TODO(alberto): set a convention for this e.g. openshift-karpenter-infraID
 			UserData:  ptr.To(string(userDataSecret.Data["value"])),
 			AMIFamily: ptr.To("Custom"),
 			AMISelectorTerms: []awskarpenterv1.AMISelectorTerm{
