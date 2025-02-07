@@ -4,7 +4,10 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make hypershift hypershift-operator product-cli karpenter-operator
+RUN make hypershift \
+  && make hypershift-operator \
+  && make product-cli \
+  && make karpenter-operator
 
 FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
