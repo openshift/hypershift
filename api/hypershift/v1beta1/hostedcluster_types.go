@@ -124,6 +124,9 @@ const (
 	// a HostedControlPlane.
 	ClusterAPIOpenStackProviderImage = "hypershift.openshift.io/capi-provider-openstack-image"
 
+	// OpenStackResourceControllerImage overrides the ORC image to use for a HostedControlPlane.
+	OpenStackResourceControllerImage = "hypershift.openshift.io/orc-image"
+
 	// AESCBCKeySecretKey defines the Kubernetes secret key name that contains the aescbc encryption key
 	// in the AESCBC secret encryption strategy
 	AESCBCKeySecretKey = "key"

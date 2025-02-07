@@ -26,10 +26,11 @@ import (
 )
 
 const (
-	AWSCAPIProvider       = "aws-cluster-api-controllers"
-	AzureCAPIProvider     = "azure-cluster-api-controllers"
-	PowerVSCAPIProvider   = "ibmcloud-cluster-api-controllers"
-	OpenStackCAPIProvider = "openstack-cluster-api-controllers"
+	AWSCAPIProvider             = "aws-cluster-api-controllers"
+	AzureCAPIProvider           = "azure-cluster-api-controllers"
+	PowerVSCAPIProvider         = "ibmcloud-cluster-api-controllers"
+	OpenStackCAPIProvider       = "openstack-cluster-api-controllers"
+	OpenStackResourceController = "openstack-resource-controller"
 )
 
 var _ Platform = aws.AWS{}
@@ -85,6 +86,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 	var (
 		platform          Platform
 		capiImageProvider string
+		orcImage          string
 		payloadVersion    *semver.Version
 		err               error
 	)
@@ -132,8 +134,12 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
+			orcImage, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackResourceController, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to retrieve orc image: %w", err)
+			}
 		}
-		platform = openstack.New(capiImageProvider)
+		platform = openstack.New(capiImageProvider, orcImage)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
