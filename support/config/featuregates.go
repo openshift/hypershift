@@ -19,12 +19,22 @@ func FeatureGates(fg configv1.FeatureGateSelection) []string {
 			return nil
 		}
 		for _, fgDescription := range fs.Enabled {
+			if fgDescription.FeatureGateAttributes.Name == features.FeatureGateOpenShiftPodSecurityAdmission {
+				// OpenShiftPodSecurityAdmission is a special case, authoritatively disabled below for now
+				continue
+			}
 			enabled = append(enabled, fgDescription.FeatureGateAttributes.Name)
 		}
 		for _, fgDescription := range fs.Disabled {
+			if fgDescription.FeatureGateAttributes.Name == features.FeatureGateOpenShiftPodSecurityAdmission {
+				// OpenShiftPodSecurityAdmission is a special case, authoritatively disabled below for now
+				continue
+			}
 			disabled = append(disabled, fgDescription.FeatureGateAttributes.Name)
 		}
 	}
+	// OpenShiftPodSecurityAdmission is a special case, it is always disabled for now
+	disabled = append(disabled, features.FeatureGateOpenShiftPodSecurityAdmission)
 	for _, e := range enabled {
 		result = append(result, fmt.Sprintf("%s=true", e))
 	}

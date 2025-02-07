@@ -113,7 +113,6 @@ spec:
         - --service-cluster-ip-range=
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-        - --feature-gates=OpenShiftPodSecurityAdmission=true
         - --feature-gates=ExternalCloudProvider=true
         - --feature-gates=ExternalCloudProviderAzure=true
         - --feature-gates=ExternalCloudProviderGCP=true
@@ -186,6 +185,7 @@ spec:
         - --feature-gates=EventedPLEG=false
         - --feature-gates=TranslateStreamCloseWebsocketRequests=false
         - --feature-gates=VolumeGroupSnapshot=false
+        - --feature-gates=OpenShiftPodSecurityAdmission=false
         command:
         - hyperkube
         - kube-controller-manager
