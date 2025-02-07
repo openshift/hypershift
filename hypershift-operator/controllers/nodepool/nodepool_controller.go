@@ -303,6 +303,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	if hcluster.Status.KubeConfig == nil {
+		log.Info("waiting on hostedCluster.status.kubeConfig to be set")
+		return ctrl.Result{}, nil
+	}
+
 	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, hcluster, releaseImage)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
