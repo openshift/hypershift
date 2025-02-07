@@ -106,8 +106,8 @@ func TestNodePool(t *testing.T) {
 						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
 					},
 					{
-						name: "OpenStackNodeMultinetTest",
-						test: NewOpenStackMultinetTest(ctx, mgtClient, hostedCluster),
+						name: "OpenStackAdvancedTest",
+						test: NewOpenStackAdvancedTest(ctx, mgtClient, hostedCluster),
 					},
 					{
 						name: "TestNTOPerformanceProfile",
@@ -120,10 +120,6 @@ func TestNodePool(t *testing.T) {
 					{
 						name: "TestNodePoolPrevReleaseN2",
 						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts),
-					},
-					{
-						name: "OpenStackAZTest",
-						test: NewOpenStackAZTest(ctx, mgtClient, hostedCluster),
 					},
 					{
 						name: "TestMirrorConfigs",
