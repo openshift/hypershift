@@ -216,7 +216,6 @@ github.com/IBM/ibm-cos-sdk-go/service/s3/s3manager
 # github.com/IBM/networking-go-sdk v0.45.0
 ## explicit; go 1.19
 github.com/IBM/networking-go-sdk/common
-github.com/IBM/networking-go-sdk/directlinkv1
 github.com/IBM/networking-go-sdk/dnsrecordsv1
 github.com/IBM/networking-go-sdk/transitgatewayapisv1
 github.com/IBM/networking-go-sdk/zonesv1
