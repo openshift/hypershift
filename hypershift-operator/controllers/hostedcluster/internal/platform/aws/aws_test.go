@@ -154,3 +154,60 @@ func TestValidCredentials(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildAWSWebIdentityCredentials(t *testing.T) {
+	type args struct {
+		roleArn string
+		region  string
+	}
+	type test struct {
+		name    string
+		args    args
+		wantErr bool
+		want    string
+	}
+	tests := []test{
+		{
+			name: "should fail if the role ARN is empty",
+			args: args{
+				roleArn: "",
+				region:  "us-east-1",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "should fail if the region is empty",
+			wantErr: true,
+			args: args{
+				roleArn: "arn:aws:iam::123456789012:role/some-role",
+				region:  "",
+			},
+		},
+		{
+			name:    "should succeed and return the creds template populated with role arn and region otherwise",
+			wantErr: false,
+			args: args{
+				roleArn: "arn:aws:iam::123456789012:role/some-role",
+				region:  "us-east-1",
+			},
+			want: `[default]
+role_arn = arn:aws:iam::123456789012:role/some-role
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
+region = us-east-1
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			creds, err := buildAWSWebIdentityCredentials(tt.args.roleArn, tt.args.region)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("buildAWSWebIdentityCredentials err = %v, wantErr = %v", err, tt.wantErr)
+				return
+			}
+			if creds != tt.want {
+				t.Errorf("expected creds:\n%s, but got:\n%s", tt.want, creds)
+			}
+		})
+	}
+}

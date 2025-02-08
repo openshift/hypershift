@@ -32,7 +32,13 @@ import (
 )
 
 const (
-	ImageStreamCAPA = "aws-cluster-api-controllers"
+	ImageStreamCAPA        = "aws-cluster-api-controllers"
+	awsCredentialsTemplate = `[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
+region = %s
+`
 )
 
 func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *AWS {
@@ -260,24 +266,32 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	return deploymentSpec, nil
 }
 
+func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {
+	if roleArn == "" {
+		return "", fmt.Errorf("role arn cannot be empty in AssumeRole credentials")
+	}
+	if region == "" {
+		return "", fmt.Errorf("a region must be specified for cross-partition compatability in AssumeRole credentials")
+	}
+	return fmt.Sprintf(awsCredentialsTemplate, roleArn, region), nil
+}
+
 func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-
-	awsCredentialsTemplate := `[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-sts_regional_endpoints = regional
-`
 	// TODO (alberto): consider moving this reconciliation logic down to the CPO.
 	// this is not trivial as the CPO deployment itself needs the secret with the ControlPlaneOperatorARN
 	var errs []error
+	var region string
+	if platformSpec := hcluster.Spec.Platform.AWS; platformSpec != nil {
+		region = platformSpec.Region
+	}
 	syncSecret := func(secret *corev1.Secret, arn string) error {
-		if arn == "" {
-			return fmt.Errorf("ARN is not provided for cloud credential secret %s/%s", secret.Namespace, secret.Name)
+		credentials, err := buildAWSWebIdentityCredentials(arn, region)
+		if err != nil {
+			return fmt.Errorf("failed to build cloud credentials secret %s/%s: %w", secret.Namespace, secret.Name, err)
 		}
 		if _, err := createOrUpdate(ctx, c, secret, func() error {
-			credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
 			secret.Data = map[string][]byte{"credentials": []byte(credentials)}
 			secret.Type = corev1.SecretTypeOpaque
 			return nil
@@ -293,8 +307,7 @@ sts_regional_endpoints = regional
 		hcluster.Spec.Platform.AWS.RolesRef.NetworkARN:              CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.AWS.RolesRef.StorageARN:              AWSEBSCSIDriverCredsSecret(controlPlaneNamespace),
 	} {
-		err := syncSecret(secret, arn)
-		if err != nil {
+		if err := syncSecret(secret, arn); err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -985,6 +985,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 							NodePoolManagementARN:   "node-pool-management-arn",
 							ControlPlaneOperatorARN: "control-plane-operator-arn",
 						},
+						Region: "us-east-1",
 					},
 				},
 				Release: hyperv1.Release{
