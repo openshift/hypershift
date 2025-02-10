@@ -29,7 +29,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs
-        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e23415eb666c8157cb
+        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e23415eb66926e10aa
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
