@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -31,6 +33,7 @@ func ReconcileOpenShiftControllerManagerConfig(
 	imageConfig *configv1.ImageSpec,
 	buildConfig *configv1.Build,
 	networkConfig *configv1.NetworkSpec,
+	caps *hyperv1.Capabilities,
 ) error {
 	ownerRef.ApplyTo(cm)
 
@@ -45,7 +48,7 @@ func ReconcileOpenShiftControllerManagerConfig(
 		}
 	}
 	if err := reconcileConfig(config, deployerImage, dockerBuilderImage, minTLSVersion,
-		cipherSuites, imageConfig, buildConfig, networkConfig); err != nil {
+		cipherSuites, imageConfig, buildConfig, networkConfig, caps); err != nil {
 		return err
 	}
 	configStr, err := util.SerializeResource(config, api.Scheme)
@@ -63,6 +66,7 @@ func reconcileConfig(
 	imageConfig *configv1.ImageSpec,
 	buildConfig *configv1.Build,
 	networkConfig *configv1.NetworkSpec,
+	caps *hyperv1.Capabilities,
 ) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(ocmContainerMain().Name, volume)
@@ -82,7 +86,9 @@ func reconcileConfig(
 	cfg.Deployer.ImageTemplateFormat.Format = deployerImage
 
 	// registry config
-	cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
+	if capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
+	}
 	if imageConfig != nil {
 		cfg.DockerPullSecret.RegistryURLs = imageConfig.ExternalRegistryHostnames
 	}
