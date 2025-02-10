@@ -112,3 +112,12 @@ func OpenShiftTrustedCABundleForNamespace(namespace string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func KASServingCertSecret(namespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "kas-server-crt",
+		},
+	}
+}
