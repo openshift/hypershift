@@ -5724,7 +5724,6 @@ func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedC
 	if err != nil {
 		return fmt.Errorf("failed to read certificate: %v", err)
 	}
-
 	// Authenticate to Azure with the certificate
 	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
 	if err != nil {
