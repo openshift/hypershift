@@ -66,6 +66,7 @@ import (
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
+	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
@@ -248,6 +249,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		kubevirtcsiv2.NewComponent(),
 		cnov2.NewComponent(),
 		ntov2.NewComponent(),
+		dnsoperatorv2.NewComponent(),
 	)
 }
 
@@ -1280,9 +1282,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile cluster network operator operands: %w", err)
 	}
 
-	r.Log.Info("Reconciling DNSOperator")
-	if err := r.reconcileDNSOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile DNS operator: %w", err)
+	if !r.IsCPOV2 {
+		r.Log.Info("Reconciling DNSOperator")
+		if err := r.reconcileDNSOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile DNS operator: %w", err)
+		}
 	}
 
 	r.Log.Info("Reconciling IngressOperator")
