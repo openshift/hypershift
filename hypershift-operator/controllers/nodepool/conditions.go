@@ -308,9 +308,17 @@ func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nod
 }
 
 func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	// TODO (alberto): we should hide haproxy config generation within NewConfigGenerator and let the kubeconfig absence to be an error type.
+	// The func consumer can then choose how to handle it.
+	if hcluster.Status.KubeConfig == nil {
+		log.Info("waiting on hostedCluster.status.kubeConfig to be set")
+		return &ctrl.Result{}, nil
 	}
 
 	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, hcluster, releaseImage)
