@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
@@ -145,6 +146,9 @@ const (
 	etcdCheckRequeueInterval = 10 * time.Second
 
 	awsEndpointDeletionGracePeriod = 10 * time.Minute
+
+	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
+	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -1561,6 +1565,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Get release image version
+	var releaseImageVersion semver.Version
+	releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	releaseImageVersion, err = semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
+	}
+
 	// Reconcile the HostedControlPlane
 	isAutoscalingNeeded, err := r.isAutoscalingNeeded(ctx, hcluster)
 	if err != nil {
@@ -1568,7 +1583,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded)
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded,
+			annotationsForCertRenewal(log,
+				hcp,
+				shouldCheckForStaleCerts(hcluster, releaseImageVersion),
+				r.kasServingCertHashFromSecret(ctx, hcp),
+				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp))))
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -1717,17 +1737,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Get release image version
-	var releaseImageVersion semver.Version
-	releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-	}
-	releaseImageVersion, err = semver.Parse(releaseInfo.Version())
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
-	}
-
 	if !controlPlaneOperatorManagesMachineApprover {
 		// Reconcile the machine approver.
 		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion, releaseProvider); err != nil {
@@ -1843,12 +1852,137 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	return result, nil
 }
 
+// annotationsForCertRenewal returns a set of annotations to set based on the current state of the KAS
+// serving certificate. These could include the annotation to restart control plane pods.
+// It will always return an empty map whenever the HostedCluster should not be checked for
+// stale certs (see shouldCheckForStaleCerts)
+func annotationsForCertRenewal(
+	log logr.Logger,
+	hcp *hyperv1.HostedControlPlane,
+	shouldCheckForStaleCerts func() bool,
+	kasServingCertHashFromSecret func() (string, error),
+	kasServingCertHashFromEndpoint func() (string, error)) func() (map[string]string, error) {
+	return func() (map[string]string, error) {
+		if !shouldCheckForStaleCerts() {
+			return nil, nil
+		}
+
+		// The hash from the KAS serving secret is the source of truth for what
+		// certificate we should be using for KAS
+		// We can check whether we need to restart pods in one of 2 ways:
+		// 1. We have previously saved an annotation on the HCP that says which was the last
+		//    observed certificate hash. If they don't match, we need to restart.
+		// 2. We have not previously saved an annotation, and therefore we make a request
+		//    to the KAS endpoint to determine if the current secret matches what the KAS
+		//    pod is using as its serving cert. We then save the observed secret hash as an
+		//    annotation for next time. If they also don't match, we add the annotation to restart.
+		hashFromSecret, err := kasServingCertHashFromSecret()
+		if err != nil {
+			return nil, err
+		}
+
+		// The simplest check is to see if the hash of the KAS serving cert secret has changed
+		// since we last saw it.
+		if annotationServingCertHash := hcp.Annotations[kasServingCertHashAnnotation]; annotationServingCertHash != "" {
+			if annotationServingCertHash != hashFromSecret {
+				log.Info("WARNING: A change in the KAS server certificate hash detected. Setting the annotation to restart control plane workloads.")
+				return map[string]string{
+					kasServingCertHashAnnotation:  hashFromSecret,
+					hyperv1.RestartDateAnnotation: fmt.Sprintf("CertHash:%s", hashFromSecret),
+				}, nil
+			}
+			return nil, nil
+		}
+
+		// If we've never stored the kasServingCertHash, check the actual serving cert hash from the endpoint
+		// against the one from the secret
+		hashFromServerEndpoint, err := kasServingCertHashFromEndpoint()
+		if err != nil {
+			return nil, err
+		}
+		// If they match, we still need to store the hash for future comparisons
+		if hashFromServerEndpoint == hashFromSecret {
+			return map[string]string{
+				kasServingCertHashAnnotation: hashFromSecret,
+			}, nil
+		}
+		// If they don't match, we store the hash AND initiate a restart
+		log.Info("WARNING: The KAS endpoint server certificate does not match the serving certificate secret. Setting the annotation to restart control plane workloads.")
+		return map[string]string{
+			kasServingCertHashAnnotation:  hashFromSecret,
+			hyperv1.RestartDateAnnotation: fmt.Sprintf("CertHash:%s", hashFromSecret),
+		}, nil
+	}
+}
+
+func kasHostAndPortFromHCP(hcp *hyperv1.HostedControlPlane) string {
+	// NOTE: On IBM Cloud platform, the service port is different than the default. However, in that platform
+	// PKI is not managed by the CPO, therefore this check would never run. For simplicity, we only use the default
+	// port here.
+	return fmt.Sprintf("kube-apiserver.%s.svc:%d", hcp.Namespace, config.KASSVCPort)
+}
+
+func (r *HostedClusterReconciler) kasServingCertHashFromSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) func() (string, error) {
+	return func() (string, error) {
+		servingCertSecret := manifests.KASServingCertSecret(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(servingCertSecret), servingCertSecret); err != nil {
+			return "", err
+		}
+		if value := servingCertSecret.Data[corev1.TLSCertKey]; len(value) == 0 {
+			return "", fmt.Errorf("no value for KAS serving certificate in %s", client.ObjectKeyFromObject(servingCertSecret).String())
+		} else {
+			return hyperutil.HashSimple(value), nil
+		}
+	}
+}
+
+func (r *HostedClusterReconciler) kasServingCertHashFromEndpoint(kasHostAndPort string) func() (string, error) {
+	return func() (string, error) {
+		conn, err := tls.Dial("tcp", kasHostAndPort, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         "kubernetes",
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to dial %s: %w", kasHostAndPort, err)
+		}
+		defer conn.Close()
+		kasCerts := conn.ConnectionState().PeerCertificates
+		if len(kasCerts) == 0 {
+			return "", fmt.Errorf("no certificate found on KAS endpoint %s", kasHostAndPort)
+		}
+		pemBytes := certs.CertToPem(kasCerts[0])
+		return hyperutil.HashSimple(pemBytes), nil
+	}
+}
+
+// shouldCheckForStaleCerts returns true if a HostedCluster should be checked for stale certs
+// The following pre-conditions must be met:
+// - The HostedCluster must be managing its own PKI (the hyperv1.DisablePKIReconciliationAnnotation is not present)
+// - The HostedCluster has been available once
+// - The cluster version of the HostedCluster is < 4.19.0
+func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, hcVersion semver.Version) func() bool {
+	return func() bool {
+		if hc.Annotations[hcmetrics.HasBeenAvailableAnnotation] != "true" {
+			return false
+		}
+		if hc.Annotations[hyperv1.DisablePKIReconciliationAnnotation] == "true" {
+			return false
+		}
+		hcVersion.Pre = nil
+		hcVersion.Build = nil
+		return !hcVersion.GE(config.Version419)
+	}
+}
+
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool) error {
-	hcp.Annotations = map[string]string{
-		hyperutil.HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+
+	if hcp.Annotations == nil {
+		hcp.Annotations = map[string]string{}
 	}
+
+	hcp.Annotations[hyperutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 
 	// These annotations are copied from the HostedCluster
 	mirroredAnnotations := []string{
@@ -1856,7 +1990,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.OauthLoginURLOverrideAnnotation,
 		hyperv1.KonnectivityAgentImageAnnotation,
 		hyperv1.KonnectivityServerImageAnnotation,
-		hyperv1.RestartDateAnnotation,
 		hyperv1.IBMCloudKMSProviderImage,
 		hyperv1.AWSKMSProviderImage,
 		hyperv1.PortierisImageAnnotation,
@@ -1902,9 +2035,30 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	// Only set the restart date annotation if it has not been previously synced.
+	// This allows other values to be set on the HCP restart date annotation (for cert rotation) without
+	// causing a constant reconcile of the annotation value set on the HostedCluster.
+	if hcluster.Annotations[hyperv1.RestartDateAnnotation] != "" &&
+		hcp.Annotations[previouslySyncedRestartDateAnnotation] != hcluster.Annotations[hyperv1.RestartDateAnnotation] {
+		hcp.Annotations[previouslySyncedRestartDateAnnotation] = hcluster.Annotations[hyperv1.RestartDateAnnotation]
+		hcp.Annotations[hyperv1.RestartDateAnnotation] = hcluster.Annotations[hyperv1.RestartDateAnnotation]
+	}
+
+	// Determine which certRenewalAnnotations to set based on the current state of the KAS serving certificate.
+	// These could include an override of the RestartDateAnnotation
+	certAnnotations, err := certRenewalAnnotations()
+	if err != nil {
+		return err
+	}
+	for k, v := range certAnnotations {
+		hcp.Annotations[k] = v
+	}
+
 	// Set the DisableClusterAutoscalerAnnotation if autoscaling is not needed
 	if !isAutoscalingNeeded {
 		hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation] = "true"
+	} else {
+		delete(hcp.Annotations, hyperv1.DisableClusterAutoscalerAnnotation)
 	}
 
 	if hcp.Labels == nil {
@@ -3990,6 +4144,28 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			return []reconcile.Request{}
 		case *hyperv1.NodePool:
 			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: typedObj.Spec.ClusterName, Namespace: typedObj.Namespace}}}
+		case *corev1.Secret:
+			if typedObj.Name == manifests.KASServingCertSecret("").Name {
+				for _, ownerRef := range typedObj.OwnerReferences {
+					if ownerRef.Kind == "HostedControlPlane" {
+						hcp := &hyperv1.HostedControlPlane{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: typedObj.Namespace,
+								Name:      ownerRef.Name,
+							},
+						}
+						if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+							log.Error(err, "failed to get hcp")
+							return []reconcile.Request{}
+						}
+						if hcAnnotation := hcp.Annotations[hyperutil.HostedClusterAnnotation]; hcAnnotation != "" {
+							return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
+						}
+						return []reconcile.Request{}
+					}
+				}
+			}
+			return handleDefault(typedObj)
 		default:
 			return handleDefault(typedObj)
 		}

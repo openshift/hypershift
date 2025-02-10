@@ -57,6 +57,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/blang/semver"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/go-logr/logr"
@@ -293,7 +294,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster, true)
+			err := reconcileHostedControlPlane(updated, &test.Cluster, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -425,7 +426,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -483,11 +484,293 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 			g := NewGomegaWithT(t)
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
 			g.Expect(hostedControlPlane.Spec.Configuration).To(BeEquivalentTo(test.configuration))
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneAutoscalingNeeded(t *testing.T) {
+	tests := []struct {
+		name                     string
+		autoscalingNeeded        bool
+		existingHCPAnnotations   map[string]string
+		expectedHCPAnnotations   map[string]string
+		unexpectedHCPAnnotations []string
+	}{
+		{
+			name:                   "Autoscaling not needed, no annotation set",
+			autoscalingNeeded:      false,
+			existingHCPAnnotations: nil,
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+		},
+		{
+			name:                     "Autoscaling needed, no annotation set",
+			autoscalingNeeded:        true,
+			existingHCPAnnotations:   nil,
+			unexpectedHCPAnnotations: []string{hyperv1.DisableClusterAutoscalerAnnotation},
+		},
+		{
+			name:              "Autoscaling not needed, annotation set",
+			autoscalingNeeded: false,
+			existingHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+		},
+		{
+			name:              "Autoscaling needed, annotation set",
+			autoscalingNeeded: true,
+			existingHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+			unexpectedHCPAnnotations: []string{hyperv1.DisableClusterAutoscalerAnnotation},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.existingHCPAnnotations
+			err := reconcileHostedControlPlane(hcp, hc, test.autoscalingNeeded, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+			for k, v := range test.expectedHCPAnnotations {
+				g.Expect(hcp.Annotations).To(HaveKeyWithValue(k, v))
+			}
+			for _, k := range test.unexpectedHCPAnnotations {
+				g.Expect(hcp.Annotations).ToNot(HaveKey(k))
+			}
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneRestartAnnotation(t *testing.T) {
+	tests := []struct {
+		name                     string
+		hcAnnotations            map[string]string
+		existingHCPAnnotations   map[string]string
+		expectedHCPAnnotations   map[string]string
+		unexpectedHCPAnnotations []string
+	}{
+		{
+			name:                   "No annotation set",
+			hcAnnotations:          nil,
+			existingHCPAnnotations: nil,
+			expectedHCPAnnotations: nil,
+			unexpectedHCPAnnotations: []string{
+				hyperv1.RestartDateAnnotation,
+				previouslySyncedRestartDateAnnotation,
+			},
+		},
+		{
+			name: "Newly set restart annotation",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "01012024",
+			},
+			existingHCPAnnotations: nil,
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "01012024",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+		},
+		{
+			name: "Existing restart annotation (different value)",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "05012024",
+			},
+			existingHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "01012024",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "05012024",
+				previouslySyncedRestartDateAnnotation: "05012024",
+			},
+		},
+		{
+			name: "Previously applied restart annotation, different actual value",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "01012024",
+			},
+			existingHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "some other value",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "some other value",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+		},
+		{
+			name: "Previously applied restart annotation, new value",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "05012024",
+			},
+			existingHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "some other value",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "05012024",
+				previouslySyncedRestartDateAnnotation: "05012024",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			hcp := &hyperv1.HostedControlPlane{}
+			hc.Annotations = test.hcAnnotations
+			hcp.Annotations = test.existingHCPAnnotations
+			err := reconcileHostedControlPlane(hcp, hc, true, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+			for k, v := range test.expectedHCPAnnotations {
+				g.Expect(hcp.Annotations).To(HaveKeyWithValue(k, v))
+			}
+			for _, k := range test.unexpectedHCPAnnotations {
+				g.Expect(hcp.Annotations).ToNot(HaveKey(k))
+			}
+		})
+	}
+}
+
+func TestAnnotationsForCertRenewal(t *testing.T) {
+	tests := []struct {
+		name             string
+		shouldSkip       bool
+		hcpAnnotations   map[string]string
+		hashFromSecret   string
+		hashFromEndpoint string
+		expected         map[string]string
+	}{
+		{
+			name:             "should not check",
+			shouldSkip:       true,
+			hashFromSecret:   "12345",
+			hashFromEndpoint: "67890",
+			expected:         nil,
+		},
+		{
+			name:             "no existing hash annotation on hcp, endpoint hash matches",
+			hashFromSecret:   "12345",
+			hashFromEndpoint: "12345",
+			expected: map[string]string{
+				kasServingCertHashAnnotation: "12345",
+			},
+		},
+		{
+			name:             "no existing hash annotation on hcp, endpoint hash does not match",
+			hashFromSecret:   "12345",
+			hashFromEndpoint: "67890",
+			expected: map[string]string{
+				kasServingCertHashAnnotation:  "12345",
+				hyperv1.RestartDateAnnotation: "CertHash:12345",
+			},
+		},
+		{
+			name:           "existing hash annotation, secret hash matches",
+			hashFromSecret: "12345",
+			hcpAnnotations: map[string]string{
+				kasServingCertHashAnnotation: "12345",
+			},
+			expected: nil,
+		},
+		{
+			name:           "existing hash annotation, secret hash does not match",
+			hashFromSecret: "67890",
+			hcpAnnotations: map[string]string{
+				kasServingCertHashAnnotation: "12345",
+			},
+			expected: map[string]string{
+				kasServingCertHashAnnotation:  "67890",
+				hyperv1.RestartDateAnnotation: "CertHash:67890",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.hcpAnnotations
+			fn := annotationsForCertRenewal(
+				ctrl.Log,
+				hcp,
+				func() bool { return !test.shouldSkip },
+				func() (string, error) { return test.hashFromSecret, nil },
+				func() (string, error) { return test.hashFromEndpoint, nil },
+			)
+			result, err := fn()
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestShouldCheckForStaleCerts(t *testing.T) {
+	tests := []struct {
+		name           string
+		hcAnnotations  map[string]string
+		hcVersion      string
+		expectedResult bool
+	}{
+		{
+			name: "version older than 4.19",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation: "true",
+			},
+			hcVersion:      "4.18.7",
+			expectedResult: true,
+		},
+		{
+			name: "ci version with 4.19",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation: "true",
+			},
+			hcVersion:      "4.19.0-0.ci-2025-02-03-120046",
+			expectedResult: false,
+		},
+		{
+			name: "4.20",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation: "true",
+			},
+			hcVersion:      "4.20.0",
+			expectedResult: false,
+		},
+		{
+			name:           "version older than 4.19, never been available",
+			hcAnnotations:  nil,
+			hcVersion:      "4.17.4",
+			expectedResult: false,
+		},
+		{
+			name: "version older than 4.19, has been available, does not reconcile pki",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation:       "true",
+				hyperv1.DisablePKIReconciliationAnnotation: "true",
+			},
+			hcVersion:      "4.16.20",
+			expectedResult: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			hc.Annotations = test.hcAnnotations
+			fn := shouldCheckForStaleCerts(hc, semver.MustParse(test.hcVersion))
+			result := fn()
+			g.Expect(result).To(Equal(test.expectedResult))
 		})
 	}
 }
