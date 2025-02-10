@@ -452,8 +452,6 @@ spec:
                   x-kubernetes-validations:
                     - message: role cannot be empty
                       rule: self != ''
-                    - message: immutable field changed
-                      rule: self == oldSelf
                 securityGroupSelectorTerms:
                   description: SecurityGroupSelectorTerms is a list of or security group selector terms. The terms are ORed.
                   items:
@@ -551,11 +549,7 @@ spec:
                   type: string
               required: []
               type: object
-              x-kubernetes-validations:
-                - message: must specify exactly one of [role, instanceProfile]
-                  rule: (has(self.role) && !has(self.instanceProfile)) || (!has(self.role) && has(self.instanceProfile))
-                - message: changing from instanceProfile to role is not supported. You must delete and recreate this node class if you want to change this.
-                  rule: (has(oldSelf.role) && has(self.role)) || (has(oldSelf.instanceProfile) && has(self.instanceProfile))
+              x-kubernetes-validations: []
             status:
               description: EC2NodeClassStatus contains the resolved state of the EC2NodeClass
               properties:

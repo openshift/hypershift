@@ -89,7 +89,6 @@ func TestReconcileEC2NodeClassDefault(t *testing.T) {
 			}
 
 			// Verify basic fields
-			g.Expect(got.Spec.Role).To(Equal("KarpenterNodeRole-agl"), "role = %v, want KarpenterNodeRole-agl", got.Spec.Role)
 			g.Expect(got.Spec.UserData).To(HaveValue(Equal("test-userdata")), "userData = %v, want test-userdata", got.Spec.UserData)
 			g.Expect(got.Spec.AMIFamily).To(HaveValue(Equal("Custom")), "amiFamily = %v, want Custom", got.Spec.AMIFamily)
 
