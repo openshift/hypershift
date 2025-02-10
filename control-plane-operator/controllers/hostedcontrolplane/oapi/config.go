@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -34,6 +35,7 @@ func ReconcileConfig(
 	cipherSuites []string,
 	imageConfig *configv1.ImageSpec,
 	projectConfig *configv1.Project,
+	caps *hyperv1.Capabilities,
 ) error {
 	ownerRef.ApplyTo(cm)
 	if cm.Data == nil {
@@ -46,7 +48,8 @@ func ReconcileConfig(
 		}
 	}
 	reconcileConfigObject(openshiftAPIServerConfig, auditWebhookRef, etcdURL,
-		ingressDomain, minTLSVersion, cipherSuites, imageConfig, projectConfig)
+		ingressDomain, minTLSVersion, cipherSuites, imageConfig, projectConfig,
+		caps)
 	serializedConfig, err := util.SerializeResource(openshiftAPIServerConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift apiserver config: %w", err)
@@ -62,6 +65,7 @@ func reconcileConfigObject(
 	cipherSuites []string,
 	imageConfig *configv1.ImageSpec,
 	projectConfig *configv1.Project,
+	caps *hyperv1.Capabilities,
 ) {
 	cfg.TypeMeta = metav1.TypeMeta{
 		Kind:       "OpenShiftAPIServerConfig",
@@ -99,7 +103,9 @@ func reconcileConfigObject(
 	}
 
 	// Image policy config
-	cfg.ImagePolicyConfig.InternalRegistryHostname = defaultInternalRegistryHostname
+	if capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cfg.ImagePolicyConfig.InternalRegistryHostname = defaultInternalRegistryHostname
+	}
 	if imageConfig != nil {
 		cfg.ImagePolicyConfig.ExternalRegistryHostnames = imageConfig.ExternalRegistryHostnames
 		var allowedRegistries openshiftcpv1.AllowedRegistries

@@ -3012,7 +3012,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	kubeAPIServerConfig := manifests.KASConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kubeAPIServerConfig, func() error {
-		return kas.ReconcileConfig(kubeAPIServerConfig, p.OwnerRef, p.ConfigParams())
+		return kas.ReconcileConfig(kubeAPIServerConfig, p.OwnerRef, p.ConfigParams(), hcp.Spec.Capabilities)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
 	}
@@ -3356,7 +3356,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oapicfg, func() error {
 		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL,
-			p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project)
+			p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project,
+			hcp.Spec.Capabilities)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver config: %w", err)
 	}
@@ -3553,7 +3554,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(
 		return ocm.ReconcileOpenShiftControllerManagerConfig(config,
 			p.OwnerRef, p.DeployerImage, p.DockerBuilderImage,
 			p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Build,
-			p.Network)
+			p.Network, hcp.Spec.Capabilities)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
 	}
