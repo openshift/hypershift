@@ -71,6 +71,7 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
+	machineapproverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/machine_approver"
 	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
@@ -250,6 +251,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		cnov2.NewComponent(),
 		ntov2.NewComponent(),
 		dnsoperatorv2.NewComponent(),
+		machineapproverv2.NewComponent(),
 	)
 }
 
@@ -1367,11 +1369,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 				return fmt.Errorf("failed to reconcile autoscaler: %w", err)
 			}
-		}
 
-		r.Log.Info("Reconciling machine approver")
-		if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile machine approver: %w", err)
+			r.Log.Info("Reconciling machine approver")
+			if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile machine approver: %w", err)
+			}
 		}
 	}
 
