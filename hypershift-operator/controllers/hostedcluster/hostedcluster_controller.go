@@ -1824,7 +1824,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	case hyperv1.AzurePlatform:
 		cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
 		if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator)
+			// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
+			hcVersion := releaseImageVersion
+			hcVersion.Pre = nil
+			hcVersion.Build = nil
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator, hcVersion.GE(config.Version419))
 			return nil
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
