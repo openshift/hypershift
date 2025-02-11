@@ -417,7 +417,6 @@ type AzurePlatformSpec struct {
 	// authenticate with Azure's API.
 	//
 	// +kubebuilder:validation:Required
-	// +openshift:enable:FeatureGate=AROHCPManagedIdentities
 	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
 
 	// tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.
@@ -595,7 +594,6 @@ type AzureKMSSpec struct {
 	// kms is a pre-existing managed identity used to authenticate with Azure KMS.
 	//
 	// +kubebuilder:validation:Required
-	// +openshift:enable:FeatureGate=AROHCPManagedIdentities
 	KMS ManagedIdentity `json:"kms"`
 }
 
