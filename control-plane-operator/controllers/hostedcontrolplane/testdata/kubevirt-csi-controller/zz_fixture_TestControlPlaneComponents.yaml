@@ -90,7 +90,7 @@ spec:
               key: infraStorageClassEnforcement
               name: driver-config
         image: kubevirt-csi-driver
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         name: csi-driver
         resources:
           requests:
@@ -112,6 +112,7 @@ spec:
         - name: ADDRESS
           value: /var/lib/csi/sockets/pluginproxy/csi.sock
         image: csi-external-provisioner
+        imagePullPolicy: IfNotPresent
         name: csi-provisioner
         resources:
           requests:
@@ -132,6 +133,7 @@ spec:
         - name: ADDRESS
           value: /var/lib/csi/sockets/pluginproxy/csi.sock
         image: csi-external-attacher
+        imagePullPolicy: IfNotPresent
         name: csi-attacher
         resources:
           requests:
@@ -147,6 +149,7 @@ spec:
         - --probe-timeout=3s
         - --health-port=10301
         image: csi-livenessprobe
+        imagePullPolicy: IfNotPresent
         name: csi-liveness-probe
         resources:
           requests:

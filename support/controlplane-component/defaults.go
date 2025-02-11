@@ -38,6 +38,7 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 	}
 
 	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
+	enforceImagePullPolicy(podTemplateSpec.Spec.Containers)
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, cpContext.HCP, podTemplateSpec.Spec.Containers); err != nil {
 		return nil, err
@@ -161,6 +162,16 @@ func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
 			volume.Secret.DefaultMode = ptr.To[int32](416)
 		}
 	}
+}
+
+func enforceImagePullPolicy(containers []corev1.Container) error {
+	for i := range containers {
+		if containers[i].Image == "" {
+			return fmt.Errorf("container %s has no image key specified", containers[i].Name)
+		}
+		containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+	}
+	return nil
 }
 
 func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, hcp *hyperv1.HostedControlPlane, containers []corev1.Container) error {
