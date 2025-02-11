@@ -77,6 +77,18 @@ func TestKarpenter(t *testing.T) {
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 		t.Logf("Waiting for Karpenter Nodes to disappear")
 
+		karpenterNodePool.SetResourceVersion("")
+		workLoads.SetResourceVersion("")
+
+		// Leave dangling resources, and hope the teardown is not blocked, else the test will fail.
+		g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
+		t.Logf("Created Karpenter NodePool")
+		g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
+		t.Logf("Created workloads")
+
+		t.Logf("Waiting for Karpenter Nodes to come up")
+		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 3, nodeLabels)
+
 		// TODO(alberto): increase coverage:
 		// - Karpenter operator plumbing, e.g:
 		// -- validate the CRDs are installed
