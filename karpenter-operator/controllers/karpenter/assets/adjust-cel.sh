@@ -13,5 +13,5 @@ yq eval '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.ami
 # since amiSelectorTerms is no longer required, top level validations need to be removed accordingly.
 yq eval '.spec.versions[0].schema.openAPIV3Schema.properties.spec.x-kubernetes-validations = []' -i ${SCRIPT_DIR}/karpenter.k8s.aws_ec2nodeclasses.yaml
 
-# additionally, role is no longer requierd to be set, and can be set by cluster-admin.
+# additionally, role is no longer required to be set, and can be set by cluster-admin.
 yq eval '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.role."x-kubernetes-validations" = [{"message": "role cannot be empty", "rule": "self != '\'''\''"}]' -i ${SCRIPT_DIR}/karpenter.k8s.aws_ec2nodeclasses.yaml
