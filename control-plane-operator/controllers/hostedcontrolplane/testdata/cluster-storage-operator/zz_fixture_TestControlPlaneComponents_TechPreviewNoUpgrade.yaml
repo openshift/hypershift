@@ -174,6 +174,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
+      imagePullSecrets:
+      - name: pull-secret
       initContainers:
       - command:
         - /usr/bin/control-plane-operator

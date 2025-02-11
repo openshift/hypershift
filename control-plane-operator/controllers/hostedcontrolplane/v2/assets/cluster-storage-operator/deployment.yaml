@@ -129,6 +129,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
+      imagePullSecrets:
+      - name: pull-secret
       securityContext:
         runAsNonRoot: true
         seccompProfile:
