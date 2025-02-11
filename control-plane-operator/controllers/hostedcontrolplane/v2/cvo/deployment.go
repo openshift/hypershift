@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -67,6 +68,12 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		Spec: configv1.ClusterVersionSpec{
 			ClusterID: configv1.ClusterID(cpContext.HCP.Spec.ClusterID),
 		},
+	}
+	if !capabilities.IsImageRegistryCapabilityEnabled(cpContext.HCP.Spec.Capabilities) {
+		cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities),
+		}
 	}
 	clusterVersionJSON, err := json.Marshal(cv)
 	if err != nil {

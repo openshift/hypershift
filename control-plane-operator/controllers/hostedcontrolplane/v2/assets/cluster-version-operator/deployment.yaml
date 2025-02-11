@@ -93,15 +93,16 @@ spec:
           EOF
           oc get ns openshift-config &> /dev/null || oc create ns openshift-config
           oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
+          oc apply -f /var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*
+          oc apply -f /tmp/clusterversion.json
           while true; do
-            echo "Applying CVO bootstrap manifests"
+            echo "Applying CVO bootstrap manifests..."
             if oc apply -f /var/payload/manifests; then
               echo "Bootstrap manifests applied successfully."
               break
             fi
             sleep 1
           done
-          oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.json
         command:
         - /bin/bash
         env:
