@@ -89,6 +89,17 @@ func (c *controlPlaneWorkload) reconcileComponentStatus(cpContext ControlPlaneCo
 		return err
 	}
 
+	if c.serviceAccountKubeConfigOpts != nil {
+		_, disablePKIReconciliationAnnotation := cpContext.HCP.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
+		if !disablePKIReconciliationAnnotation {
+			component.Status.Resources = append(component.Status.Resources, hyperv1.ComponentResource{
+				Kind:  "Secret",
+				Group: corev1.GroupName,
+				Name:  c.serviceAccountKubeconfigSecretName(),
+			})
+		}
+	}
+
 	if len(unavailableDependencies) == 0 && reconcilationError == nil {
 		// set version status only if reconciliation is not blocked on dependencies and if there was no reconciliation error.
 		component.Status.Version = cpContext.ReleaseImageProvider.Version()

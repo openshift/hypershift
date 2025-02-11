@@ -62,6 +62,10 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 			util.WithOptions(c.availabilityProberOpts))
 	}
 
+	if c.serviceAccountKubeConfigOpts != nil {
+		c.addServiceAccountKubeconfigVolumes(podTemplateSpec)
+	}
+
 	deploymentConfig := &config.DeploymentConfig{
 		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
 		Resources:                 existingResources,

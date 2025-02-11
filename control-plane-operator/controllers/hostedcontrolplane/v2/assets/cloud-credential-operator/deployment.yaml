@@ -39,11 +39,3 @@ spec:
             drop:
             - ALL
         terminationMessagePolicy: FallbackToLogsOnError
-        volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: service-account-kubeconfig
-      volumes:
-      - name: service-account-kubeconfig
-        secret:
-          defaultMode: 416
-          secretName: cloud-credential-operator-kubeconfig

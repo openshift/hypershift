@@ -82,6 +82,17 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectAvailabilityProberContainer(opts 
 	return b
 }
 
+// InjectServiceAccountKubeConfig will cause the generation of a secret with a kubeconfig using certificates for the given named service account
+// and the volume mounts for that secret withing the given mountPath.
+func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts ServiceAccountKubeConfigOpts) *controlPlaneWorkloadBuilder[T] {
+	b.workload.serviceAccountKubeConfigOpts = &opts
+	return b
+}
+
+type ServiceAccountKubeConfigOpts struct {
+	Name, Namespace, MountPath string
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) Build() ControlPlaneComponent {
 	b.validate()
 	return b.workload

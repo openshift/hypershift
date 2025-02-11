@@ -115,5 +115,5 @@ spec:
       - name: service-account-kubeconfig
         secret:
           defaultMode: 416
-          secretName: cloud-credential-operator-kubeconfig
+          secretName: cloud-credential-operator-service-account-kubeconfig
 status: {}

@@ -121,6 +121,9 @@ type controlPlaneWorkload struct {
 	konnectivityContainerOpts *KonnectivityContainerOptions
 	// if provided, availabilityProber container and required volumes will be injected into the deployment/statefulset.
 	availabilityProberOpts *util.AvailabilityProberOpts
+	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
+	// and the volume mounts for that secret withing the given mountPath.
+	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
 }
 
 // Name implements ControlPlaneComponent.
@@ -251,6 +254,17 @@ func (c *controlPlaneWorkload) update(cpContext ControlPlaneContext) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	if c.serviceAccountKubeConfigOpts != nil {
+		_, disablePKIReconciliationAnnotation := cpContext.HCP.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
+		if !disablePKIReconciliationAnnotation {
+			kubeconfigSecret := c.serviceAccountKubeconfigSecret(cpContext.workloadContext())
+			c.adaptServiceAccountKubeconfigSecret(cpContext.workloadContext(), kubeconfigSecret)
+			if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, kubeconfigSecret); err != nil {
+				return err
+			}
+		}
 	}
 
 	return c.reconcileWorkload(cpContext)
