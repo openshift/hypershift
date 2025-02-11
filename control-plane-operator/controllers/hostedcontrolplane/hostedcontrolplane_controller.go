@@ -3730,6 +3730,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 			util.HCPOAuthEnabled(hcp),
 			r.EnableCVOManagementClusterMetricsAccess,
 			p.FeatureSet,
+			hcp.Spec.Capabilities,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
