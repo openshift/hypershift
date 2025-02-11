@@ -77,6 +77,7 @@ func TestCreateCluster(t *testing.T) {
 				"--infra-json=" + infraFile,
 				"--rhcos-image=whatever",
 				"--render-sensitive",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 		{
@@ -94,6 +95,7 @@ func TestCreateCluster(t *testing.T) {
 				"--instance-type=Standard_DS2_v2",
 				"--disk-storage-account-type=Standard_LRS",
 				"--render-sensitive",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 		{
@@ -113,6 +115,7 @@ func TestCreateCluster(t *testing.T) {
 				"--marketplace-offer=aro4",
 				"--marketplace-sku=aro_414",
 				"--marketplace-version=414.92.2024021",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 		{
@@ -123,6 +126,7 @@ func TestCreateCluster(t *testing.T) {
 				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--availability-zones=1,2",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 	} {

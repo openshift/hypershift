@@ -65,7 +65,6 @@ type CreateInfraOptions struct {
 	NetworkSecurityGroupID      string
 	ResourceGroupTags           map[string]string
 	SubnetID                    string
-	TechPreviewEnabled          bool
 	ManagedIdentitiesFile       string
 	DataPlaneIdentitiesFile     string
 	AssignServicePrincipalRoles bool
