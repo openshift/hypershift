@@ -4084,6 +4084,7 @@ spec:
                           rule: self == oldSelf
                     required:
                     - location
+                    - managedIdentities
                     - resourceGroup
                     - securityGroupID
                     - subnetID
@@ -5197,6 +5198,7 @@ spec:
                             type: object
                         required:
                         - activeKey
+                        - kms
                         type: object
                       ibmcloud:
                         description: IBMCloud defines metadata for the IBM Cloud KMS
