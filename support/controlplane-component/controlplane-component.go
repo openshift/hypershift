@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
@@ -242,6 +243,8 @@ func (c *controlPlaneWorkload) update(cpContext ControlPlaneContext) error {
 					typedObj.Subjects[i].Namespace = hcp.Namespace
 				}
 			}
+		case *corev1.ServiceAccount:
+			util.EnsurePullSecret(typedObj, common.PullSecret("").Name)
 		}
 
 		if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, obj); err != nil {
