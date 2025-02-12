@@ -255,7 +255,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 	}
 
-	if o.DataPlaneIdentitiesFile != "" && o.AssignServicePrincipalRoles {
+	if o.DataPlaneIdentitiesFile != "" {
 		managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroupName)
 
 		dataPlaneIdentitiesRaw, err := os.ReadFile(o.DataPlaneIdentitiesFile)
@@ -266,32 +266,34 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			return nil, fmt.Errorf("failed to unmarshal --data-plane-identities-file: %w", err)
 		}
 
-		// Setup Data Plane MI role assignments
-		objectID, err := findObjectId(result.DataPlaneIdentities.ImageRegistryMSIClientID)
-		if err != nil {
-			return nil, err
-		}
-		err = assignRole(objectID, "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5", managedRG)
-		if err != nil {
-			return nil, err
-		}
+		if o.AssignServicePrincipalRoles {
+			// Setup Data Plane MI role assignments
+			objectID, err := findObjectId(result.DataPlaneIdentities.ImageRegistryMSIClientID)
+			if err != nil {
+				return nil, err
+			}
+			err = assignRole(objectID, "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5", managedRG)
+			if err != nil {
+				return nil, err
+			}
 
-		objectID, err = findObjectId(result.DataPlaneIdentities.DiskMSIClientID)
-		if err != nil {
-			return nil, err
-		}
-		err = assignRole(objectID, "5b7237c5-45e1-49d6-bc18-a1f62f400748", managedRG)
-		if err != nil {
-			return nil, err
-		}
+			objectID, err = findObjectId(result.DataPlaneIdentities.DiskMSIClientID)
+			if err != nil {
+				return nil, err
+			}
+			err = assignRole(objectID, "5b7237c5-45e1-49d6-bc18-a1f62f400748", managedRG)
+			if err != nil {
+				return nil, err
+			}
 
-		objectID, err = findObjectId(result.DataPlaneIdentities.FileMSIClientID)
-		if err != nil {
-			return nil, err
-		}
-		err = assignRole(objectID, "0d7aedc0-15fd-4a67-a412-efad370c947e", managedRG)
-		if err != nil {
-			return nil, err
+			objectID, err = findObjectId(result.DataPlaneIdentities.FileMSIClientID)
+			if err != nil {
+				return nil, err
+			}
+			err = assignRole(objectID, "0d7aedc0-15fd-4a67-a412-efad370c947e", managedRG)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
