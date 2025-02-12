@@ -87,9 +87,7 @@ spec:
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
-          name: dns-operator-kubeconfig
-        - mountPath: /var/kubeconfig
-          name: dns-operator-kubeconfig
+          name: service-account-kubeconfig
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -105,7 +103,7 @@ spec:
         resources: {}
         volumeMounts:
         - mountPath: /var/kubeconfig
-          name: dns-operator-kubeconfig
+          name: service-account-kubeconfig
       priorityClassName: hypershift-control-plane
       terminationGracePeriodSeconds: 2
       tolerations:
@@ -118,8 +116,8 @@ spec:
         operator: Equal
         value: hcp-namespace
       volumes:
-      - name: dns-operator-kubeconfig
+      - name: service-account-kubeconfig
         secret:
           defaultMode: 416
-          secretName: dns-operator-kubeconfig
+          secretName: dns-operator-service-account-kubeconfig
 status: {}

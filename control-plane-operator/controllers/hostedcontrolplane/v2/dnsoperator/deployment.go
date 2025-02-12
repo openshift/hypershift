@@ -1,10 +1,6 @@
 package dnsoperator
 
 import (
-	"fmt"
-
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 
@@ -12,8 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, obj *appsv1.Deployment) error {
@@ -49,18 +43,4 @@ func adaptDeployment(cpContext component.WorkloadContext, obj *appsv1.Deployment
 	})
 	obj.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr.To[int64](2)
 	return nil
-}
-
-// TODO(alberto) refactor cco, csi, this... and let the service account kubeconfig injection be common.
-func adaptKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
-		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
-	}
-	rootCA := manifests.RootCAConfigMap(cpContext.HCP.Namespace)
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca cert configMap: %w", err)
-	}
-
-	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, "openshift-dns-operator", "dns-operator")
 }

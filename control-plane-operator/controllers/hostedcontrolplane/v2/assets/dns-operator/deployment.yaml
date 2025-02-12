@@ -42,13 +42,4 @@ spec:
           requests:
             cpu: 10m
             memory: 29Mi
-        volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: dns-operator-kubeconfig
-        - mountPath: /var/kubeconfig
-          name: dns-operator-kubeconfig
-      volumes:
-      - name: dns-operator-kubeconfig
-        secret:
-          defaultMode: 416
-          secretName: dns-operator-kubeconfig
+
