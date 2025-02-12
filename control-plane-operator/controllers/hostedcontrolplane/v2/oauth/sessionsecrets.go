@@ -38,12 +38,14 @@ func adaptSessionSecret(cpContext component.WorkloadContext, secret *corev1.Secr
 			return nil
 		}
 	}
-	sessionSecrets := generateSessionSecrets()
-	encodedSessionSecrets := &bytes.Buffer{}
-	if err := api.YamlSerializer.Encode(sessionSecrets, encodedSessionSecrets); err != nil {
-		return fmt.Errorf("cannot encode session secrets: %w", err)
+	if !cpContext.SkipCertificateSigning {
+		sessionSecrets := generateSessionSecrets()
+		encodedSessionSecrets := &bytes.Buffer{}
+		if err := api.YamlSerializer.Encode(sessionSecrets, encodedSessionSecrets); err != nil {
+			return fmt.Errorf("cannot encode session secrets: %w", err)
+		}
+		secret.Data[sessionSecretsFileKey] = encodedSessionSecrets.Bytes()
 	}
-	secret.Data[sessionSecretsFileKey] = encodedSessionSecrets.Bytes()
 	return nil
 }
 
