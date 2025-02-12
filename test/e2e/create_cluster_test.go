@@ -1125,6 +1125,7 @@ func TestCreateCluster(t *testing.T) {
 	clusterOpts.PodsLabels = map[string]string{
 		"hypershift-e2e-test-label": "test",
 	}
+	clusterOpts.Tolerations = []string{"key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule"}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Sanity check the cluster by waiting for the nodes to report ready
@@ -1152,6 +1153,7 @@ func TestCreateCluster(t *testing.T) {
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }

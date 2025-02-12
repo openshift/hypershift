@@ -1952,3 +1952,37 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 		}
 	})
 }
+
+func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCustomTolerations", func(t *testing.T) {
+		AtLeast(t, Version419)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		podList := &corev1.PodList{}
+		if err := client.List(ctx, podList, crclient.InNamespace(hcpNamespace)); err != nil {
+			t.Fatalf("error listing hcp pods: %v", err)
+		}
+
+		var podsWithoutToleration []string
+		for _, pod := range podList.Items {
+			// Ensure that each pod in the HCP has the custom toleration
+			found := false
+			for _, toleration := range pod.Spec.Tolerations {
+				if toleration.Key == "hypershift-e2e-test-toleration" &&
+					toleration.Operator == corev1.TolerationOpEqual &&
+					toleration.Value == "true" &&
+					toleration.Effect == corev1.TaintEffectNoSchedule {
+					found = true
+					break
+				}
+			}
+			if !found {
+				podsWithoutToleration = append(podsWithoutToleration, pod.Name)
+			}
+		}
+
+		if len(podsWithoutToleration) > 0 {
+			t.Fatalf("expected pods [%s] to have hypershift-e2e-test-toleration", strings.Join(podsWithoutToleration, ", "))
+		}
+	})
+}
