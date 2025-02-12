@@ -40,7 +40,6 @@ func NewComponent() component.ControlPlaneComponent {
 			"kubeconfig.yaml",
 			component.WithAdaptFunction(adaptKubeconfig),
 		).
-		RolloutOnConfigMapChange("kube-scheduler").
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
 }
