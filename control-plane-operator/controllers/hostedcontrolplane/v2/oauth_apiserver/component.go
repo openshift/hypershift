@@ -44,8 +44,8 @@ func NewComponent() component.ControlPlaneComponent {
 			component.AdaptPodDisruptionBudget(),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		RolloutOnConfigMapChange("openshift-oauth-apiserver-audit").
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		ExcludeConfigMapsFromConfigHash("client-ca").
 		Build()
 }
 

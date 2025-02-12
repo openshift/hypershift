@@ -66,16 +66,6 @@ func (b *controlPlaneWorkloadBuilder[T]) WithManifestAdapter(manifestName string
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) RolloutOnSecretChange(name ...string) *controlPlaneWorkloadBuilder[T] {
-	b.workload.rolloutSecretsNames = append(b.workload.rolloutSecretsNames, name...)
-	return b
-}
-
-func (b *controlPlaneWorkloadBuilder[T]) RolloutOnConfigMapChange(name ...string) *controlPlaneWorkloadBuilder[T] {
-	b.workload.rolloutConfigMapsNames = append(b.workload.rolloutSecretsNames, name...)
-	return b
-}
-
 func (b *controlPlaneWorkloadBuilder[T]) WithDependencies(dependencies ...string) *controlPlaneWorkloadBuilder[T] {
 	b.workload.dependencies = append(b.workload.dependencies, dependencies...)
 	return b
@@ -102,6 +92,11 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectTokenMinterContainer(opts TokenMi
 // and the volume mounts for that secret within the given mountPath.
 func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts ServiceAccountKubeConfigOpts) *controlPlaneWorkloadBuilder[T] {
 	b.workload.serviceAccountKubeConfigOpts = &opts
+	return b
+}
+
+func (b *controlPlaneWorkloadBuilder[T]) ExcludeConfigMapsFromConfigHash(names ...string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.configMapsExcludedFromConfigHash = append(b.workload.configMapsExcludedFromConfigHash, names...)
 	return b
 }
 

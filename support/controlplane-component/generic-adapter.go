@@ -11,8 +11,9 @@ import (
 type Predicate func(cpContext WorkloadContext) bool
 
 type genericAdapter struct {
-	adapt     func(cpContext WorkloadContext, resource client.Object) error
-	predicate Predicate
+	adapt             func(cpContext WorkloadContext, resource client.Object) error
+	predicate         Predicate
+	reconcileExisting bool // if true, causes the existing resource to be fetched before adapting
 }
 
 type option func(*genericAdapter)
@@ -31,6 +32,15 @@ func WithPredicate(predicate Predicate) option {
 	}
 }
 
+// ReconcileExisting can be used as an option when the existing resource should be fetched
+// and passed to the adapt function. This is necessary for resources such as certificates that
+// can result in a change every time we reconcile if we don't load the existing one first.
+func ReconcileExisting() option {
+	return func(ga *genericAdapter) {
+		ga.reconcileExisting = true
+	}
+}
+
 func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName string, manifestName string) error {
 	workloadContext := cpContext.workloadContext()
 	hcp := cpContext.HCP
@@ -45,6 +55,13 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName
 	if ga.predicate != nil && !ga.predicate(workloadContext) {
 		_, err := util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
 		return err
+	}
+
+	if ga.reconcileExisting {
+		existing := obj.DeepCopyObject().(client.Object)
+		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(existing), existing); err == nil {
+			obj = existing
+		}
 	}
 
 	ownerRef.ApplyTo(obj)

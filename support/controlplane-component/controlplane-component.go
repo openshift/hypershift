@@ -58,6 +58,9 @@ type ControlPlaneContext struct {
 
 	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
 	SkipPredicate bool
+
+	// SkipCertificateSigning is used for the generic unit test to skip the signing of certificates and maintain a stable output.
+	SkipCertificateSigning bool
 }
 
 type WorkloadContext struct {
@@ -74,6 +77,9 @@ type WorkloadContext struct {
 	SetDefaultSecurityContext bool
 	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
+
+	// skip generation of certificates for unit tests
+	SkipCertificateSigning bool
 }
 
 func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
@@ -88,6 +94,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
+		SkipCertificateSigning:    cp.SkipCertificateSigning,
 	}
 }
 
@@ -116,9 +123,6 @@ type controlPlaneWorkload[T client.Object] struct {
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the beginning, the component is disabled if it returns false.
 	predicate func(cpContext WorkloadContext) (bool, error)
-	// These secrets/configMaps will cause the Deployment/statefulset to rollout when changed.
-	rolloutSecretsNames    []string
-	rolloutConfigMapsNames []string
 
 	// if provided, konnectivity proxy container and required volumes will be injected into the deployment/statefulset.
 	konnectivityContainerOpts *KonnectivityContainerOptions
@@ -129,6 +133,9 @@ type controlPlaneWorkload[T client.Object] struct {
 	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
 	// and the volume mounts for that secret within the given mountPath.
 	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
+
+	// configMapsExcludedFromConfigHash contains a list of ConfigMap names to exclude when calculating the config hash for the component
+	configMapsExcludedFromConfigHash []string
 }
 
 // Name implements ControlPlaneComponent.
@@ -136,7 +143,7 @@ func (c *controlPlaneWorkload[T]) Name() string {
 	return c.name
 }
 
-// reconcile implements ControlPlaneComponent.
+// Reconcile implements ControlPlaneComponent.
 func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error {
 	workloadContext := cpContext.workloadContext()
 
@@ -210,7 +217,7 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	return err
 }
 
-// reconcile implements ControlPlaneComponent.
+// update reconciles component workload and related manifests
 func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
@@ -252,8 +259,15 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 		_, disablePKIReconciliationAnnotation := cpContext.HCP.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
 		if !disablePKIReconciliationAnnotation {
 			kubeconfigSecret := c.serviceAccountKubeconfigSecret(cpContext.HCP.Namespace)
-			if err := c.adaptServiceAccountKubeconfigSecret(cpContext.workloadContext(), kubeconfigSecret); err != nil {
-				return err
+			if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return err
+				}
+			}
+			if !cpContext.SkipCertificateSigning {
+				if err := c.adaptServiceAccountKubeconfigSecret(cpContext.workloadContext(), kubeconfigSecret); err != nil {
+					return err
+				}
 			}
 			if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, kubeconfigSecret); err != nil {
 				return err
