@@ -255,9 +255,9 @@ func componentsFakeObjects() ([]client.Object, error) {
 		},
 	}
 
-	rootCA := manifests.RootCAConfigMap(testComponentNamespace)
-	rootCA.Data = map[string]string{
-		certs.CASignerCertMapKey: "fake",
+	rootCA := manifests.RootCASecret(testComponentNamespace)
+	rootCA.Data = map[string][]byte{
+		certs.CASignerCertMapKey: []byte("fake"),
 	}
 
 	caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}

@@ -101,14 +101,13 @@ func NewComponent() component.ControlPlaneComponent {
 			"aws-pod-identity-webhook-kubeconfig.yaml",
 			component.EnableForPlatform(hyperv1.AWSPlatform),
 			component.WithAdaptFunction(adaptAWSPodIdentityWebhookKubeconfigSecret),
+			component.ReconcileExisting(),
 		).
 		WithManifestAdapter(
 			"azure-kms-secretprovider.yaml",
 			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
 			component.WithPredicate(enableAzureKMSSecretProvider),
 		).
-		RolloutOnConfigMapChange("kas-config", "kas-audit-config", "auth-config").
-		RolloutOnSecretChange("kas-secret-encryption-config").
 		Build()
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,12 +23,17 @@ func (c *controlPlaneWorkload[T]) adaptServiceAccountKubeconfigSecret(cpContext 
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
 		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
 	}
-	rootCA := manifests.RootCAConfigMap(cpContext.HCP.Namespace)
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca cert configMap: %w", err)
+		return fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+	rootCACM := &corev1.ConfigMap{
+		Data: map[string]string{
+			certs.CASignerCertMapKey: string(rootCA.Data[certs.CASignerCertMapKey]),
+		},
 	}
 
-	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, c.serviceAccountKubeConfigOpts.Namespace, c.serviceAccountKubeConfigOpts.Name)
+	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCACM, cpContext.HCP, c.serviceAccountKubeConfigOpts.Namespace, c.serviceAccountKubeConfigOpts.Name)
 }
 
 func (c *controlPlaneWorkload[T]) serviceAccountKubeconfigSecretName() string {
