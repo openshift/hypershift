@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns-operator
+  namespace: HCP_NAMESPACE
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: dns-operator
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: dns-operator
+        name: dns-operator
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    spec:
+      containers:      
+      - command:
+        - dns-operator
+        env:
+        - name: RELEASE_VERSION
+          value: ""
+        - name: IMAGE
+          value: ""
+        - name: OPENSHIFT_CLI_IMAGE
+          value: ""
+        - name: KUBE_RBAC_PROXY_IMAGE
+          value: ""
+        - name: KUBECONFIG
+          value: /etc/kubernetes/kubeconfig
+        image: cluster-dns-operator
+        imagePullPolicy: IfNotPresent
+        name: dns-operator
+        resources:
+          requests:
+            cpu: 10m
+            memory: 29Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes
+          name: dns-operator-kubeconfig
+        - mountPath: /var/kubeconfig
+          name: dns-operator-kubeconfig
+      volumes:
+      - name: dns-operator-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: dns-operator-kubeconfig
