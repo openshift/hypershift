@@ -49,6 +49,7 @@ const (
 	cpo           = "cpo"
 	ingress       = "ingress"
 	nodePoolMgmt  = "capz"
+	kms           = "kms"
 )
 
 type CreateInfraOptions struct {
@@ -70,7 +71,7 @@ type CreateInfraOptions struct {
 	DataPlaneIdentitiesFile     string
 	AssignServicePrincipalRoles bool
 	DNSZoneRG                   string
-	AssignCustomHCPRoles        bool
+	CustomRoleNames             map[string]string
 }
 
 type CreateInfraOutput struct {
@@ -248,7 +249,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 				if err != nil {
 					return nil, err
 				}
-				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID, o.AssignCustomHCPRoles)
+				err = assignServicePrincipalRoles(l, subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID, o.CustomRoleNames)
 				if err != nil {
 					return nil, err
 				}
@@ -819,16 +820,15 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 }
 
 // assignServicePrincipalRoles assigns the required roles to the service principal for each control plane managed identity component
-func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string, assignCustomHCPRoles bool) error {
+func assignServicePrincipalRoles(l logr.Logger, subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string, customRoleNames map[string]string) error {
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
 	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
 	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
 
-	role := "Contributor"
-
+	fallbackRole := "Contributor"
+	role := fallbackRole
 	scopes := []string{managedRG}
-
 	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
 	switch component {
 	case cloudProvider:
@@ -839,9 +839,7 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
 		scopes = append(scopes, nsgRG, vnetRG)
-		if assignCustomHCPRoles {
-			role = "Azure Red Hat OpenShift Control Plane Operator Role"
-		}
+		// TODO "Azure Red Hat OpenShift Control Plane Operator Role"
 	case azureFile:
 		role = "Azure Red Hat OpenShift Azure Files Storage Operator Role"
 		scopes = append(scopes, nsgRG, vnetRG)
@@ -851,11 +849,16 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 		role = "Azure Red Hat OpenShift Network Operator Role"
 	case ciro:
 		role = "Azure Red Hat OpenShift Image Registry Operator Role"
+	case kms:
+		role = "Key Vault Crypto User"
 	case nodePoolMgmt:
 		scopes = append(scopes, vnetRG)
-		if assignCustomHCPRoles {
-			role = "Azure Red Hat OpenShift NodePool Management Role"
-		}
+		// TODO "Azure Red Hat OpenShift NodePool Management Role"
+	}
+
+	if overrideRoleName, ok := customRoleNames[component]; ok {
+		role = overrideRoleName
+		l.Info("Using override role name through CLI", "component", component, "role", role)
 	}
 
 	// Assign contributor role to service principal
