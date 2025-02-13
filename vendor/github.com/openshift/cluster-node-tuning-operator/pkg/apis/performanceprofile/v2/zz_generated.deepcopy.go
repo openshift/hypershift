@@ -326,6 +326,11 @@ func (in *PerformanceProfileSpec) DeepCopyInto(out *PerformanceProfileSpec) {
 		*out = new(RealTimeKernel)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.KernelPageSize != nil {
+		in, out := &in.KernelPageSize, &out.KernelPageSize
+		*out = new(KernelPageSize)
+		**out = **in
+	}
 	if in.AdditionalKernelArgs != nil {
 		in, out := &in.AdditionalKernelArgs, &out.AdditionalKernelArgs
 		*out = make([]string, len(*in))

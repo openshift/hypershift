@@ -1188,7 +1188,7 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
+                          networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
@@ -1993,7 +1993,7 @@ spec:
                         type: string
                       mastersSchedulable:
                         description: |-
-                          MastersSchedulable allows masters nodes to be schedulable. When this flag is
+                          mastersSchedulable allows masters nodes to be schedulable. When this flag is
                           turned on, all the master nodes in the cluster will be made schedulable,
                           so that workload pods can run on them. The default value for this field is false,
                           meaning none of the master nodes are schedulable.
@@ -5095,12 +5095,12 @@ spec:
                                     fail to evaluate.
                                   properties:
                                     promql:
-                                      description: promQL represents a cluster condition
+                                      description: promql represents a cluster condition
                                         based on PromQL.
                                       properties:
                                         promql:
                                           description: |-
-                                            PromQL is a PromQL query classifying clusters. This query
+                                            promql is a PromQL query classifying clusters. This query
                                             query should return a 1 in the match case and a 0 in the
                                             does-not-match case. Queries which return no time
                                             series, or which return values besides 0 or 1, are
