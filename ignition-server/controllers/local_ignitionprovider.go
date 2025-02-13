@@ -70,6 +70,10 @@ type LocalIgnitionProvider struct {
 	// to render the ignition payload.
 	FeatureGateManifest string
 
+	// ImageMetaDataProvider is used to get the image metadata for the images
+	// used in the ignition payload.
+	ImageMetadataProvider *util.RegistryClientImageMetadataProvider
+
 	ImageFileCache *imageFileCache
 
 	lock sync.Mutex
@@ -151,11 +155,24 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("release image does not contain machine-config-operator (images: %v)", imageProvider.ComponentImages())
 	}
 
-	mcoImage, err = registryclient.GetCorrectArchImage(ctx, component, mcoImage, pullSecret)
+	mcoImage, err = registryclient.GetCorrectArchImage(ctx, component, mcoImage, pullSecret, p.ImageMetadataProvider)
 	if err != nil {
 		return nil, err
 	}
-	log.Info("discovered machine-config-operator image", "image", mcoImage)
+
+	log.Info(fmt.Sprintf("discovered image %s image %v", component, mcoImage))
+
+	// Making sure image uses the registry override for disconnected environments
+	checkedMcoImage, err := p.ImageMetadataProvider.GetOverride(ctx, mcoImage, pullSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	mcoComposedImage := fmt.Sprintf("%s/%s/%s", checkedMcoImage.Registry, checkedMcoImage.Namespace, checkedMcoImage.NameString())
+	if mcoComposedImage != mcoImage {
+		mcoImage = mcoComposedImage
+		log.Info(fmt.Sprintf("using mirrored %s image %v", component, mcoImage))
+	}
 
 	// Set up the base working directory
 	workDir, err := os.MkdirTemp(p.WorkDir, "get-payload")
@@ -288,12 +305,24 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return fmt.Errorf("release image does not contain $%s (images: %v)", clusterConfigComponent, imageProvider.ComponentImages())
 		}
 
-		clusterConfigImage, err = registryclient.GetCorrectArchImage(ctx, clusterConfigComponent, clusterConfigImage, pullSecret)
+		clusterConfigImage, err = registryclient.GetCorrectArchImage(ctx, clusterConfigComponent, clusterConfigImage, pullSecret, p.ImageMetadataProvider)
 		if err != nil {
 			return err
 		}
 
-		log.Info(fmt.Sprintf("discovered  image %s image %v", clusterConfigComponent, clusterConfigImage))
+		log.Info(fmt.Sprintf("discovered image %s image %v", clusterConfigComponent, clusterConfigImage))
+
+		// Making sure image uses the registry override for disconnected environments
+		checkedClusterConfigImage, err := p.ImageMetadataProvider.GetOverride(ctx, clusterConfigImage, pullSecret)
+		if err != nil {
+			return err
+		}
+
+		ccaComposedImage := fmt.Sprintf("%s/%s/%s", checkedClusterConfigImage.Registry, checkedClusterConfigImage.Namespace, checkedClusterConfigImage.NameString())
+		if ccaComposedImage != clusterConfigImage {
+			clusterConfigImage = ccaComposedImage
+			log.Info(fmt.Sprintf("using mirrored %s image %v", clusterConfigComponent, ccaComposedImage))
+		}
 
 		file, err := os.Create(filepath.Join(binDir, clusterConfigComponent))
 		if err != nil {
@@ -709,7 +738,7 @@ EOF
    --asset-input-dir %[2]s/input \
    --asset-output-dir %[2]s/output \
    --rendered-manifest-files=%[2]s/manifests \
-   --payload-version=%[4]s 
+   --payload-version=%[4]s
 cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 `
 	}

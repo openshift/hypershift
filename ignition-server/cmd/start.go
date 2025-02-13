@@ -149,6 +149,10 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
+	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
+	}
+
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
@@ -163,12 +167,13 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 				},
 				OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 			},
-			Client:              mgr.GetClient(),
-			Namespace:           os.Getenv(namespaceEnvVariableName),
-			CloudProvider:       cloudProvider,
-			WorkDir:             cacheDir,
-			ImageFileCache:      imageFileCache,
-			FeatureGateManifest: featureGateManifest,
+			Client:                mgr.GetClient(),
+			Namespace:             os.Getenv(namespaceEnvVariableName),
+			CloudProvider:         cloudProvider,
+			WorkDir:               cacheDir,
+			ImageFileCache:        imageFileCache,
+			FeatureGateManifest:   featureGateManifest,
+			ImageMetadataProvider: imageMetaDataProvider,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)
