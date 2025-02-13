@@ -32,12 +32,10 @@ import (
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	clusterctlv1alpha3 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
-	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 )
@@ -90,14 +88,6 @@ func (mw *azureManagedMachinePoolWebhook) ValidateCreate(_ context.Context, obj 
 	m, ok := obj.(*AzureManagedMachinePool)
 	if !ok {
 		return nil, apierrors.NewBadRequest("expected an AzureManagedMachinePool")
-	}
-	// NOTE: AzureManagedMachinePool relies upon MachinePools, which is behind a feature gate flag.
-	// The webhook must prevent creating new objects in case the feature flag is disabled.
-	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return nil, field.Forbidden(
-			field.NewPath("spec"),
-			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
-		)
 	}
 
 	var errs []error

@@ -481,6 +481,7 @@ spec:
                   disk of the machine
                 properties:
                   cachingType:
+                    default: None
                     description: CachingType specifies the caching requirements.
                     enum:
                     - None
@@ -562,6 +563,7 @@ spec:
                         type: string
                     type: object
                   osType:
+                    default: Linux
                     type: string
                 required:
                 - osType

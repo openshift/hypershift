@@ -23,12 +23,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	"sigs.k8s.io/cluster-api-provider-azure/util/versions"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 )
@@ -65,14 +63,6 @@ func (mcpw *azureManagedControlPlaneTemplateWebhook) ValidateCreate(_ context.Co
 	mcp, ok := obj.(*AzureManagedControlPlaneTemplate)
 	if !ok {
 		return nil, apierrors.NewBadRequest("expected an AzureManagedControlPlaneTemplate")
-	}
-	// NOTE: AzureManagedControlPlaneTemplate relies upon MachinePools, which is behind a feature gate flag.
-	// The webhook must prevent creating new objects in case the feature flag is disabled.
-	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return nil, field.Forbidden(
-			field.NewPath("spec"),
-			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
-		)
 	}
 
 	return nil, mcp.validateManagedControlPlaneTemplate(mcpw.Client)

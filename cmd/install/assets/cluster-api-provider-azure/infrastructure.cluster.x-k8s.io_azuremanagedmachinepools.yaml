@@ -527,6 +527,7 @@ spec:
                 - Managed
                 type: string
               osType:
+                default: Linux
                 description: |-
                   OSType specifies the virtual machine operating system. Default to Linux. Possible values include: 'Linux', 'Windows'.
                   'Windows' requires the AzureManagedControlPlane's `spec.networkPlugin` to be `azure`.
