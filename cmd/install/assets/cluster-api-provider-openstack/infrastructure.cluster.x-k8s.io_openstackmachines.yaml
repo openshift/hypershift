@@ -23,10 +23,6 @@ spec:
       jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
       name: Cluster
       type: string
-    - description: OpenStack instance state
-      jsonPath: .status.instanceState
-      name: InstanceState
-      type: string
     - description: Machine ready status
       jsonPath: .status.ready
       name: Ready
@@ -1024,15 +1020,17 @@ spec:
                   controller's output.
                 type: string
               failureReason:
-                description: MachineStatusError defines errors states for Machine
-                  objects.
+                description: DeprecatedCAPIMachineStatusError defines errors states
+                  for Machine objects.
                 type: string
               instanceID:
                 description: InstanceID is the OpenStack instance ID for this machine.
                 type: string
               instanceState:
-                description: InstanceState is the state of the OpenStack instance
-                  for this machine.
+                description: |-
+                  InstanceState is the state of the OpenStack instance for this machine.
+                  This field is not set anymore by the OpenStackMachine controller.
+                  Instead, it's set by the OpenStackServer controller.
                 type: string
               ready:
                 description: Ready is true when the provider resource is ready.
