@@ -854,7 +854,7 @@ github.com/openshift/cluster-node-tuning-operator/pkg/performanceprofile/control
 ## explicit; go 1.12
 github.com/openshift/custom-resource-status/conditions/v1
 # github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7 => ./api
-## explicit; go 1.22.0
+## explicit; go 1.23.0
 github.com/openshift/hypershift/api/certificates
 github.com/openshift/hypershift/api/certificates/v1alpha1
 github.com/openshift/hypershift/api/hypershift/v1beta1
