@@ -59,6 +59,7 @@ const (
 	// management cluster's resource group in Azure.
 	AROHCPKeyVaultManagedIdentityClientID = "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
 
+	ManagedAzureCredentialsFilePath          = "MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH"
 	ManagedAzureClientIdEnvVarKey            = "ARO_HCP_MI_CLIENT_ID"
 	ManagedAzureTenantIdEnvVarKey            = "ARO_HCP_TENANT_ID"
 	ManagedAzureCertificatePathEnvVarKey     = "ARO_HCP_CLIENT_CERTIFICATE_PATH"

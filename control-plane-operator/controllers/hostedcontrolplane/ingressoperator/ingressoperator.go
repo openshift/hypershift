@@ -40,21 +40,22 @@ const (
 )
 
 type Params struct {
-	IngressOperatorImage    string
-	IngressCanaryImage      string
-	HAProxyRouterImage      string
-	KubeRBACProxyImage      string
-	ReleaseVersion          string
-	TokenMinterImage        string
-	AvailabilityProberImage string
-	ProxyImage              string
-	Platform                hyperv1.PlatformType
-	DeploymentConfig        config.DeploymentConfig
-	ProxyConfig             *configv1.ProxySpec
-	NoProxy                 string
-	AzureClientID           string
-	AzureTenantID           string
-	AzureCertificateName    string
+	IngressOperatorImage     string
+	IngressCanaryImage       string
+	HAProxyRouterImage       string
+	KubeRBACProxyImage       string
+	ReleaseVersion           string
+	TokenMinterImage         string
+	AvailabilityProberImage  string
+	ProxyImage               string
+	Platform                 hyperv1.PlatformType
+	DeploymentConfig         config.DeploymentConfig
+	ProxyConfig              *configv1.ProxySpec
+	NoProxy                  string
+	AzureClientID            string
+	AzureTenantID            string
+	AzureCertificateName     string
+	AzureCredentialsFilepath string
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
@@ -71,6 +72,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	if azureutil.IsAroHCP() {
 		p.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ClientID
 		p.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName
+		p.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CredentialsSecretName
 	}
 
 	if hcp.Spec.Configuration != nil {
@@ -237,7 +239,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
 	if azureutil.IsAroHCP() {
 		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
-			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName)...)
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName, params.AzureCredentialsFilepath)...)
 
 		if dep.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
 			dep.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
