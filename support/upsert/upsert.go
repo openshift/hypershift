@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/support/util"
-
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -139,7 +136,7 @@ func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, 
 	case *corev1.Service:
 		defaultServiceSpec(&existingTyped.Spec, &obj.(*corev1.Service).Spec)
 	case *corev1.ServiceAccount:
-		defaultServiceAccount(existingTyped, obj.(*corev1.ServiceAccount))
+		preserveServiceAccountPullSecrets(existingTyped, obj.(*corev1.ServiceAccount))
 	case *routev1.Route:
 		defaultRouteSpec(&existingTyped.Spec, &obj.(*routev1.Route).Spec)
 	case *apiextensionsv1.CustomResourceDefinition:
@@ -288,13 +285,17 @@ func defaultServiceSpec(original, mutated *corev1.ServiceSpec) {
 	}
 }
 
-func defaultServiceAccount(original, mutated *corev1.ServiceAccount) {
+func preserveServiceAccountPullSecrets(original, mutated *corev1.ServiceAccount) {
 	// keep original pull secrets, as those will be injected after the serviceAccount is created.
 	// this is necessary to avoid infinite update loop.
-	mutated.ImagePullSecrets = original.ImagePullSecrets
-	mutated.Secrets = original.Secrets
+	imagePullSecretsSet := sets.New(mutated.ImagePullSecrets...)
+	for _, pullSecret := range original.ImagePullSecrets {
+		if !imagePullSecretsSet.Has(pullSecret) {
+			mutated.ImagePullSecrets = append(mutated.ImagePullSecrets, pullSecret)
+		}
+	}
 
-	util.EnsurePullSecret(mutated, common.PullSecret("").Name)
+	mutated.Secrets = original.Secrets
 }
 
 func defaultCronJobSpec(original, mutated *batchv1.CronJobSpec) {
