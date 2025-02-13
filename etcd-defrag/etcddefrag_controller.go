@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/events"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/clock"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -80,7 +81,7 @@ func (r *DefragController) SetupWithManager(ctx context.Context, mgr ctrl.Manage
 	endpointsFunc := func() ([]string, error) {
 		return r.etcdEndpoints(ctx)
 	}
-	r.etcdClient = etcdcli.NewEtcdClient(endpointsFunc, events.NewLoggingEventRecorder(r.ControllerName))
+	r.etcdClient = etcdcli.NewEtcdClient(endpointsFunc, events.NewLoggingEventRecorder(r.ControllerName, clock.RealClock{}))
 
 	// Set this so that it will immediately requeue itself.
 	r.defragWaitDuration = minDefragWaitDuration
