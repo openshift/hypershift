@@ -285,13 +285,15 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 	if len(kvPlatform.KubevirtHostDevices) > 0 {
 		hostDevices := []kubevirtv1.HostDevice{}
+		deviceCounter := 1
 		for _, hostDevice := range kvPlatform.KubevirtHostDevices {
 			for i := 1; i <= hostDevice.Count; i++ {
 				kvHostDevice := kubevirtv1.HostDevice{
-					Name:       "hostdevice-" + strconv.Itoa(i),
+					Name:       "hostdevice-" + strconv.Itoa(deviceCounter),
 					DeviceName: hostDevice.DeviceName,
 				}
 				hostDevices = append(hostDevices, kvHostDevice)
+				deviceCounter++
 			}
 
 		}
