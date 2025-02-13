@@ -17,7 +17,6 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -36,22 +35,12 @@ const (
 
 func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
 	rawCreateOptions := &RawCreateOptions{
-		Location:           "eastus",
-		TechPreviewEnabled: false,
-		NodePoolOpts:       azurenodepool.DefaultOptions(),
+		Location:     "eastus",
+		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
 
 	if client == nil {
 		return rawCreateOptions, nil
-	}
-
-	techPreviewCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "hypershift", Name: "feature-gate"}}
-	if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(techPreviewCM), techPreviewCM); err != nil && !apierrors.IsNotFound(err) {
-		log.Info("Warning: Failed to get feature-gate configmap, proceeding without tech preview", "error", err)
-	}
-
-	if techPreviewCM != nil && techPreviewCM.Data["TechPreviewEnabled"] == "true" {
-		rawCreateOptions.TechPreviewEnabled = true
 	}
 
 	return rawCreateOptions, nil
@@ -74,16 +63,13 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
-
-	if opts.TechPreviewEnabled {
-		flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
-		flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
-		flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
-		flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
-		flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
-		flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
-		flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
-	}
+	flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
+	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
+	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
+	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -143,22 +129,20 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
-	if o.TechPreviewEnabled {
-		if o.KMSClientID != "" && o.KMSCertName == "" {
-			return nil, fmt.Errorf("flag --kms-cert-name is required when using --kms-client-id")
-		}
+	if o.KMSClientID != "" && o.KMSCertName == "" {
+		return nil, fmt.Errorf("flag --kms-cert-name is required when using --kms-client-id")
+	}
 
-		if o.KMSClientID == "" && o.KMSCertName != "" {
-			return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
-		}
+	if o.KMSClientID == "" && o.KMSCertName != "" {
+		return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
+	}
 
-		if o.ManagedIdentitiesFile == "" {
-			return nil, fmt.Errorf("flag --managed-identities-file is required")
-		}
+	if o.ManagedIdentitiesFile == "" {
+		return nil, fmt.Errorf("flag --managed-identities-file is required")
+	}
 
-		if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
-			return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
-		}
+	if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
+		return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
 	}
 
 	validOpts := &ValidatedCreateOptions{
@@ -283,19 +267,17 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		},
 	}
 
-	if o.TechPreviewEnabled {
-		cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
-		cluster.Spec.Platform.Azure.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
+	cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
+	cluster.Spec.Platform.Azure.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
 
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
-		cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
-	}
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
 
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
@@ -313,7 +295,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		}
 	}
 
-	if o.encryptionKey != nil && o.TechPreviewEnabled {
+	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption.KMS.Azure.KMS = hyperv1.ManagedIdentity{
 			ClientID:        o.KMSClientID,
 			CertificateName: o.KMSCertName,
@@ -578,7 +560,6 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		NetworkSecurityGroupID:      azureOpts.NetworkSecurityGroupID,
 		ResourceGroupTags:           azureOpts.ResourceGroupTags,
 		SubnetID:                    azureOpts.SubnetID,
-		TechPreviewEnabled:          azureOpts.TechPreviewEnabled,
 		DNSZoneRG:                   azureOpts.DNSZoneRGName,
 		ManagedIdentitiesFile:       azureOpts.ManagedIdentitiesFile,
 		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,

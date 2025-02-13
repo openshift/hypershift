@@ -45,32 +45,32 @@ spec:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
           controlPlaneOperator:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
           disk:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
           file:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
           imageRegistry:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
           ingress:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
           managedIdentitiesKeyVault:
             name: ""
             tenantID: ""
@@ -78,12 +78,12 @@ spec:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
           nodePoolManagement:
             certificateName: ""
             clientID: ""
             credentialsSecretName: ""
-            objectEncoding: ""
+            objectEncoding: utf-8
         dataPlane:
           diskMSIClientID: ""
           fileMSIClientID: ""

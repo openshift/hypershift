@@ -20,9 +20,6 @@
                         "name": "AutoNodeKarpenter",
                     },
                     {
-                      "name": "AROHCPManagedIdentities"
-                    },
-                    {
                         "name": "ExternalOIDC"
                     },
                     {

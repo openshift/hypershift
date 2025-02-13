@@ -271,7 +271,7 @@ func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {
 		return "", fmt.Errorf("role arn cannot be empty in AssumeRole credentials")
 	}
 	if region == "" {
-		return "", fmt.Errorf("a region must be specified for cross-partition compatability in AssumeRole credentials")
+		return "", fmt.Errorf("a region must be specified for cross-partition compatibility in AssumeRole credentials")
 	}
 	return fmt.Sprintf(awsCredentialsTemplate, roleArn, region), nil
 }
