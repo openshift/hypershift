@@ -13,6 +13,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	scheduling "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -337,6 +338,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	cmd.WithNamespace(opts.Namespace).Run(ctx, objectNames...)
 
 	cmd.Run(ctx, objectType(&corev1.Node{}))
+
+	cmd.Run(ctx, objectType(&scheduling.ClusterSizingConfiguration{}))
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name)
 

@@ -48,7 +48,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 		if !errors.IsNotFound(err) {
 			return fmt.Errorf("failed to get sizing configuration: %w", err)
 		}
-		if _, err := hypershiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Create(ctx, defaultSizingConfig(), metav1.CreateOptions{}); err != nil {
+		if _, err := hypershiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Create(ctx, DefaultSizingConfig(), metav1.CreateOptions{}); err != nil {
 			return fmt.Errorf("failed to create sizing configuration: %w", err)
 		}
 	}
@@ -147,7 +147,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 	return nil
 }
 
-func defaultSizingConfig() *schedulingv1alpha1.ClusterSizingConfiguration {
+func DefaultSizingConfig() *schedulingv1alpha1.ClusterSizingConfiguration {
 	return &schedulingv1alpha1.ClusterSizingConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",
