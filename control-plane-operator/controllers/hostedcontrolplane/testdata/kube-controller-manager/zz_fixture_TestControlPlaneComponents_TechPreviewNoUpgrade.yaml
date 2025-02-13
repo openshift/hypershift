@@ -116,7 +116,6 @@ spec:
         - --feature-gates=ConsolePluginContentSecurityPolicy=true
         - --feature-gates=SetEIPForNLBIngressController=true
         - --feature-gates=OpenShiftPodSecurityAdmission=true
-        - --feature-gates=CSIDriverSharedResource=true
         - --feature-gates=BuildCSIVolumes=true
         - --feature-gates=MachineAPIProviderOpenStack=true
         - --feature-gates=InsightsConfigAPI=true
@@ -126,9 +125,12 @@ spec:
         - --feature-gates=SigstoreImageVerification=true
         - --feature-gates=GCPLabelsTags=true
         - --feature-gates=AlibabaPlatform=true
+        - --feature-gates=VSphereHostVMGroupZonal=true
+        - --feature-gates=VSphereMultiDisk=true
         - --feature-gates=VSphereMultiVCenters=true
         - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=RouteExternalCertificate=true
+        - --feature-gates=CPMSMachineNamePrefix=true
         - --feature-gates=AdminNetworkPolicy=true
         - --feature-gates=NetworkSegmentation=true
         - --feature-gates=AdditionalRoutingCapabilities=true
@@ -155,7 +157,6 @@ spec:
         - --feature-gates=ExternalOIDC=true
         - --feature-gates=Example=true
         - --feature-gates=PlatformOperators=true
-        - --feature-gates=NewOLM=true
         - --feature-gates=InsightsOnDemandDataGather=true
         - --feature-gates=BareMetalLoadBalancer=true
         - --feature-gates=InsightsConfig=true
@@ -173,6 +174,9 @@ spec:
         - --feature-gates=VSphereMultiNetworks=true
         - --feature-gates=IngressControllerDynamicConfigurationManager=true
         - --feature-gates=MinimumKubeletVersion=true
+        - --feature-gates=NutanixMultiSubnets=true
+        - --feature-gates=KMSEncryptionProvider=true
+        - --feature-gates=HighlyAvailableArbiter=true
         - --feature-gates=ServiceAccountTokenNodeBinding=true
         - --feature-gates=ValidatingAdmissionPolicy=true
         - --feature-gates=NodeSwap=true
@@ -190,9 +194,12 @@ spec:
         - --feature-gates=GatewayAPI=false
         - --feature-gates=MachineAPIOperatorDisableMachineHealthCheckController=false
         - --feature-gates=ClusterAPIInstall=false
+        - --feature-gates=Example2=false
+        - --feature-gates=NewOLM=false
         - --feature-gates=ClusterAPIInstallIBMCloud=false
         - --feature-gates=MachineAPIMigration=false
         - --feature-gates=MultiArchInstallAzure=false
+        - --feature-gates=ClusterVersionOperatorConfiguration=false
         - --feature-gates=EventedPLEG=false
         command:
         - hyperkube
