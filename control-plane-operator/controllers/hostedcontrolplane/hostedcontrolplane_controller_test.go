@@ -1559,7 +1559,7 @@ func TestIncludeServingCertificates(t *testing.T) {
 			Namespace: hcp.Namespace,
 		},
 		Data: map[string]string{
-			"tls.crt": "root-ca-cert",
+			"ca.crt": "root-ca-cert",
 		},
 	}
 
@@ -1672,7 +1672,7 @@ func TestIncludeServingCertificates(t *testing.T) {
 				g.Expect(err).To(HaveOccurred())
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(newRootCA.Data["tls.crt"]).To(Equal(tc.expectedCert))
+				g.Expect(newRootCA.Data["ca.crt"]).To(Equal(tc.expectedCert))
 			}
 		})
 	}

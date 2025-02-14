@@ -1374,6 +1374,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure image registry component is disabled
 		e2eutil.EnsureImageRegistryCapabilityDisabled(ctx, t, g, mgtClient, hostedCluster)
+		e2eutil.EnsureKubeAPIDNSName(t, ctx, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
