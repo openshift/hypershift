@@ -123,7 +123,7 @@ func ReconcileDeployment(ctx context.Context, client crclient.Client, deployment
 		}
 		delete(deployment.Spec.Template.ObjectMeta.Annotations, KubeadminSecretHashAnnotation)
 	} else {
-		deployment.Spec.Template.ObjectMeta.Annotations[KubeadminSecretHashAnnotation] = util.HashSimple(kubeadminPasswordSecret.Data)
+		deployment.Spec.Template.ObjectMeta.Annotations[KubeadminSecretHashAnnotation] = kubeadminPasswordSecret.Annotations[KubeadminSecretHashAnnotation]
 	}
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{

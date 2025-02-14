@@ -1,7 +1,6 @@
 package oauth
 
 import (
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -69,7 +68,6 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		WithDependencies(oapiv2.ComponentName).
 		RolloutOnConfigMapChange("oauth-openshift").
-		RolloutOnSecretChange(common.KubeadminPasswordSecret("").Name).
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.Dual,
 			Socks5Options: component.Socks5Options{

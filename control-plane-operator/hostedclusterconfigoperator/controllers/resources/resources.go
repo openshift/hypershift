@@ -15,6 +15,7 @@ import (
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
@@ -1357,11 +1358,23 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 	}
 
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
-	_, err := r.CreateOrUpdate(ctx, r.client, kubeadminPasswordHashSecret, func() error {
+	if _, err := r.CreateOrUpdate(ctx, r.client, kubeadminPasswordHashSecret, func() error {
 		return kubeadminpassword.ReconcileKubeadminPasswordHashSecret(kubeadminPasswordHashSecret, kubeadminPasswordSecret)
-	})
+	}); err != nil {
+		return err
+	}
 
-	return err
+	if _, err := r.CreateOrUpdate(ctx, r.cpClient, kubeadminPasswordSecret, func() error {
+		if kubeadminPasswordSecret.Annotations == nil {
+			kubeadminPasswordSecret.Annotations = map[string]string{}
+		}
+		kubeadminPasswordSecret.Annotations[cpoauth.KubeadminSecretHashAnnotation] = string(kubeadminPasswordHashSecret.Data["kubeadmin"])
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %v", err)
+	}
+
+	return nil
 }
 
 func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context) error {
