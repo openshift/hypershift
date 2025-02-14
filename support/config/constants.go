@@ -1,5 +1,7 @@
 package config
 
+import "github.com/blang/semver"
+
 const (
 	// NeedManagementKASAccessLabel is used by network policies
 	// to prevent any pod which doesn't contain the label from accessing the management cluster KAS.
@@ -84,4 +86,8 @@ const (
 	ManagedAzureNetworkSecretStoreProviderClassName       = "managed-azure-network"
 	ManagedAzureNodePoolMgmtSecretProviderClassName       = "managed-azure-nodepool-management"
 	ManagedAzureNodePoolMgmtSecretStoreVolumeName         = "nodepool-management-cert"
+)
+
+var (
+	Version419 = semver.MustParse("4.19.0")
 )
