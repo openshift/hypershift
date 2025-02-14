@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -23,6 +26,7 @@ import (
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/test/integration/framework"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -45,7 +49,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -148,8 +154,6 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	return nil
 }
 
-<<<<<<< Updated upstream
-=======
 // WaitForKASCustomKubeconfigClient waits for the KAS custom kubeconfig to be published for the given HostedCluster and returns a client for it.
 func WaitForKASCustomKubeconfigClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, serverAddress string) crclient.Client {
 	g := NewWithT(t)
@@ -214,7 +218,6 @@ func WaitForCustomKubeconfig(t *testing.T, ctx context.Context, client crclient.
 	return data
 }
 
->>>>>>> Stashed changes
 func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) []byte {
 	var guestKubeConfigSecretRef crclient.ObjectKey
 	EventuallyObject(t, ctx, fmt.Sprintf("kubeconfig to be published for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name),
@@ -1387,8 +1390,6 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 	})
 }
 
-<<<<<<< Updated upstream
-=======
 func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
 	AtLeast(t, Version419)
 	var (
@@ -1556,7 +1557,6 @@ func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient
 	})
 }
 
->>>>>>> Stashed changes
 func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
 	if !util.IsPublicHC(hc) {
 		return // Admission policies are only validated in public clusters does not worth to test it in private ones.
@@ -2276,4 +2276,55 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 			t.Fatalf("expected pods [%s] to have hypershift-e2e-test-toleration", strings.Join(podsWithoutToleration, ", "))
 		}
 	})
+}
+
+// RestConfigToKubeconfig converts a rest.Config to a kubeconfig file and returns the path
+func RestConfigToKubeconfig(config *rest.Config, contextName string) (string, error) {
+	kubeCfg := clientcmdapi.Config{
+		Kind:       "Config",
+		APIVersion: "v1",
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"cluster": {
+				Server:                   config.Host,
+				CertificateAuthorityData: config.CAData,
+				InsecureSkipTLSVerify:    config.Insecure,
+			},
+		},
+		AuthInfos: map[string]*clientcmdapi.AuthInfo{
+			"user": {
+				ClientCertificateData: config.CertData,
+				ClientKeyData:         config.KeyData,
+				Token:                 config.BearerToken,
+				Username:              config.Username,
+				Password:              config.Password,
+			},
+		},
+		Contexts: map[string]*clientcmdapi.Context{
+			contextName: {
+				Cluster:   "cluster",
+				AuthInfo:  "user",
+				Namespace: "default",
+			},
+		},
+		CurrentContext: contextName,
+	}
+
+	// Create a temporary file for the kubeconfig
+	kubeconfigFile, err := os.CreateTemp("", "kubeconfig-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file for kubeconfig: %w", err)
+	}
+	defer kubeconfigFile.Close()
+
+	// Write the kubeconfig to the file
+	data, err := clientcmd.Write(kubeCfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal kubeconfig: %w", err)
+	}
+
+	if _, err := kubeconfigFile.Write(data); err != nil {
+		return "", fmt.Errorf("failed to write kubeconfig to file: %w", err)
+	}
+
+	return kubeconfigFile.Name(), nil
 }
