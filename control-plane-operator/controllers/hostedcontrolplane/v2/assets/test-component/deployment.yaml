@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-component
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-component
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: test-component
+    spec:
+      # This should be replaced by builtin reconciliation
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --foo=bar
+        command:
+        - /usr/bin/test-component
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: test-component # image name in the payload
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /health-check
+            port: 8085
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        # This should be replaced by builtin reconciliation
+        imagePullPolicy: Always
+        name: test-component
+        ports:
+        - containerPort: 8085
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health-check
+            port: 8085
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 60Mi
+        volumeMounts:
+        - mountPath: /mnt
+          name: my-volume
+      restartPolicy: Always
+      securityContext: {}
+      serviceAccount: test-component
+      serviceAccountName: test-component
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: my-volume
+        secret:
+          # This should be replaced by builtin reconciliation
+          defaultMode: 000
+          items:
+          - key: value
+            path: path
+          secretName: my-secret
+      - name: my-configmap
+        configMap:
+          defaultMode: 000
+          items:
+          - key: config-key
+            path: config-path

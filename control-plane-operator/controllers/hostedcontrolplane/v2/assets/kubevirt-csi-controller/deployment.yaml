@@ -51,8 +51,6 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
-            - name: tenantcluster
-              mountPath: "/var/run/secrets/tenantcluster"
           resources:
             requests:
               memory: 50Mi
@@ -72,8 +70,6 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
-            - name: tenantcluster
-              mountPath: "/var/run/secrets/tenantcluster"
           resources:
             requests:
               memory: 50Mi
@@ -92,8 +88,6 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
-            - name: tenantcluster
-              mountPath: "/var/run/secrets/tenantcluster"
           resources:
             requests:
               memory: 50Mi
@@ -107,8 +101,6 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
-            - name: tenantcluster
-              mountPath: "/var/run/secrets/tenantcluster"
           resources:
             requests:
               memory: 50Mi
@@ -126,8 +118,6 @@ spec:
           volumeMounts:
           - mountPath: /csi
             name: socket-dir
-          - name: tenantcluster
-            mountPath: "/var/run/secrets/tenantcluster"
           resources:
             requests:
               memory: 50Mi
@@ -135,6 +125,3 @@ spec:
       volumes:
         - name: socket-dir
           emptyDir: {}
-        - name: tenantcluster
-          secret:
-            secretName: kubevirt-csi-controller-tenant-kubeconfig

@@ -21,5 +21,5 @@ status:
   resources:
   - group: ""
     kind: Secret
-    name: dns-operator-kubeconfig
+    name: dns-operator-service-account-kubeconfig
   version: 4.18.0

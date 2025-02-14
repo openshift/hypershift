@@ -33,10 +33,11 @@ func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &kubevirtCSIOptions{}).
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(predicate).
-		WithManifestAdapter(
-			"kubeconfig.yaml",
-			component.WithAdaptFunction(adaptKubeconfigSecret),
-		).
+		InjectServiceAccountKubeConfig(component.ServiceAccountKubeConfigOpts{
+			Name:      "kubevirt-csi-controller-sa",
+			Namespace: "openshift-cluster-csi-drivers",
+			MountPath: "/var/run/secrets/tenantcluster",
+		}).
 		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfigMap),

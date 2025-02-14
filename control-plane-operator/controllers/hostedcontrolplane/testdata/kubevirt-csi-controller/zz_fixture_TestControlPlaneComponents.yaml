@@ -90,7 +90,7 @@ spec:
               key: infraStorageClassEnforcement
               name: driver-config
         image: kubevirt-csi-driver
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         name: csi-driver
         resources:
           requests:
@@ -100,7 +100,7 @@ spec:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
-          name: tenantcluster
+          name: service-account-kubeconfig
       - args:
         - --csi-address=$(ADDRESS)
         - --default-fstype=ext4
@@ -112,6 +112,7 @@ spec:
         - name: ADDRESS
           value: /var/lib/csi/sockets/pluginproxy/csi.sock
         image: csi-external-provisioner
+        imagePullPolicy: IfNotPresent
         name: csi-provisioner
         resources:
           requests:
@@ -121,7 +122,7 @@ spec:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
-          name: tenantcluster
+          name: service-account-kubeconfig
       - args:
         - --csi-address=$(ADDRESS)
         - --v=5
@@ -132,6 +133,7 @@ spec:
         - name: ADDRESS
           value: /var/lib/csi/sockets/pluginproxy/csi.sock
         image: csi-external-attacher
+        imagePullPolicy: IfNotPresent
         name: csi-attacher
         resources:
           requests:
@@ -141,12 +143,13 @@ spec:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
-          name: tenantcluster
+          name: service-account-kubeconfig
       - args:
         - --csi-address=/csi/csi.sock
         - --probe-timeout=3s
         - --health-port=10301
         image: csi-livenessprobe
+        imagePullPolicy: IfNotPresent
         name: csi-liveness-probe
         resources:
           requests:
@@ -156,7 +159,7 @@ spec:
         - mountPath: /csi
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
-          name: tenantcluster
+          name: service-account-kubeconfig
       - args:
         - --v=5
         - --csi-address=/csi/csi.sock
@@ -175,7 +178,7 @@ spec:
         - mountPath: /csi
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
-          name: tenantcluster
+          name: service-account-kubeconfig
       priorityClassName: hypershift-control-plane
       serviceAccount: kubevirt-csi
       tolerations:
@@ -190,8 +193,8 @@ spec:
       volumes:
       - emptyDir: {}
         name: socket-dir
-      - name: tenantcluster
+      - name: service-account-kubeconfig
         secret:
           defaultMode: 416
-          secretName: kubevirt-csi-controller-tenant-kubeconfig
+          secretName: kubevirt-csi-controller-service-account-kubeconfig
 status: {}

@@ -11,8 +11,6 @@ import (
 
 const (
 	ComponentName = "cloud-credential-operator"
-
-	serviceAccountKubeconfigVolumeName = "service-account-kubeconfig"
 )
 
 var _ component.ComponentOptions = &cloudCredentialOperator{}
@@ -39,13 +37,14 @@ func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &cloudCredentialOperator{}).
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(isAWSPlatform).
-		WithManifestAdapter(
-			"kubeconfig.yaml",
-			component.WithAdaptFunction(adaptKubeconfigSecret),
-		).
 		WithDependencies(oapiv2.ComponentName).
+		InjectServiceAccountKubeConfig(component.ServiceAccountKubeConfigOpts{
+			Name:      "cloud-credential-operator",
+			Namespace: "openshift-cloud-credential-operator",
+			MountPath: "/etc/kubernetes",
+		}).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{
-			KubeconfigVolumeName:          serviceAccountKubeconfigVolumeName,
+			KubeconfigVolumeName:          component.ServiceAccountKubeconfigVolumeName,
 			WaitForInfrastructureResource: true,
 			RequiredAPIs: []schema.GroupVersionKind{
 				{Group: "operator.openshift.io", Version: "v1", Kind: "CloudCredential"},

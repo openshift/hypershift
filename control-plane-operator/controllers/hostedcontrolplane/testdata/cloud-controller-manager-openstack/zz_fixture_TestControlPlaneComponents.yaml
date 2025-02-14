@@ -82,6 +82,7 @@ spec:
           value: /etc/openstack/config/cloud.conf
         - name: OCP_INFRASTRUCTURE_NAME
         image: openstack-cloud-controller-manager
+        imagePullPolicy: IfNotPresent
         name: cloud-controller-manager
         resources:
           requests:

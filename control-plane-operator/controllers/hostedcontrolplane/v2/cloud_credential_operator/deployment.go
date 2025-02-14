@@ -18,6 +18,5 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		proxy.SetEnvVars(&c.Env)
 
 	})
-
 	return nil
 }
