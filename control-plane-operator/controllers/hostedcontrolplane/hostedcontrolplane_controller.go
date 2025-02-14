@@ -5743,7 +5743,7 @@ func setCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedControlPl
 			Key:  DefaultAdminKubeconfigKey,
 		}
 	} else {
-		// Cleanning up custom kubeconfig status
+		// Cleaning up custom kubeconfig status
 		hcp.Status.CustomKubeConfig = nil
 	}
 
@@ -5765,14 +5765,14 @@ func includeServingCertificates(ctx context.Context, c client.Client, hcp *hyper
 			}
 
 			if len(tlsCRT) <= 0 {
-				tlsCRT = newRootCA.Data["tls.crt"]
+				tlsCRT = newRootCA.Data["ca.crt"]
 			}
 
 			tlsCRT = fmt.Sprintf("%s\n%s", tlsCRT, string(newCRT.Data["tls.crt"]))
 		}
 
 		if len(tlsCRT) > 0 {
-			newRootCA.Data["tls.crt"] = tlsCRT
+			newRootCA.Data["ca.crt"] = tlsCRT
 		}
 	}
 

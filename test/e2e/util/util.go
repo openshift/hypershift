@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -23,6 +26,7 @@ import (
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/test/integration/framework"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -146,6 +150,72 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 		t.Logf("Deleted namespace %s", namespace)
 	}
 	return nil
+}
+
+// WaitForCustomKubeconfigClient waits for the custom kubeconfig to be published for the given HostedCluster and returns a client for it.
+func WaitForCustomKubeconfigClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
+	g := NewWithT(t)
+	customKubeconfigData := WaitForCustomKubeConfig(t, ctx, client, hostedCluster)
+	customConfig, err := clientcmd.RESTConfigFromKubeConfig(customKubeconfigData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load custom kubeconfig")
+	// we know we're the only real clients for these test servers, so turn off client-side throttling
+	customConfig.QPS = -1
+	customConfig.Burst = -1
+	kubeClient, err := kubernetes.NewForConfig(customConfig)
+	if err != nil {
+		t.Fatalf("failed to create custom kube client for guest cluster: %v", err)
+	}
+
+	EventuallyObject(t, ctx, "a successful connection to the custom DNS guest API server",
+		func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
+			return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+		}, nil, WithTimeout(30*time.Minute),
+	)
+
+	customClient, err := crclient.New(customConfig, crclient.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatalf("could not create custom DNS client for guest cluster: %v", err)
+	}
+
+	return customClient
+}
+
+// WaitForCustomKubeConfig waits for a custom kubeconfig to be published for the given HostedCluster.
+func WaitForCustomKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) []byte {
+	var customKubeConfigSecretRef crclient.ObjectKey
+	EventuallyObject(t, ctx, fmt.Sprintf("custom kubeconfig to be published for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			return hostedCluster, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			func(cluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+				customKubeConfigSecretRef = crclient.ObjectKey{
+					Namespace: hostedCluster.Namespace,
+					Name:      ptr.Deref(hostedCluster.Status.CustomKubeConfig, corev1.LocalObjectReference{}).Name,
+				}
+				return hostedCluster.Status.CustomKubeConfig != nil, fmt.Sprintf("expected a custom kubeconfig reference in status"), nil
+			},
+		},
+	)
+
+	var data []byte
+	EventuallyObject(t, ctx, "custom kubeconfig secret to have data",
+		func(ctx context.Context) (*corev1.Secret, error) {
+			var customKubeConfigSecret corev1.Secret
+			err := client.Get(ctx, customKubeConfigSecretRef, &customKubeConfigSecret)
+			return &customKubeConfigSecret, err
+		},
+		[]Predicate[*corev1.Secret]{
+			func(secret *corev1.Secret) (done bool, reasons string, err error) {
+				var hasData bool
+				data, hasData = secret.Data["kubeconfig"]
+				return hasData, "expected secret to contain kubeconfig in data", nil
+			},
+		},
+	)
+
+	return data
 }
 
 func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) []byte {
@@ -1317,6 +1387,157 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
 		}
 
+	})
+}
+
+func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
+	var hcCustomKubeconfigSecretName string
+	if !util.IsPublicHC(hc) {
+		return
+	}
+
+	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := mgmtClient.Get(ctx, types.NamespacedName{Name: hc.Name, Namespace: hcpNamespace}, hcp); err != nil {
+		t.Fatalf("failed to get hosted control plane: %v", err)
+	}
+
+	// update HC with a KubeAPIDNSName
+	hcCP := hc.DeepCopy()
+	hcCP.Spec.KubeAPIServerDNSName = "127.0.0.1"
+	t.Log("Updating hosted cluster with KubeAPIDNSName")
+	if err := mgmtClient.Update(ctx, hcCP); err != nil {
+		t.Fatalf("failed to update hosted cluster: %v", err)
+	}
+
+	// wait for the KubeAPIDNSName to be reconciled
+	t.Log("waiting for the KubeAPIDNSName to be reconciled")
+	_ = WaitForCustomKubeConfig(t, ctx, mgmtClient, hc)
+
+	// Get HC and HCP updated
+	if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), hc); err != nil {
+		t.Fatalf("failed to get updated HostedCluster: %v", err)
+	}
+	if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		t.Fatalf("failed to get updated HostedControlPlane: %v", err)
+	}
+
+	opts := framework.DefaultOptions()
+	logger := log.Log
+	forwardedLocalPort, err := framework.GetFreePort(ctx, logger, opts, t)
+	if err != nil {
+		t.Fatal("couldn't fetch a free port: %w", err)
+	}
+
+	go func() {
+		portForwardCtx := context.Background() // we need this during cleanup, possible to do better but hard
+		logPath := "apiserver-port-forward.log"
+		cmd := exec.CommandContext(portForwardCtx, opts.OCPath,
+			"port-forward", "service/kube-apiserver", "--namespace", hcpNamespace,
+			fmt.Sprintf("%s:6443", forwardedLocalPort),
+			"--kubeconfig", opts.Kubeconfig,
+		)
+		if err := framework.StartCommand(logger, opts, logPath, cmd); err != nil {
+			logger.Error(err, "failed to start port-forwarding")
+		}
+	}()
+
+	t.Run("EnsureCustomAdminKubeconfigStatusExists", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+		t.Log("Checking CustomAdminKubeconfigStatus are present")
+		g.Expect(hcp.Status.CustomKubeConfig).ToNot(BeNil(), "HostedControlPlane CustomKubeConfig is nil")
+		g.Expect(hc.Status.CustomKubeConfig).ToNot(BeNil(), "HostedCluster CustomKubeConfig is nil")
+		hcCustomKubeconfigSecretName = hc.Status.CustomKubeConfig.Name
+	})
+	t.Run("EnsureCustomAdminKubeconfigExists", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+		// Get CustomKubeConfig secret from HCP Namespace
+		t.Log("Checking CustomAdminKubeconfigs are present")
+		hcpCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
+		err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hcpCustomKubeconfig), hcpCustomKubeconfig)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get custom kubeconfig secret")
+		g.Expect(hc.Status.CustomKubeConfig).ToNot(BeNil(), "CustomKubeConfig is nil")
+
+		// Get CustomKubeConfig secret from HC Namespace
+		hcCustomKubeconfigSecret := &corev1.Secret{}
+		err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.CustomKubeConfig.Name}, hcCustomKubeconfigSecret)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get custom kubeconfig secret from HC namespace")
+	})
+	t.Run("EnsureCustomAdminKubeconfigReachesTheKAS", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+		t.Log("Checking CustomAdminKubeconfig reaches the KAS")
+		customKubeconfigClient := WaitForCustomKubeconfigClient(t, ctx, mgmtClient, hc)
+		cv := &configv1.ClusterVersion{}
+		err := customKubeconfigClient.Get(ctx, types.NamespacedName{Name: "version"}, cv)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster ClusterVersion with custom kubeconfig")
+	})
+	t.Run("EnsureCustomAdminKubeconfigInfraStatusIsUpdated", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+		t.Log("Checking CustomAdminKubeconfig reaches the KAS")
+		customKubeconfigClient := WaitForCustomKubeconfigClient(t, ctx, mgmtClient, hc)
+		infra := &configv1.Infrastructure{}
+		err := customKubeconfigClient.Get(ctx, types.NamespacedName{Name: "cluster"}, infra)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster Infrastructure with custom kubeconfig")
+		g.Expect(infra.Status.APIServerURL).To(ContainSubstring(hc.Spec.KubeAPIServerDNSName), "Infrastructure APIServerURL does not contains the KubeAPIServerDNSName set in the HostedCluster")
+	})
+
+	// removing KubeAPIDNSName from HC
+	hcCP = hc.DeepCopy()
+	hcCP.Spec.KubeAPIServerDNSName = ""
+	if err := mgmtClient.Update(ctx, hcCP); err != nil {
+		t.Fatalf("failed to update hosted control plane: %v", err)
+	}
+
+	EventuallyObject(t, ctx, "the custom kubeconfig secret to be deleted",
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := mgmtClient.Get(ctx, types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}, hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			func(hostedCluster *hyperv1.HostedCluster) (done bool, reason string, err error) {
+				if hostedCluster.Status.CustomKubeConfig != nil {
+					return false, fmt.Sprintf("custom kubeconfig secret still exists: %s", hostedCluster.Status.CustomKubeConfig.Name), nil
+				}
+				return true, fmt.Sprint("custom kubeconfig secret disappeared"), nil
+			},
+		}, WithTimeout(30*time.Minute),
+	)
+
+	t.Run("EnsureCustomAdminKubeconfigIsRemoved", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+		t.Log("Checking CustomAdminKubeconfig are removed")
+		hcpCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
+		err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hcpCustomKubeconfig), hcpCustomKubeconfig)
+		g.Expect(err).To(HaveOccurred(), "custom kubeconfig secret still exists in HCP namespace")
+
+		// Get CustomKubeConfig secret from HC Namespace
+		hcCustomKubeconfigSecret := &corev1.Secret{}
+		err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hcCustomKubeconfigSecretName}, hcCustomKubeconfigSecret)
+		g.Expect(err).To(HaveOccurred(), "custom kubeconfig secret still exists in HC namespace")
+	})
+	t.Run("EnsureCustomAdminKubeconfigStatusIsRemoved", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+		t.Log("Checking CustomAdminKubeconfigStatus are removed")
+		g.Expect(hcp.Status.CustomKubeConfig).To(BeNil(), "HostedControlPlane CustomKubeConfig is not nil")
+		g.Expect(hc.Status.CustomKubeConfig).To(BeNil(), "HostedCluster CustomKubeConfig is not nil")
+	})
+	t.Run("EnsureCustomAdminKubeconfigInfraStatusMatchesAPIInt", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+		t.Log("Checking APIServerURL points back to the same address as APIServerInternalURL")
+		infra := &configv1.Infrastructure{}
+		err := guestClient.Get(ctx, types.NamespacedName{Name: "cluster"}, infra)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster Infrastructure with custom kubeconfig")
+		g.Expect(infra.Status.APIServerURL).To(Equal(infra.Status.APIServerInternalURL), "Infrastructure APIServerURL and APIServerInternalURL should be equal")
 	})
 }
 
