@@ -29,7 +29,7 @@ func ReconcileKASEndpointSlice(endpointSlice *discoveryv1.EndpointSlice, address
 		endpointSlice.Labels = map[string]string{}
 	}
 	endpointSlice.Labels[discoveryv1.LabelServiceName] = "kubernetes"
-	ipv4, err := util.IsIPv4(address)
+	ipv4, err := util.IsIPv4Address(address)
 	if err != nil || ipv4 {
 		endpointSlice.AddressType = discoveryv1.AddressTypeIPv4
 	} else {
