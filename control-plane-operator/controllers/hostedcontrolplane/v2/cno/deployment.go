@@ -161,6 +161,10 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 				Name:  config.ManagedAzureSecretProviderClassEnvVarKey,
 				Value: config.ManagedAzureNetworkSecretStoreProviderClassName,
 			},
+			corev1.EnvVar{
+				Name:  config.ManagedAzureCredentialsFilePath,
+				Value: hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CredentialsSecretName,
+			},
 		)
 	}
 

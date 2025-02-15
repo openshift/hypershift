@@ -104,22 +104,23 @@ type Images struct {
 }
 
 type Params struct {
-	ReleaseVersion          string
-	AvailabilityProberImage string
-	HostedClusterName       string
-	CAConfigMap             string
-	CAConfigMapKey          string
-	APIServerAddress        string
-	APIServerPort           int32
-	TokenAudience           string
-	Images                  Images
-	OwnerRef                config.OwnerRef
-	DeploymentConfig        config.DeploymentConfig
-	IsPrivate               bool
-	DefaultIngressDomain    string
-	AzureClientID           string
-	AzureTenantID           string
-	AzureCertificateName    string
+	ReleaseVersion           string
+	AvailabilityProberImage  string
+	HostedClusterName        string
+	CAConfigMap              string
+	CAConfigMapKey           string
+	APIServerAddress         string
+	APIServerPort            int32
+	TokenAudience            string
+	Images                   Images
+	OwnerRef                 config.OwnerRef
+	DeploymentConfig         config.DeploymentConfig
+	IsPrivate                bool
+	DefaultIngressDomain     string
+	AzureClientID            string
+	AzureTenantID            string
+	AzureCertificateName     string
+	AzureCredentialsFilepath string
 }
 
 func init() {
@@ -171,6 +172,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	if azureutil.IsAroHCP() {
 		p.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ClientID
 		p.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CertificateName
+		p.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CredentialsSecretName
 	}
 
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
@@ -639,6 +641,10 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			corev1.EnvVar{
 				Name:  config.ManagedAzureSecretProviderClassEnvVarKey,
 				Value: config.ManagedAzureNetworkSecretStoreProviderClassName,
+			},
+			corev1.EnvVar{
+				Name:  config.ManagedAzureCredentialsFilePath,
+				Value: params.AzureCredentialsFilepath,
 			},
 		)
 	}

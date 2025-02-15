@@ -99,17 +99,18 @@ var (
 )
 
 type Params struct {
-	operatorImage        string
-	tokenMinterImage     string
-	platform             hyperv1.PlatformType
-	issuerURL            string
-	releaseVersion       string
-	registryImage        string
-	prunerImage          string
-	deploymentConfig     config.DeploymentConfig
-	AzureClientID        string
-	AzureTenantID        string
-	AzureCertificateName string
+	operatorImage            string
+	tokenMinterImage         string
+	platform                 hyperv1.PlatformType
+	issuerURL                string
+	releaseVersion           string
+	registryImage            string
+	prunerImage              string
+	deploymentConfig         config.DeploymentConfig
+	AzureClientID            string
+	AzureTenantID            string
+	AzureCertificateName     string
+	AzureCredentialsFilepath string
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
@@ -152,6 +153,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	if azureutil.IsAroHCP() {
 		params.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID
 		params.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName
+		params.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName
 	}
 
 	params.deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
@@ -210,7 +212,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
 	if azureutil.IsAroHCP() {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName)...)
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName, params.AzureCredentialsFilepath)...)
 
 		if deployment.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
